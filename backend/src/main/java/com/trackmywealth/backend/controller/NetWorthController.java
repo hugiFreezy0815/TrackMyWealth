@@ -1,9 +1,11 @@
 package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.NetWorthResponse;
+import com.trackmywealth.backend.dto.ValueHistoryResponse;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.NetWorthService;
+import com.trackmywealth.backend.service.ValueHistoryService;
 import com.trackmywealth.backend.web.ProblemCodes;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -20,9 +22,22 @@ import org.springframework.web.bind.annotation.RestController;
 public class NetWorthController {
 
   private final NetWorthService netWorthService;
+  private final ValueHistoryService historyService;
 
-  public NetWorthController(NetWorthService netWorthService) {
+  public NetWorthController(
+      NetWorthService netWorthService, ValueHistoryService historyService) {
     this.netWorthService = netWorthService;
+    this.historyService = historyService;
+  }
+
+  @Operation(operationId = "getNetWorthHistory", summary = "Historical workspace net worth and period change")
+  @ProblemCodes({ProblemCode.VALIDATION_FAILED, ProblemCode.NOT_FOUND})
+  @GetMapping("/history")
+  public ValueHistoryResponse getHistory(
+      @RequestParam(defaultValue = "1M") String period,
+      @RequestParam(required = false) String currency,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return historyService.netWorthHistory(period, currency, actor);
   }
 
   @Operation(operationId = "getNetWorth", summary = "The workspace's net worth")
