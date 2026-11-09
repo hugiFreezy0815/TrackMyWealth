@@ -5,9 +5,9 @@ import { useAmountsHidden } from './amount-visibility';
 
 jest.mock('./amount-visibility', () => ({ useAmountsHidden: jest.fn(() => true) }));
 
-it('never exposes a hidden amount to visual users or screen readers', () => {
+it('never exposes a hidden amount to visual users or screen readers', async () => {
   jest.mocked(useAmountsHidden).mockReturnValue(true);
-  render(
+  await render(
     <IntlProvider locale="en">
       <PrivacyAmount value="1234.50" currency="CHF" />
     </IntlProvider>,
@@ -16,9 +16,9 @@ it('never exposes a hidden amount to visual users or screen readers', () => {
   expect(screen.getByLabelText('hidden')).toBeTruthy();
   expect(screen.queryByText(/1,234/)).toBeNull();
 });
-it('shows the amount when privacy is disabled', () => {
+it('shows the amount when privacy is disabled', async () => {
   jest.mocked(useAmountsHidden).mockReturnValue(false);
-  render(
+  await render(
     <IntlProvider locale="en">
       <PrivacyAmount value="1234.50" currency="CHF" />
     </IntlProvider>,
