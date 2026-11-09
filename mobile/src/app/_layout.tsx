@@ -6,6 +6,7 @@ import { AppIntlProvider } from '@/i18n';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { View, useColorScheme } from 'react-native';
+import { useIntl } from 'react-intl';
 
 import { loadServerUrl } from '@/api/server-url';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
@@ -46,16 +47,23 @@ export default function TabLayout() {
         <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
           <AnimatedSplashOverlay />
           {restoring ? (
-            <View accessibilityLabel="Restoring session">
-              <ThemedText>Restoring session…</ThemedText>
-            </View>
+            <RestoringSession />
           ) : session.signedIn ? (
-            <AppShell />
+            <AppShell identity={session.identity} />
           ) : (
             <AuthScreen mfaRequired={session.mfaRequired} />
           )}
         </ThemeProvider>
       </AppIntlProvider>
     </QueryClientProvider>
+  );
+}
+
+function RestoringSession() {
+  const intl = useIntl();
+  return (
+    <View accessibilityRole="progressbar" accessibilityState={{ busy: true }}>
+      <ThemedText>{intl.formatMessage({ id: 'session.restoring' })}</ThemedText>
+    </View>
   );
 }

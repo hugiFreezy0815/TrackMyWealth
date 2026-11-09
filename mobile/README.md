@@ -16,7 +16,10 @@ app.json                 Expo app config (name, icon, splash, plugins)
 src/
   app/                    Expo Router routes (file-based routing) - _layout.tsx, index.tsx, ...
   components/             Shared UI components
-  constants/              Theme tokens
+  constants/              Theme tokens (theme.test.ts checks every text pair for WCAG AA)
+  features/shell/         App shell: navigation per layout, offline banner, ShellScreen
+  features/privacy/       Hide amounts, PrivacyAmount, app-switcher protection
+  i18n/                   react-intl provider and the EN/DE catalogues (keys must match)
   hooks/                  Shared hooks (color scheme, theme, ...)
   api/
     client.ts             Transport: fetch, token refresh, timeouts, ApiError/NetworkError
@@ -134,9 +137,27 @@ broken screen.
   `ProblemCode` and `ImportRowCode` also accept any other string. For an unknown import row code,
   show the row's `message`, which the server has already translated.
 
+## App shell and screen protection (US-01-13)
+
+- **Navigation** follows docs/ux/01-information-architecture.md: phone and tablet (<1024 px) show
+  bottom tabs Overview + More, desktop (>=1024 px) a 248 px sidebar with Overview + Settings.
+  Breakpoints are viewport widths (`layoutFor`), never the platform. Future areas are absent, not
+  disabled. Administrators also get Reference data; the screen and server check the role again.
+- **Screens** use `ShellScreen` (title, eye control, optional 360 px detail panel). A route whose
+  screen story has not shipped renders `UnavailableScreen`: no data, a way back to Overview.
+- **Money** is rendered with `PrivacyAmount` only; ESLint fails a direct `formatAmount` import
+  outside it, so every amount honours "Hide amounts". The preference is device-local (secure store
+  on native, localStorage on web) and loads hidden-first, so no amount flashes on start-up.
+- **App switcher** (FR-CLI-005) is protected natively while signed in, via `expo-screen-capture`:
+  iOS blurs the window before the snapshot, Android sets `FLAG_SECURE` (recents shows a blank
+  card; the flag also blocks screenshots and recordings of the app). The package's
+  screenshot-listener permissions are blocked in app.json. Web cannot protect browser
+  thumbnails; Hide amounts is the protection there.
+- **Copy** comes from `src/i18n/*.json` via react-intl. ESLint fails literal JSX text in
+  `src/app`, `features/shell`, `features/privacy` and `features/auth`.
+
 ## Status
 
-This is the initial Expo Router scaffold only - navigation shell, theming, and the API client
-plumbing. Screens for the actual product (accounts, transactions, budgets, net worth, ...) are
-not yet built; they follow the same epic/story backlog under `docs/user-stories/` that drives the
+The app shell, sign-in, theming and the API client plumbing are in place. Screens for the actual
+product (accounts, transactions, budgets, net worth, ...) are not yet built; they follow the same epic/story backlog under `docs/user-stories/` that drives the
 backend.

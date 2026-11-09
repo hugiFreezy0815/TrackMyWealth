@@ -1,43 +1,56 @@
-import { useEffect, useState } from 'react';
-import { Slot, usePathname, useRouter, type Href } from 'expo-router';
-import { AppState, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useEffect } from 'react';
+import { Slot, usePathname, useRouter } from 'expo-router';
+import { Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIntl } from 'react-intl';
 
 import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/hooks/use-theme';
+import { type Identity, isAdministrator } from '@/features/auth/session';
 import { restoreAmountVisibility } from '@/features/privacy/amount-visibility';
-import { OfflineBanner } from './offline-banner';
-import { DESKTOP_NAVIGATION, isCurrentRoute, NAVIGATION } from './navigation';
+import { useAppSwitcherProtection } from '@/features/privacy/screen-protection';
 
-export function AppShell() {
+import { OfflineBanner } from './offline-banner';
+import { isCurrentRoute, layoutFor, navigationFor } from './navigation';
+
+/** W01: the 248 px desktop sidebar. */
+export const SIDEBAR_WIDTH = 248;
+
+/** The signed-in frame: navigation per layout, global banners and screen protection. */
+export function AppShell({ identity }: { identity: Identity | null }) {
   const { width } = useWindowDimensions();
-  const desktop = Platform.OS === 'web' && width >= 1024;
+  const layout = layoutFor(width);
+  const desktop = layout === 'desktop';
   const router = useRouter();
   const pathname = usePathname();
   const intl = useIntl();
   const theme = useTheme();
-  const [backgrounded, setBackgrounded] = useState(false);
 
+  useAppSwitcherProtection();
   useEffect(() => {
     void restoreAmountVisibility();
-    if (Platform.OS === 'web') return;
-    const sub = AppState.addEventListener('change', (state) => setBackgrounded(state !== 'active'));
-    return () => sub.remove();
   }, []);
 
-  const navigation = desktop ? DESKTOP_NAVIGATION : NAVIGATION;
+  // Web gets a navigation landmark of links (aria-current marks the page); native gets the
+  // platform's tab semantics.
+  const web = Platform.OS === 'web';
   const menu = (
-    <View accessibilityRole="tablist" style={desktop ? styles.sidebarMenu : styles.bottomMenu}>
-      {navigation.map((item) => {
+    <View
+      role={web ? 'navigation' : 'tablist'}
+      accessibilityLabel={intl.formatMessage({ id: 'nav.main' })}
+      style={desktop ? styles.sidebarMenu : [styles.bottomMenu, { borderTopColor: theme.border }]}
+    >
+      {navigationFor(layout, isAdministrator(identity)).map((item) => {
         const selected = isCurrentRoute(pathname, item.href);
+        const label = intl.formatMessage({ id: item.labelKey });
         return (
           <Pressable
             key={item.href}
-            accessibilityRole="tab"
+            role={web ? 'link' : 'tab'}
+            accessibilityLabel={label}
             accessibilityState={{ selected }}
-            accessibilityLabel={intl.formatMessage({ id: item.labelKey })}
-            onPress={() => router.navigate(item.href as Href)}
+            {...(web && selected ? { 'aria-current': 'page' } : {})}
+            onPress={() => router.navigate(item.href)}
             style={({ pressed }) => [
               styles.navigationItem,
               desktop && styles.desktopItem,
@@ -45,10 +58,14 @@ export function AppShell() {
               pressed && styles.pressed,
             ]}
           >
-            <ThemedText style={styles.navIcon} accessibilityElementsHidden>
+            <ThemedText
+              style={styles.navIcon}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            >
               {item.icon}
             </ThemedText>
-            <ThemedText type="smallBold">{intl.formatMessage({ id: item.labelKey })}</ThemedText>
+            <ThemedText type="smallBold">{label}</ThemedText>
           </Pressable>
         );
       })}
@@ -62,9 +79,12 @@ export function AppShell() {
     >
       <View style={styles.layout}>
         {desktop && (
-          <View style={[styles.sidebar, { borderRightColor: theme.backgroundSelected }]}>
+          <View
+            testID="shell-sidebar"
+            style={[styles.sidebar, { borderRightColor: theme.backgroundSelected }]}
+          >
             <ThemedText type="smallBold" style={styles.brand}>
-              TrackMyWealth
+              {intl.formatMessage({ id: 'app.name' })}
             </ThemedText>
             {menu}
           </View>
@@ -77,27 +97,19 @@ export function AppShell() {
           {!desktop && menu}
         </View>
       </View>
-      {backgrounded && Platform.OS !== 'web' && (
-        <View
-          style={[
-            StyleSheet.absoluteFill,
-            styles.privacyCover,
-            { backgroundColor: theme.background },
-          ]}
-          accessibilityLabel={intl.formatMessage({ id: 'privacy.protected' })}
-          importantForAccessibility="yes"
-        >
-          <ThemedText type="subtitle">TrackMyWealth</ThemedText>
-          <ThemedText>{intl.formatMessage({ id: 'privacy.protected' })}</ThemedText>
-        </View>
-      )}
     </SafeAreaView>
   );
 }
+
 const styles = StyleSheet.create({
   root: { flex: 1 },
   layout: { flex: 1, flexDirection: 'row' },
-  sidebar: { width: 248, paddingHorizontal: 16, paddingVertical: 24, borderRightWidth: 1 },
+  sidebar: {
+    width: SIDEBAR_WIDTH,
+    paddingHorizontal: 16,
+    paddingVertical: 24,
+    borderRightWidth: 1,
+  },
   brand: { fontSize: 20, marginBottom: 32 },
   sidebarMenu: { gap: 8 },
   bottomMenu: {
@@ -105,7 +117,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     paddingVertical: 6,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#7B8793',
   },
   navigationItem: {
     minHeight: 48,
@@ -122,5 +133,4 @@ const styles = StyleSheet.create({
   main: { flex: 1, minWidth: 0 },
   content: { flex: 1, minHeight: 0 },
   pressed: { opacity: 0.7 },
-  privacyCover: { zIndex: 1000, justifyContent: 'center', alignItems: 'center', gap: 16 },
 });

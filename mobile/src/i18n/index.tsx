@@ -10,15 +10,24 @@ import deDE from './de-DE.json';
 export type AppLocale = 'en' | 'de' | 'de-CH' | 'de-DE';
 
 export function resolveLocale(language?: string | null, deviceLocale?: string): AppLocale {
-  const raw =
-    language ||
-    deviceLocale ||
-    (Platform.OS === 'web' && typeof navigator !== 'undefined' ? navigator.language : 'en');
+  const raw = language || deviceLocale || systemLocale();
   const locale = raw.replace('_', '-').toLowerCase();
   if (locale.startsWith('de-ch')) return 'de-CH';
   if (locale.startsWith('de-de')) return 'de-DE';
   if (locale.startsWith('de')) return 'de';
   return 'en';
+}
+
+/** The device language before sign-in: the browser's on web, the OS locale (Hermes Intl) on native. */
+function systemLocale(): string {
+  if (Platform.OS === 'web') {
+    return typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en';
+  }
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().locale || 'en';
+  } catch {
+    return 'en';
+  }
 }
 
 export function AppIntlProvider({

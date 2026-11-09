@@ -2,7 +2,12 @@ import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
 import { api, getApiBaseUrl, setApiBaseUrl } from './client';
-import { loadServerUrl, normalizeServerUrl, saveServerUrl } from './server-url';
+import {
+  InvalidServerUrlError,
+  loadServerUrl,
+  normalizeServerUrl,
+  saveServerUrl,
+} from './server-url';
 
 jest.mock('expo-secure-store', () => ({
   setItemAsync: jest.fn(async () => {}),
@@ -110,5 +115,19 @@ describe('configurable server address (FR-CLI-007)', () => {
     await api.get('/api/v1/accounts');
 
     expect(fetchMock.mock.calls[0][0]).toBe('https://wealth.example.com/api/v1/accounts');
+  });
+});
+
+describe('refused server address', () => {
+  // The sign-in screen localizes the refusal from this reason, never from the English message.
+  it.each([
+    ['not an address', 'format'],
+    ['https://user:pass@wealth.example.com', 'format'],
+    ['http://wealth.example.com', 'insecure'],
+  ])('names why %s was refused', (input, reason) => {
+    expect(() => normalizeServerUrl(input)).toThrow(
+      expect.objectContaining({ name: 'InvalidServerUrlError', reason }),
+    );
+    expect(() => normalizeServerUrl(input)).toThrow(InvalidServerUrlError);
   });
 });

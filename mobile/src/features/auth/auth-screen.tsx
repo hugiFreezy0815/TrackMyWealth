@@ -7,6 +7,7 @@ import {
   type TextInputProps,
   View,
 } from 'react-native';
+import { useIntl, type IntlShape } from 'react-intl';
 
 import { getApiBaseUrl, NetworkError } from '@/api/client';
 import { InvalidServerUrlError, saveServerUrl } from '@/api/server-url';
@@ -14,10 +15,12 @@ import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/hooks/use-theme';
 
 import { cancelMfa, signIn, verifyMfa } from './session';
-import { authCopy } from './auth-copy';
+
+const SERVER_PLACEHOLDER = 'https://wealth.example.com';
 
 export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
-  const copy = authCopy();
+  const intl = useIntl();
+  const theme = useTheme();
   const [server, setServer] = useState(getApiBaseUrl);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -39,7 +42,7 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
         setPassword('');
       }
     } catch (failure) {
-      setError(errorMessage(failure, copy));
+      setError(errorMessage(failure, intl));
     } finally {
       setCode('');
       setBusy(false);
@@ -52,19 +55,21 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
     cancelMfa();
   }
 
-  const theme = useTheme();
+  const submitLabel = intl.formatMessage({ id: mfaRequired ? 'auth.verifyCode' : 'auth.signIn' });
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
-        <ThemedText type="smallBold" style={styles.brand}>
-          TrackMyWealth
+        <ThemedText type="smallBold" themeColor="primary" style={styles.brand}>
+          {intl.formatMessage({ id: 'app.name' })}
         </ThemedText>
-        <ThemedText type="subtitle">{mfaRequired ? copy.verifySignIn : copy.signIn}</ThemedText>
+        <ThemedText type="subtitle" accessibilityRole="header">
+          {intl.formatMessage({ id: mfaRequired ? 'auth.verifySignIn' : 'auth.signIn' })}
+        </ThemedText>
         {!mfaRequired ? (
           <>
             <LabeledField
-              label={copy.server}
-              placeholder="https://wealth.example.com"
+              label={intl.formatMessage({ id: 'auth.server' })}
+              placeholder={SERVER_PLACEHOLDER}
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="url"
@@ -72,7 +77,7 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
               onChangeText={setServer}
             />
             <LabeledField
-              label={copy.email}
+              label={intl.formatMessage({ id: 'auth.email' })}
               autoCapitalize="none"
               autoComplete="email"
               keyboardType="email-address"
@@ -80,7 +85,7 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
               onChangeText={setEmail}
             />
             <LabeledField
-              label={copy.password}
+              label={intl.formatMessage({ id: 'auth.password' })}
               secureTextEntry
               autoComplete="password"
               value={password}
@@ -89,7 +94,7 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
           </>
         ) : (
           <LabeledField
-            label={copy.authenticatorCode}
+            label={intl.formatMessage({ id: 'auth.authenticatorCode' })}
             keyboardType="number-pad"
             autoComplete="one-time-code"
             maxLength={6}
@@ -100,16 +105,18 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
         {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
         <Pressable
           accessibilityRole="button"
-          accessibilityState={{ disabled: busy }}
-          style={[styles.submit, busy && styles.disabled]}
+          // The spinner replaces the text while busy; the button keeps its name for screen readers.
+          accessibilityLabel={submitLabel}
+          accessibilityState={{ disabled: busy, busy }}
+          style={[styles.submit, { backgroundColor: theme.primary }, busy && styles.disabled]}
           onPress={() => void submit()}
           disabled={busy}
         >
           {busy ? (
-            <ActivityIndicator color="#FFFFFF" />
+            <ActivityIndicator color={theme.onPrimary} />
           ) : (
-            <ThemedText style={styles.submitText}>
-              {mfaRequired ? copy.verifyCode : copy.signIn}
+            <ThemedText themeColor="onPrimary" style={styles.submitText}>
+              {submitLabel}
             </ThemedText>
           )}
         </Pressable>
@@ -121,7 +128,7 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
             onPress={startOver}
             disabled={busy}
           >
-            <ThemedText type="smallBold">{copy.startOver}</ThemedText>
+            <ThemedText type="smallBold">{intl.formatMessage({ id: 'auth.startOver' })}</ThemedText>
           </Pressable>
         )}
       </View>
@@ -129,13 +136,19 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
   );
 }
 
-function errorMessage(failure: unknown, copy: ReturnType<typeof authCopy>): string {
-  if (failure instanceof InvalidServerUrlError) return failure.message;
-  // Not the credentials' fault: saying so would send the user hunting for a typo.
-  if (failure instanceof NetworkError) {
-    return copy.networkError;
+function errorMessage(failure: unknown, intl: IntlShape): string {
+  if (failure instanceof InvalidServerUrlError) {
+    return intl.formatMessage({
+      id:
+        failure.reason === 'insecure'
+          ? 'auth.error.serverUrlInsecure'
+          : 'auth.error.serverUrlFormat',
+    });
   }
-  return copy.signInError;
+  // Not the credentials' fault: saying so would send the user hunting for a typo.
+  if (failure instanceof NetworkError) return intl.formatMessage({ id: 'auth.error.network' });
+  // One message for every other refusal: it never tells which of email, password or code was wrong.
+  return intl.formatMessage({ id: 'auth.error.signIn' });
 }
 
 /** A visible label above the input; the same text is its accessible name. */
@@ -159,18 +172,17 @@ function LabeledField({ label, ...input }: TextInputProps & { label: string }) {
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   card: { width: '100%', maxWidth: 440, borderRadius: 20, padding: 28, gap: 18 },
-  brand: { color: '#075CB2', letterSpacing: 0.3 },
+  brand: { letterSpacing: 0.3 },
   labeled: { gap: 8 },
   field: { borderWidth: 1, minHeight: 48, padding: 12, borderRadius: 10 },
   submit: {
     minHeight: 48,
-    backgroundColor: '#075CB2',
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 8,
   },
-  submitText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  submitText: { fontSize: 16, fontWeight: '700' },
   disabled: { opacity: 0.5 },
   back: { minHeight: 44, justifyContent: 'center', alignItems: 'center' },
 });

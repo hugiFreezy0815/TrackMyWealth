@@ -14,6 +14,14 @@ export const Colors = {
     backgroundElement: '#F0F0F3',
     backgroundSelected: '#E0E1E6',
     textSecondary: '#60646C',
+    /** Brand accent for text, links and filled buttons; AA on background and backgroundElement. */
+    primary: '#075CB2',
+    /** Text and icons on a `primary` fill. */
+    onPrimary: '#FFFFFF',
+    /** Hairlines and separators (decorative, not a text colour). */
+    border: '#7B8793',
+    warningBackground: '#FFF2CF',
+    onWarning: '#4D3600',
   },
   dark: {
     text: '#ffffff',
@@ -21,6 +29,11 @@ export const Colors = {
     backgroundElement: '#212225',
     backgroundSelected: '#2E3135',
     textSecondary: '#B0B4BA',
+    primary: '#6CB4FF',
+    onPrimary: '#000000',
+    border: '#5C6670',
+    warningBackground: '#3D2E00',
+    onWarning: '#FFE08A',
   },
 } as const;
 
