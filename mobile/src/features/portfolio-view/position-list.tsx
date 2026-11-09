@@ -19,13 +19,29 @@ export type PositionViewProps = {
 };
 
 /**
- * Why a position shows "–" as its gain (spec S2, M24): another price currency than the depot
- * (FR-PERF-018), or no cost basis yet.
+ * Why a position shows "–" as its gain (spec S2, M24), or null when the gain is known or its
+ * value is unknown (the value-status badge says so): another price currency than the depot
+ * (FR-PERF-018, even with a cost basis), or no cost basis yet.
  */
-export function noGainReason(position: Position, currency: string): string {
-  return position.priceCurrency && position.priceCurrency !== currency
-    ? 'portfolio.position.foreignGain'
-    : 'portfolio.position.noBasis';
+export function noGainReason(position: Position, currency: string): string | null {
+  if (position.unrealisedGainPercent != null) return null;
+  if (position.priceCurrency && position.priceCurrency !== currency) {
+    return 'portfolio.position.foreignGain';
+  }
+  return position.costBasis == null ? 'portfolio.position.noBasis' : null;
+}
+
+/** The explanation line under a position without a gain; nothing when there is no reason. */
+export function NoGainNote({ position, currency }: { position: Position; currency: string }) {
+  const intl = useIntl();
+  const theme = useTheme();
+  const reason = noGainReason(position, currency);
+  if (!reason) return null;
+  return (
+    <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
+      {msg(intl, reason, { currency: position.priceCurrency ?? '' })}
+    </Text>
+  );
 }
 
 /** The row's spoken summary: name, value, units and gain, masked like the visible text. */
@@ -39,19 +55,17 @@ export function usePositionLabel(position: Position, currency: string): string {
     masked: hidden,
   }).label;
   const units = figureTexts(intl, { value: position.quantity, kind: 'quantity', masked: hidden });
-  const gain =
-    position.unrealisedGainPercent != null
-      ? msg(intl, 'portfolio.position.gainLabel', {
-          percent: figureTexts(intl, {
-            value: position.unrealisedGainPercent,
-            kind: 'percent',
-            signRole: 'change',
-            masked: hidden,
-          }).label,
-        })
-      : msg(intl, noGainReason(position, currency), {
-          currency: position.priceCurrency ?? '',
-        });
+  const reason = noGainReason(position, currency);
+  const gain = reason
+    ? msg(intl, reason, { currency: position.priceCurrency ?? '' })
+    : msg(intl, 'portfolio.position.gainLabel', {
+        percent: figureTexts(intl, {
+          value: position.unrealisedGainPercent,
+          kind: 'percent',
+          signRole: 'change',
+          masked: hidden,
+        }).label,
+      });
   return [
     position.displayName,
     value,
@@ -124,13 +138,7 @@ function PositionRow({
         style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.two }}
       >
         <ValueStatusBadge status={position.valueStatus} interactive={false} />
-        {position.unrealisedGainPercent == null ? (
-          <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
-            {msg(intl, noGainReason(position, currency), {
-              currency: position.priceCurrency ?? '',
-            })}
-          </Text>
-        ) : null}
+        <NoGainNote position={position} currency={currency} />
         {position.costBasisEstimated ? (
           <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
             {msg(intl, 'portfolio.position.estimated')}

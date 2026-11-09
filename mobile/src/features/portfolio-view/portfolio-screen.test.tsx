@@ -433,6 +433,26 @@ describe('S2 depot positions (#478)', () => {
     expect(onAccount.mock.calls).toEqual([['depot'], ['depot']]);
   });
 
+  it('gives no cost-basis reason for an unpriced position that has a cost basis', async () => {
+    setData(view([depotSection()]));
+    setPositions([
+      position('1', {
+        valueStatus: 'UNKNOWN',
+        value: null,
+        valueInAccountCurrency: null,
+        unrealisedGain: null,
+        unrealisedGainPercent: null,
+      }),
+    ]);
+    await mount();
+    expect(screen.queryByText('No cost basis yet')).toBeNull();
+    expect(
+      screen.getByRole('button', {
+        name: 'Fund 1, Value unknown, 10 units, unrealised gain Value unknown',
+      }),
+    ).toBeTruthy();
+  });
+
   it('keeps the depot row visible when its positions fail and retries only them', async () => {
     setData(view([depotSection()]));
     const refetch = jest.fn();

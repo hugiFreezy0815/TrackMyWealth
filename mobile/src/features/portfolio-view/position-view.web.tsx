@@ -10,7 +10,7 @@ import { useTheme } from '@/hooks/use-theme';
 
 import {
   PositionList,
-  noGainReason,
+  NoGainNote,
   usePositionLabel,
   type PositionViewProps,
 } from './position-list';
@@ -141,13 +141,7 @@ export function PositionView(props: PositionViewProps) {
                   tone="gainLoss"
                   style={TypeScale.caption}
                 />
-                {position.unrealisedGainPercent == null ? (
-                  <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
-                    {msg(intl, noGainReason(position, currency), {
-                      currency: position.priceCurrency ?? '',
-                    })}
-                  </Text>
-                ) : null}
+                <NoGainNote position={position} currency={currency} />
                 {position.costBasisEstimated ? (
                   <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
                     {msg(intl, 'portfolio.position.estimated')}
