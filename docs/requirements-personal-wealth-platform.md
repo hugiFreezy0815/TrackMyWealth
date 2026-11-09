@@ -678,7 +678,7 @@ Confirmed in scope. Implemented as jurisdiction rule plugins (DM-07).
 | NFR-PER-02 | Performance | Full historical recomputation of a large portfolio completes in < 60 s as a background job |
 | NFR-AVL-01 | Availability | 99.5% for the hosted service; degraded price data must not prevent access to holdings |
 | NFR-USE-01 | Usability | Time-to-first-insight after signup < 10 minutes for a single-broker user |
-| NFR-USE-02 | Usability | **Localisation: English and German at launch.** Full i18n from day one (externalised strings, no concatenated sentences, locale-aware number/date/currency formatting, CHF `1'234.56` vs EUR `1.234,56`). Adding a language must require no code change. |
+| NFR-USE-02 | Usability | **Localisation: English and German at launch.** Full i18n from day one (externalised strings, no concatenated sentences, locale-aware date formatting and wording; amounts display in one format in every language and currency: apostrophe group, decimal point, e.g. `1'234.56`, `1'111'111.00` (PO 2026-11-09, UX-02 section 3)). Adding a language must require no code change. |
 | NFR-USE-02a | Usability | **Caveat to record, not a v1 requirement:** DE+EN covers Germany fully and German-speaking Switzerland, which is roughly two-thirds of the Swiss market. The Romandie and Ticino are not served; BlueBudget ships DE/EN/FR/IT for this reason. French should be treated as the first post-launch language, and no design decision may foreclose FR/IT. |
 | NFR-USE-03 | Usability | Accessibility to WCAG 2.2 AA |
 | NFR-POR-01 | Portability | No paywalled lock-in of user data (FR-EXP-01) |

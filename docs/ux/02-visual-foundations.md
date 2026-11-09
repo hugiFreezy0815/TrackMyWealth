@@ -159,7 +159,8 @@ older generic web breakpoint suggestion: **phone <600 px**, **tablet 600–1023 
 **desktop ≥1024 px**; web sidebar **248 px** and optional contextual rail **360 px**.
 Figma uses approximately **16 px** mobile side padding / card gap and **40 px**
 desktop content padding / **24 px** grid gap. Collapse columns before clipping
-long amounts; at 200% zoom keep actions reachable and never truncate a financial
+long amounts (exception: the S1 section tiles keep Figma's two columns and step the figure's
+size down instead; PO 2026-11-09); at 200% zoom keep actions reachable and never truncate a financial
 amount. Use a minimum **44×44 pt target** for interactions.
 
 ## 3. Amount formatting: DecimalString in, display string out
@@ -183,7 +184,10 @@ and some ICU builds group de-CH with `’` U+2019). The amount is therefore **as
 3. Format the **absolute** value with `style: 'decimal'`, min = max fraction digits = scale,
    `roundingMode: 'halfExpand'` (commercial rounding, half away from zero), grouping on, via
    `formatToParts`.
-4. Replace `group` parts where UX-02 overrides CLDR: **`de-CH` → ASCII apostrophe `'`**.
+4. **One display format in every UI language** (PO 2026-11-09): format with `en` (Latin
+   digits), then group with the **ASCII apostrophe `'`** and use the **decimal point `.`**,
+   e.g. `1'122.00`, `1'111'111.00`. The locale does not change the displayed number; it only
+   shapes the accessible label (see below).
 5. Sign, decided **after** rounding: a value that displays as zero has no sign; otherwise
    negative → **U+2212 `−`**; positive → `+` only for a *change* (`signRole = change`), nothing
    for a balance.
@@ -200,14 +204,16 @@ in the ADR 0008 Jest test under the Hermes polyfills.
 | Locale | Currency | Display | Separators |
 | --- | --- | --- | --- |
 | `de-CH` | CHF | **`−CHF␣1'234.50`** | ASCII apostrophe group, decimal dot |
-| `de-DE` | EUR | **`−EUR␣1.234,50`** | Group dot, decimal comma |
-| `en` | CHF | **`−CHF␣1,234.50`** | Group comma, decimal dot |
+| `de-DE` | EUR | **`−EUR␣1'234.50`** | The same: ASCII apostrophe group, decimal dot |
+| `en` | CHF | **`−CHF␣1'234.50`** | The same: ASCII apostrophe group, decimal dot |
 
 Further normative cases: `1234.565` CHF de-CH → `CHF␣1'234.57`; `-0.004` CHF → `CHF␣0.00`
-(no sign); `6842.1` as a change → `+CHF␣6'842.10`; `-1234.5` JPY en → `−JPY␣1,235`;
+(no sign); `6842.1` as a change → `+CHF␣6'842.10`; `-1234.5` JPY en → `−JPY␣1'235`; `1111111` CHF en → `CHF␣1'111'111.00`;
 `12345678901234567.89` keeps every digit. `+CHF 6'842.10` is an explicit positive change,
 not a normal unsigned positive balance. In accessible labels spell out the sign and currency
-(e.g. “minus 1,234.50 Swiss francs”); localize the number and words. The no-break space keeps
+without group separators (screen readers read them aloud), e.g. “minus 1234.50 Swiss francs”
+or “minus 1234,50 Schweizer Franken”: the label keeps the reader's decimal separator and
+words. The no-break space keeps
 code and number together; if the whole amount does not fit, wrap it below its label rather
 than truncate it.
 

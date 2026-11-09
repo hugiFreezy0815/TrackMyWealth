@@ -20,6 +20,8 @@ export function AmountVisibilityToggle() {
       // The name states the effect; the switch state says whether it is on.
       accessibilityLabel={intl.formatMessage({ id: 'privacy.hideAmounts' })}
       accessibilityState={{ checked: hidden }}
+      // react-native-web ignores accessibilityState; a switch needs aria-checked (axe, #538).
+      aria-checked={hidden}
       hitSlop={8}
       onPress={() => void setAmountsHidden(!hidden)}
       style={({ pressed }) => [

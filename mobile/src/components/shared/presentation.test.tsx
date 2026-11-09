@@ -192,7 +192,7 @@ describe('shared navigation and financial rows', () => {
         'en',
       );
       expect(screen.getByText('–')).toBeTruthy();
-      expect(screen.queryByText(/1,234/)).toBeNull();
+      expect(screen.queryByText(/1'234/)).toBeNull();
       warn.mockRestore();
     },
   );

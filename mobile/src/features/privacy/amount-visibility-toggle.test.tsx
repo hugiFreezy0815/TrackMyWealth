@@ -29,14 +29,14 @@ describe('eye control (FR-CLI-005)', () => {
     );
     const toggle = screen.getByRole('switch', { name: 'Hide amounts' });
     expect(toggle).not.toBeChecked();
-    expect(screen.getByText(/1,234\.50/)).toBeTruthy();
+    expect(screen.getByText(/1'234\.50/)).toBeTruthy();
 
     await fireEvent.press(toggle);
 
     expect(screen.getByRole('switch', { name: 'Hide amounts' })).toBeChecked();
     expect(screen.getAllByText('••••')).toHaveLength(2);
     expect(screen.getAllByLabelText('hidden')).toHaveLength(2);
-    expect(screen.queryByText(/1,234/)).toBeNull();
+    expect(screen.queryByText(/1'234/)).toBeNull();
     expect(screen.getByText('Show amounts')).toBeTruthy();
   });
 
@@ -53,7 +53,7 @@ describe('eye control (FR-CLI-005)', () => {
 
     await fireEvent.press(screen.getByRole('switch', { name: 'Hide amounts' }));
 
-    expect(screen.getByText(/1,234\.50/)).toBeTruthy();
+    expect(screen.getByText(/1'234\.50/)).toBeTruthy();
   });
 
   it('announces hidden amounts in German as "verborgen"', async () => {
