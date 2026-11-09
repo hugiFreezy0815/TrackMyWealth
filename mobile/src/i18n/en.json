@@ -263,7 +263,7 @@
   "txn.fxRate": "FX rate",
   "txn.history.title": "Change history",
   "txn.history.more": "Load more history",
-  "txn.history.imported": "Imported from statement",
+  "txn.history.imported": "Imported from {format} statement on {date}",
   "txn.history.created": "Entered by {actor}",
   "txn.history.assigned": "Category set automatically: {to}",
   "txn.history.changed": "Category: {from} → {to} · {actor}",
