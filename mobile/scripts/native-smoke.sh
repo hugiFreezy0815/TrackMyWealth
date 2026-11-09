@@ -41,6 +41,8 @@ case "$platform" in
     adb shell am start -W -n "$app_id/.MainActivity"
     sleep "$settle_seconds"
     adb exec-out screencap -p >smoke/android-home.png
+    # Saved before the checks: a launch crash is exactly when the uploaded log is needed.
+    adb logcat -d >smoke/android-logcat.txt
     android_assert_running "launch"
 
     # Signed out on a fresh install: the sign-in form, not the tabs, and no crash restoring a session.

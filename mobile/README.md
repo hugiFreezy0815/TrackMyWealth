@@ -150,8 +150,10 @@ broken screen.
   on native, localStorage on web) and loads hidden-first, so no amount flashes on start-up.
 - **App switcher** (FR-CLI-005) is protected natively while signed in, via `expo-screen-capture`:
   iOS blurs the window before the snapshot, Android sets `FLAG_SECURE` (recents shows a blank
-  card; the flag also blocks screenshots and recordings of the app). The package's
-  screenshot-listener permissions are blocked in app.json. Web cannot protect browser
+  card; the flag also blocks screenshots and recordings of the app). The package's storage
+  permissions (its pre-Android-14 screenshot listener) are blocked in app.json.
+  `DETECT_SCREEN_CAPTURE` must stay: on Android 14+ the module registers a screen-capture
+  callback at start-up and crashes the app without it (install-time, no prompt, no data access). Web cannot protect browser
   thumbnails; Hide amounts is the protection there.
 - **Copy** comes from `src/i18n/*.json` via react-intl. ESLint fails literal UI strings in
   `src/app` and `src/features` (legacy reference-data and imports migrate with their tickets).
