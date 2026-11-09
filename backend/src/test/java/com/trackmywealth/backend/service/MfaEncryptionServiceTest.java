@@ -87,6 +87,69 @@ class MfaEncryptionServiceTest {
   }
 
   @Test
+  void missingKeyIsAllowedOnlyForSelfHostedWithTheDocumentedWarningFallback() {
+    MfaEncryptionService unconfigured =
+        new MfaEncryptionService(new MfaProperties(""), SELF_HOSTED);
+    assertThat(unconfigured.usesPlaceholderKey()).isTrue();
+    assertThat(unconfigured.decrypt(unconfigured.encrypt("JBSWY3DPEHPK3PXP")))
+        .isEqualTo("JBSWY3DPEHPK3PXP");
+    assertThatThrownBy(() -> new MfaEncryptionService(new MfaProperties(""), "hosted"))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("placeholder");
+  }
+
+  @Test
+  void theEnvExampleValueIsRefusedWithoutTheDecoderQuotingTheKey() {
+    // #544: .env.example ships CHANGE-ME, which Compose now forwards to the backend.
+    for (String notBase64 : new String[] {"CHANGE-ME", "abc", " " + randomKey()}) {
+      assertThatThrownBy(() -> new MfaEncryptionService(new MfaProperties(notBase64), SELF_HOSTED))
+          .as(notBase64)
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("must be Base64")
+          .hasNoCause()
+          .message()
+          .doesNotContain("CHANGE");
+    }
+  }
+
+  @Test
+  void malformedCiphertextIsRejectedAsADecryptionFailure() {
+    MfaEncryptionService service = serviceWithKey(randomKey());
+    String tooShort = Base64.getEncoder().encodeToString(new byte[28]);
+
+    for (String corrupt : new String[] {"not-valid-base64", tooShort}) {
+      assertThatThrownBy(() -> service.decrypt(corrupt))
+          .as(corrupt)
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessageStartingWith("Invalid MFA ciphertext");
+    }
+  }
+
+  @Test
+  void reencryptsLegacyCiphertextAndLeavesCurrentCiphertextUnchanged() {
+    MfaEncryptionService legacy = serviceWithKey(placeholderKey());
+    MfaEncryptionService current = serviceWithKey(randomKey());
+    String oldCiphertext = legacy.encrypt("JBSWY3DPEHPK3PXP");
+    String alreadyCurrent = current.encrypt("JBSWY3DPEHPK3PXP");
+
+    String rotated = current.reencryptFromPlaceholder(oldCiphertext).orElseThrow();
+    assertThat(current.decrypt(rotated)).isEqualTo("JBSWY3DPEHPK3PXP");
+    assertThat(current.reencryptFromPlaceholder(rotated)).isEmpty();
+    assertThat(current.reencryptFromPlaceholder(alreadyCurrent)).isEmpty();
+    assertThat(legacy.reencryptFromPlaceholder(oldCiphertext)).isEmpty();
+  }
+
+  @Test
+  void rejectsCiphertextFromAnUnknownKeyRatherThanReplacingItsSecret() {
+    MfaEncryptionService current = serviceWithKey(randomKey());
+    String fromUnknownKey = serviceWithKey(randomKey()).encrypt("JBSWY3DPEHPK3PXP");
+
+    assertThatThrownBy(() -> current.reencryptFromPlaceholder(fromUnknownKey))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("existing MFA secret");
+  }
+
+  @Test
   void thePlaceholderConstantMatchesApplicationYmlSoTheGuardCannotSilentlyDrift() throws Exception {
     String yml =
         new String(

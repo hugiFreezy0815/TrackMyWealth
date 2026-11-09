@@ -138,8 +138,9 @@ docker compose up -d --build
 ```
 
 `.env.example` also turns on the database role split for a new installation (see
-[Database roles](#database-roles)). Keeping only `JWT_SECRET` (and `MFA_ENCRYPTION_KEY`) in `.env`
-starts a single-role installation, as before.
+[Database roles](#database-roles)). Keeping only `JWT_SECRET`, `MFA_ENCRYPTION_KEY` and `IMPORT_ACCOUNT_IDENTIFIER_KEY` in `.env`
+starts a single-role installation, as before. The two latter keys are optional for
+postgres-only development commands, but should be configured before real use.
 
 `docker-compose.yml` passes that value to the backend, whose startup guard rejects an absent,
 short, trivially weak, or public-placeholder secret. The public JWT placeholder is accepted only
@@ -248,14 +249,26 @@ until a real secret is supplied; a Compose backend start without it fails immedi
 - `JWT_SECRET` - signs access tokens and MFA login challenges. Generate cryptographically random
   key material with `openssl rand -base64 32` (at least 32 bytes of HMAC key material) and store it
   in the deployment's private `.env`/secret manager. Never reuse the repository placeholder.
-- `MFA_ENCRYPTION_KEY` - AES-256 key encrypting each user's TOTP secret at rest (US-02-04): the
-  Base64 of exactly 32 random bytes, e.g. `openssl rand -base64 32`. Left unset, the backend
-  logs a startup warning (and refuses to start at all when `DEPLOYMENT_TOPOLOGY=hosted`). **Back it up with the same
-  care as the database.** There is no key rotation yet: changing or losing it makes every
-  already-enrolled user's authenticator secret undecryptable. There is also no lost-device
-  recovery path (a known gap, per the story) - no admin reset exists either, so an affected user
-  can only be unlocked directly in the database:
+- `MFA_ENCRYPTION_KEY` - AES-256 key encrypting each user's TOTP secret at rest (US-02-04):
+  Base64 of exactly 32 random bytes from `openssl rand -base64 32`. Back it up with the
+  database. On the first startup after setting this key, the backend atomically re-encrypts
+  secrets still protected by the **historical public placeholder**. Members keep their
+  authenticator enrollment and can still sign in. Repeated starts leave migrated records
+  unchanged. A secret encrypted under an *unknown* old key, or corrupted ciphertext, stops
+  startup and rolls back the whole migration; restore the correct key or database backup.
+  Migration from arbitrary custom keys is **not** supported. Stop all old backend instances and
+  make a verified database backup before changing keys. The new key must then remain stable:
+  changing or losing a real key makes enrolled secrets unreadable. When unset, self-hosted
+  installs log a security warning and hosted deployments refuse to start. There is no lost-device
+  recovery flow yet; last-resort database reset (requiring re-enrollment):
   `UPDATE app_user SET mfa_enabled = false, mfa_totp_secret = NULL WHERE email = '...';`
+- `IMPORT_ACCOUNT_IDENTIFIER_KEY` - private HMAC-SHA256 server key for per-workspace IBAN,
+  masked card-number and contract-number identification (US-07-10). Generate independent
+  Base64 key material with `openssl rand -base64 32` (at least 32 random bytes), keep it
+  outside version control and back it up with the database. Without it, identifier registration
+  returns 503 and imports cannot automatically match identifiers. Changing this key invalidates
+  existing registered hashes: members must register account identifiers again. Never use a
+  publicly known placeholder.
 
 ### FX rates
 
