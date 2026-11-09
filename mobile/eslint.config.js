@@ -3,6 +3,31 @@ const { defineConfig } = require('eslint/config');
 const expoConfig = require('eslint-config-expo/flat');
 const prettierConfig = require('eslint-config-prettier');
 
+// #452: kept in one place because two blocks below set no-restricted-syntax.
+const ENUM_FALLBACK_SYNTAX = [
+  {
+    selector:
+      'SwitchCase:not([test]) > ThrowStatement, SwitchCase:not([test]) > BlockStatement > ThrowStatement',
+    message:
+      'A newer backend can send a value this switch does not know (#452): render the neutral fallback (labelFor) instead of throwing.',
+  },
+  {
+    selector:
+      'MemberExpression[computed=true][object.name=/^[A-Z][A-Z0-9_]*_(LABELS|ICONS|COLORS)$/]',
+    message:
+      'Read an API enum display map through labelFor (@/api/enum-label), so an unknown value gets the neutral fallback (#452).',
+  },
+];
+
+const LITERAL_UI_STRING_MESSAGE =
+  'Use an ICU message from src/i18n instead of a literal UI string.';
+const LITERAL_UI_STRING_SYNTAX = [
+  'JSXText[value=/[A-Za-zÀ-ÿ]/]',
+  'JSXExpressionContainer > Literal[value=/[A-Za-zÀ-ÿ]/]',
+  'JSXExpressionContainer > TemplateLiteral > TemplateElement[value.raw=/[A-Za-zÀ-ÿ]/]',
+  'JSXAttribute[name.name=/^(accessibilityLabel|accessibilityHint|aria-label|placeholder|title|label)$/] > Literal',
+].map((selector) => ({ selector, message: LITERAL_UI_STRING_MESSAGE }));
+
 module.exports = defineConfig([
   expoConfig,
   // Disables ESLint's own stylistic/formatting rules so ESLint (logic/quality) and Prettier
@@ -50,21 +75,24 @@ module.exports = defineConfig([
     ignores: ['**/*.test.{ts,tsx}', 'src/api/schema.d.ts', 'src/api/enum-label.ts'],
     rules: {
       'default-case': 'error',
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector:
-            'SwitchCase:not([test]) > ThrowStatement, SwitchCase:not([test]) > BlockStatement > ThrowStatement',
-          message:
-            'A newer backend can send a value this switch does not know (#452): render the neutral fallback (labelFor) instead of throwing.',
-        },
-        {
-          selector:
-            'MemberExpression[computed=true][object.name=/^[A-Z][A-Z0-9_]*_(LABELS|ICONS|COLORS)$/]',
-          message:
-            'Read an API enum display map through labelFor (@/api/enum-label), so an unknown value gets the neutral fallback (#452).',
-        },
-      ],
+      'no-restricted-syntax': ['error', ...ENUM_FALLBACK_SYNTAX],
+    },
+  },
+  {
+    // ADR 0008 / #486: feature screens render ICU messages from src/i18n; literal copy (JSX text,
+    // accessibility props, string expressions) belongs in the catalogues. Flat config replaces a
+    // rule's options per file instead of merging them, so this block repeats the #452 selectors.
+    // The legacy screens below predate the catalogues; their sprint-7 tickets migrate them and
+    // delete the entry here.
+    files: ['src/features/**/*.{ts,tsx,jsx}'],
+    ignores: [
+      '**/*.test.{ts,tsx}',
+      'src/features/auth/**',
+      'src/features/reference-data/**',
+      'src/features/imports/**',
+    ],
+    rules: {
+      'no-restricted-syntax': ['error', ...ENUM_FALLBACK_SYNTAX, ...LITERAL_UI_STRING_SYNTAX],
     },
   },
   {

@@ -5,6 +5,7 @@ import { ApiError, setAccessToken, setRefreshHandler } from '@/api/client';
 import { problemReaction } from '@/api/problems';
 import type { components } from '@/api/schema';
 import { typedApi } from '@/api/typed-api';
+import { queryClient } from '@/api/queries/client';
 
 type Tokens = components['schemas']['AuthTokensResponse'];
 export type Identity = components['schemas']['CurrentUserResponse'];
@@ -175,6 +176,9 @@ async function clearSession(): Promise<void> {
   challenge = null;
   identity = null;
   setAccessToken(null);
+  // Drop the member's financial data: stop requests in flight, then empty the cache.
+  void queryClient.cancelQueries();
+  queryClient.clear();
   changed();
   try {
     await persist(null);

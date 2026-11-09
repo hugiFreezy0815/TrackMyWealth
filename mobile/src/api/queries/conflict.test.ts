@@ -1,0 +1,64 @@
+import { createElement, type ReactNode } from 'react';
+import { act, renderHook } from '@testing-library/react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+import { ApiError } from '@/api/client';
+import { ifMatch, useConflict } from './conflict';
+
+const problem = (status: number, code: string) =>
+  new ApiError('failed', status, { status, title: 'Problem', code });
+
+async function renderConflict() {
+  // gcTime Infinity: no garbage-collection timer keeps Jest running after the tests.
+  const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } });
+  client.setQueryData(['accounts', 'a1'], { version: 3 });
+  const wrapper = ({ children }: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client }, children);
+  const view = await renderHook(() => useConflict(), { wrapper });
+  return { client, ...view };
+}
+
+describe('useConflict', () => {
+  it('opens the conflict state and reloads only the conflicting resource', async () => {
+    const { client, result } = await renderConflict();
+    client.setQueryData(['portfolios'], []);
+
+    let handled = false;
+    await act(async () => {
+      handled = await result.current.handle(problem(412, 'VERSION_CONFLICT'), ['accounts', 'a1']);
+    });
+
+    expect(handled).toBe(true);
+    expect(result.current.conflicted).toBe(true);
+    expect(client.getQueryState(['accounts', 'a1'])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(['portfolios'])?.isInvalidated).toBe(false);
+
+    await act(async () => result.current.dismiss());
+    expect(result.current.conflicted).toBe(false);
+  });
+
+  it.each([
+    ['another problem', problem(400, 'VALIDATION_FAILED')],
+    ['a non-API error', new Error('boom')],
+  ])('leaves %s to the caller', async (_, error) => {
+    const { client, result } = await renderConflict();
+    let handled = true;
+    await act(async () => {
+      handled = await result.current.handle(error, ['accounts', 'a1']);
+    });
+    expect(handled).toBe(false);
+    expect(result.current.conflicted).toBe(false);
+    expect(client.getQueryState(['accounts', 'a1'])?.isInvalidated).toBe(false);
+  });
+});
+
+describe('ifMatch', () => {
+  it('sends the server version of the cached resource', () => {
+    expect(ifMatch({ version: 7 })).toBe(7);
+    expect(ifMatch({ version: 0 })).toBe(0);
+  });
+
+  it.each([-1, 1.5, Number.NaN])('rejects %p as a version', (version) => {
+    expect(() => ifMatch({ version })).toThrow(TypeError);
+  });
+});

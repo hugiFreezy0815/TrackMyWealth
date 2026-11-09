@@ -14,6 +14,7 @@ export class ApiError extends Error {
     message: string,
     public readonly status: number,
     public readonly body?: unknown,
+    public readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -89,6 +90,23 @@ async function send(url: string, init: RequestInit): Promise<Response> {
  * the session on a 401, ApiError and NetworkError. Features call typedApi (typed-api.ts), whose
  * types come from the contract; they never name a path or a type by hand.
  */
+/**
+ * RFC 9110 `Retry-After`: delay-seconds or an HTTP-date. Returns seconds from now (never negative),
+ * or undefined when the header is missing or unreadable.
+ */
+export function parseRetryAfter(
+  header: string | null | undefined,
+  now = Date.now(),
+): number | undefined {
+  const value = header?.trim();
+  if (!value) return undefined;
+  if (/^\d+$/.test(value)) return Number(value);
+  // Only an HTTP-date (it names a weekday); Date.parse also reads "2" or "2.5" as a year.
+  if (!/^[A-Za-z]{3},/.test(value)) return undefined;
+  const at = Date.parse(value);
+  return Number.isNaN(at) ? undefined : Math.max(0, (at - now) / 1000);
+}
+
 export async function request<T>(
   path: string,
   options: RequestOptions = {},
@@ -125,6 +143,7 @@ export async function request<T>(
       `${options.method ?? 'GET'} ${path} failed with ${response.status}`,
       response.status,
       errorBody,
+      parseRetryAfter(response.headers?.get?.('Retry-After')),
     );
   }
 
