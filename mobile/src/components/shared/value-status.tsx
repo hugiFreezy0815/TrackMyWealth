@@ -6,7 +6,8 @@ import { useTheme } from '@/hooks/use-theme';
 
 import { currentUiLocale, uiMessage, type UiLocale } from './locale';
 
-export type ValueStatus = 'CURRENT' | 'ESTIMATED' | 'STALE' | 'UNRECONCILED' | 'UNKNOWN' | (string & {});
+export type ValueStatus =
+  'CURRENT' | 'ESTIMATED' | 'STALE' | 'UNRECONCILED' | 'UNKNOWN' | (string & {});
 
 type Props = {
   status: ValueStatus | null | undefined;
@@ -25,9 +26,7 @@ export function ValueStatusBadge({
   const [expanded, setExpanded] = useState(false);
   if (!status || status === 'CURRENT') return null;
   const recognized: Exclude<ValueStatus, string & {}> | string =
-    status === 'ESTIMATED' || status === 'STALE' || status === 'UNRECONCILED'
-      ? status
-      : 'UNKNOWN';
+    status === 'ESTIMATED' || status === 'STALE' || status === 'UNRECONCILED' ? status : 'UNKNOWN';
   const label =
     recognized === 'ESTIMATED'
       ? uiMessage('value.estimated', locale)
@@ -75,14 +74,22 @@ export function ValueStatusBadge({
           backgroundColor: background,
         }}
       >
-        <Text style={{ color: ink, fontSize: 12, lineHeight: 16, fontWeight: '600' }}>
-          {label}
-        </Text>
+        <Text style={{ color: ink, fontSize: 12, lineHeight: 16, fontWeight: '600' }}>{label}</Text>
       </Pressable>
-      <Modal transparent visible={expanded} animationType="fade" onRequestClose={() => setExpanded(false)}>
-        <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#00000099' }}>
+      <Modal
+        transparent
+        visible={expanded}
+        animationType="fade"
+        onRequestClose={() => setExpanded(false)}
+      >
+        <View
+          style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#00000099' }}
+        >
           <View style={{ borderRadius: Radii.card, padding: 24, backgroundColor: theme.bgSurface }}>
-            <Text accessibilityRole="header" style={{ fontSize: 20, fontWeight: '600', color: theme.textPrimary }}>
+            <Text
+              accessibilityRole="header"
+              style={{ fontSize: 20, fontWeight: '600', color: theme.textPrimary }}
+            >
               {label}
             </Text>
             <Text style={{ color: theme.textSecondary, marginTop: 12 }}>{detail}</Text>

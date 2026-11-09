@@ -20,13 +20,17 @@ export function parseAmountInput(input: string, locale: UiLocale): DecimalString
   // Strictly validate grouping before stripping it. This prevents silent amount changes.
   const separator = locale === 'de-CH' ? "['’]" : locale === 'de-DE' ? '\\.' : ',';
   const decimal = locale === 'de-DE' ? ',' : '\\.';
-  const validGrouping = new RegExp('^-?(?:\\d+|\\d{1,3}(?:' + separator + '\\d{3})+)(?:' + decimal + '\\d+)?$');
+  const validGrouping = new RegExp(
+    '^-?(?:\\d+|\\d{1,3}(?:' + separator + '\\d{3})+)(?:' + decimal + '\\d+)?$',
+  );
   if (!validGrouping.test(trimmed)) return null;
   const grouped = trimmed.replace(groups, '');
   const canonical = decimalSeparator === '.' ? grouped : grouped.replace(',', '.');
   const isValid = /^-?\d+(\.\d+)?$/.test(canonical);
   if (!isValid) return null;
-  const rawInt = canonical.startsWith('-') ? canonical.slice(1).split('.')[0] : canonical.split('.')[0];
+  const rawInt = canonical.startsWith('-')
+    ? canonical.slice(1).split('.')[0]
+    : canonical.split('.')[0];
   const sign = canonical.startsWith('-') ? '-' : '';
   const rest = canonical.split('.')[1];
   const normalizedInt = rawInt.replace(/^0+(?=\d)/, '');
@@ -40,7 +44,15 @@ export type TextFieldProps = Omit<TextInputProps, 'style'> & {
   testID?: string;
   locale?: UiLocale;
 };
-export function TextField({ label, error, hint, editable = true, locale = currentUiLocale(), testID, ...rest }: TextFieldProps) {
+export function TextField({
+  label,
+  error,
+  hint,
+  editable = true,
+  locale = currentUiLocale(),
+  testID,
+  ...rest
+}: TextFieldProps) {
   const theme = useTheme();
   return (
     <View style={{ gap: Spacing.one }}>
@@ -53,14 +65,24 @@ export function TextField({ label, error, hint, editable = true, locale = curren
         editable={editable}
         placeholderTextColor={theme.textTertiary}
         style={{
-          minHeight: 44, borderColor: error ? theme.statusLoss : theme.borderInteractive,
-          borderWidth: 1, borderRadius: Radii.control, paddingHorizontal: Spacing.compact,
-          color: theme.textPrimary, backgroundColor: theme.bgSurface,
+          minHeight: 44,
+          borderColor: error ? theme.statusLoss : theme.borderInteractive,
+          borderWidth: 1,
+          borderRadius: Radii.control,
+          paddingHorizontal: Spacing.compact,
+          color: theme.textPrimary,
+          backgroundColor: theme.bgSurface,
         }}
         {...rest}
       />
-      {hint && !error ? <Text style={{ fontSize: 12, color: theme.textSecondary }}>{hint}</Text> : null}
-      {error ? <Text accessibilityRole="alert" style={{ fontSize: 12, color: theme.statusLoss }}>{error}</Text> : null}
+      {hint && !error ? (
+        <Text style={{ fontSize: 12, color: theme.textSecondary }}>{hint}</Text>
+      ) : null}
+      {error ? (
+        <Text accessibilityRole="alert" style={{ fontSize: 12, color: theme.statusLoss }}>
+          {error}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -72,7 +94,14 @@ export type AmountFieldProps = Omit<TextFieldProps, 'value' | 'onChangeText' | '
   onChangeRawText?: (raw: string) => void;
 };
 /** Controlled display input. Emit a valid DecimalString or null (never a rounded float). */
-export function AmountField({ value, onChangeValue, onChangeRawText, currency, locale = currentUiLocale(), ...props }: AmountFieldProps) {
+export function AmountField({
+  value,
+  onChangeValue,
+  onChangeRawText,
+  currency,
+  locale = currentUiLocale(),
+  ...props
+}: AmountFieldProps) {
   const [raw, setRaw] = useState(value);
   useEffect(() => setRaw(value), [value]);
   const [touched, setTouched] = useState(false);
@@ -84,22 +113,40 @@ export function AmountField({ value, onChangeValue, onChangeRawText, currency, l
       value={raw}
       keyboardType="decimal-pad"
       autoComplete="off"
-      onBlur={(event) => { setTouched(true); props.onBlur?.(event); }}
+      onBlur={(event) => {
+        setTouched(true);
+        props.onBlur?.(event);
+      }}
       onChangeText={(next) => {
         setRaw(next);
         onChangeRawText?.(next);
         onChangeValue(parseAmountInput(next, locale));
       }}
       hint={currency}
-      error={props.error ?? (touched && raw && normalized === null ? uiMessage('ui.invalidAmount', locale) : undefined)}
+      error={
+        props.error ??
+        (touched && raw && normalized === null ? uiMessage('ui.invalidAmount', locale) : undefined)
+      }
     />
   );
 }
 
 export type PickerOption = { value: string; label: string };
 export function CurrencyPicker({
-  label, value, options, onChange, locale = currentUiLocale(), disabled = false,
-}: { label: string; value: string | null; options: PickerOption[]; onChange: (value: string) => void; locale?: UiLocale; disabled?: boolean }) {
+  label,
+  value,
+  options,
+  onChange,
+  locale = currentUiLocale(),
+  disabled = false,
+}: {
+  label: string;
+  value: string | null;
+  options: PickerOption[];
+  onChange: (value: string) => void;
+  locale?: UiLocale;
+  disabled?: boolean;
+}) {
   const theme = useTheme();
   return (
     <View style={{ gap: Spacing.two }}>
@@ -110,18 +157,26 @@ export function CurrencyPicker({
             key={option.value}
             accessibilityRole="radio"
             accessibilityState={{ selected: value === option.value, disabled }}
-            accessibilityLabel={option.label + (value === option.value ? '. ' + uiMessage('ui.selected', locale) : '')}
+            accessibilityLabel={
+              option.label + (value === option.value ? '. ' + uiMessage('ui.selected', locale) : '')
+            }
             disabled={disabled}
             onPress={() => onChange(option.value)}
             style={{
-              minHeight: 44, minWidth: 52, borderRadius: Radii.control, padding: Spacing.two,
-              justifyContent: 'center', alignItems: 'center',
-              borderWidth: 1, borderColor: theme.borderInteractive,
+              minHeight: 44,
+              minWidth: 52,
+              borderRadius: Radii.control,
+              padding: Spacing.two,
+              justifyContent: 'center',
+              alignItems: 'center',
+              borderWidth: 1,
+              borderColor: theme.borderInteractive,
               backgroundColor: value === option.value ? theme.brandSubtle : theme.bgSurface,
             }}
           >
             <Text style={{ color: theme.textPrimary }}>
-              {option.label}{value === option.value ? ' ✓' : ''}
+              {option.label}
+              {value === option.value ? ' ✓' : ''}
             </Text>
           </Pressable>
         ))}
@@ -134,12 +189,21 @@ export function isValidIsoDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [year, month, day] = value.split('-').map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
+  return (
+    date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day
+  );
 }
 export function DateField({
-  value, onChange, onChangeRawText, label, locale = currentUiLocale(), ...props
+  value,
+  onChange,
+  onChangeRawText,
+  label,
+  locale = currentUiLocale(),
+  ...props
 }: Omit<TextFieldProps, 'value' | 'onChangeText'> & {
-  value: string; onChange: (value: string | null) => void; onChangeRawText?: (value: string) => void;
+  value: string;
+  onChange: (value: string | null) => void;
+  onChangeRawText?: (value: string) => void;
 }) {
   const [raw, setRaw] = useState(value);
   useEffect(() => setRaw(value), [value]);
@@ -152,7 +216,11 @@ export function DateField({
       value={raw}
       placeholder="YYYY-MM-DD"
       keyboardType="numbers-and-punctuation"
-      onChangeText={(input) => { setRaw(input); onChangeRawText?.(input); onChange(isValidIsoDate(input) ? input : null); }}
+      onChangeText={(input) => {
+        setRaw(input);
+        onChangeRawText?.(input);
+        onChange(isValidIsoDate(input) ? input : null);
+      }}
       error={props.error ?? (!valid ? uiMessage('ui.invalidDate', locale) : undefined)}
     />
   );

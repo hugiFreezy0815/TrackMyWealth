@@ -5,10 +5,15 @@ import { ValueStatusBadge } from './value-status';
 jest.mock('@/global.css', () => ({}));
 jest.mock('@/hooks/use-theme', () => ({
   useTheme: () => ({
-    textPrimary: '#0B1C3F', textSecondary: '#53627A',
-    statusWarning: '#8F5200', statusWarningSubtle: '#FFF3D9',
-    statusInfo: '#1F5CC4', statusInfoSubtle: '#E6EFFF',
-    bgSubtle: '#ECF1F4', bgSurface: '#FFFFFF', brandLink: '#006D64',
+    textPrimary: '#0B1C3F',
+    textSecondary: '#53627A',
+    statusWarning: '#8F5200',
+    statusWarningSubtle: '#FFF3D9',
+    statusInfo: '#1F5CC4',
+    statusInfoSubtle: '#E6EFFF',
+    bgSubtle: '#ECF1F4',
+    bgSurface: '#FFFFFF',
+    brandLink: '#006D64',
   }),
 }));
 describe('ValueStatusBadge', () => {

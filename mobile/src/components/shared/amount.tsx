@@ -90,7 +90,9 @@ export function Amount({ style, accessibilityLabel, testID, ...options }: Amount
   const locale = options.locale ?? currentUiLocale();
   const display = displayAmount({ ...options, locale });
   // Masking wins over any caller-provided label: private digits cannot leak.
-  const label = options.masked ? uiMessage('amount.hidden', locale) : accessibilityLabel ?? accessibleAmount({ ...options, locale });
+  const label = options.masked
+    ? uiMessage('amount.hidden', locale)
+    : (accessibilityLabel ?? accessibleAmount({ ...options, locale }));
   return (
     <Text
       testID={testID}

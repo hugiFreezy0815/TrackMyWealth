@@ -5,17 +5,46 @@
  */
 export type UiLocale = 'en' | 'de-CH' | 'de-DE';
 type MessageKey =
-  | 'amount.hidden' | 'amount.unknown' | 'value.estimated' | 'value.stale'
-  | 'value.unreconciled' | 'value.unknown' | 'value.explanation.estimated'
-  | 'value.explanation.stale' | 'value.explanation.unreconciled'
-  | 'value.explanation.unknown' | 'value.explain' | 'value.dismiss'
-  | 'ui.retry' | 'ui.offline' | 'ui.offlineDetail' | 'ui.lastUpdated'
-  | 'ui.error' | 'ui.empty' | 'ui.loading' | 'ui.close' | 'ui.cancel'
-  | 'ui.continue' | 'ui.previous' | 'ui.confirm' | 'ui.conflict'
-  | 'ui.conflictDetail' | 'ui.reviewAgain' | 'ui.discard'
-  | 'ui.search' | 'ui.select' | 'ui.none' | 'ui.selected'
-  | 'ui.chooseDate' | 'ui.required' | 'ui.invalidAmount' | 'ui.invalidDate'
-  | 'ui.change' | 'ui.details' | 'ui.unavailable' | 'ui.more';
+  | 'amount.hidden'
+  | 'amount.unknown'
+  | 'value.estimated'
+  | 'value.stale'
+  | 'value.unreconciled'
+  | 'value.unknown'
+  | 'value.explanation.estimated'
+  | 'value.explanation.stale'
+  | 'value.explanation.unreconciled'
+  | 'value.explanation.unknown'
+  | 'value.explain'
+  | 'value.dismiss'
+  | 'ui.retry'
+  | 'ui.offline'
+  | 'ui.offlineDetail'
+  | 'ui.lastUpdated'
+  | 'ui.error'
+  | 'ui.empty'
+  | 'ui.loading'
+  | 'ui.close'
+  | 'ui.cancel'
+  | 'ui.continue'
+  | 'ui.previous'
+  | 'ui.confirm'
+  | 'ui.conflict'
+  | 'ui.conflictDetail'
+  | 'ui.reviewAgain'
+  | 'ui.discard'
+  | 'ui.search'
+  | 'ui.select'
+  | 'ui.none'
+  | 'ui.selected'
+  | 'ui.chooseDate'
+  | 'ui.required'
+  | 'ui.invalidAmount'
+  | 'ui.invalidDate'
+  | 'ui.change'
+  | 'ui.details'
+  | 'ui.unavailable'
+  | 'ui.more';
 const en: Record<MessageKey, string> = {
   'amount.hidden': 'Amount hidden',
   'amount.unknown': 'Value unknown',
@@ -23,9 +52,12 @@ const en: Record<MessageKey, string> = {
   'value.stale': 'Price from {date}',
   'value.unreconciled': 'Differs from statement',
   'value.unknown': 'Value unknown',
-  'value.explanation.estimated': 'This value is based on an approximation, such as a rate or transactions before the opening balance.',
-  'value.explanation.stale': 'The newest statement, valuation or exchange rate behind this value is older than usual.',
-  'value.explanation.unreconciled': 'The ledger and the bank statement disagree. Review the difference.',
+  'value.explanation.estimated':
+    'This value is based on an approximation, such as a rate or transactions before the opening balance.',
+  'value.explanation.stale':
+    'The newest statement, valuation or exchange rate behind this value is older than usual.',
+  'value.explanation.unreconciled':
+    'The ledger and the bank statement disagree. Review the difference.',
   'value.explanation.unknown': 'A reliable value is not available.',
   'value.explain': 'Explain value status',
   'value.dismiss': 'Dismiss explanation',
@@ -65,9 +97,12 @@ const de: Record<MessageKey, string> = {
   'value.stale': 'Kurs vom {date}',
   'value.unreconciled': 'Weicht vom Auszug ab',
   'value.unknown': 'Wert unbekannt',
-  'value.explanation.estimated': 'Dieser Wert basiert auf einer Schätzung, etwa einem Kurs oder Buchungen vor dem Anfangssaldo.',
-  'value.explanation.stale': 'Der neueste Auszug, die Bewertung oder der Wechselkurs ist älter als üblich.',
-  'value.explanation.unreconciled': 'Das Buch und der Kontoauszug stimmen nicht überein. Prüfe die Differenz.',
+  'value.explanation.estimated':
+    'Dieser Wert basiert auf einer Schätzung, etwa einem Kurs oder Buchungen vor dem Anfangssaldo.',
+  'value.explanation.stale':
+    'Der neueste Auszug, die Bewertung oder der Wechselkurs ist älter als üblich.',
+  'value.explanation.unreconciled':
+    'Das Buch und der Kontoauszug stimmen nicht überein. Prüfe die Differenz.',
   'value.explanation.unknown': 'Es liegt kein verlässlicher Wert vor.',
   'value.explain': 'Wertstatus erklären',
   'value.dismiss': 'Erklärung schliessen',
@@ -103,7 +138,11 @@ const de: Record<MessageKey, string> = {
 export function uiLanguage(locale: string): 'en' | 'de' {
   return locale.toLowerCase().startsWith('de') ? 'de' : 'en';
 }
-export function uiMessage(key: MessageKey, locale: string = 'en', values?: Record<string, string>): string {
+export function uiMessage(
+  key: MessageKey,
+  locale: string = 'en',
+  values?: Record<string, string>,
+): string {
   const base = uiLanguage(locale) === 'de' ? de[key] : en[key];
   return base.replace(/\{(\w+)\}/g, (full, name: string) => values?.[name] ?? full);
 }

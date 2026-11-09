@@ -119,7 +119,12 @@ export const TypeScale = {
 } as const;
 
 export const Radii = { control: 10, card: 16, hero: 24, pill: 999 } as const;
-export const Layout = { phoneMax: 599, tabletMax: 1023, sidebarWidth: 248, railWidth: 360 } as const;
+export const Layout = {
+  phoneMax: 599,
+  tabletMax: 1023,
+  sidebarWidth: 248,
+  railWidth: 360,
+} as const;
 
 export const Fonts = Platform.select({
   ios: { sans: 'system-ui', serif: 'ui-serif', rounded: 'ui-rounded', mono: 'ui-monospace' },
