@@ -76,7 +76,7 @@ export function TransactionResults({
                 <td style={cellStyle}>
                   <button
                     type="button"
-                    aria-current={selectedTransactionId === transaction.id ? "true" : undefined}
+                    aria-current={selectedTransactionId === transaction.id ? 'true' : undefined}
                     style={{
                       border: 0,
                       background: 'transparent',

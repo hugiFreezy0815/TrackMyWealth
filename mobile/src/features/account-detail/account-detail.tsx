@@ -51,7 +51,13 @@ const SORTS: TransactionSort[] = [
 ];
 const SORT_KEYS = ['account.newest', 'account.oldest', 'account.largest', 'account.smallest'];
 
-export function AccountDetail({ accountId, onBack, onTransaction, onImport, selectedTransactionId }: AccountDetailProps) {
+export function AccountDetail({
+  accountId,
+  onBack,
+  onTransaction,
+  onImport,
+  selectedTransactionId,
+}: AccountDetailProps) {
   const intl = useIntl();
   const theme = useTheme();
   const online = useSyncExternalStore(

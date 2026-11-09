@@ -157,10 +157,11 @@ export const useTransactionHistory = (accountId: string, transactionId: string) 
   useInfiniteQuery({
     queryKey: queryKeys.transactionHistory(accountId, transactionId),
     initialPageParam: 0,
-    queryFn: ({ pageParam }) => typedApi.get(
-      '/api/v1/accounts/{accountId}/transactions/{transactionId}/history',
-      { params: { accountId, transactionId }, query: { page: pageParam, size: 50, sort: ['occurredAt,desc'] } },
-    ),
+    queryFn: ({ pageParam }) =>
+      typedApi.get('/api/v1/accounts/{accountId}/transactions/{transactionId}/history', {
+        params: { accountId, transactionId },
+        query: { page: pageParam, size: 50, sort: ['occurredAt,desc'] },
+      }),
     getNextPageParam: (last) =>
       last.page.number + 1 < last.page.totalPages ? last.page.number + 1 : undefined,
     enabled: !!accountId && !!transactionId,
@@ -179,26 +180,32 @@ export function useTransactionDetailActions(accountId: string, transactionId: st
   const sync = async (updated?: components['schemas']['TransactionResponse']) => {
     if (updated) client.setQueryData(queryKeys.transaction(accountId, transactionId), updated);
     await invalidateFinancialData(client);
-    await client.invalidateQueries({ queryKey: queryKeys.transactionHistory(accountId, transactionId) });
+    await client.invalidateQueries({
+      queryKey: queryKeys.transactionHistory(accountId, transactionId),
+    });
   };
   const setCategory = useMutation({
     mutationFn: ({ categoryId, version }: { categoryId: string; version: number }) =>
       typedApi.put('/api/v1/accounts/{accountId}/transactions/{transactionId}/category', {
-        params: { accountId, transactionId }, body: { categoryId }, version: ifMatch({ version }),
+        params: { accountId, transactionId },
+        body: { categoryId },
+        version: ifMatch({ version }),
       }),
     onSuccess: (updated) => sync(updated),
   });
   const resetCategory = useMutation({
     mutationFn: ({ version }: { version: number }) =>
       typedApi.delete('/api/v1/accounts/{accountId}/transactions/{transactionId}/category', {
-        params: { accountId, transactionId }, version: ifMatch({ version }),
+        params: { accountId, transactionId },
+        version: ifMatch({ version }),
       }),
     onSuccess: (updated) => sync(updated),
   });
   const remove = useMutation({
     mutationFn: ({ version, reason }: { version: number; reason?: string }) =>
       typedApi.delete('/api/v1/accounts/{accountId}/transactions/{transactionId}', {
-        params: { accountId, transactionId }, version: ifMatch({ version }),
+        params: { accountId, transactionId },
+        version: ifMatch({ version }),
         query: reason ? { reason } : {},
       }),
     onSuccess: () => sync(),

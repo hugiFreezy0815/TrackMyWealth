@@ -1,22 +1,33 @@
 import type { Category, Transaction, HistoryEntry } from './model';
 import {
-  canChangeCategory, canRemove, categoryLabel, historyDescription,
+  canChangeCategory,
+  canRemove,
+  categoryLabel,
+  historyDescription,
   transactionTitle,
 } from './model';
 
-const transaction = (changes: Partial<Transaction> = {}): Transaction => ({
-  categoryId: 'groceries', internalTransfer: false, voidedAt: null,
-  deletedAt: null, reconciliationAdjustment: null,
-  removal: 'VOID', merchantDescription: 'Migros',
-  counterpartyName: 'Other', transactionType: 'CARD_PAYMENT',
-  ...changes,
-} as Transaction);
+const transaction = (changes: Partial<Transaction> = {}): Transaction =>
+  ({
+    categoryId: 'groceries',
+    internalTransfer: false,
+    voidedAt: null,
+    deletedAt: null,
+    reconciliationAdjustment: null,
+    removal: 'VOID',
+    merchantDescription: 'Migros',
+    counterpartyName: 'Other',
+    transactionType: 'CARD_PAYMENT',
+    ...changes,
+  }) as Transaction;
 
 describe('S4 transaction detail rules', () => {
   it('does not offer a category for dividend or internal transfer', () => {
     expect(canChangeCategory(transaction({ categoryId: null }), false)).toBe(false);
     expect(canChangeCategory(transaction({ internalTransfer: true }), false)).toBe(false);
-    expect(canChangeCategory(transaction({ reconciliationAdjustment: 'ADJUSTMENT' }), false)).toBe(false);
+    expect(canChangeCategory(transaction({ reconciliationAdjustment: 'ADJUSTMENT' }), false)).toBe(
+      false,
+    );
     expect(canChangeCategory(transaction(), true)).toBe(false);
     expect(canChangeCategory(transaction(), false)).toBe(true);
   });
@@ -31,8 +42,9 @@ describe('S4 transaction detail rules', () => {
 
   it('uses an adjustment title and never mistakes it for a merchant', () => {
     expect(transactionTitle(transaction())).toBe('Migros');
-    expect(transactionTitle(transaction({ reconciliationAdjustment: 'ADJUSTMENT' })))
-      .toBe('VALUATION_ADJUSTMENT');
+    expect(transactionTitle(transaction({ reconciliationAdjustment: 'ADJUSTMENT' }))).toBe(
+      'VALUATION_ADJUSTMENT',
+    );
   });
 
   it('formats the two-level category tree in either language', () => {
@@ -48,14 +60,25 @@ describe('S4 transaction detail rules', () => {
       { id: 'd', nameEn: 'Dining out', nameDe: 'Restaurant', parentId: null },
     ] as Category[];
     const entry = {
-      kind: 'CATEGORY_CHANGED', fromCategoryId: 'g', toCategoryId: 'd',
-      actorDisplayName: 'Anna', reason: null,
+      kind: 'CATEGORY_CHANGED',
+      fromCategoryId: 'g',
+      toCategoryId: 'd',
+      actorDisplayName: 'Anna',
+      reason: null,
     } as HistoryEntry;
     expect(historyDescription(entry, categories, false)).toEqual({
       key: 'txn.history.changed',
-      values: { actor: 'Anna', from: 'Groceries', to: 'Dining out', reason: '', format: '', date: '' },
+      values: {
+        actor: 'Anna',
+        from: 'Groceries',
+        to: 'Dining out',
+        reason: '',
+        format: '',
+        date: '',
+      },
     });
-    expect(historyDescription({ ...entry, kind: 'FUTURE_KIND' }, categories, true).key)
-      .toBe('txn.history.other');
+    expect(historyDescription({ ...entry, kind: 'FUTURE_KIND' }, categories, true).key).toBe(
+      'txn.history.other',
+    );
   });
 });

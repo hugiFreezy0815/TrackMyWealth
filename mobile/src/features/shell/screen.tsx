@@ -22,7 +22,13 @@ type Props = {
   detailWidth?: number;
 };
 
-export function ShellScreen({ title, children, aside, privacyToggle = true, detailWidth = DETAIL_PANEL_WIDTH }: Props) {
+export function ShellScreen({
+  title,
+  children,
+  aside,
+  privacyToggle = true,
+  detailWidth = DETAIL_PANEL_WIDTH,
+}: Props) {
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const layout = layoutFor(width);
