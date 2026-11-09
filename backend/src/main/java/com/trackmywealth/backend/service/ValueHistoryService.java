@@ -31,6 +31,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -88,7 +89,7 @@ public class ValueHistoryService {
     List<Account> accounts =
         accessControlService.accountsWithAccess(
             memberId, accountRepository.findByWorkspaceId(actor.workspaceId()));
-    return history(periodParam, currency, accounts, actor, true);
+    return history(periodParam, currency, accounts, actor, true, null);
   }
 
   @Transactional(readOnly = true)
@@ -100,7 +101,7 @@ public class ValueHistoryService {
         accountRepository.findByWorkspaceId(actor.workspaceId()).stream()
             .filter(account -> portfolioId.equals(account.getPortfolio().getId()))
             .toList();
-    return history(periodParam, portfolio.getPortfolioCurrency(), accounts, actor, false);
+    return history(periodParam, portfolio.getPortfolioCurrency(), accounts, actor, false, portfolioId);
   }
 
   private ValueHistoryResponse history(
@@ -108,11 +109,12 @@ public class ValueHistoryService {
       String currency,
       List<Account> accounts,
       AuthenticatedUserPrincipal actor,
-      boolean withSections) {
+      boolean withSections,
+      @Nullable UUID portfolioId) {
     ValueHistoryPeriod period = ValueHistoryPeriod.parse(periodParam);
     LocalDate today = businessDateService.today();
     LocalDate from =
-        period.start(today, historyStartRepository.firstActivity(actor.workspaceId(), today));
+        period.start(today, historyStartRepository.firstActivity(actor.workspaceId(), portfolioId, today));
     List<LocalDate> dates = period.dates(from, today);
     Map<UUID, PortfolioPlacement> placements =
         withSections ? accountService.portfolioPlacementsOf(accounts) : Map.of();
@@ -228,7 +230,7 @@ public class ValueHistoryService {
       warnings.addAll(valuation.warnings());
       if (!valuation.valueKnown()) {
         complete = false;
-        warnings.add(valuation.name() + ": value unknown on " + asOf);
+        warnings.add(valuation.name() + ": value unknown");
         continue;
       }
       String basis = valuation.valueBasis();
