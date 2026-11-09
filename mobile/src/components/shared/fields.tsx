@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, Text, TextInput, View, type TextInputProps } from 'react-native';
 
 import type { DecimalString } from '@/api/decimal';
@@ -102,8 +102,8 @@ export function AmountField({
   locale = currentUiLocale(),
   ...props
 }: AmountFieldProps) {
-  const [raw, setRaw] = useState(value);
-  useEffect(() => setRaw(value), [value]);
+  const [draft, setDraft] = useState<string | null>(null);
+  const raw = draft ?? value;
   const [touched, setTouched] = useState(false);
   const normalized = parseAmountInput(raw, locale);
   return (
@@ -118,7 +118,7 @@ export function AmountField({
         props.onBlur?.(event);
       }}
       onChangeText={(next) => {
-        setRaw(next);
+        setDraft(next);
         onChangeRawText?.(next);
         onChangeValue(parseAmountInput(next, locale));
       }}
