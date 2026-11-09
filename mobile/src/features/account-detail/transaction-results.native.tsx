@@ -13,6 +13,7 @@ export type TransactionResultsProps = {
   byDate: boolean;
   onOpen: (id: string) => void;
   onCategory: (transaction: Transaction) => void;
+  selectedTransactionId?: string | null;
 };
 
 export function TransactionResults({
