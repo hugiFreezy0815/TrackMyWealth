@@ -1,6 +1,13 @@
 import { useRouter } from 'expo-router';
-import type { ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import type { ReactElement, ReactNode } from 'react';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+  type RefreshControlProps,
+} from 'react-native';
 import { useIntl } from 'react-intl';
 
 import { ThemedText } from '@/components/themed-text';
@@ -19,9 +26,17 @@ type Props = {
   aside?: ReactNode;
   /** The eye control on every screen (FR-CLI-005); Settings shows its own labelled switch. */
   privacyToggle?: boolean;
+  /** Pull-to-refresh for the whole screen (a `RefreshControl`). */
+  refreshControl?: ReactElement<RefreshControlProps>;
 };
 
-export function ShellScreen({ title, children, aside, privacyToggle = true }: Props) {
+export function ShellScreen({
+  title,
+  children,
+  aside,
+  privacyToggle = true,
+  refreshControl,
+}: Props) {
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const layout = layoutFor(width);
@@ -29,6 +44,7 @@ export function ShellScreen({ title, children, aside, privacyToggle = true }: Pr
   return (
     <ScrollView
       style={{ backgroundColor: theme.background }}
+      refreshControl={refreshControl}
       contentContainerStyle={[styles.scroll, layout === 'phone' && styles.scrollPhone]}
     >
       <View style={[styles.frame, besideContent && styles.frameWithPanel]}>
