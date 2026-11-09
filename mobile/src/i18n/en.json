@@ -372,5 +372,6 @@
   "accountType.other": "Other",
   "valueBasis.LEDGER": "its transactions",
   "valueBasis.LATEST_SNAPSHOT": "the latest statement",
-  "valueBasis.MANUAL_VALUATION": "a manual valuation"
+  "valueBasis.MANUAL_VALUATION": "a manual valuation",
+  "account.uncategorizedLabel": "Uncategorised"
 }

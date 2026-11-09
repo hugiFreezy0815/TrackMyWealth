@@ -260,6 +260,19 @@ describe('S3 account detail view model', () => {
       expect(view.canCategorize).toBe(false);
     });
 
+    it('labels the shipped default with the app word, whatever the server calls it', () => {
+      const server = categories.map((category) =>
+        category.code === 'UNCATEGORIZED' ? { ...category, nameEn: 'Uncategorized' } : category,
+      );
+      const row0 = row('u', '2026-11-09', { categoryId: 'uncategorized' });
+      expect(presentTransaction(row0, context({ categories: server }), enIntl)).toMatchObject({
+        categoryLabel: 'Uncategorised',
+        uncategorized: true,
+        canCategorize: true,
+      });
+      expect(presentTransaction(row0, context(), deIntl).categoryLabel).toBe('Nicht kategorisiert');
+    });
+
     it('gives a dividend (categoryId null) no chip', () => {
       const view = presentTransaction(
         row('d', '2026-11-09', { transactionType: 'DIVIDEND', merchantDescription: null }),

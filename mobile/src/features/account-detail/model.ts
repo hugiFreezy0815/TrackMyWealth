@@ -292,13 +292,17 @@ export function presentTransaction(
     ? intl.formatMessage({ id: 'transactionType.VALUATION_ADJUSTMENT' })
     : row.merchantDescription?.trim() || row.counterpartyName?.trim() || typeLabel;
   const counterparty = row.counterpartyName?.trim() || null;
+  const uncategorized = isUncategorized(row, context.categories);
   const categoryLabel = row.internalTransfer
     ? intl.formatMessage({ id: 'account.internalTransfer' })
-    : category
-      ? categoryName(category, context.categories, german, context.includeParent)
-      : row.categoryId !== null
-        ? intl.formatMessage({ id: 'account.categoryFallback' })
-        : null;
+    : uncategorized
+      ? // Spec S3 row 4: the app's own word in warning style, not the category's server name.
+        intl.formatMessage({ id: 'account.uncategorizedLabel' })
+      : category
+        ? categoryName(category, context.categories, german, context.includeParent)
+        : row.categoryId !== null
+          ? intl.formatMessage({ id: 'account.categoryFallback' })
+          : null;
   const reversalDate = reversalOf(row, context.loaded);
   const lifecycle = [
     row.replacesTransactionId
@@ -316,7 +320,7 @@ export function presentTransaction(
     typeLabel,
     counterparty: counterparty !== null && counterparty !== title ? counterparty : null,
     categoryLabel,
-    uncategorized: isUncategorized(row, context.categories),
+    uncategorized,
     canCategorize:
       !context.archived &&
       !row.voidedAt &&

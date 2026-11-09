@@ -372,5 +372,6 @@
   "accountType.other": "Sonstiges",
   "valueBasis.LEDGER": "den Buchungen",
   "valueBasis.LATEST_SNAPSHOT": "dem letzten Auszug",
-  "valueBasis.MANUAL_VALUATION": "einer manuellen Bewertung"
+  "valueBasis.MANUAL_VALUATION": "einer manuellen Bewertung",
+  "account.uncategorizedLabel": "Nicht kategorisiert"
 }
