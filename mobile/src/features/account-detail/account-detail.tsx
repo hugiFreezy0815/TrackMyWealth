@@ -142,7 +142,7 @@ export function AccountDetail({ accountId, onBack, onTransaction, onImport }: Ac
             {value.currency !== value.workspaceCurrency && value.balanceInWorkspaceCurrency !== null ? (
               <Amount value={value.balanceInWorkspaceCurrency} currency={value.workspaceCurrency} approx style={{ color: theme.textSecondary }} />
             ) : null}
-            <ValueStatusBadge status={value.valueStatus} valueSourceDate={value.valueSourceDate} />
+            <ValueStatusBadge status={value.valueStatus} valueSourceDate={value.valueSourceDate} interactive={false} />
             <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
               {intl.formatMessage({ id: 'account.asOf' }, { date: formatDate(value.asOf, intl.locale) })}
             </Text>
