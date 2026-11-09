@@ -47,6 +47,14 @@ export const useAccount = (accountId: string) =>
     queryFn: () => typedApi.get('/api/v1/accounts/{accountId}', { params: { accountId } }),
     enabled: !!accountId,
   });
+/** The depot / crypto holdings API is merged (#478); data is already server-valued. */
+export const useAccountPositions = (accountId: string) =>
+  useQuery({
+    queryKey: [...queryKeys.account(accountId), 'positions'],
+    queryFn: () =>
+      typedApi.get('/api/v1/accounts/{accountId}/positions', { params: { accountId } }),
+    enabled: !!accountId,
+  });
 export const useAccountTransactions = (accountId: string, uncategorized = false) =>
   useInfiniteQuery({
     queryKey: queryKeys.accountTransactions(accountId, { uncategorized }),
