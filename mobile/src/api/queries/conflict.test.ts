@@ -37,6 +37,19 @@ describe('useConflict', () => {
     expect(result.current.conflicted).toBe(false);
   });
 
+  it('restarts a paged list behind the conflict at page 0', async () => {
+    const { client, result } = await renderConflict();
+    const key = ['accounts', 'a1', 'transactions', {}];
+    client.setQueryData(key, { pages: ['p0', 'p1', 'p2'], pageParams: [0, 1, 2] });
+
+    await act(async () => {
+      await result.current.handle(problem(412, 'VERSION_CONFLICT'), ['accounts', 'a1']);
+    });
+
+    expect(client.getQueryData(key)).toEqual({ pages: ['p0'], pageParams: [0] });
+    expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+  });
+
   it.each([
     ['another problem', problem(400, 'VALIDATION_FAILED')],
     ['a non-API error', new Error('boom')],
