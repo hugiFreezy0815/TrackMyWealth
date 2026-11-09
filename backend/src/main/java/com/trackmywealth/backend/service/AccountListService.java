@@ -123,6 +123,7 @@ public class AccountListService {
         account.getPortfolio().getName(),
         inOwn.currency(),
         ARCHIVED.equals(account.getStatus()),
+        account.isHasTransactions(),
         SignedAmounts.of(inOwn),
         workspaceCurrency,
         SignedAmounts.of(inWorkspace),

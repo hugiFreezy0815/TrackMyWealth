@@ -151,7 +151,7 @@ describe('S3 account detail view model', () => {
 
   it('labels API codes from the catalogue and an unknown code as "Other"', () => {
     jest.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(transactionTypeLabel('CREDIT_CARD_PURCHASE', enIntl)).toBe('Card payment');
+    expect(transactionTypeLabel('CREDIT_CARD_PURCHASE', enIntl)).toBe('Card purchase');
     expect(transactionTypeLabel('CREDIT_CARD_PURCHASE', deIntl)).toBe('Kartenzahlung');
     expect(transactionTypeLabel('SOMETHING_NEW', enIntl)).toBe('Other');
     expect(accountTypeLabel('SAVINGS', deIntl)).toBe('Sparkonto');

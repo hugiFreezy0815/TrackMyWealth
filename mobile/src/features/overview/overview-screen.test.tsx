@@ -197,6 +197,7 @@ const unreconciledAccount = (id: string, name: string): Account => ({
   portfolioName: 'Euro Bank',
   currency: 'CHF',
   archived: false,
+  hasTransactions: true,
   balance: '10.00',
   workspaceCurrency: 'CHF',
   balanceInWorkspaceCurrency: '10.00',
@@ -548,6 +549,14 @@ describe('Overview S1 (#489)', () => {
     expect(tabs[1]).not.toBeSelected();
     await fireEvent.press(screen.getByRole('tab', { name: '+ Add portfolio' }));
     expect(add).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers the web Import statement entry point for account selection', async () => {
+    mockWindow.width = 1280;
+    const openImport = jest.fn();
+    await renderOverview('en', { onImportStatement: openImport });
+    await fireEvent.press(screen.getByRole('button', { name: 'Import statement' }));
+    expect(openImport).toHaveBeenCalledTimes(1);
   });
 
   it('leaves the page heading to the shell and shows only the greeting', async () => {

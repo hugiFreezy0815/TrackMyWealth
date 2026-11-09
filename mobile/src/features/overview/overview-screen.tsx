@@ -38,6 +38,7 @@ import { AssetsLiabilitiesCard, NetWorthCard, type FinancialPart } from './total
 export type OverviewScreenProps = {
   onAddPortfolio: () => void;
   onReviewAccount: (accountId: string) => void;
+  onImportStatement?: () => void;
 };
 
 /** S1 web layout: two columns from 1024 px, the right one 360 px wide. */
@@ -58,7 +59,11 @@ function greetingId(hour: number): string {
 }
 
 /** US-01-15 / S1: independent TanStack queries, no financial arithmetic in the UI. */
-export function OverviewScreen({ onAddPortfolio, onReviewAccount }: OverviewScreenProps) {
+export function OverviewScreen({
+  onAddPortfolio,
+  onReviewAccount,
+  onImportStatement,
+}: OverviewScreenProps) {
   const intl = useIntl();
   const theme = useTheme();
   const { width } = useWindowDimensions();
@@ -170,6 +175,16 @@ export function OverviewScreen({ onAddPortfolio, onReviewAccount }: OverviewScre
           style={{ minHeight: 44, alignSelf: 'flex-start', justifyContent: 'center' }}
         >
           <Text style={{ color: theme.brandLink }}>{msg(intl, 'overview.refresh')}</Text>
+        </Pressable>
+      ) : null}
+      {onImportStatement ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={msg(intl, 'statement.title')}
+          onPress={onImportStatement}
+          style={{ minHeight: 44, alignSelf: 'flex-start', justifyContent: 'center' }}
+        >
+          <Text style={{ color: theme.brandLink }}>{msg(intl, 'statement.title')}</Text>
         </Pressable>
       ) : null}
       {!online ? (
