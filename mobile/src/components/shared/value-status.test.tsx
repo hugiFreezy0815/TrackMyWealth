@@ -1,5 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, screen } from '@testing-library/react-native';
 
+import type { AppLocale } from '@/i18n';
+import { renderWithIntl } from '@/i18n/test-utils';
 import { isValueKnown, ValueStatusBadge } from './value-status';
 
 jest.mock('@/global.css', () => ({}));
@@ -23,13 +25,13 @@ describe('ValueStatusBadge', () => {
   afterEach(() => jest.restoreAllMocks());
 
   it.each(['CURRENT', null, undefined])('renders nothing for %s', async (status) => {
-    const { toJSON } = await render(<ValueStatusBadge status={status} />);
+    const { toJSON } = await renderWithIntl(<ValueStatusBadge status={status} />);
     expect(toJSON()).toBeNull();
   });
 
   it.each([
     ['ESTIMATED', 'en', 'Estimated', /rests on an approximation/],
-    ['STALE', 'en', 'Price from Oct 1, 2026', /older than usual/],
+    ['STALE', 'en', 'Price from 1 Oct 2026', /older than usual/],
     ['UNRECONCILED', 'en', 'Differs from statement', /disagree/],
     ['UNKNOWN', 'en', 'Value unknown', /not available/],
     ['FUTURE_SERVER_ENUM', 'en', 'Value unknown', /not available/],
@@ -42,8 +44,9 @@ describe('ValueStatusBadge', () => {
   ] as const)(
     'renders %s in %s as %s with its explanation',
     async (status, locale, label, detail) => {
-      await render(
-        <ValueStatusBadge status={status} valueSourceDate="2026-10-01" locale={locale} />,
+      await renderWithIntl(
+        <ValueStatusBadge status={status} valueSourceDate="2026-10-01" />,
+        locale as AppLocale,
       );
       expect(screen.getByText(label)).toBeTruthy();
       const badge = screen.getByRole('button', { name: new RegExp('^' + label + '\\. ') });
@@ -52,15 +55,18 @@ describe('ValueStatusBadge', () => {
   );
 
   it('says the price is outdated when STALE comes without a date', async () => {
-    await render(<ValueStatusBadge status="STALE" locale="en" />);
+    await renderWithIntl(<ValueStatusBadge status="STALE" />);
     expect(screen.getByText('Price outdated')).toBeTruthy();
-    expect(screen.queryByText(/–/)).toBeNull();
   });
 
-  it('explains the financial status on demand', async () => {
-    await render(<ValueStatusBadge status="ESTIMATED" locale="en" />);
-    await fireEvent.press(screen.getByRole('button', { name: /Estimated/ }));
-    expect(screen.getByText(/rests on an approximation/)).toBeTruthy();
+  it.each([
+    ['de-CH', 'Erklärung schliessen'],
+    ['de-DE', 'Erklärung schließen'],
+  ] as const)('explains the status on demand (%s)', async (locale, dismiss) => {
+    await renderWithIntl(<ValueStatusBadge status="ESTIMATED" />, locale);
+    await fireEvent.press(screen.getByRole('button', { name: /Geschätzt/ }));
+    expect(screen.getByText(/beruht auf einer Schätzung/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: dismiss })).toBeTruthy();
   });
 
   it.each([

@@ -1,4 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, screen } from '@testing-library/react-native';
+
+import { renderWithIntl } from '@/i18n/test-utils';
 
 import {
   AccountRow,
@@ -55,7 +57,7 @@ function findHost(node: unknown, type: string): Node | undefined {
 describe('shared navigation and financial rows', () => {
   it('tracks selected portfolio tabs and exposes accessible states', async () => {
     const onSelect = jest.fn();
-    await render(
+    await renderWithIntl(
       <PortfolioTabs
         tabs={[
           { id: 'a', label: 'All' },
@@ -72,7 +74,7 @@ describe('shared navigation and financial rows', () => {
 
   it('exposes single-choice chips as a checked radio group', async () => {
     const onSelect = jest.fn();
-    await render(
+    await renderWithIntl(
       <ChipGroup
         label="Type"
         options={[
@@ -92,7 +94,7 @@ describe('shared navigation and financial rows', () => {
   });
 
   it('exposes multi-choice chips as checkboxes', async () => {
-    await render(
+    await renderWithIntl(
       <ChipGroup
         multi
         options={[{ value: 'a', label: 'A' }]}
@@ -104,48 +106,43 @@ describe('shared navigation and financial rows', () => {
   });
 
   it('masks account balances even in the rendered tree', async () => {
-    await render(<AccountRow title="Main" amount="1234567.89" currency="CHF" masked />);
+    await renderWithIntl(<AccountRow title="Main" amount="1234567.89" currency="CHF" masked />);
     expect(screen.getByText('••••')).toBeTruthy();
     expect(JSON.stringify(screen.toJSON())).not.toContain('1234567.89');
   });
 
   it('reads title, amount and value status on a pressable row', async () => {
-    await render(
+    await renderWithIntl(
       <AccountRow
         title="Main"
         subtitle="Cash"
         amount="-1234.5"
         currency="CHF"
         status="ESTIMATED"
-        locale="en"
         onPress={jest.fn()}
       />,
+      'en',
     );
     const label = screen.getByRole('button', { name: /^Main/ }).props.accessibilityLabel;
-    expect(label).toMatch(/^Main, Cash, minus 1,234\.50 .+, Estimated$/);
+    expect(label).toBe('Main, Cash, minus 1234.50 Swiss francs, Estimated');
   });
 
   it('keeps a hidden amount hidden in the pressable row label', async () => {
-    await render(
-      <AccountRow
-        title="Main"
-        amount="1234.5"
-        currency="CHF"
-        masked
-        locale="en"
-        onPress={jest.fn()}
-      />,
+    await renderWithIntl(
+      <AccountRow title="Main" amount="1234.5" currency="CHF" masked onPress={jest.fn()} />,
+      'en',
     );
     const label = screen.getByRole('button', { name: /^Main/ }).props.accessibilityLabel;
-    expect(label).toBe('Main, Amount hidden');
+    expect(label).toBe('Main, hidden');
   });
 
   it.each(['UNKNOWN', 'FUTURE_SERVER_ENUM'])(
     'shows the amount as "–" for status %s',
     async (status) => {
       const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-      await render(
-        <AccountRow title="Main" amount="1234.5" currency="CHF" status={status} locale="en" />,
+      await renderWithIntl(
+        <AccountRow title="Main" amount="1234.5" currency="CHF" status={status} />,
+        'en',
       );
       expect(screen.getByText('–')).toBeTruthy();
       expect(screen.queryByText(/1,234/)).toBeNull();
@@ -154,14 +151,9 @@ describe('shared navigation and financial rows', () => {
   );
 
   it('formats the transaction date in the UI locale', async () => {
-    await render(
-      <TransactionRow
-        title="Coffee"
-        date="2026-11-08"
-        amount="-4.5"
-        currency="CHF"
-        locale="de-CH"
-      />,
+    await renderWithIntl(
+      <TransactionRow title="Coffee" date="2026-11-08" amount="-4.5" currency="CHF" />,
+      'de-CH',
     );
     expect(screen.getByText('08.11.2026')).toBeTruthy();
   });
@@ -172,38 +164,36 @@ describe('shared navigation and financial rows', () => {
     ['-0.001', '→', '#53627A'],
     ['0', '→', '#53627A'],
   ])('shows change %s with arrow %s in the matching colour', async (amount, arrow, color) => {
-    await render(<ChangeChip amount={amount} currency="CHF" locale="de-CH" />);
+    await renderWithIntl(<ChangeChip amount={amount} currency="CHF" />, 'de-CH');
     const glyph = screen.getByText(arrow, { includeHiddenElements: true });
     expect(glyph.props.style.color).toBe(color);
     expect(glyph.props.accessibilityElementsHidden).toBe(true);
   });
 
   it('falls back to institution initials when no logo is provided', async () => {
-    await render(<InstitutionLogo name="Example Bank" />);
+    await renderWithIntl(<InstitutionLogo name="Example Bank" />);
     expect(screen.getByText('EB')).toBeTruthy();
     expect(screen.getByRole('image', { name: 'Example Bank' })).toBeTruthy();
   });
 
   it('shows the house icon for the personal-assets default portfolio', async () => {
-    await render(<InstitutionLogo name="Mein Vermögen" personalAssetsDefault />);
+    await renderWithIntl(<InstitutionLogo name="Mein Vermögen" personalAssetsDefault />);
     expect(findHost(screen.toJSON(), 'SymbolView')).toBeTruthy();
     expect(screen.queryByText('MV')).toBeNull();
   });
 
   it('keeps the logo image out of the accessibility tree', async () => {
-    await render(<InstitutionLogo name="Example Bank" logoUrl="https://logo.example/x.png" />);
+    await renderWithIntl(
+      <InstitutionLogo name="Example Bank" logoUrl="https://logo.example/x.png" />,
+    );
     expect(findHost(screen.toJSON(), 'Image')?.props.accessible).toBe(false);
   });
 
   it('lets completed steps be revisited but not future ones', async () => {
     const onSelect = jest.fn();
-    await render(
-      <Stepper
-        steps={['Create', 'Review', 'Finish']}
-        current={1}
-        onSelect={onSelect}
-        locale="en"
-      />,
+    await renderWithIntl(
+      <Stepper steps={['Create', 'Review', 'Finish']} current={1} onSelect={onSelect} />,
+      'en',
     );
     const finish = screen.getByRole('button', { name: '3. Finish' });
     expect(finish.props.accessibilityState.disabled).toBe(true);
@@ -215,7 +205,7 @@ describe('shared navigation and financial rows', () => {
   });
 
   it('renders key/value pairs with text or custom content', async () => {
-    await render(
+    await renderWithIntl(
       <KeyValueList
         items={[
           { key: 'a', label: 'Source', value: 'Statement' },

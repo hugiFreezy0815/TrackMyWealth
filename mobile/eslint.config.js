@@ -83,8 +83,8 @@ module.exports = defineConfig([
     // accessibility props, string expressions) belongs in the catalogues. Flat config replaces a
     // rule's options per file instead of merging them, so this block repeats the #452 selectors.
     // The legacy screens below predate the catalogues; their sprint-7 tickets migrate them and
-    // delete the entry here.
-    files: ['src/features/**/*.{ts,tsx,jsx}'],
+    // delete the entry here. The shared components (#488) follow the same rule.
+    files: ['src/features/**/*.{ts,tsx,jsx}', 'src/components/shared/**/*.{ts,tsx}'],
     ignores: [
       '**/*.test.{ts,tsx}',
       'src/features/auth/**',

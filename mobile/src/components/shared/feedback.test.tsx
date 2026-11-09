@@ -1,4 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, screen } from '@testing-library/react-native';
+
+import type { AppLocale } from '@/i18n';
+import { renderWithIntl } from '@/i18n/test-utils';
 
 import { ApiError } from '@/api/client';
 import {
@@ -38,10 +41,15 @@ function problem(status: number, code: string, correlationId?: string) {
 }
 
 describe('ErrorBanner', () => {
+  it('shows the generic message without a problem', async () => {
+    await renderWithIntl(<ErrorBanner />, 'de-CH');
+    expect(screen.getByText('Etwas ist schiefgelaufen.')).toBeTruthy();
+  });
+
   it('offers a retry on errors that allow one', async () => {
     const onRetry = jest.fn();
-    await render(<ErrorBanner onRetry={onRetry} locale="en" />);
-    await fireEvent.press(screen.getByRole('button', { name: 'Retry' }));
+    await renderWithIntl(<ErrorBanner onRetry={onRetry} />, 'en');
+    await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
@@ -55,18 +63,18 @@ describe('ErrorBanner', () => {
     [problem(403, 'UNKNOWN_CODE'), 'de-DE', /^Das ist gerade nicht möglich\.$/],
     [problem(500, 'UNKNOWN_CODE', 'corr-1'), 'en', /^Something went wrong\.$/],
   ])('shows the message key of the problem code (%#)', async (error, locale, message) => {
-    await render(<ErrorBanner error={error} locale={locale as 'en'} />);
+    await renderWithIntl(<ErrorBanner error={error} />, locale as AppLocale);
     expect(screen.getByText(message)).toBeTruthy();
     expect(screen.queryByText(/raw server title/)).toBeNull();
   });
 
   it('prefers an explicit, user-safe message', async () => {
-    await render(<ErrorBanner error={problem(409, 'VERSION_CONFLICT')} message="Custom" />);
+    await renderWithIntl(<ErrorBanner error={problem(409, 'VERSION_CONFLICT')} message="Custom" />);
     expect(screen.getByText('Custom')).toBeTruthy();
   });
 
   it('quotes the correlationId for a reported error', async () => {
-    await render(<ErrorBanner error={problem(500, 'INTERNAL', 'corr-42')} locale="en" />);
+    await renderWithIntl(<ErrorBanner error={problem(500, 'INTERNAL', 'corr-42')} />, 'en');
     expect(screen.getByText('corr-42')).toBeTruthy();
   });
 
@@ -78,26 +86,31 @@ describe('ErrorBanner', () => {
     [problem(503, 'LOCKED'), true],
     [problem(500, 'INTERNAL'), true],
   ])('offers Retry only when it can help (%#)', async (error, retry) => {
-    await render(<ErrorBanner error={error} onRetry={jest.fn()} locale="en" />);
-    expect(screen.queryByRole('button', { name: 'Retry' }) !== null).toBe(retry);
+    await renderWithIntl(<ErrorBanner error={error} onRetry={jest.fn()} />, 'en');
+    expect(screen.queryByRole('button', { name: 'Try again' }) !== null).toBe(retry);
   });
 });
 
 describe('feedback states', () => {
   it('shows the offline last-updated date in the UI locale', async () => {
-    await render(<OfflineBanner locale="de-CH" lastUpdated="2026-11-08" />);
+    await renderWithIntl(<OfflineBanner lastUpdated="2026-11-08" />, 'de-CH');
     expect(screen.getByText('Zuletzt aktualisiert: 08.11.2026')).toBeTruthy();
+  });
+
+  it('shows an offline last-updated instant with its time', async () => {
+    await renderWithIntl(<OfflineBanner lastUpdated="2026-11-08T12:00:00Z" />);
+    expect(screen.getByText(/^Last updated 8 Nov 2026, \d{2}:00$/)).toBeTruthy();
   });
 
   it('allows an empty-state action', async () => {
     const onAction = jest.fn();
-    await render(<EmptyState actionLabel="Add" onAction={onAction} />);
+    await renderWithIntl(<EmptyState actionLabel="Add" onAction={onAction} />);
     await fireEvent.press(screen.getByRole('button', { name: 'Add' }));
     expect(onAction).toHaveBeenCalledTimes(1);
   });
 
   it('does not render a dismissed conflict dialog', async () => {
-    await render(
+    await renderWithIntl(
       <ConflictDialog
         visible={false}
         onClose={() => {}}
@@ -111,14 +124,9 @@ describe('feedback states', () => {
   it('offers review and discard in a visible conflict dialog', async () => {
     const onReview = jest.fn();
     const onDiscard = jest.fn();
-    await render(
-      <ConflictDialog
-        visible
-        locale="en"
-        onClose={() => {}}
-        onReview={onReview}
-        onDiscard={onDiscard}
-      />,
+    await renderWithIntl(
+      <ConflictDialog visible onClose={() => {}} onReview={onReview} onDiscard={onDiscard} />,
+      'en',
     );
     await fireEvent.press(screen.getByRole('button', { name: 'Review and save again' }));
     await fireEvent.press(screen.getByRole('button', { name: 'Discard my edit' }));
@@ -131,10 +139,11 @@ describe('feedback states', () => {
     ['BottomSheet', BottomSheet],
   ] as const)('%s shows its title and closes', async (_name, Component) => {
     const onClose = jest.fn();
-    await render(
-      <Component title="Sample" visible onClose={onClose} locale="de-CH">
+    await renderWithIntl(
+      <Component title="Sample" visible onClose={onClose}>
         <></>
       </Component>,
+      'de-CH',
     );
     expect(screen.getByRole('header', { name: 'Sample' })).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: 'Schliessen' }));
