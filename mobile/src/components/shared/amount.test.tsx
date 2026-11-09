@@ -22,18 +22,18 @@ describe('UX-03 normative DecimalString amount formatting', () => {
     [{ value: '-1234.5', currency: 'CHF', locale: 'de-CH', masked: true }, '••••'],
     [{ value: null, currency: 'CHF', locale: 'de-CH' }, '–'],
     [{ value: '12.30', currency: 'CHF', locale: 'de-CH', valueKnown: false }, '–'],
-  ] as const)('%j gives %s', (options, expected) => {
+  ] as const)('%j gives %s', async (options, expected) => {
     expect(displayAmount(options)).toBe(expected);
   });
-  it.each([1234.5, '1e3', '1,5', ' 1', '1.', '+1', ''])('rejects invalid decimal %j', (value) => {
+  it.each([1234.5, '1e3', '1,5', ' 1', '1.', '+1', ''])('rejects invalid decimal %j', async (value) => {
     expect(() => displayAmount({ value: value as string, currency: 'CHF' })).toThrow(TypeError);
   });
-  it('never exposes a hidden amount through accessibility text', () => {
-    render(<Amount value="1234.56" currency="CHF" locale="en" masked />);
+  it('never exposes a hidden amount through accessibility text', async () => {
+    await render(<Amount value="1234.56" currency="CHF" locale="en" masked />);
     expect(screen.getByText('••••').props.accessibilityLabel).toBe('Amount hidden');
     expect(JSON.stringify(screen.toJSON())).not.toContain('1234');
   });
-  it('reads unknown values as unknown rather than zero', () => {
+  it('reads unknown values as unknown rather than zero', async () => {
     expect(accessibleAmount({ value: null, currency: 'EUR', locale: 'de-DE' })).toBe('Wert unbekannt');
   });
 });
