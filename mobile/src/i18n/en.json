@@ -281,5 +281,6 @@
   "txn.confirmDelete": "Confirm deletion",
   "txn.adjustmentLocked": "Change this through reconciliation.",
   "txn.archived": "Restore the account to change its transactions.",
-  "txn.openAccount": "Open other account"
+  "txn.openAccount": "Open other account",
+  "txn.source.unknown": "Source unknown"
 }
