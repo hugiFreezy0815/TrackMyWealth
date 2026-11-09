@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { onlineManager } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native';
@@ -30,7 +30,7 @@ export type TransactionDetailProps = {
   onAccount?: (id: string) => void;
 };
 
-function DetailLabel({ children }: { children: string }) {
+function DetailLabel({ children }: { children: ReactNode }) {
   const theme = useTheme();
   return <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>{children}</Text>;
 }
