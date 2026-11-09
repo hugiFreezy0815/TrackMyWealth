@@ -263,7 +263,7 @@
   "txn.fxRate": "Wechselkurs",
   "txn.history.title": "Änderungsverlauf",
   "txn.history.more": "Mehr Verlauf laden",
-  "txn.history.imported": "Aus einem Auszug importiert",
+  "txn.history.imported": "Aus {format}-Auszug vom {date} importiert",
   "txn.history.created": "Erfasst von {actor}",
   "txn.history.assigned": "Kategorie automatisch zugewiesen: {to}",
   "txn.history.changed": "Kategorie: {from} → {to} · {actor}",
