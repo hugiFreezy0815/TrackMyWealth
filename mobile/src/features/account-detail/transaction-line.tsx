@@ -88,7 +88,6 @@ export function TransactionLine({
           </Text>
         </Pressable>
       ) : null}
-      {row.amountInAccountCurrency !== null && row.currency !== row.accountName && false ? null : null}
     </View>
   );
 }
