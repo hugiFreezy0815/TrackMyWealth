@@ -1,4 +1,11 @@
+// First import: the Hermes Intl polyfills (and the device locale read before them), ADR 0008.
+import '@/i18n/polyfills';
+
 import { useEffect, useState } from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
+
+import { configureQueryEnvironment, queryClient } from '@/api/queries/client';
+import { AppIntlProvider } from '@/i18n';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { View, useColorScheme } from 'react-native';
@@ -19,30 +26,43 @@ export default function TabLayout() {
   const [restoring, setRestoring] = useState(true);
 
   useEffect(() => {
+    const stopQueryEnvironment = configureQueryEnvironment();
     const unsubscribe = subscribeSession(() => setSession(sessionSnapshot()));
     // The stored session belongs to the configured server, so that address comes first.
     loadServerUrl()
       .then(restoreSession)
       .catch(() => undefined)
       .finally(() => setRestoring(false));
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      stopQueryEnvironment();
+    };
   }, []);
 
+  useEffect(() => {
+    // A cache must never expose the previous member's financial data after sign-out.
+    if (!session.signedIn) queryClient.clear();
+  }, [session.signedIn]);
+
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      {restoring ? (
-        <View accessibilityLabel="Restoring session">
-          <ThemedText>Restoring session…</ThemedText>
-        </View>
-      ) : session.signedIn ? (
-        <>
-          <SessionBar identity={session.identity} />
-          <AppTabs identity={session.identity} />
-        </>
-      ) : (
-        <AuthScreen mfaRequired={session.mfaRequired} />
-      )}
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <AppIntlProvider language={session.identity?.language}>
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <AnimatedSplashOverlay />
+          {restoring ? (
+            <View accessibilityLabel="Restoring session">
+              <ThemedText>Restoring session…</ThemedText>
+            </View>
+          ) : session.signedIn ? (
+            <>
+              <SessionBar identity={session.identity} />
+              <AppTabs identity={session.identity} />
+            </>
+          ) : (
+            <AuthScreen mfaRequired={session.mfaRequired} />
+          )}
+        </ThemeProvider>
+      </AppIntlProvider>
+    </QueryClientProvider>
   );
 }
