@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useState, useSyncExternalStore, type ReactNode } from 'react';
 import { onlineManager } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native';
@@ -20,7 +20,7 @@ import { formatDate, formatDateTime } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
 import {
   canChangeCategory, canRemove, categoryLabel, historyDescription, transactionTitle,
-  type Category, type Transaction,
+  type Category,
 } from './model';
 
 export type TransactionDetailProps = {
@@ -45,7 +45,6 @@ function CategoryPicker({
   const theme = useTheme();
   const [search, setSearch] = useState('');
   const german = intl.locale.startsWith('de');
-  useEffect(() => { if (visible) setSearch(''); }, [visible]);
   const choices = categories.filter((category) => {
     if (!category.active || category.code === 'UNCATEGORIZED') return false;
     const label = categoryLabel(category, categories.find((candidate) => candidate.id === category.parentId), german);
@@ -312,9 +311,9 @@ export function TransactionDetail({ accountId, transactionId, onBack, onAccount 
       </View> : transaction.reconciliationAdjustment ? <Text style={{ color: theme.textSecondary }}>
         {intl.formatMessage({ id: 'txn.adjustmentLocked' })}
       </Text> : null}
-      <CategoryPicker visible={picker} categories={categories.data ?? []}
+      {picker ? <CategoryPicker visible categories={categories.data ?? []}
         selected={selectedCategory} busy={locked} onClose={() => setPicker(false)}
-        onSelect={(id) => void saveCategory(id)} />
+        onSelect={(id) => void saveCategory(id)} /> : null}
       <Dialog visible={confirmRemove} onClose={() => setConfirmRemove(false)} title={intl.formatMessage({ id: 'txn.delete' })}>
         <Text style={{ color: theme.textPrimary }}>
           {intl.formatMessage({ id: transaction.removal === 'VOID' ? 'txn.deleteVoidConfirm' : 'txn.deleteSoftConfirm' })}
