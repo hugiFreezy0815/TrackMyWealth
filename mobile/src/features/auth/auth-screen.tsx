@@ -7,8 +7,10 @@ import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/hooks/use-theme';
 
 import { cancelMfa, signIn, verifyMfa } from './session';
+import { authCopy } from './auth-copy';
 
 export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
+  const copy = authCopy();
   const [server, setServer] = useState(getApiBaseUrl);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,7 +32,7 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
         setPassword('');
       }
     } catch (failure) {
-      setError(errorMessage(failure));
+      setError(errorMessage(failure, copy));
     } finally {
       setCode('');
       setBusy(false);
@@ -48,11 +50,11 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
         <ThemedText type="smallBold" style={styles.brand}>TrackMyWealth</ThemedText>
-      <ThemedText type="subtitle">{mfaRequired ? 'Verify sign-in' : 'Sign in'}</ThemedText>
+      <ThemedText type="subtitle">{mfaRequired ? copy.verifySignIn : copy.signIn}</ThemedText>
       {!mfaRequired ? (
         <>
           <LabeledField
-            label="Server"
+            label={copy.server}
             placeholder="https://wealth.example.com"
             autoCapitalize="none"
             autoCorrect={false}
@@ -61,7 +63,7 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
             onChangeText={setServer}
           />
           <LabeledField
-            label="Email"
+            label={copy.email}
             autoCapitalize="none"
             autoComplete="email"
             keyboardType="email-address"
@@ -69,7 +71,7 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
             onChangeText={setEmail}
           />
           <LabeledField
-            label="Password"
+            label={copy.password}
             secureTextEntry
             autoComplete="password"
             value={password}
@@ -78,7 +80,7 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
         </>
       ) : (
         <LabeledField
-          label="Authenticator code"
+          label={copy.authenticatorCode}
           keyboardType="number-pad"
           autoComplete="one-time-code"
           maxLength={6}
@@ -90,12 +92,12 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
       <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }}
         style={[styles.submit, busy && styles.disabled]} onPress={() => void submit()} disabled={busy}>
         {busy ? <ActivityIndicator color="#FFFFFF" /> :
-          <ThemedText style={styles.submitText}>{mfaRequired ? 'Verify code' : 'Sign in'}</ThemedText>}
+          <ThemedText style={styles.submitText}>{mfaRequired ? copy.verifyCode : copy.signIn}</ThemedText>}
       </Pressable>
       {mfaRequired && (
         <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }}
           style={styles.back} onPress={startOver} disabled={busy}>
-          <ThemedText type="smallBold">Start over</ThemedText>
+          <ThemedText type="smallBold">{copy.startOver}</ThemedText>
         </Pressable>
       )}
       </View>
@@ -103,13 +105,13 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
   );
 }
 
-function errorMessage(failure: unknown): string {
+function errorMessage(failure: unknown, copy: ReturnType<typeof authCopy>): string {
   if (failure instanceof InvalidServerUrlError) return failure.message;
   // Not the credentials' fault: saying so would send the user hunting for a typo.
   if (failure instanceof NetworkError) {
-    return 'Could not reach the server. Check the server address and your connection.';
+    return copy.networkError;
   }
-  return 'Could not sign in. Check your credentials or verification code.';
+  return copy.signInError;
 }
 
 /** A visible label above the input; the same text is its accessible name. */
