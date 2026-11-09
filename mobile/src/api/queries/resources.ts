@@ -151,6 +151,60 @@ export const useTransaction = (accountId: string, transactionId: string) =>
       }),
     enabled: !!accountId && !!transactionId,
   });
+/** S4: history pages stay independent of the main transaction list. */
+export const useTransactionHistory = (accountId: string, transactionId: string) =>
+  useInfiniteQuery({
+    queryKey: queryKeys.transactionHistory(accountId, transactionId),
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => typedApi.get(
+      '/api/v1/accounts/{accountId}/transactions/{transactionId}/history',
+      { params: { accountId, transactionId }, query: { page: pageParam, size: 50, sort: ['occurredAt,desc'] } },
+    ),
+    getNextPageParam: (last) =>
+      last.page.number + 1 < last.page.totalPages ? last.page.number + 1 : undefined,
+    enabled: !!accountId && !!transactionId,
+  });
+
+export const useSecurity = (securityId: string) =>
+  useQuery({
+    queryKey: queryKeys.security(securityId),
+    queryFn: () => typedApi.get('/api/v1/securities/{id}', { params: { id: securityId } }),
+    enabled: !!securityId,
+  });
+
+/** Updating S4 invalidates S3 page zero, counts, totals and history. */
+export function useTransactionDetailActions(accountId: string, transactionId: string) {
+  const client = useQueryClient();
+  const sync = async (updated?: Awaited<ReturnType<typeof typedApi.get<'/api/v1/accounts/{accountId}/transactions/{transactionId}'>>>) => {
+    if (updated) client.setQueryData(queryKeys.transaction(accountId, transactionId), updated);
+    await invalidateFinancialData(client);
+    await client.invalidateQueries({ queryKey: queryKeys.transactionHistory(accountId, transactionId) });
+  };
+  const setCategory = useMutation({
+    mutationFn: ({ categoryId, version }: { categoryId: string; version: number }) =>
+      typedApi.put('/api/v1/accounts/{accountId}/transactions/{transactionId}/category', {
+        params: { accountId, transactionId }, body: { categoryId }, version: ifMatch({ version }),
+      }),
+    onSuccess: (updated) => sync(updated),
+  });
+  const resetCategory = useMutation({
+    mutationFn: ({ version }: { version: number }) =>
+      typedApi.delete('/api/v1/accounts/{accountId}/transactions/{transactionId}/category', {
+        params: { accountId, transactionId }, version: ifMatch({ version }),
+      }),
+    onSuccess: (updated) => sync(updated),
+  });
+  const remove = useMutation({
+    mutationFn: ({ version, reason }: { version: number; reason?: string }) =>
+      typedApi.delete('/api/v1/accounts/{accountId}/transactions/{transactionId}', {
+        params: { accountId, transactionId }, version: ifMatch({ version }),
+        query: reason ? { reason } : {},
+      }),
+    onSuccess: () => sync(),
+  });
+  return { setCategory, resetCategory, remove };
+}
+
 export const useCategories = (includeInactive = false) =>
   useQuery({
     queryKey: queryKeys.categories(includeInactive),
