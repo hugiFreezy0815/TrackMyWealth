@@ -715,13 +715,51 @@ class CategorizationControllerTest {
 
     assertThat(codeOf(reset.categoryId())).isEqualTo("GROCERIES");
     assertThat(reset.categoryAssignedBy()).isEqualTo("SOURCE_CODE");
+    assertThat(
+            jdbcUuid(
+                "SELECT assigned_by_user_id FROM transaction_categorization_log"
+                    + " WHERE transaction_id = ? AND is_reset = true",
+                recorded.id()))
+        .isEqualTo(jdbcUuid("SELECT id FROM app_user WHERE email = ?", "admin@example.com"));
+    assertThat(
+            jdbcValue(
+                "SELECT COUNT(*) FROM transaction_categorization_log"
+                    + " WHERE transaction_id = ? AND is_reset = true",
+                recorded.id()))
+        .isEqualTo(1L);
+
     createRule(token, "MERCHANT", "coop", defaultId("SHOPPING"), null);
     categorizationService.recategorizeWorkspace(workspaceOf(card.id()));
     assertThat(codeOf(categoryOf(recorded.id()))).isEqualTo("SHOPPING");
   }
 
-  // Nothing writes a log row for UNCATEGORIZED, so the override's row outlives it; it must stop
-  // counting - neither shown as USER nor protecting the row from the next run.
+  // US-07-38: the reset row keeps the rule it selected, so the next run finds the row unchanged and
+  // does not log the same decision again (which the history would show as a second assignment).
+  @Test
+  void aReRunAfterAResetToARuleWritesNothing() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
+    CategorizationRuleResponse rule =
+        createRule(token, "MERCHANT", "coop", defaultId("SHOPPING"), null);
+    TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", null);
+    setCategory(token, card.id(), recorded.id(), defaultId("LEISURE"));
+
+    TransactionResponse reset = resetCategory(token, card.id(), recorded.id());
+
+    assertThat(reset.categoryAssignedBy()).isEqualTo("RULE");
+    assertThat(
+            jdbcUuid(
+                "SELECT rule_id FROM transaction_categorization_log"
+                    + " WHERE transaction_id = ? AND is_reset = true",
+                recorded.id()))
+        .isEqualTo(rule.id());
+    assertThat(categorizationService.recategorizeWorkspace(workspaceOf(card.id()))).isZero();
+    assertThat(logAssignments(recorded.id())).containsExactlyInAnyOrder("RULE", "USER", "RULE");
+  }
+
+  // Before US-07-38 nothing wrote a log row for UNCATEGORIZED, so the override's row outlived it; a
+  // reset now writes RESET. Either way it must stop counting - neither shown as USER nor protecting
+  // the row from the next run.
   @Test
   void aResetThatLandsInUncategorizedNoLongerCountsAsAnOverride() {
     String token = bootstrapAdministrator();
@@ -733,6 +771,13 @@ class CategorizationControllerTest {
 
     assertThat(codeOf(reset.categoryId())).isEqualTo(UNCATEGORIZED);
     assertThat(reset.categoryAssignedBy()).isNull();
+    assertThat(
+            jdbcValue(
+                "SELECT COUNT(*) FROM transaction_categorization_log"
+                    + " WHERE transaction_id = ? AND is_reset = true AND assigned_by = 'RESET'",
+                recorded.id()))
+        .isEqualTo(1L);
+
     assertThat(assignedByInList(token, cash.id(), recorded.id())).isNull();
     createRule(token, "MERCHANT", "unknown shop", defaultId("LEISURE"), null);
     categorizationService.recategorizeWorkspace(workspaceOf(cash.id()));
@@ -759,6 +804,12 @@ class CategorizationControllerTest {
     TransactionResponse reset = resetCategory(token, card.id(), settlement.id());
     assertThat(reset.categoryId()).isNull();
     assertThat(reset.categoryAssignedBy()).isNull();
+    assertThat(
+            jdbcValue(
+                "SELECT COUNT(*) FROM transaction_categorization_log"
+                    + " WHERE transaction_id = ? AND is_reset = true AND category_id IS NULL",
+                settlement.id()))
+        .isEqualTo(1L);
   }
 
   @Test

@@ -253,9 +253,9 @@ public interface TransactionRepository
               // workspace's history); the explicit >= keeps the exact configured threshold.
               + " AND t.merchant_description % :merchant"
               + " AND similarity(t.merchant_description, :merchant) >= :threshold"
-              // The latest log row counts only while it still describes the current category: a
-              // reset to automatic that landed in UNCATEGORIZED writes no row of its own
-              // (US-08-02).
+              // The latest log row counts only while it still describes the current category: an
+              // older reset to automatic that landed in UNCATEGORIZED wrote no row of its own
+              // (US-08-02); a newer one writes RESET (US-07-38), which the IN list leaves out.
               + " AND (SELECT CASE WHEN l.category_id = t.category_id THEN l.assigned_by END"
               + " FROM transaction_categorization_log l WHERE l.transaction_id = t.id"
               + " ORDER BY l.assigned_at DESC, l.id DESC LIMIT 1) IN ('RULE', 'USER')"
@@ -452,6 +452,26 @@ public interface TransactionRepository
           + " group by s.id")
   List<KeyedAmount> sumAmountBookedAfterSnapshots(
       @Param("snapshotIds") Collection<UUID> snapshotIds, @Param(AS_OF) LocalDate asOf);
+
+  /**
+   * #482: backward-compatible reconciliation for newest snapshots that predate persisted results.
+   * The ledger window starts at each account's opening balance and ends at its own newest
+   * observation. This is the batched counterpart of sumAmountByAccountIdBookedAfter.
+   */
+  @Query(
+      "select new com.trackmywealth.backend.dto.KeyedAmount(observed.id, "
+          + LEDGER_SUM
+          + ") from AccountSnapshot observed, AccountSnapshot opening, Transaction t"
+          + " where observed.id in :snapshotIds"
+          + " and opening.account.id = observed.account.id and opening.openingBalance = true"
+          + " and t.account.id = observed.account.id"
+          + " and (t.bookingDate > opening.snapshotDate"
+          + " or (t.bookingDate = opening.snapshotDate and t.reconciliationResultId is not null"
+          + " and t.createdAt > coalesce(opening.updatedAt, opening.createdAt)))"
+          + " and t.bookingDate <= observed.snapshotDate"
+          + " group by observed.id")
+  List<KeyedAmount> sumAmountAfterOpeningsForObservedSnapshots(
+      @Param("snapshotIds") Collection<UUID> snapshotIds);
 
   /**
    * US-25-04: the earliest booking date of the account's live rows - neither voided nor a reversal

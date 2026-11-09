@@ -153,8 +153,8 @@ broken screen.
   card; the flag also blocks screenshots and recordings of the app). The package's
   screenshot-listener permissions are blocked in app.json. Web cannot protect browser
   thumbnails; Hide amounts is the protection there.
-- **Copy** comes from `src/i18n/*.json` via react-intl. ESLint fails literal JSX text in
-  `src/app`, `features/shell`, `features/privacy` and `features/auth`.
+- **Copy** comes from `src/i18n/*.json` via react-intl. ESLint fails literal UI strings in
+  `src/app` and `src/features` (legacy reference-data and imports migrate with their tickets).
 
 ## Status
 

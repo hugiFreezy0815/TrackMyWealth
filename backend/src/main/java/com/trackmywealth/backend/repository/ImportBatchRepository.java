@@ -51,6 +51,13 @@ public interface ImportBatchRepository extends JpaRepository<ImportBatch, UUID> 
   List<ImportBatch> findByAccountIdAndStatusAndFileSha256InOrderByCommittedAtDesc(
       UUID accountId, String status, Collection<String> fileSha256s);
 
+  /**
+   * Most recent still-committed import across a portfolio's active account ids, bounded to one row
+   * by the pageable. The id is a deterministic tie-breaker for simultaneous commits.
+   */
+  List<ImportBatch> findByAccountIdInAndStatusOrderByCommittedAtDescIdDesc(
+      Collection<UUID> accountIds, String status, Pageable pageable);
+
   /** How many of the account's batches are in one of {@code statuses}. */
   long countByAccountIdAndStatusIn(UUID accountId, Collection<String> statuses);
 }

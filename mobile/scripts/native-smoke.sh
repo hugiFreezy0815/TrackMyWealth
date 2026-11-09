@@ -60,8 +60,11 @@ case "$platform" in
     xcrun simctl launch "$device" "$app_id"
     sleep "$settle_seconds"
     xcrun simctl io "$device" screenshot smoke/ios-home.png
-    xcrun simctl spawn "$device" launchctl list | grep -q "$app_id" ||
-      fail "app is not running after launch"
+    # Read the whole list before searching it. Piped into `grep -q`, launchctl gets SIGPIPE when
+    # grep exits on the match before the rest is written, and pipefail then reports a running app
+    # as not running (#529's red iOS run, 2026-11-08).
+    services=$(xcrun simctl spawn "$device" launchctl list)
+    grep -q "$app_id" <<<"$services" || fail "app is not running after launch"
     xcrun simctl spawn "$device" log show --last 2m --predicate "process == 'TrackMyWealth'" \
       >smoke/ios-log.txt || true
     ;;

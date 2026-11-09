@@ -3,34 +3,8 @@ const { defineConfig } = require('eslint/config');
 const expoConfig = require('eslint-config-expo/flat');
 const prettierConfig = require('eslint-config-prettier');
 
-// Flat config replaces a rule's options per file instead of merging them, so every block that sets
-// no-restricted-imports or no-restricted-syntax repeats the shared entries below; otherwise a later
-// block would silently drop an earlier block's checks for its files.
-
-// US-29-05 (#375): app code calls the API through typedApi, whose paths and types come from the
-// contract; the untyped transport stays inside src/api (and its tests).
-const TYPED_API_ONLY = {
-  name: '@/api/client',
-  importNames: ['api', 'request'],
-  message: 'Call the API through typedApi (@/api/typed-api): its types are generated.',
-};
-// FR-CLI-005: an amount rendered without PrivacyAmount would ignore "Hide amounts".
-const PRIVATE_AMOUNTS_ONLY = {
-  name: '@/format/amount',
-  importNames: ['formatAmount', 'a11yAmount'],
-  message:
-    'Render money with PrivacyAmount (@/features/privacy/privacy-amount): it honours "Hide amounts" (FR-CLI-005).',
-};
-
-// #452: a newer self-hosted backend can send an enum value this app does not know, and the
-// generated union cannot stop that at runtime. ESLint names the file and line of each break:
-// - every switch has a default branch (ESLint cannot tell an API enum switch from another, so the
-//   rule covers all of them; the app has no switch that would need an exception);
-// - that default does not throw, which would crash the screen on the new value: it renders the
-//   neutral fallback instead (labelFor in @/api/enum-label);
-// - a display map (a *_LABELS, *_ICONS or *_COLORS constant) is read through labelFor, never
-//   indexed directly, so an unknown value gets the fallback instead of undefined.
-const ENUM_FALLBACK_SELECTORS = [
+// #452: kept in one place because two blocks below set no-restricted-syntax.
+const ENUM_FALLBACK_SYNTAX = [
   {
     selector:
       'SwitchCase:not([test]) > ThrowStatement, SwitchCase:not([test]) > BlockStatement > ThrowStatement',
@@ -44,19 +18,32 @@ const ENUM_FALLBACK_SELECTORS = [
       'Read an API enum display map through labelFor (@/api/enum-label), so an unknown value gets the neutral fallback (#452).',
   },
 ];
-const NO_LITERAL_UI_TEXT = {
-  selector: 'JSXText[value=/\\S/]',
-  message: 'Use an ICU message from src/i18n instead of a literal UI string.',
+
+const LITERAL_UI_STRING_MESSAGE =
+  'Use an ICU message from src/i18n instead of a literal UI string.';
+const LITERAL_UI_STRING_SYNTAX = [
+  'JSXText[value=/[A-Za-zÀ-ÿ]/]',
+  'JSXExpressionContainer > Literal[value=/[A-Za-zÀ-ÿ]/]',
+  'JSXExpressionContainer > TemplateLiteral > TemplateElement[value.raw=/[A-Za-zÀ-ÿ]/]',
+  'JSXAttribute[name.name=/^(accessibilityLabel|accessibilityHint|aria-label|placeholder|title|label)$/] > Literal',
+].map((selector) => ({ selector, message: LITERAL_UI_STRING_MESSAGE }));
+
+// Flat config also replaces no-restricted-imports options per file, so both entries live here and
+// every block that sets the rule lists the ones its files need.
+// US-29-05 (#375): app code calls the API through typedApi, whose paths and types come from the
+// contract; the untyped transport stays inside src/api (and its tests).
+const TYPED_API_ONLY = {
+  name: '@/api/client',
+  importNames: ['api', 'request'],
+  message: 'Call the API through typedApi (@/api/typed-api): its types are generated.',
 };
-const TESTS = '**/*.test.{ts,tsx}';
-// Screens that render only catalogue copy (sprint-7 rule "no literal UI strings"). Legacy
-// reference-data and imports are migrated when their own sprint-7 tickets restyle them.
-const CATALOGUE_ONLY_FILES = [
-  'src/app/**/*.tsx',
-  'src/features/shell/**/*.tsx',
-  'src/features/privacy/**/*.tsx',
-  'src/features/auth/**/*.tsx',
-];
+// FR-CLI-005 / #487: an amount rendered without PrivacyAmount would ignore "Hide amounts".
+const PRIVATE_AMOUNTS_ONLY = {
+  name: '@/format/amount',
+  importNames: ['formatAmount', 'a11yAmount'],
+  message:
+    'Render money with PrivacyAmount (@/features/privacy/privacy-amount): it honours "Hide amounts" (FR-CLI-005).',
+};
 
 module.exports = defineConfig([
   expoConfig,
@@ -74,31 +61,45 @@ module.exports = defineConfig([
   },
   {
     files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/api/**', TESTS],
+    ignores: ['src/api/**', '**/*.test.{ts,tsx}'],
     rules: {
       'no-restricted-imports': ['error', { paths: [TYPED_API_ONLY, PRIVATE_AMOUNTS_ONLY] }],
     },
   },
   {
-    // The one component allowed to format money; it applies the privacy mask itself.
+    // The one component that formats money; it applies the privacy mask itself.
     files: ['src/features/privacy/privacy-amount.tsx'],
     rules: {
       'no-restricted-imports': ['error', { paths: [TYPED_API_ONLY] }],
     },
   },
   {
+    // #452: a newer self-hosted backend can send an enum value this app does not know, and the
+    // generated union cannot stop that at runtime. ESLint names the file and line of each break:
+    // - every switch has a default branch (ESLint cannot tell an API enum switch from another, so
+    //   the rule covers all of them; the app has no switch that would need an exception);
+    // - that default does not throw, which would crash the screen on the new value: it renders the
+    //   neutral fallback instead (labelFor in @/api/enum-label);
+    // - a display map (a *_LABELS, *_ICONS or *_COLORS constant) is read through labelFor, never
+    //   indexed directly, so an unknown value gets the fallback instead of undefined.
     files: ['src/**/*.{ts,tsx}'],
-    ignores: [TESTS, 'src/api/schema.d.ts', 'src/api/enum-label.ts'],
+    ignores: ['**/*.test.{ts,tsx}', 'src/api/schema.d.ts', 'src/api/enum-label.ts'],
     rules: {
       'default-case': 'error',
-      'no-restricted-syntax': ['error', ...ENUM_FALLBACK_SELECTORS],
+      'no-restricted-syntax': ['error', ...ENUM_FALLBACK_SYNTAX],
     },
   },
   {
-    files: CATALOGUE_ONLY_FILES,
-    ignores: [TESTS, 'src/app/reference-data.tsx'],
+    // ADR 0008 / #486: feature screens render ICU messages from src/i18n; literal copy (JSX text,
+    // accessibility props, string expressions) belongs in the catalogues. Flat config replaces a
+    // rule's options per file instead of merging them, so this block repeats the #452 selectors.
+    // The legacy screens below predate the catalogues; their sprint-7 tickets migrate them and
+    // delete the entry here.
+    // Routes render screens too (#487 migrated auth and the shell routes).
+    files: ['src/features/**/*.{ts,tsx,jsx}', 'src/app/**/*.{ts,tsx,jsx}'],
+    ignores: ['**/*.test.{ts,tsx}', 'src/features/reference-data/**', 'src/features/imports/**'],
     rules: {
-      'no-restricted-syntax': ['error', ...ENUM_FALLBACK_SELECTORS, NO_LITERAL_UI_TEXT],
+      'no-restricted-syntax': ['error', ...ENUM_FALLBACK_SYNTAX, ...LITERAL_UI_STRING_SYNTAX],
     },
   },
   {

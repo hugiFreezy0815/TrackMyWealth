@@ -37,6 +37,7 @@ import org.jspecify.annotations.Nullable;
  * @param valueStatus the worst {@link ValueStatus} of the portfolio's accounts in either total's
  *     currency; {@code CURRENT} for a portfolio without accounts
  * @param asOf the business date every value is taken on
+ * @param institutionName the catalogue institution's display name; null without a catalogue link
  */
 public record PortfolioListItemResponse(
     UUID id,
@@ -56,4 +57,5 @@ public record PortfolioListItemResponse(
     BigDecimal totalInWorkspaceCurrency,
     boolean complete,
     ValueStatus valueStatus,
-    LocalDate asOf) {}
+    LocalDate asOf,
+    @Nullable String institutionName) {}

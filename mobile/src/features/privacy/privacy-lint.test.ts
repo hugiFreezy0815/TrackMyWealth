@@ -1,7 +1,8 @@
-// The sprint-7 lint guards: money is rendered only through PrivacyAmount (FR-CLI-005), and shell,
-// privacy, auth and route screens render catalogue copy only. Flat config replaces a rule's options
-// per file, so these snippets also prove the #452 enum checks and the typedApi rule survive in the
-// files that get the extra rules. Runs ESLint in a child process, as src/api/enum-lint.test.ts does.
+// #487 lint guards: money is rendered only through PrivacyAmount (FR-CLI-005), and route files
+// render catalogue copy only (src/i18n/ui-string-lint.test.ts covers src/features). Flat config
+// replaces a rule's options per file, so these snippets also prove the #452 enum checks and the
+// typedApi rule survive where the extra rules apply. Runs ESLint in a child process, as
+// src/api/enum-lint.test.ts does.
 
 type ChildProcess = {
   spawnSync: (

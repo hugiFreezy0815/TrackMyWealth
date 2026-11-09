@@ -347,6 +347,7 @@ class PortfolioListControllerTest {
     assertThat(rows.get(0).institutionType()).isEqualTo("PERSONAL_ASSETS");
     assertSameAs(rows.get(1), fromCatalogue);
     assertThat(rows.get(1).catalogueInstitutionId()).isEqualTo(postFinanceEntry);
+    assertThat(rows.get(1).institutionName()).isEqualTo("PostFinance");
     assertSameAs(rows.get(2), custom);
     assertThat(rows.get(2).logoUrl()).isEqualTo("https://example.com/logo.png");
     assertThat(rows.get(2).country()).isEqualTo("DE");

@@ -109,7 +109,7 @@ export function useCommitImport(accountId: string, batchId: string) {
         params: { accountId, batchId },
         version: ifMatch(resource),
       }),
-    onSuccess: () => invalidateFinancialData(client, accountId, batchId),
+    onSuccess: () => invalidateFinancialData(client),
   });
 }
 export function useRollbackImport(accountId: string, batchId: string) {
@@ -121,6 +121,6 @@ export function useRollbackImport(accountId: string, batchId: string) {
         version: ifMatch(resource),
         body: { reason },
       }),
-    onSuccess: () => invalidateFinancialData(client, accountId, batchId),
+    onSuccess: () => invalidateFinancialData(client),
   });
 }

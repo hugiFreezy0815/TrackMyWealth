@@ -90,6 +90,23 @@ async function send(url: string, init: RequestInit): Promise<Response> {
  * the session on a 401, ApiError and NetworkError. Features call typedApi (typed-api.ts), whose
  * types come from the contract; they never name a path or a type by hand.
  */
+/**
+ * RFC 9110 `Retry-After`: delay-seconds or an HTTP-date. Returns seconds from now (never negative),
+ * or undefined when the header is missing or unreadable.
+ */
+export function parseRetryAfter(
+  header: string | null | undefined,
+  now = Date.now(),
+): number | undefined {
+  const value = header?.trim();
+  if (!value) return undefined;
+  if (/^\d+$/.test(value)) return Number(value);
+  // Only an HTTP-date (it names a weekday); Date.parse also reads "2" or "2.5" as a year.
+  if (!/^[A-Za-z]{3},/.test(value)) return undefined;
+  const at = Date.parse(value);
+  return Number.isNaN(at) ? undefined : Math.max(0, (at - now) / 1000);
+}
+
 export async function request<T>(
   path: string,
   options: RequestOptions = {},
@@ -122,18 +139,11 @@ export async function request<T>(
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => undefined);
-    const retryAfter = response.headers?.get?.('Retry-After');
-    const retryAfterSeconds =
-      retryAfter && /^\\d+$/.test(retryAfter)
-        ? Number(retryAfter)
-        : retryAfter
-          ? Math.max(0, (Date.parse(retryAfter) - Date.now()) / 1000)
-          : undefined;
     throw new ApiError(
       `${options.method ?? 'GET'} ${path} failed with ${response.status}`,
       response.status,
       errorBody,
-      Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : undefined,
+      parseRetryAfter(response.headers?.get?.('Retry-After')),
     );
   }
 

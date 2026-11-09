@@ -176,6 +176,8 @@ async function clearSession(): Promise<void> {
   challenge = null;
   identity = null;
   setAccessToken(null);
+  // Drop the member's financial data: stop requests in flight, then empty the cache.
+  void queryClient.cancelQueries();
   queryClient.clear();
   changed();
   try {

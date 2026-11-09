@@ -15,6 +15,7 @@ import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountCreditCard;
 import com.trackmywealth.backend.entity.Transaction;
+import com.trackmywealth.backend.entity.TransactionCategorizationLog;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountCreditCardRepository;
@@ -728,10 +729,14 @@ public class TransactionService {
         transactions.stream()
             .filter(transaction -> transaction.getCategoryId() != null)
             .collect(Collectors.toMap(Transaction::getId, Transaction::getCategoryId));
-    // A latest row that no longer describes the current category (e.g. an override reset to
-    // UNCATEGORIZED) says nothing about how the category was assigned.
+    // A latest row that no longer describes the current category, or a member's reset that assigned
+    // nothing (US-07-38), says nothing about how the category was assigned.
     return categorizationLogRepository.findLatestAssignments(categorized).stream()
-        .filter(latest -> latest.describes(currentCategory.get(latest.getTransactionId())))
+        .filter(
+            latest ->
+                latest.describes(currentCategory.get(latest.getTransactionId()))
+                    && !TransactionCategorizationLog.ASSIGNED_BY_RESET.equals(
+                        latest.getAssignedBy()))
         .collect(
             Collectors.toMap(
                 LatestCategoryAssignment::getTransactionId,
@@ -780,7 +785,7 @@ public class TransactionService {
     versionPreconditionService.requireCurrent(
         expectedVersion, transaction.getVersion(), VERSIONED_RESOURCE);
     if (categorizationService.isOverridden(transaction)) {
-      categorizationService.resetToAutomatic(transaction);
+      categorizationService.resetToAutomatic(transaction, actor);
     }
     return toResponse(
         transaction, latestAssignments(List.of(transaction)).get(transaction.getId()));
@@ -822,14 +827,28 @@ public class TransactionService {
   @Transactional(readOnly = true)
   public TransactionResponse getTransaction(
       UUID accountId, UUID transactionId, AuthenticatedUserPrincipal actor) {
+    return toResponses(List.of(readableTransaction(accountId, transactionId, actor))).get(0);
+  }
+
+  /**
+   * US-07-38: authorizes a read of one transaction exactly as {@link #getTransaction} does - the
+   * account must be accessible and the row on it and not soft-deleted, else a non-enumerating 404 -
+   * without building its response. Returns the transaction's id.
+   */
+  @Transactional(readOnly = true)
+  public UUID requireReadableTransaction(
+      UUID accountId, UUID transactionId, AuthenticatedUserPrincipal actor) {
+    return readableTransaction(accountId, transactionId, actor).getId();
+  }
+
+  private Transaction readableTransaction(
+      UUID accountId, UUID transactionId, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account);
-    Transaction transaction =
-        transactionRepository
-            .findByIdAndAccountId(transactionId, accountId)
-            .orElseThrow(
-                () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
-    return toResponses(List.of(transaction)).get(0);
+    return transactionRepository
+        .findByIdAndAccountId(transactionId, accountId)
+        .orElseThrow(
+            () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
   }
 
   private Optional<Transaction> findReplay(UUID accountId, CreateTransactionRequest request) {
