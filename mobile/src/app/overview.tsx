@@ -18,6 +18,9 @@ export default function OverviewRoute() {
     <ShellScreen title={intl.formatMessage({ id: 'nav.overview' })}>
       <OverviewScreen
         onAddPortfolio={() => router.push('/portfolios/new' as Href)}
+        onPortfolio={(portfolioId) => router.push({
+          pathname: '/overview/[portfolioId]', params: { portfolioId },
+        })}
         onReviewAccount={(accountId) =>
           router.push({ pathname: '/accounts/[accountId]', params: { accountId } })
         }
