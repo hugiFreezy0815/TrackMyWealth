@@ -180,6 +180,35 @@ public class CashFlowService {
         pending.isEmpty() && allKnown);
   }
 
+  /**
+   * US-11-06: net external contribution over an arbitrary inclusive range, using exactly the
+   * income/spending rules of the monthly cash-flow endpoint. Internal transfers, card settlements,
+   * voided/deleted entries and pending review are excluded by the shared repository queries.
+   * Returns null (not a misleading zero) if a historical FX rate is unavailable.
+   *
+   * <p>The caller has already authorized the supplied account IDs. Only the contribution interval
+   * is read, not each chart point; FX is resolved on every transaction booking date.
+   */
+  @Transactional(readOnly = true)
+  public BigDecimal netContributions(
+      List<UUID> accountIds, LocalDate from, LocalDate to, String currency) {
+    if (accountIds.isEmpty() || from.isAfter(to)) {
+      return BigDecimal.ZERO;
+    }
+    List<Object[]> income =
+        transactionRepository.sumIncomeByDateAndCurrency(accountIds, INCOME_TYPES, from, to);
+    List<Object[]> spending =
+        transactionRepository.sumSpendingByDateAndCurrency(
+            accountIds, SPENDING_TYPES, from, to);
+    List<Object[]> all = Stream.concat(income.stream(), spending.stream()).toList();
+    if (all.isEmpty()) {
+      return BigDecimal.ZERO;
+    }
+    List<CurrencyAmount> converted = converted(all, currency, new HashMap<>());
+    CurrencyAmount contribution = converted.get(0);
+    return contribution.valueKnown() ? contribution.amount() : null;
+  }
+
   // US-10-02: with mortgage principal included, the loan is a saving account, so principal paid
   // from a non-saving account is saving; without it, principal paid out of a saving account is
   // money taken out of saving. Either way a payment between two alike accounts moves nothing; the
