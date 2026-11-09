@@ -58,4 +58,34 @@ public record PortfolioListItemResponse(
     boolean complete,
     ValueStatus valueStatus,
     LocalDate asOf,
-    @Nullable String institutionName) {}
+    @Nullable String institutionName,
+    @Nullable PortfolioPeriodChange change) {
+
+  /** Binary-compatible constructor for existing callers constructing a row without history. */
+  public PortfolioListItemResponse(
+      UUID id,
+      int version,
+      String name,
+      @Nullable UUID catalogueInstitutionId,
+      String institutionType,
+      @Nullable String country,
+      @Nullable String logoUrl,
+      PortfolioType portfolioType,
+      boolean portfolioTypeOverridden,
+      boolean personalAssetsDefault,
+      int activeAccountCount,
+      String portfolioCurrency,
+      BigDecimal total,
+      String workspaceCurrency,
+      BigDecimal totalInWorkspaceCurrency,
+      boolean complete,
+      ValueStatus valueStatus,
+      LocalDate asOf,
+      @Nullable String institutionName) {
+    this(
+        id, version, name, catalogueInstitutionId, institutionType, country, logoUrl,
+        portfolioType, portfolioTypeOverridden, personalAssetsDefault, activeAccountCount,
+        portfolioCurrency, total, workspaceCurrency, totalInWorkspaceCurrency, complete,
+        valueStatus, asOf, institutionName, null);
+  }
+}
