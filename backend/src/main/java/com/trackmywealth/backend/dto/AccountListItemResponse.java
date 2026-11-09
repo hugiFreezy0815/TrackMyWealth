@@ -20,6 +20,8 @@ import org.jspecify.annotations.Nullable;
  * @param currency the account's own currency: its native currency, or a card's billing currency
  * @param archived whether the account is archived: such an account is listed only with {@code
  *     archived=true} and counts towards no total
+ * @param hasTransactions whether the account keeps a transaction ledger (FR-ACC-010): only such an
+ *     account takes a statement import, so a client lists only these as import targets
  * @param balance the account's signed value in {@code currency}; {@code null} only when it has no
  *     value even in its own currency. It may be set while {@code valueKnown} is {@code false}: an
  *     account whose value has no FX rate into the workspace's currency still shows its own balance
@@ -47,6 +49,7 @@ public record AccountListItemResponse(
     String portfolioName,
     String currency,
     boolean archived,
+    boolean hasTransactions,
     @Nullable BigDecimal balance,
     String workspaceCurrency,
     @Nullable BigDecimal balanceInWorkspaceCurrency,

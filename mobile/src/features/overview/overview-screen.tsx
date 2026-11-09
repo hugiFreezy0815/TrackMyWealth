@@ -40,6 +40,7 @@ export type OverviewScreenProps = {
   onReviewAccount: (accountId: string) => void;
   onPortfolio?: (portfolioId: string) => void;
   missingPortfolioNotice?: boolean;
+  onImportStatement?: () => void;
 };
 
 /** S1 web layout: two columns from 1024 px, the right one 360 px wide. */
@@ -65,6 +66,7 @@ export function OverviewScreen({
   onReviewAccount,
   onPortfolio,
   missingPortfolioNotice = false,
+  onImportStatement,
 }: OverviewScreenProps) {
   const intl = useIntl();
   const theme = useTheme();
@@ -204,6 +206,16 @@ export function OverviewScreen({
           style={{ minHeight: 44, alignSelf: 'flex-start', justifyContent: 'center' }}
         >
           <Text style={{ color: theme.brandLink }}>{msg(intl, 'overview.refresh')}</Text>
+        </Pressable>
+      ) : null}
+      {onImportStatement ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={msg(intl, 'statement.title')}
+          onPress={onImportStatement}
+          style={{ minHeight: 44, alignSelf: 'flex-start', justifyContent: 'center' }}
+        >
+          <Text style={{ color: theme.brandLink }}>{msg(intl, 'statement.title')}</Text>
         </Pressable>
       ) : null}
       {!online ? (
