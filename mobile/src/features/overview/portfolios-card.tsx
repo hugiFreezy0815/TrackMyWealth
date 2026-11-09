@@ -1,5 +1,5 @@
 import type { IntlShape } from 'react-intl';
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { Amount, InstitutionLogo, SectionCard, ValueStatusBadge } from '@/components/shared';
 import { TypeScale } from '@/constants/theme';
@@ -15,18 +15,23 @@ export function PortfoliosCard({
   items,
   hidden,
   intl,
+  onPortfolio,
 }: {
   items: readonly Portfolio[];
   hidden: boolean;
   intl: IntlShape;
+  onPortfolio?: (id: string) => void;
 }) {
   const theme = useTheme();
   return (
     <SectionCard title={msg(intl, 'overview.portfolios')}>
       {items.length === 0 ? <InfoText>{msg(intl, 'overview.portfolio.empty')}</InfoText> : null}
       {items.map((item) => (
-        <View
+        <Pressable
           key={item.id}
+          accessibilityRole={onPortfolio ? 'button' : undefined}
+          accessibilityLabel={onPortfolio ? item.name : undefined}
+          onPress={onPortfolio ? () => onPortfolio(item.id) : undefined}
           style={{
             flexDirection: 'row',
             alignItems: 'flex-start',
@@ -53,7 +58,7 @@ export function PortfoliosCard({
                     currency: item.portfolioCurrency,
                   })}
             </InfoText>
-            <ValueStatusBadge status={item.valueStatus} />
+            <ValueStatusBadge status={item.valueStatus} interactive={!onPortfolio} />
             {!item.complete ? <InfoText warning>{msg(intl, 'total.incomplete')}</InfoText> : null}
           </View>
           {/* M03: the amounts sit right of the name; they never shrink, the name wraps. */}
@@ -76,7 +81,7 @@ export function PortfoliosCard({
               />
             ) : null}
           </View>
-        </View>
+        </Pressable>
       ))}
     </SectionCard>
   );
