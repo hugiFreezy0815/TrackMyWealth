@@ -209,5 +209,10 @@
   "account.corrected": "Corrected",
   "account.warning": "Check this transaction",
   "account.statementAdjustment": "Statement adjustment",
-  "account.notFound": "This account no longer exists or is not available to you"
+  "account.notFound": "This account no longer exists or is not available to you",
+  "account.date": "Date",
+  "account.description": "Description",
+  "account.category": "Category",
+  "account.amount": "Amount",
+  "account.estimatedFx": "Estimated exchange rate"
 }
