@@ -11,6 +11,7 @@ export type TransactionResultsProps = {
   byDate: boolean;
   onOpen: (id: string) => void;
   onCategory: (transaction: Transaction) => void;
+  selectedTransactionId?: string | null;
 };
 
 /** ADR 0007 Option B: a real semantic table on web, not a div-based imitation. */
@@ -20,6 +21,7 @@ export function TransactionResults({
   archived,
   onOpen,
   onCategory,
+  selectedTransactionId,
 }: TransactionResultsProps) {
   const intl = useIntl();
   const german = intl.locale.startsWith('de');
@@ -74,6 +76,7 @@ export function TransactionResults({
                 <td style={cellStyle}>
                   <button
                     type="button"
+                    aria-current={selectedTransactionId === transaction.id ? "true" : undefined}
                     style={{
                       border: 0,
                       background: 'transparent',
