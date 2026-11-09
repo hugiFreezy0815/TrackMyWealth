@@ -147,5 +147,22 @@
   "overview.liabilities.includesOne": "Includes {first}",
   "overview.explain.complete": "All available account values are included.",
   "overview.section.incomplete": "Not all values are included",
-  "overview.unknownSection": "Other"
+  "overview.unknownSection": "Other",
+  "setup.overviewName.title": "Name your overview",
+  "setup.overviewName.question": "What should the first tab be called?",
+  "setup.overviewName.label": "Name of your overview",
+  "setup.overviewName.optional": "Optional. You can change this any time in Settings.",
+  "setup.overviewName.tooLong": "Use at most {max} characters.",
+  "setup.overviewName.invalid": "This name cannot be saved. Please choose another.",
+  "setup.overviewName.count": "{count} of {max} characters",
+  "setup.overviewName.preview": "First tab preview",
+  "setup.overviewName.conflict.theirs": "Another member changed the name to: {name}",
+  "setup.overviewName.conflict.yours": "Your unsaved name: {name}",
+  "setup.overviewName.conflict.help": "Your text is still here. Review the latest name and save again.",
+  "setup.currency.label": "Display currency",
+  "setup.continue": "Continue",
+  "setup.skip": "Skip for now",
+  "settings.overviewName": "Name of your overview",
+  "settings.overviewName.save": "Save",
+  "settings.overviewName.clear": "Clear name"
 }
