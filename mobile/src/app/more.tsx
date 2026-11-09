@@ -9,7 +9,11 @@ export default function MoreRoute() {
   const router = useRouter();
   return (
     <ShellScreen title={intl.formatMessage({ id: 'nav.more' })}>
-      <Pressable accessibilityRole="button" style={styles.item} onPress={() => router.push('/settings')}>
+      <Pressable
+        accessibilityRole="button"
+        style={styles.item}
+        onPress={() => router.push('/settings')}
+      >
         <ThemedText>{intl.formatMessage({ id: 'nav.settings' })}</ThemedText>
       </Pressable>
     </ShellScreen>

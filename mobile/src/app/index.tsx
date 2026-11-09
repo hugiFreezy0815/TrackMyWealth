@@ -1,2 +1,4 @@
 import { Redirect } from 'expo-router';
-export default function IndexRoute() { return <Redirect href="/overview" />; }
+export default function IndexRoute() {
+  return <Redirect href="/overview" />;
+}

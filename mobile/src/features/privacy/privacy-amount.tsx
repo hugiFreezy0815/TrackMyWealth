@@ -14,10 +14,7 @@ export function PrivacyAmount({ value, currency, options, ...props }: Props) {
   const hidden = useAmountsHidden();
   const settings = { ...options, masked: hidden || options?.masked };
   return (
-    <Text
-      {...props}
-      accessibilityLabel={a11yAmount(value, currency, locale, settings)}
-    >
+    <Text {...props} accessibilityLabel={a11yAmount(value, currency, locale, settings)}>
       {formatAmount(value, currency, locale, settings)}
     </Text>
   );

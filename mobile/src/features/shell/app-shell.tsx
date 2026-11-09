@@ -45,10 +45,10 @@ export function AppShell() {
               pressed && styles.pressed,
             ]}
           >
-            <ThemedText style={styles.navIcon} accessibilityElementsHidden>{item.icon}</ThemedText>
-            <ThemedText type="smallBold">
-              {intl.formatMessage({ id: item.labelKey })}
+            <ThemedText style={styles.navIcon} accessibilityElementsHidden>
+              {item.icon}
             </ThemedText>
+            <ThemedText type="smallBold">{intl.formatMessage({ id: item.labelKey })}</ThemedText>
           </Pressable>
         );
       })}
@@ -56,23 +56,34 @@ export function AppShell() {
   );
 
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: theme.background }]} edges={['top', 'bottom']}>
+    <SafeAreaView
+      style={[styles.root, { backgroundColor: theme.background }]}
+      edges={['top', 'bottom']}
+    >
       <View style={styles.layout}>
         {desktop && (
           <View style={[styles.sidebar, { borderRightColor: theme.backgroundSelected }]}>
-            <ThemedText type="smallBold" style={styles.brand}>TrackMyWealth</ThemedText>
+            <ThemedText type="smallBold" style={styles.brand}>
+              TrackMyWealth
+            </ThemedText>
             {menu}
           </View>
         )}
         <View style={styles.main}>
           <OfflineBanner />
-          <View style={styles.content}><Slot /></View>
+          <View style={styles.content}>
+            <Slot />
+          </View>
           {!desktop && menu}
         </View>
       </View>
       {backgrounded && Platform.OS !== 'web' && (
         <View
-          style={[StyleSheet.absoluteFill, styles.privacyCover, { backgroundColor: theme.background }]}
+          style={[
+            StyleSheet.absoluteFill,
+            styles.privacyCover,
+            { backgroundColor: theme.background },
+          ]}
           accessibilityLabel={intl.formatMessage({ id: 'privacy.protected' })}
           importantForAccessibility="yes"
         >
@@ -89,10 +100,23 @@ const styles = StyleSheet.create({
   sidebar: { width: 248, paddingHorizontal: 16, paddingVertical: 24, borderRightWidth: 1 },
   brand: { fontSize: 20, marginBottom: 32 },
   sidebarMenu: { gap: 8 },
-  bottomMenu: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 6,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#7B8793' },
-  navigationItem: { minHeight: 48, minWidth: 96, paddingHorizontal: 12, paddingVertical: 8,
-    borderRadius: 10, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  bottomMenu: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#7B8793',
+  },
+  navigationItem: {
+    minHeight: 48,
+    minWidth: 96,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
   desktopItem: { flexDirection: 'row', justifyContent: 'flex-start', gap: 12 },
   navIcon: { fontSize: 19 },
   main: { flex: 1, minWidth: 0 },

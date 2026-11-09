@@ -11,9 +11,7 @@ export function OfflineBanner() {
   if (online !== false) return null;
   return (
     <View accessibilityRole="alert" style={styles.banner}>
-      <ThemedText style={styles.label}>
-        {intl.formatMessage({ id: 'error.offline' })}
-      </ThemedText>
+      <ThemedText style={styles.label}>{intl.formatMessage({ id: 'error.offline' })}</ThemedText>
     </View>
   );
 }

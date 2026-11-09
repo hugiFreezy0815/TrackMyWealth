@@ -26,8 +26,9 @@ const de: typeof en = {
   signInError: 'Anmeldung fehlgeschlagen. Prüfe deine Zugangsdaten oder den Bestätigungscode.',
 };
 export function authCopy() {
-  const deviceLocale = Platform.OS === 'web' && typeof navigator !== 'undefined'
-    ? navigator.language
-    : Intl.DateTimeFormat().resolvedOptions().locale;
+  const deviceLocale =
+    Platform.OS === 'web' && typeof navigator !== 'undefined'
+      ? navigator.language
+      : Intl.DateTimeFormat().resolvedOptions().locale;
   return resolveLocale(null, deviceLocale).startsWith('de') ? de : en;
 }

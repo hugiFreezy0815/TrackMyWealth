@@ -7,12 +7,18 @@ const listeners = new Set<() => void>();
 let hidden = true;
 let restored = false;
 
-function emit() { listeners.forEach((listener) => listener()); }
+function emit() {
+  listeners.forEach((listener) => listener());
+}
 export function subscribeAmounts(listener: () => void): () => void {
   listeners.add(listener);
-  return () => { listeners.delete(listener); };
+  return () => {
+    listeners.delete(listener);
+  };
 }
-export function amountsHidden(): boolean { return hidden; }
+export function amountsHidden(): boolean {
+  return hidden;
+}
 export function useAmountsHidden(): boolean {
   return useSyncExternalStore(subscribeAmounts, amountsHidden, () => true);
 }
@@ -21,9 +27,12 @@ export async function restoreAmountVisibility(): Promise<void> {
   if (restored) return;
   let value: string | null = null;
   try {
-    value = Platform.OS === 'web'
-      ? (typeof window === 'undefined' ? 'true' : window.localStorage.getItem(KEY))
-      : await SecureStore.getItemAsync(KEY);
+    value =
+      Platform.OS === 'web'
+        ? typeof window === 'undefined'
+          ? 'true'
+          : window.localStorage.getItem(KEY)
+        : await SecureStore.getItemAsync(KEY);
   } catch {
     // Storage can be blocked. Default to private until the member changes the setting.
     value = 'true';

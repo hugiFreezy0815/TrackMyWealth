@@ -8,6 +8,9 @@ export const DESKTOP_NAVIGATION = [
   { href: '/settings', labelKey: 'nav.settings', icon: '⚙' },
 ] as const;
 export function isCurrentRoute(pathname: string, href: string): boolean {
-  return pathname === href || (href === '/overview' && pathname.startsWith('/overview/')) ||
-    (href === '/more' && pathname === '/settings');
+  return (
+    pathname === href ||
+    (href === '/overview' && pathname.startsWith('/overview/')) ||
+    (href === '/more' && pathname === '/settings')
+  );
 }

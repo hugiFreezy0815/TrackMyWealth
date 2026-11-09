@@ -14,7 +14,6 @@ import { ThemedText } from '@/components/themed-text';
 import { AuthScreen } from '@/features/auth/auth-screen';
 import { restoreSession, sessionSnapshot, subscribeSession } from '@/features/auth/session';
 
-
 SplashScreen.preventAutoHideAsync();
 
 export default function TabLayout() {
