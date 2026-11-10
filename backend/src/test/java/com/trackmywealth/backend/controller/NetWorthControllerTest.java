@@ -19,6 +19,7 @@ import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -82,10 +83,10 @@ class NetWorthControllerTest {
     // would reach the shared institution catalogue.
     try (Connection connection = dataSource.getConnection();
         Statement statement = connection.createStatement()) {
+      statement.execute(LedgerCleanup.DELETE_ALL_TRANSACTIONS);
       for (String table :
           List.of(
               "fx_rate",
-              "transaction",
               "snapshot_holding",
               "account_snapshot",
               "custom_asset_valuation",
