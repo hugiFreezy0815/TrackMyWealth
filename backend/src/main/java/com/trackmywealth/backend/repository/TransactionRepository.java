@@ -456,9 +456,9 @@ public interface TransactionRepository
       @Param("snapshotIds") Collection<UUID> snapshotIds, @Param(AS_OF) LocalDate asOf);
 
   /**
-   * Dated opening-balance ledger increments for a history series. Exactly the same row
-   * eligibility and currency conversion as {@link #sumAmountBookedAfterSnapshots}, but one
-   * query for the entire chart instead of repeating the ledger scan for each point.
+   * Dated opening-balance ledger increments for a history series. Exactly the same row eligibility
+   * and currency conversion as {@link #sumAmountBookedAfterSnapshots}, but one query for the entire
+   * chart instead of repeating the ledger scan for each point.
    */
   @Query(
       "select t.account.id, t.bookingDate, "

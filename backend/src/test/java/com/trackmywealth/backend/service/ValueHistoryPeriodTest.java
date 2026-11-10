@@ -46,10 +46,7 @@ class ValueHistoryPeriodTest {
   void unknownCapitalMovementsDoNotBecomeMarketPerformance() {
     var change =
         ValueHistoryService.change(
-            new BigDecimal("1000"),
-            new BigDecimal("1200"),
-            new BigDecimal("100"),
-            null);
+            new BigDecimal("1000"), new BigDecimal("1200"), new BigDecimal("100"), null);
     assertThat(change.contributions()).isEqualByComparingTo("100");
     assertThat(change.marketAndFx()).isNull();
   }

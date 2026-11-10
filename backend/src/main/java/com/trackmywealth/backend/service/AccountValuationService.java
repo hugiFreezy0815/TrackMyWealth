@@ -263,7 +263,8 @@ public class AccountValuationService {
     Map<UUID, String> currencies = accountCurrencyService.ownCurrencies(candidates);
     Map<LocalDate, Map<UUID, AccountValuation>> history = new LinkedHashMap<>();
     for (LocalDate date : dates) {
-      Function<String, Optional<CurrencyConversionResult>> lookup = rateLookup(targetCurrency, date);
+      Function<String, Optional<CurrencyConversionResult>> lookup =
+          rateLookup(targetCurrency, date);
       Map<String, Optional<CurrencyConversionResult>> rates = new HashMap<>();
       Map<UUID, AccountValuation> atDate = new HashMap<>();
       for (Account account : candidates) {

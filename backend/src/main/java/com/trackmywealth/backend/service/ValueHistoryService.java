@@ -299,8 +299,7 @@ public class ValueHistoryService {
     Map<UUID, Set<UUID>> idsAtEnd = new HashMap<>();
     for (Account account : eligibleAtStart) {
       AccountHistoryState state = stateOn(account, from, businessDateService.zone(), historyStates);
-      UUID previousPortfolio =
-          state == null ? account.getPortfolio().getId() : state.portfolioId();
+      UUID previousPortfolio = state == null ? account.getPortfolio().getId() : state.portfolioId();
       idsAtStart
           .computeIfAbsent(previousPortfolio, unused -> new java.util.HashSet<>())
           .add(account.getId());
