@@ -14,18 +14,19 @@ CREATE TABLE account_history_state (
 CREATE INDEX idx_account_history_state_lookup
     ON account_history_state (workspace_id, account_id, effective_at, id);
 
-ALTER TABLE account_history_state ENABLE ROW LEVEL SECURITY;
-ALTER TABLE account_history_state FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON account_history_state
-    USING (workspace_id = current_workspace_id())
-    WITH CHECK (workspace_id = current_workspace_id());
-
 -- Pre-existing account transitions cannot be recovered from account.archived_at or
 -- account.portfolio_id. Backfill the current state as an explicitly unverified baseline.
 INSERT INTO account_history_state
     (workspace_id, account_id, portfolio_id, status, effective_at, verified)
 SELECT workspace_id, id, portfolio_id, status, COALESCE(created_at, clock_timestamp()), FALSE
 FROM account;
+
+ALTER TABLE account_history_state ENABLE ROW LEVEL SECURITY;
+ALTER TABLE account_history_state FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON account_history_state
+    USING (workspace_id = current_workspace_id())
+    WITH CHECK (workspace_id = current_workspace_id());
+
 
 CREATE FUNCTION record_account_history_state() RETURNS TRIGGER AS $$
 BEGIN
