@@ -45,4 +45,4 @@ stack sets no `IMPORT_ACCOUNT_IDENTIFIER_KEY`, so every upload asks for account 
 - iOS / Android: no simulator on this machine; the native CI build covers the app start.
 - The error CSV download: the synthetic fixture has no error rows (its unreadable row is
   `SKIPPED`). Covered by unit tests on both platforms (`device-files*.test.ts`).
-- Screen reader: optional for the UI Definition of Done (PO, 2026-11-09).
+- Screen reader (VoiceOver/TalkBack): not required for the UI Definition of Done (PO, 2026-11-10).

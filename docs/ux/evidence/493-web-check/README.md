@@ -42,4 +42,5 @@ against it. Chrome via Playwright, headless (`portfolio-view.mjs`). The data is 
   have. Jest covers them (`portfolio-screen.test.tsx`, `position-view.web.test.tsx`).
 - Card due dates and statement dates come from card statement imports; Jest covers the chip.
 - German copy: the app language comes from the member's profile; Jest covers the DE catalogue.
-- Native screen reader: still to be done on a device.
+- Native screen reader (VoiceOver/TalkBack): not required (PO, 2026-11-10); the Jest
+  accessibility tests and the web axe check cover the labels.

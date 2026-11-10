@@ -43,6 +43,7 @@ value-status sheet, the conflict dialog and the gallery with "Hide amounts" on.
 
 ## Not covered here
 
-The screen-reader pass (VoiceOver or TalkBack) needs a physical device and stays open. The web
+A screen-reader pass (VoiceOver or TalkBack) is not required (PO, 2026-11-10; #539 closed as not
+planned); the Jest accessibility tests and the axe check above cover the labels. The web
 `aria-*` gap also affects screens outside #488 (shell navigation, the "Hide amounts" switch, sign-in
 button); see the follow-up issue.
