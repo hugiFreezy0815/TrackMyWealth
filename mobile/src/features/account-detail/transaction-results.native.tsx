@@ -1,5 +1,5 @@
 import { useMemo, useRef, type ReactNode } from 'react';
-import { SectionList, Text, View, type ViewToken } from 'react-native';
+import { SectionList, Text, View } from 'react-native';
 import { useIntl } from 'react-intl';
 
 import { TypeScale } from '@/constants/theme';
@@ -47,7 +47,7 @@ export function TransactionResults({
   idsRef.current = ids;
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 1 }).current;
   const onViewableItemsChanged = useRef(
-    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    ({ viewableItems }: { viewableItems: { isViewable: boolean; item: unknown }[] }) => {
       if (!loadMore.current) return;
       const visibleIds = viewableItems
         .filter((token) => token.isViewable && token.item)
