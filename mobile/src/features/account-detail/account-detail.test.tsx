@@ -227,7 +227,13 @@ describe('S3 account detail acceptance checks (#494)', () => {
           await screen.findByText('This account no longer exists or is not available to you'),
         ).toBeTruthy();
       } else {
-        expect(await screen.findByRole('alert')).toBeTruthy();
+        expect(
+        await screen.findByText(
+          status === 401
+            ? 'Your session has ended. Sign in again.'
+            : 'This is not possible right now.',
+        ),
+      ).toBeTruthy();
       }
     },
   );
