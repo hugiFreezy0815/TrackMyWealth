@@ -24,6 +24,9 @@ jest.mock('@/features/privacy/amount-visibility', () => ({
   useAmountsHidden: jest.fn(() => false),
 }));
 jest.mock('@/api/queries/conflict', () => ({ useConflict: jest.fn() }));
+jest.mock('@/components/shared/accessibility-focus', () => ({
+  moveAccessibilityFocus: jest.fn(),
+}));
 jest.mock('@/api/queries/resources', () => ({
   useAccount: jest.fn(),
   useCategories: jest.fn(),
