@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Modal, Platform } from 'react-native';
+import { Platform } from 'react-native';
 import { IntlProvider } from 'react-intl';
 import {
   useAccount,
@@ -497,7 +497,7 @@ describe('S4 transaction detail', () => {
           rejectSave = reject;
         }),
     );
-    const view = await render(
+    await render(
       <QueryClientProvider client={new QueryClient()}>
         <IntlProvider locale="en" messages={en}>
           <TransactionDetail accountId="account-1" transactionId="transaction-1" onBack={jest.fn()} />
@@ -512,7 +512,7 @@ describe('S4 transaction detail', () => {
       await fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
     } else {
       await fireEvent.press(screen.getByRole('button', { name: 'Close' }));
-      const modal = view.UNSAFE_getByType(Modal);
+      const modal = screen.getByTestId('shared-dialog-modal');
       await fireEvent(modal, 'requestClose');
     }
     expect(screen.getByRole('radio', { name: 'Food › Dining out' })).toBeTruthy();
