@@ -1,4 +1,5 @@
 export { Amount, amountTexts, type AmountValue } from './amount';
+export { Figure, figureTexts, type FigureValue } from './figure';
 export {
   ValueStatusBadge,
   ValueStatusExplanation,

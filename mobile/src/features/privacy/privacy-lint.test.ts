@@ -16,6 +16,7 @@ const root = process.cwd();
 const SHELL_FILE = `${root}/src/features/shell/example-card.tsx`;
 const ROUTE_FILE = `${root}/src/app/example.tsx`;
 const PRIVACY_AMOUNT_FILE = `${root}/src/features/privacy/privacy-amount.tsx`;
+const FIGURE_FILE = `${root}/src/components/shared/figure.tsx`;
 
 const LINT_SNIPPETS = `
 const { ESLint } = require('eslint');
@@ -40,6 +41,15 @@ const SNIPPETS = {
   rawAmountInPrivacyAmount: {
     filePath: PRIVACY_AMOUNT_FILE,
     code: "import { formatAmount } from '@/format/amount';\n\nexport const total = formatAmount('1.00', 'CHF', 'en');\n",
+  },
+  // #493: units, percentages and rates are masked by "Hide amounts" too (UX-02 §7).
+  rawFigureInScreen: {
+    filePath: SHELL_FILE,
+    code: "import { formatFigure } from '@/format/figure';\n\nexport const gain = formatFigure('1.00', 'percent', 'en');\n",
+  },
+  rawFigureInFigure: {
+    filePath: FIGURE_FILE,
+    code: "import { formatFigure } from '@/format/figure';\n\nexport const gain = formatFigure('1.00', 'percent', 'en');\n",
   },
   untypedApiInPrivacyAmount: {
     filePath: PRIVACY_AMOUNT_FILE,
@@ -82,6 +92,11 @@ beforeAll(() => {
 describe('sprint-7 lint guards', () => {
   it('fails a screen that formats money without PrivacyAmount', () => {
     expect(rules.rawAmountInScreen).toContain('no-restricted-imports');
+  });
+
+  it('fails a screen that formats units, percentages or rates without Figure', () => {
+    expect(rules.rawFigureInScreen).toContain('no-restricted-imports');
+    expect(rules.rawFigureInFigure).toEqual([]);
   });
 
   it('lets PrivacyAmount format money but still requires typedApi there', () => {

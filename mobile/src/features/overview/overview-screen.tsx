@@ -38,6 +38,8 @@ import { AssetsLiabilitiesCard, NetWorthCard, type FinancialPart } from './total
 export type OverviewScreenProps = {
   onAddPortfolio: () => void;
   onReviewAccount: (accountId: string) => void;
+  onPortfolio?: (portfolioId: string) => void;
+  missingPortfolioNotice?: boolean;
   onImportStatement?: () => void;
 };
 
@@ -62,6 +64,8 @@ function greetingId(hour: number): string {
 export function OverviewScreen({
   onAddPortfolio,
   onReviewAccount,
+  onPortfolio,
+  missingPortfolioNotice = false,
   onImportStatement,
 }: OverviewScreenProps) {
   const intl = useIntl();
@@ -71,6 +75,7 @@ export function OverviewScreen({
   const compact = width < COMPACT_BREAKPOINT;
   const online = useOnline();
   const [selectedCurrency, selectCurrency] = useState<string | null>(null);
+  const [dismissMissing, setDismissMissing] = useState(false);
   const [explanation, setExplanation] = useState<FinancialPart | null>(null);
   const hidden = useAmountsHidden();
   // Recomputed on every render, so a session that crosses a month boundary asks for the new month.
@@ -136,7 +141,12 @@ export function OverviewScreen({
         <ErrorBanner error={portfolios.error} onRetry={() => void portfolios.refetch()} />
       ) : null}
       {portfolios.data ? (
-        <PortfoliosCard items={portfolioItems} hidden={hidden} intl={intl} />
+        <PortfoliosCard
+          items={portfolioItems}
+          hidden={hidden}
+          intl={intl}
+          onPortfolio={onPortfolio}
+        />
       ) : null}
       {waitingFor(cashFlow) ? <LoadingSkeleton count={3} /> : null}
       {cashFlow.isError ? (
@@ -167,6 +177,27 @@ export function OverviewScreen({
     >
       {/* The shell (#487) renders the page heading "Overview"; the screen adds the greeting. */}
       <InfoText>{msg(intl, greetingId(new Date().getHours()))}</InfoText>
+      {missingPortfolioNotice && !dismissMissing ? (
+        <View
+          accessibilityRole="alert"
+          style={{
+            padding: Spacing.two,
+            borderLeftWidth: 4,
+            borderLeftColor: theme.statusWarning,
+            backgroundColor: theme.statusWarningSubtle,
+            gap: Spacing.one,
+          }}
+        >
+          <Text style={{ color: theme.textPrimary }}>{msg(intl, 'portfolio.missing')}</Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setDismissMissing(true)}
+            style={{ minHeight: 44, alignSelf: 'flex-start', justifyContent: 'center' }}
+          >
+            <Text style={{ color: theme.brandLink }}>{msg(intl, 'ui.close')}</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {Platform.OS === 'web' ? (
         <Pressable
           accessibilityRole="button"
@@ -205,6 +236,8 @@ export function OverviewScreen({
             intl={intl}
             offline={!online}
             onAddPortfolio={onAddPortfolio}
+            portfolios={portfolioItems}
+            onPortfolio={onPortfolio}
           />
           <CurrencyScope
             currency={currency ?? workspace.data.currency}
