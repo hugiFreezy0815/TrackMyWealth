@@ -152,6 +152,18 @@ function fixtures(transaction: Transaction = base) {
   });
 }
 
+function useMockConflict() {
+  const [conflicted, setConflicted] = useState(false);
+  return {
+    conflicted,
+    dismiss: () => setConflicted(false),
+    handle: async () => {
+      setConflicted(true);
+      return true;
+    },
+  };
+}
+
 async function show() {
   const onBack = jest.fn();
   await render(
@@ -290,17 +302,7 @@ describe('S4 transaction detail', () => {
 
 
   it('closes the picker on a 412, preserves the choice, and saves using the reviewed server ETag', async () => {
-    jest.mocked(useConflict).mockImplementation(() => {
-      const [conflicted, setConflicted] = useState(false);
-      return {
-        conflicted,
-        dismiss: () => setConflicted(false),
-        handle: async () => {
-          setConflicted(true);
-          return true;
-        },
-      };
-    });
+    jest.mocked(useConflict).mockImplementation(useMockConflict);
     const refetch = jest.fn(async () => ({ data: { ...base, version: 8 } }));
     jest.mocked(useTransaction).mockReturnValue({
       ...success(base),
@@ -334,17 +336,7 @@ describe('S4 transaction detail', () => {
   });
 
   it('blocks saving until conflict review reload succeeds, and offers Retry review', async () => {
-    jest.mocked(useConflict).mockImplementation(() => {
-      const [conflicted, setConflicted] = useState(false);
-      return {
-        conflicted,
-        dismiss: () => setConflicted(false),
-        handle: async () => {
-          setConflicted(true);
-          return true;
-        },
-      };
-    });
+    jest.mocked(useConflict).mockImplementation(useMockConflict);
     const refetch = jest
       .fn()
       .mockResolvedValueOnce({ error: new Error('offline'), data: undefined })
