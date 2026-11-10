@@ -87,7 +87,16 @@ export function historyDescription(
     RESTORED: 'txn.history.restored',
   };
   const kind = kinds[entry.kind] ?? 'txn.history.other';
-  const needsActor = ['CREATED', 'CATEGORY_CHANGED', 'CATEGORY_RESET', 'CORRECTED', 'VOIDED', 'DELETED', 'RESTORED'].includes(entry.kind) || !kinds[entry.kind];
+  const needsActor =
+    [
+      'CREATED',
+      'CATEGORY_CHANGED',
+      'CATEGORY_RESET',
+      'CORRECTED',
+      'VOIDED',
+      'DELETED',
+      'RESTORED',
+    ].includes(entry.kind) || !kinds[entry.kind];
   let key = needsActor && !actor ? kind + '.system' : kind;
   if (entry.kind === 'VOIDED' && !entry.reason) key += '.noReason';
   if (entry.kind === 'IMPORTED' && !entry.importBatch) key += '.unknown';

@@ -55,7 +55,13 @@ export function ShellScreen({
       scrollEventThrottle={100}
       contentContainerStyle={[styles.scroll, layout === 'phone' && styles.scrollPhone]}
     >
-      <View style={[styles.frame, besideContent && styles.frameWithPanel, besideContent && { maxWidth: 960 + 24 + detailWidth }]}>
+      <View
+        style={[
+          styles.frame,
+          besideContent && styles.frameWithPanel,
+          besideContent && { maxWidth: 960 + 24 + detailWidth },
+        ]}
+      >
         <View style={styles.content}>
           <View style={styles.header}>
             <ThemedText type="subtitle" role="heading" style={styles.heading}>

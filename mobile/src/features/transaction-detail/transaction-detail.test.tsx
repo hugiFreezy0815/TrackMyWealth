@@ -253,7 +253,9 @@ describe('S4 transaction detail', () => {
     await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
     expect(setCategory).not.toHaveBeenCalled();
     await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
-    await waitFor(() => expect(setCategory).toHaveBeenCalledWith({ categoryId: 'dining', version: 7 }));
+    await waitFor(() =>
+      expect(setCategory).toHaveBeenCalledWith({ categoryId: 'dining', version: 7 }),
+    );
   });
 
   it('preserves the selected category and displays a local error on network failure', async () => {
@@ -263,7 +265,9 @@ describe('S4 transaction detail', () => {
     await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
     await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
     await waitFor(() => expect(screen.getByText(/Couldn't save the category/)).toBeTruthy());
-    expect(screen.getByRole('radio', { name: 'Food › Dining out' }).props['aria-checked']).toBe(true);
+    expect(screen.getByRole('radio', { name: 'Food › Dining out' }).props['aria-checked']).toBe(
+      true,
+    );
     await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
     await waitFor(() => expect(setCategory).toHaveBeenCalledTimes(2));
   });
@@ -275,7 +279,10 @@ describe('S4 transaction detail', () => {
       isFetching: true,
     } as unknown as ReturnType<typeof useTransaction>);
     await show();
-    expect(screen.getByRole('button', { name: 'Change category' }).props.accessibilityState?.disabled ?? screen.getByRole('button', { name: 'Change category' }).props.disabled).toBe(true);
+    expect(
+      screen.getByRole('button', { name: 'Change category' }).props.accessibilityState?.disabled ??
+        screen.getByRole('button', { name: 'Change category' }).props.disabled,
+    ).toBe(true);
     expect(setCategory).not.toHaveBeenCalled();
   });
 

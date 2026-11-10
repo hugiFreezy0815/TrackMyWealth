@@ -1,7 +1,15 @@
 import { useRef, useState, useSyncExternalStore, type ComponentRef, type ReactNode } from 'react';
 import { onlineManager } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { ActivityIndicator, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { ApiError } from '@/api/client';
 import { useConflict } from '@/api/queries/conflict';
@@ -77,7 +85,9 @@ function CategoryPicker({
   const theme = useTheme();
   const [search, setSearch] = useState('');
   const german = intl.locale.startsWith('de');
-  const validChoice = categories.some((item) => item.id === selected && item.active && item.code !== 'UNCATEGORIZED');
+  const validChoice = categories.some(
+    (item) => item.id === selected && item.active && item.code !== 'UNCATEGORIZED',
+  );
   const choices = categories.filter((category) => {
     if (!category.active || category.code === 'UNCATEGORIZED') return false;
     const label = categoryLabel(
@@ -85,7 +95,9 @@ function CategoryPicker({
       categories.find((candidate) => candidate.id === category.parentId),
       german,
     );
-    return label.toLocaleLowerCase(intl.locale).includes(search.trim().toLocaleLowerCase(intl.locale));
+    return label
+      .toLocaleLowerCase(intl.locale)
+      .includes(search.trim().toLocaleLowerCase(intl.locale));
   });
   const content = (
     <>
@@ -144,7 +156,11 @@ function CategoryPicker({
           </Text>
         ) : null}
       </ScrollView>
-      {error ? <Text accessibilityRole="alert" style={{ color: theme.statusLoss }}>{error}</Text> : null}
+      {error ? (
+        <Text accessibilityRole="alert" style={{ color: theme.statusLoss }}>
+          {error}
+        </Text>
+      ) : null}
       {busy ? <ActivityIndicator /> : null}
       <ActionButton
         label={intl.formatMessage({ id: 'txn.picker.save' })}
@@ -152,7 +168,11 @@ function CategoryPicker({
         onPress={onSave}
       />
       {Platform.OS === 'web' ? (
-        <ActionButton label={intl.formatMessage({ id: 'txn.picker.cancel' })} onPress={onClose} disabled={busy} />
+        <ActionButton
+          label={intl.formatMessage({ id: 'txn.picker.cancel' })}
+          onPress={onClose}
+          disabled={busy}
+        />
       ) : null}
     </>
   );
@@ -161,9 +181,18 @@ function CategoryPicker({
       <View
         accessibilityRole="region"
         accessibilityLabel={intl.formatMessage({ id: 'txn.picker.title' })}
-        style={{ borderWidth: 1, borderColor: theme.borderDefault, borderRadius: Radii.card, padding: Spacing.two, gap: Spacing.two }}
+        style={{
+          borderWidth: 1,
+          borderColor: theme.borderDefault,
+          borderRadius: Radii.card,
+          padding: Spacing.two,
+          gap: Spacing.two,
+        }}
       >
-        <Text accessibilityRole="header" style={{ ...TypeScale.headingMedium, color: theme.textPrimary }}>
+        <Text
+          accessibilityRole="header"
+          style={{ ...TypeScale.headingMedium, color: theme.textPrimary }}
+        >
           {intl.formatMessage({ id: 'txn.picker.title' })}
         </Text>
         {content}
@@ -171,7 +200,11 @@ function CategoryPicker({
     );
   }
   return (
-    <BottomSheet visible={visible} onClose={onClose} title={intl.formatMessage({ id: 'txn.picker.title' })}>
+    <BottomSheet
+      visible={visible}
+      onClose={onClose}
+      title={intl.formatMessage({ id: 'txn.picker.title' })}
+    >
       {content}
     </BottomSheet>
   );
@@ -232,7 +265,9 @@ export function TransactionDetail({
     focusCategory();
   };
   const categoryIsValid = (id: string) =>
-    !!categories.data?.some((item) => item.id === id && item.active && item.code !== 'UNCATEGORIZED');
+    !!categories.data?.some(
+      (item) => item.id === id && item.active && item.code !== 'UNCATEGORIZED',
+    );
 
   async function withVersionRetry<T>(
     perform: (version: number) => Promise<T>,
@@ -263,7 +298,13 @@ export function TransactionDetail({
   }
 
   async function saveCategory(id: string): Promise<void> {
-    if (!transaction || locked || !canChangeCategory(transaction, archived) || !categoryIsValid(id)) return;
+    if (
+      !transaction ||
+      locked ||
+      !canChangeCategory(transaction, archived) ||
+      !categoryIsValid(id)
+    )
+      return;
     setError(null);
     setCategoryError(null);
     try {
@@ -289,7 +330,11 @@ export function TransactionDetail({
       if (code === 'UNPROCESSABLE' || code === 'VALIDATION_FAILED') {
         setCategoryError(intl.formatMessage({ id: 'txn.category.unavailable' }));
         const refreshed = await categories.refetch();
-        if (!refreshed.data?.some((item) => item.id === id && item.active && item.code !== 'UNCATEGORIZED')) {
+        if (
+          !refreshed.data?.some(
+            (item) => item.id === id && item.active && item.code !== 'UNCATEGORIZED',
+          )
+        ) {
           setSelectedCategory(null);
         }
       } else {
@@ -347,7 +392,12 @@ export function TransactionDetail({
           return;
         }
         const pending = selectedCategory;
-        if (pending && !latestCategories.data?.some((item) => item.id === pending && item.active && item.code !== 'UNCATEGORIZED')) {
+        if (
+          pending &&
+          !latestCategories.data?.some(
+            (item) => item.id === pending && item.active && item.code !== 'UNCATEGORIZED',
+          )
+        ) {
           setSelectedCategory(null);
           setCategoryError(intl.formatMessage({ id: 'txn.category.unavailable' }));
         }
@@ -541,7 +591,8 @@ export function TransactionDetail({
             : name}
         </Text>
         <DetailLabel>
-          {date(transaction.bookingDate)} · {transactionTypeLabel(transaction.transactionType, intl)}
+          {date(transaction.bookingDate)} ·{' '}
+          {transactionTypeLabel(transaction.transactionType, intl)}
         </DetailLabel>
         <Text style={{ color: theme.textSecondary }}>
           {intl.formatMessage({
@@ -626,7 +677,9 @@ export function TransactionDetail({
                 }}
                 style={{ minHeight: 44, justifyContent: 'center' }}
               >
-                <Text style={{ color: theme.brandLink }}>{intl.formatMessage({ id: 'txn.changeCategory' })}</Text>
+                <Text style={{ color: theme.brandLink }}>
+                  {intl.formatMessage({ id: 'txn.changeCategory' })}
+                </Text>
               </Pressable>
             ) : null}
             {Platform.OS === 'web' && picker ? (
@@ -648,15 +701,41 @@ export function TransactionDetail({
                   {intl.formatMessage({ id: 'txn.picker.pending' }, {
                     category: selectedCategory
                       ? (() => {
-                          const item = categories.data?.find((candidate) => candidate.id === selectedCategory);
-                          return item ? categoryLabel(item, categories.data?.find((parent) => parent.id === item.parentId), german) : intl.formatMessage({ id: 'txn.category.fallback' });
+                          const item = categories.data?.find(
+                            (candidate) => candidate.id === selectedCategory,
+                          );
+                          return item
+                            ? categoryLabel(
+                                item,
+                                categories.data?.find((parent) => parent.id === item.parentId),
+                                german,
+                              )
+                            : intl.formatMessage({ id: 'txn.category.fallback' });
                         })()
                       : intl.formatMessage({ id: 'txn.category.fallback' }),
                   })}
                 </Text>
-                {categoryError ? <Text accessibilityRole="alert" style={{ color: theme.statusLoss }}>{categoryError}</Text> : null}
-                <ActionButton label={intl.formatMessage({ id: 'txn.picker.saveAgain' })} disabled={locked || !selectedCategory || !categoryIsValid(selectedCategory)} onPress={() => { if (selectedCategory) void saveCategory(selectedCategory); }} />
-                <ActionButton label={intl.formatMessage({ id: 'txn.picker.discard' })} onPress={() => { setPendingReview(false); setSelectedCategory(null); setCategoryError(null); focusCategory(); }} />
+                {categoryError ? (
+                  <Text accessibilityRole="alert" style={{ color: theme.statusLoss }}>
+                    {categoryError}
+                  </Text>
+                ) : null}
+                <ActionButton
+                  label={intl.formatMessage({ id: 'txn.picker.saveAgain' })}
+                  disabled={locked || !selectedCategory || !categoryIsValid(selectedCategory)}
+                  onPress={() => {
+                    if (selectedCategory) void saveCategory(selectedCategory);
+                  }}
+                />
+                <ActionButton
+                  label={intl.formatMessage({ id: 'txn.picker.discard' })}
+                  onPress={() => {
+                    setPendingReview(false);
+                    setSelectedCategory(null);
+                    setCategoryError(null);
+                    focusCategory();
+                  }}
+                />
               </View>
             ) : null}
             {changeable && transaction.categoryAssignedBy === 'USER' ? (
@@ -777,8 +856,14 @@ export function TransactionDetail({
                 </Text>
                 <DetailLabel>{formatDateTime(entry.occurredAt, intl.locale)}</DetailLabel>
                 {relatedId && entry.kind === 'CORRECTED' && onRelatedTransaction ? (
-                  <Pressable accessibilityRole="link" onPress={() => onRelatedTransaction(relatedId)} style={{ minHeight: 44, justifyContent: 'center' }}>
-                    <Text style={{ color: theme.brandLink }}>{intl.formatMessage({ id: 'txn.history.openCorrected' })}</Text>
+                  <Pressable
+                    accessibilityRole="link"
+                    onPress={() => onRelatedTransaction(relatedId)}
+                    style={{ minHeight: 44, justifyContent: 'center' }}
+                  >
+                    <Text style={{ color: theme.brandLink }}>
+                      {intl.formatMessage({ id: 'txn.history.openCorrected' })}
+                    </Text>
                   </Pressable>
                 ) : null}
               </View>

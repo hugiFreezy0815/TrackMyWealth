@@ -34,7 +34,13 @@ export function TransactionResults(props: TransactionResultsProps) {
   );
 }
 
-function TransactionTable({ transactions, context, onOpen, onCategory, selectedTransactionId }: TransactionResultsProps) {
+function TransactionTable({
+  transactions,
+  context,
+  onOpen,
+  onCategory,
+  selectedTransactionId,
+}: TransactionResultsProps) {
   const intl = useIntl();
   const theme = useTheme();
   const cellStyle = {

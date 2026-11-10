@@ -85,7 +85,13 @@ export function useAccountRefresh() {
   return { refreshing, refresh };
 }
 
-export function AccountDetail({ accountId, onBack, onTransaction, onImport, selectedTransactionId }: AccountDetailProps) {
+export function AccountDetail({
+  accountId,
+  onBack,
+  onTransaction,
+  onImport,
+  selectedTransactionId,
+}: AccountDetailProps) {
   const intl = useIntl();
   const theme = useTheme();
   const online = useOnline();

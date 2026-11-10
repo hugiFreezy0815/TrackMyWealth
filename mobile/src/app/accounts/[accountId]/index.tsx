@@ -23,7 +23,8 @@ export default function AccountDetailRoute() {
   if (isAdministrator(identity)) return <Redirect href={homeFor(true)} />;
   const openTransaction = (transactionId: string) => {
     if (webPanel) {
-      if (!selectedTransaction) previousFocus.current = document.activeElement as HTMLElement | null;
+      if (!selectedTransaction)
+        previousFocus.current = document.activeElement as HTMLElement | null;
       setSelectedTransaction(transactionId);
     } else {
       router.push({
