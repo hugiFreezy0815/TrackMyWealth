@@ -11,6 +11,7 @@ import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.NetWorthSectionResponse;
 import com.trackmywealth.backend.dto.PortfolioListItemResponse;
 import com.trackmywealth.backend.dto.PortfolioResponse;
+import com.trackmywealth.backend.dto.ReassignAccountPortfolioRequest;
 import com.trackmywealth.backend.dto.PortfolioSection;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.ValueHistoryResponse;
@@ -25,6 +26,7 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -449,6 +451,112 @@ class NetWorthControllerTest {
   }
 
   @Test
+  void historicalPortfolioReassignmentPreservesThePreviousPortfolioValues() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse source = createPortfolio(token, "Source", "CHF");
+    PortfolioResponse destination = createPortfolio(token, "Destination", "CHF");
+    AccountSummaryResponse account = createAccount(token, cash("Moving account", source.id()));
+    seedOpeningBalance(account.id(), "5000");
+
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + account.id() + "/reassign-portfolio")
+        .header("If-Match", "\"" + account.version() + "\"")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new ReassignAccountPortfolioRequest(destination.id()))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    ValueHistoryResponse oldPortfolio = portfolioHistory(token, source.id(), "1W");
+    ValueHistoryResponse newPortfolio = portfolioHistory(token, destination.id(), "1W");
+    assertThat(valueOn(oldPortfolio, today().minusDays(2))).isEqualByComparingTo("5000");
+    assertThat(valueOn(oldPortfolio, today())).isEqualByComparingTo("0");
+    assertThat(valueOn(newPortfolio, today().minusDays(2))).isEqualByComparingTo("0");
+    assertThat(valueOn(newPortfolio, today())).isEqualByComparingTo("5000");
+    assertThat(oldPortfolio.change().capitalMovements()).isEqualByComparingTo("-5000");
+    assertThat(newPortfolio.change().capitalMovements()).isEqualByComparingTo("5000");
+    assertThat(oldPortfolio.change().marketAndFx()).isEqualByComparingTo("0");
+    assertThat(newPortfolio.change().marketAndFx()).isEqualByComparingTo("0");
+  }
+
+  @Test
+  void archiveAndRestoreRetainThePreviousArchivedInterval() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse portfolio = createPortfolio(token, "History", "CHF");
+    AccountSummaryResponse account = createAccount(token, cash("Temporarily archived", portfolio.id()));
+    seedOpeningBalance(account.id(), "5000");
+
+    AccountSummaryResponse archived =
+        client(token).post().uri("/api/v1/accounts/" + account.id() + "/archive")
+            .header("If-Match", "\"" + account.version() + "\"")
+            .exchange().expectStatus().isOk()
+            .expectBody(AccountSummaryResponse.class).returnResult().getResponseBody();
+
+    // Backdate the two recorded state events to simulate an archive interval spanning
+    // business days; the HTTP endpoints still perform the actual transitions.
+    backdateAccountState(account.id(), 0, today().minusDays(4));
+    backdateAccountState(account.id(), 1, today().minusDays(2));
+
+    client(token).post().uri("/api/v1/accounts/" + account.id() + "/restore")
+        .header("If-Match", "\"" + archived.version() + "\"")
+        .exchange().expectStatus().isOk();
+
+    ValueHistoryResponse history = portfolioHistory(token, portfolio.id(), "1W");
+    assertThat(valueOn(history, today().minusDays(3))).isEqualByComparingTo("5000");
+    assertThat(valueOn(history, today().minusDays(1))).isEqualByComparingTo("0");
+    assertThat(valueOn(history, today())).isEqualByComparingTo("5000");
+    assertThat(history.change().marketAndFx()).isEqualByComparingTo("0");
+  }
+
+  @Test
+  void internalTransferBetweenPortfoliosDoesNotBecomeMarketPerformance() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse source = createPortfolio(token, "Sending portfolio", "CHF");
+    PortfolioResponse destination = createPortfolio(token, "Receiving portfolio", "CHF");
+    UUID from = createAccount(token, cash("Source cash", source.id())).id();
+    UUID to = createAccount(token, cash("Destination cash", destination.id())).id();
+    seedOpeningBalance(from, "7000");
+    seedOpeningBalance(to, "3000");
+
+    seedTransfer(from, to, "-5000");
+    seedTransfer(to, from, "5000");
+
+    ValueHistoryResponse sourceHistory = portfolioHistory(token, source.id(), "1W");
+    ValueHistoryResponse destHistory = portfolioHistory(token, destination.id(), "1W");
+    ValueHistoryResponse workspaceHistory = history(token, "1W");
+
+    assertThat(valueOn(sourceHistory, today().minusDays(2))).isEqualByComparingTo("7000");
+    assertThat(valueOn(sourceHistory, today())).isEqualByComparingTo("2000");
+    assertThat(valueOn(destHistory, today().minusDays(2))).isEqualByComparingTo("3000");
+    assertThat(valueOn(destHistory, today())).isEqualByComparingTo("8000");
+    assertThat(sourceHistory.change().capitalMovements()).isEqualByComparingTo("-5000");
+    assertThat(destHistory.change().capitalMovements()).isEqualByComparingTo("5000");
+    assertThat(sourceHistory.change().marketAndFx()).isEqualByComparingTo("0");
+    assertThat(destHistory.change().marketAndFx()).isEqualByComparingTo("0");
+    assertThat(valueOn(workspaceHistory, today().minusDays(2)))
+        .isEqualByComparingTo(valueOn(workspaceHistory, today()));
+    assertThat(workspaceHistory.change().marketAndFx()).isEqualByComparingTo("0");
+  }
+
+  @Test
+  void unresolvedTransferIsReflectedInHistoryCompleteness() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse portfolio = createPortfolio(token, "Needs review", "CHF");
+    UUID cash = createAccount(token, cash("Cash", portfolio.id())).id();
+    seedOpeningBalance(cash, "2000");
+    seedUnresolvedTransfer(cash);
+
+    ValueHistoryResponse portfolioHistory = portfolioHistory(token, portfolio.id(), "1W");
+    ValueHistoryResponse workspaceHistory = history(token, "1W");
+    assertThat(portfolioHistory.complete()).isFalse();
+    assertThat(portfolioHistory.warnings()).anyMatch(w -> w.contains("pending review"));
+    assertThat(portfolioHistory.change().marketAndFx()).isNull();
+    assertThat(workspaceHistory.complete()).isFalse();
+    assertThat(workspaceHistory.change().marketAndFx()).isNull();
+  }
+
+  @Test
   void invalidHistoryPeriodIsRejectedWithValidationFailed() {
     String token = bootstrapAdministrator();
 
@@ -481,6 +589,18 @@ class NetWorthControllerTest {
     assertThat(rows[0].change()).isNotNull();
     assertThat(rows[0].change().period()).isEqualTo("1M");
     assertThat(rows[0].change().percent()).isNull();
+  }
+
+  private ValueHistoryResponse portfolioHistory(String token, UUID portfolioId, String period) {
+    return client(token).get()
+        .uri("/api/v1/portfolios/" + portfolioId + "/history?period=" + period)
+        .exchange().expectStatus().isOk()
+        .expectBody(ValueHistoryResponse.class).returnResult().getResponseBody();
+  }
+
+  private static BigDecimal valueOn(ValueHistoryResponse history, LocalDate date) {
+    return history.points().stream().filter(point -> point.date().equals(date))
+        .findFirst().orElseThrow().value();
   }
 
   private ValueHistoryResponse history(String token, String period) {
@@ -594,6 +714,52 @@ class NetWorthControllerTest {
       statement.setObject(1, today().minusDays(3));
       statement.setBigDecimal(2, new BigDecimal(balance));
       statement.setObject(3, accountId);
+      assertThat(statement.executeUpdate()).isEqualTo(1);
+    }
+  }
+
+  private void backdateAccountState(UUID accountId, int position, LocalDate date)
+      throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "UPDATE account_history_state SET effective_at = ? WHERE id = ("
+                    + "SELECT id FROM account_history_state WHERE account_id = ? ORDER BY id"
+                    + " OFFSET ? LIMIT 1)")) {
+      statement.setObject(1, date.atTime(12, 0).atZone(ZoneId.of("Europe/Zurich")).toOffsetDateTime());
+      statement.setObject(2, accountId);
+      statement.setInt(3, position);
+      assertThat(statement.executeUpdate()).isEqualTo(1);
+    }
+  }
+
+  private void seedTransfer(UUID accountId, UUID counterparty, String amount)
+      throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency, internal_transfer, counterparty_account_id)"
+                    + " SELECT workspace_id, id, 'TRANSFER', ?, ?, native_currency, TRUE, ?"
+                    + " FROM account WHERE id = ?")) {
+      statement.setObject(1, today().minusDays(1));
+      statement.setBigDecimal(2, new BigDecimal(amount));
+      statement.setObject(3, counterparty);
+      statement.setObject(4, accountId);
+      assertThat(statement.executeUpdate()).isEqualTo(1);
+    }
+  }
+
+  private void seedUnresolvedTransfer(UUID accountId) throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency, internal_transfer)"
+                    + " SELECT workspace_id, id, 'TRANSFER', ?, -100, native_currency, FALSE"
+                    + " FROM account WHERE id = ?")) {
+      statement.setObject(1, today().minusDays(1));
+      statement.setObject(2, accountId);
       assertThat(statement.executeUpdate()).isEqualTo(1);
     }
   }
