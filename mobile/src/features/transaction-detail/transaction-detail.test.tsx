@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { useState } from 'react';
+import { Platform } from 'react-native';
 import { IntlProvider } from 'react-intl';
 import {
   useAccount,
@@ -283,6 +285,179 @@ describe('S4 transaction detail', () => {
       screen.getByRole('button', { name: 'Change category' }).props.accessibilityState?.disabled ??
         screen.getByRole('button', { name: 'Change category' }).props.disabled,
     ).toBe(true);
+    expect(setCategory).not.toHaveBeenCalled();
+  });
+
+
+  it('closes the picker on a 412, preserves the choice, and saves using the reviewed server ETag', async () => {
+    jest.mocked(useConflict).mockImplementation(() => {
+      const [conflicted, setConflicted] = useState(false);
+      return {
+        conflicted,
+        dismiss: () => setConflicted(false),
+        handle: async () => {
+          setConflicted(true);
+          return true;
+        },
+      };
+    });
+    const refetch = jest.fn(async () => ({ data: { ...base, version: 8 } }));
+    jest.mocked(useTransaction).mockReturnValue({
+      ...success(base),
+      refetch,
+    } as unknown as ReturnType<typeof useTransaction>);
+    jest.mocked(useCategories).mockReturnValue({
+      ...success(categories),
+      refetch: jest.fn(async () => ({ data: categories })),
+    } as unknown as ReturnType<typeof useCategories>);
+    setCategory.mockRejectedValueOnce(
+      new ApiError('conflict', 412, {
+        code: 'VERSION_CONFLICT',
+        status: 412,
+        title: 'Concurrent edit',
+      }),
+    );
+
+    await show();
+    await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
+    await waitFor(() => expect(screen.getByText('This item was changed meanwhile')).toBeTruthy());
+    expect(screen.queryByRole('radio', { name: 'Food › Dining out' })).toBeNull();
+    await fireEvent.press(screen.getByRole('button', { name: 'Review and save again' }));
+    await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByText(/Your pending choice: Food › Dining out/)).toBeTruthy());
+    await fireEvent.press(screen.getByRole('button', { name: 'Save again' }));
+    await waitFor(() =>
+      expect(setCategory).toHaveBeenNthCalledWith(2, { categoryId: 'dining', version: 8 }),
+    );
+  });
+
+  it('blocks saving until conflict review reload succeeds, and offers Retry review', async () => {
+    jest.mocked(useConflict).mockImplementation(() => {
+      const [conflicted, setConflicted] = useState(false);
+      return {
+        conflicted,
+        dismiss: () => setConflicted(false),
+        handle: async () => {
+          setConflicted(true);
+          return true;
+        },
+      };
+    });
+    const refetch = jest
+      .fn()
+      .mockResolvedValueOnce({ error: new Error('offline'), data: undefined })
+      .mockResolvedValueOnce({ data: { ...base, version: 9 } });
+    jest.mocked(useTransaction).mockReturnValue({
+      ...success(base),
+      refetch,
+    } as unknown as ReturnType<typeof useTransaction>);
+    jest.mocked(useCategories).mockReturnValue({
+      ...success(categories),
+      refetch: jest.fn(async () => ({ data: categories })),
+    } as unknown as ReturnType<typeof useCategories>);
+    setCategory.mockRejectedValueOnce(
+      new ApiError('conflict', 412, {
+        code: 'VERSION_CONFLICT',
+        status: 412,
+        title: 'Concurrent edit',
+      }),
+    );
+    await show();
+    await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
+    await waitFor(() => expect(screen.getByText('This item was changed meanwhile')).toBeTruthy());
+    await fireEvent.press(screen.getByRole('button', { name: 'Review and save again' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Retry review' })).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'Save again' }).props.disabled).toBe(true);
+    expect(setCategory).toHaveBeenCalledTimes(1);
+    await fireEvent.press(screen.getByRole('button', { name: 'Retry review' }));
+    await waitFor(() => expect(refetch).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry review' })).toBeNull());
+    await fireEvent.press(screen.getByRole('button', { name: 'Save again' }));
+    await waitFor(() =>
+      expect(setCategory).toHaveBeenNthCalledWith(2, { categoryId: 'dining', version: 9 }),
+    );
+  });
+
+  it('keeps deactivated category labels in history without offering them for edits', async () => {
+    const deactivated = categories.map((item) =>
+      item.id === 'groceries' ? { ...item, active: false } : item,
+    );
+    jest.mocked(useCategories).mockImplementation((includeInactive = false) =>
+      success(includeInactive ? deactivated : deactivated.filter((item) => item.active)) as
+        ReturnType<typeof useCategories>,
+    );
+    jest.mocked(useTransactionHistory).mockReturnValue(
+      success({
+        pages: [
+          {
+            content: [{
+              occurredAt: '2026-11-09T10:00:00Z',
+              kind: 'CATEGORY_CHANGED',
+              fromCategoryId: 'groceries',
+              toCategoryId: 'dining',
+              actorDisplayName: null,
+              reason: null,
+            }],
+            page: { number: 0, size: 50, totalElements: 1, totalPages: 1 },
+          },
+        ],
+      }) as unknown as ReturnType<typeof useTransactionHistory>,
+    );
+    await show();
+    expect(screen.getByText('Category: Food › Groceries → Food › Dining out')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+    expect(screen.queryByRole('radio', { name: 'Food › Groceries' })).toBeNull();
+  });
+
+  it('opens a related corrected transaction from paginated history and loads more', async () => {
+    const more = jest.fn();
+    const onRelated = jest.fn();
+    jest.mocked(useTransactionHistory).mockReturnValue({
+      ...success({
+        pages: [{
+          content: [{
+            kind: 'CORRECTED',
+            occurredAt: '2026-11-09T10:00:00Z',
+            relatedTransactionId: 'previous-transaction',
+            actorDisplayName: null,
+            fromCategoryId: null,
+            toCategoryId: null,
+            reason: null,
+          }],
+          page: { number: 0, size: 50, totalElements: 51, totalPages: 2 },
+        }],
+      }),
+      hasNextPage: true,
+      fetchNextPage: more,
+    } as unknown as ReturnType<typeof useTransactionHistory>);
+    await render(
+      <IntlProvider locale="en" messages={en}>
+        <TransactionDetail accountId="account-1" transactionId="transaction-1"
+          onBack={jest.fn()} onRelatedTransaction={onRelated} />
+      </IntlProvider>,
+    );
+    expect(screen.getByText('Corrected automatically')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('link', { name: 'Open the previous transaction' }));
+    expect(onRelated).toHaveBeenCalledWith('previous-transaction');
+    await fireEvent.press(screen.getByRole('button', { name: 'Load more history' }));
+    expect(more).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows cancelling the picker without submitting', async () => {
+    await show();
+    await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
+    if (Platform.OS === 'web') {
+      await fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+      expect(screen.queryByRole('radio', { name: 'Food › Dining out' })).toBeNull();
+    } else {
+      // The bottom-sheet close action belongs to the shared Dialog.
+      await fireEvent.press(screen.getByRole('button', { name: 'Close' }));
+    }
     expect(setCategory).not.toHaveBeenCalled();
   });
 
