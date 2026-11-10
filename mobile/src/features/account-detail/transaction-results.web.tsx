@@ -16,6 +16,7 @@ export type TransactionResultsProps = {
   byDate: boolean;
   onOpen?: (id: string) => void;
   onCategory: (transaction: Transaction) => void;
+  selectedTransactionId?: string | null;
   /** Native only: web pages with the "Load more" button (spec S3 "Paging"). */
   onEndReached?: () => void;
 };
@@ -33,7 +34,13 @@ export function TransactionResults(props: TransactionResultsProps) {
   );
 }
 
-function TransactionTable({ transactions, context, onOpen, onCategory }: TransactionResultsProps) {
+function TransactionTable({
+  transactions,
+  context,
+  onOpen,
+  onCategory,
+  selectedTransactionId,
+}: TransactionResultsProps) {
   const intl = useIntl();
   const theme = useTheme();
   const cellStyle = {
@@ -100,6 +107,7 @@ function TransactionTable({ transactions, context, onOpen, onCategory }: Transac
                       font: 'inherit',
                       padding: 0,
                     }}
+                    aria-current={selectedTransactionId === transaction.id ? 'true' : undefined}
                     disabled={!onOpen}
                     onClick={onOpen ? () => onOpen(transaction.id) : undefined}
                   >

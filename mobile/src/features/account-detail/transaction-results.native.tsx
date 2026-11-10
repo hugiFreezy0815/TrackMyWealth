@@ -15,6 +15,7 @@ export type TransactionResultsProps = {
   byDate: boolean;
   onOpen?: (id: string) => void;
   onCategory: (transaction: Transaction) => void;
+  selectedTransactionId?: string | null;
   /** Phone infinite scroll: the next page loads once the last 10 rows come into view. */
   onEndReached?: () => void;
 };

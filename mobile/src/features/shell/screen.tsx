@@ -29,6 +29,8 @@ type Props = {
   privacyToggle?: boolean;
   /** Pull-to-refresh for the whole screen (a `RefreshControl`). */
   refreshControl?: ReactElement<RefreshControlProps>;
+  /** S4 transaction details use a 400px desktop side panel. */
+  detailWidth?: number;
 };
 
 export function ShellScreen({
@@ -37,6 +39,7 @@ export function ShellScreen({
   aside,
   privacyToggle = true,
   refreshControl,
+  detailWidth = DETAIL_PANEL_WIDTH,
 }: Props) {
   const theme = useTheme();
   const { width } = useWindowDimensions();
@@ -52,7 +55,13 @@ export function ShellScreen({
       scrollEventThrottle={100}
       contentContainerStyle={[styles.scroll, layout === 'phone' && styles.scrollPhone]}
     >
-      <View style={[styles.frame, besideContent && styles.frameWithPanel]}>
+      <View
+        style={[
+          styles.frame,
+          besideContent && styles.frameWithPanel,
+          besideContent && { maxWidth: 960 + 24 + detailWidth },
+        ]}
+      >
         <View style={styles.content}>
           <View style={styles.header}>
             <ThemedText type="subtitle" role="heading" style={styles.heading}>
@@ -66,7 +75,7 @@ export function ShellScreen({
           <View
             role="complementary"
             testID="shell-detail-panel"
-            style={besideContent ? styles.panelBeside : styles.panelBelow}
+            style={besideContent ? [styles.panelBeside, { width: detailWidth }] : styles.panelBelow}
           >
             {aside}
           </View>

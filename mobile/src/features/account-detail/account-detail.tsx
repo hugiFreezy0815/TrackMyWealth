@@ -62,6 +62,8 @@ export type AccountDetailProps = {
   accountId: string;
   onBack: () => void;
   onTransaction?: (id: string) => void;
+  /** The selected transaction in a desktop S4 panel, if any. */
+  selectedTransactionId?: string | null;
   onImport: () => void;
 };
 
@@ -100,7 +102,13 @@ export function useAccountRefresh() {
   return { refreshing, refresh };
 }
 
-export function AccountDetail({ accountId, onBack, onTransaction, onImport }: AccountDetailProps) {
+export function AccountDetail({
+  accountId,
+  onBack,
+  onTransaction,
+  selectedTransactionId,
+  onImport,
+}: AccountDetailProps) {
   const intl = useIntl();
   const theme = useTheme();
   const online = useOnline();
@@ -506,6 +514,7 @@ export function AccountDetail({ accountId, onBack, onTransaction, onImport }: Ac
           ) : null}
           <TransactionResults
             transactions={records}
+            selectedTransactionId={selectedTransactionId}
             context={context}
             byDate={sort.startsWith('bookingDate')}
             onOpen={onTransaction}
