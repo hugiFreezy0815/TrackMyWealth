@@ -31,7 +31,17 @@ public record ValueHistoryResponse(
       BigDecimal amount,
       @Nullable BigDecimal percent,
       @Nullable BigDecimal contributions,
-      @Nullable BigDecimal marketAndFx) {}
+      @Nullable BigDecimal marketAndFx,
+      @Nullable BigDecimal capitalMovements) {
+
+    public Change(
+        BigDecimal amount,
+        @Nullable BigDecimal percent,
+        @Nullable BigDecimal contributions,
+        @Nullable BigDecimal marketAndFx) {
+      this(amount, percent, contributions, marketAndFx, null);
+    }
+  }
 
   /** Only workspace-wide history includes a per-section period change. */
   public record SectionChange(PortfolioSection section, Change change) {}

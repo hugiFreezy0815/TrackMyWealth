@@ -717,6 +717,80 @@ public interface TransactionRepository
       @Param(FROM) LocalDate from,
       @Param("to") LocalDate to);
 
+
+  /**
+   * Signed per-account/date/currency external income, preserving the monthly cash-flow
+   * classification and proposed-transfer exclusion for historical portfolio membership.
+   */
+  @Query(
+      "select t.account.id, t.bookingDate, t.currency, sum(t.amount) from Transaction t"
+          + " where t.account.id in :accountIds and t.transactionType in :types"
+          + " and t.internalTransfer = false"
+          + BOOKED_BETWEEN
+          + NOT_VOIDED_OR_REVERSAL
+          + " and not exists (select 1 from SettlementMatch m where m.status = 'PROPOSED'"
+          + " and m.matchKind = 'TRANSFER' and m.cardTransaction = t)"
+          + " group by t.account.id, t.bookingDate, t.currency")
+  List<Object[]> sumHistoryIncomeByAccountDateCurrency(
+      @Param(ACCOUNT_IDS) Collection<UUID> accountIds,
+      @Param(TYPES) Collection<String> types,
+      @Param(FROM) LocalDate from,
+      @Param("to") LocalDate to);
+
+  @Query(
+      "select t.account.id, t.bookingDate, t.currency, sum(t.amount) from Transaction t"
+          + " where t.account.id in :accountIds and t.transactionType in :types"
+          + " and t.internalTransfer = false"
+          + BOOKED_BETWEEN
+          + NOT_VOIDED_OR_REVERSAL
+          + " and not exists (select 1 from SettlementMatch m"
+          + " where m.status = 'PROPOSED' and m.paymentTransaction = t)"
+          + " group by t.account.id, t.bookingDate, t.currency")
+  List<Object[]> sumHistorySpendingByAccountDateCurrency(
+      @Param(ACCOUNT_IDS) Collection<UUID> accountIds,
+      @Param(TYPES) Collection<String> types,
+      @Param(FROM) LocalDate from,
+      @Param("to") LocalDate to);
+
+  /** Signed capital entering or leaving a portfolio, including paired internal transfer legs. */
+  @Query(
+      "select t.account.id, t.bookingDate, t.currency, sum(t.amount) from Transaction t"
+          + " where t.account.id in :accountIds and t.internalTransfer = true"
+          + BOOKED_BETWEEN
+          + NOT_VOIDED_OR_REVERSAL
+          + " group by t.account.id, t.bookingDate, t.currency")
+  List<Object[]> sumHistoryInternalByAccountDateCurrency(
+      @Param(ACCOUNT_IDS) Collection<UUID> accountIds,
+      @Param(FROM) LocalDate from,
+      @Param("to") LocalDate to);
+
+  /** Pending review with the exact /cash-flow classification, grouped by account for scope. */
+  @Query(
+      "select t.account.id, t.bookingDate, t.currency, sum(abs(t.amount)) from Transaction t"
+          + " where t.account.id in :accountIds and t.internalTransfer = false"
+          + BOOKED_BETWEEN
+          + NOT_VOIDED_OR_REVERSAL
+          + " and ((t.transactionType = 'DEBT_REPAYMENT' and t.amount < 0"
+          + " and not exists (select 1 from Transaction c"
+          + " where c.relatedTransactionId = t.id and c.transactionType = 'DEBT_REPAYMENT'"
+          + " and c.account.id in :accountIds and c.bookingDate between :from and :to"
+          + " and c.voidedAt is null and c.replacesTransactionId is null))"
+          + " or (t.amount < 0 and (t.transactionType = 'SETTLEMENT' or exists (select 1 from"
+          + " SettlementMatch m where m.status = 'PROPOSED' and m.paymentTransaction = t)))"
+          + " or ((t.transactionType in ('TRANSFER', 'PENSION_CONTRIBUTION')"
+          + " or (t.transactionType = 'DEBT_REPAYMENT' and t.amount > 0)"
+          + " or exists (select 1 from SettlementMatch m where m.status = 'PROPOSED'"
+          + " and m.matchKind = 'TRANSFER' and m.cardTransaction = t))"
+          + " and not exists (select 1 from SettlementMatch m join m.paymentTransaction d"
+          + " where m.status = 'PROPOSED' and m.matchKind = 'TRANSFER' and m.cardTransaction = t"
+          + " and d.account.id in :accountIds and d.bookingDate between :from and :to"
+          + " and d.internalTransfer = false)))"
+          + " group by t.account.id, t.bookingDate, t.currency")
+  List<Object[]> sumHistoryPendingByAccountDateCurrency(
+      @Param(ACCOUNT_IDS) Collection<UUID> accountIds,
+      @Param(FROM) LocalDate from,
+      @Param("to") LocalDate to);
+
   /**
    * US-10-01: signed income per booking date and currency - {@code types} rows in [{@code from},
    * {@code to}] that are not an internal transfer and not the incoming leg of a transfer pair still

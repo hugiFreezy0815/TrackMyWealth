@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import com.trackmywealth.backend.dto.AccountHistoryState;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.CashFlowContribution;
+import com.trackmywealth.backend.dto.PortfolioCapitalFlows;
 import com.trackmywealth.backend.dto.PortfolioPeriodChange;
 import com.trackmywealth.backend.dto.PortfolioPlacement;
 import com.trackmywealth.backend.dto.PortfolioSection;
@@ -161,12 +162,36 @@ public class ValueHistoryService {
     ValueHistorySnapshot start = Objects.requireNonNull(first);
     ValueHistorySnapshot end = Objects.requireNonNull(last);
     List<UUID> accountIds = accounts.stream().map(Account::getId).toList();
-    CashFlowContribution contributions =
-        cashFlowService.netContributions(accountIds, from.plusDays(1), today, currency);
-    complete &= contributions.complete();
-    warnings.addAll(contributions.warnings());
-    Change change =
-        change(start.value(), end.value(), contributions.complete() ? contributions.amount() : null);
+    Change change;
+    if (portfolioId == null) {
+      CashFlowContribution contributions =
+          cashFlowService.netContributions(accountIds, from.plusDays(1), today, currency);
+      complete &= contributions.complete();
+      warnings.addAll(contributions.warnings());
+      change =
+          change(start.value(), end.value(),
+              contributions.complete() ? contributions.amount() : null);
+    } else {
+      PortfolioCapitalFlows flows =
+          cashFlowService.portfolioCapitalFlows(
+              accountIds,
+              from.plusDays(1),
+              today,
+              currency,
+              (accountId, date) -> {
+                Account account = accounts.stream()
+                    .filter(a -> a.getId().equals(accountId)).findFirst().orElse(null);
+                return account != null
+                    && portfolioId.equals(portfolioOfOnDate(
+                        account, date, businessDateService.zone(), historyStates));
+              });
+      complete &= flows.complete();
+      warnings.addAll(flows.warnings());
+      change =
+          change(start.value(), end.value(),
+              flows.complete() ? flows.contributions() : null,
+              flows.complete() ? flows.capitalMovements() : null);
+    }
     List<SectionChange> sections = new ArrayList<>();
     if (withSections) {
       for (PortfolioSection section : PortfolioSection.values()) {
@@ -327,6 +352,15 @@ public class ValueHistoryService {
         .toList();
   }
 
+  private static @Nullable UUID portfolioOfOnDate(
+      Account account,
+      LocalDate date,
+      ZoneId zone,
+      Map<UUID, List<AccountHistoryState>> historyStates) {
+    AccountHistoryState state = stateOn(account, date, zone, historyStates);
+    return state == null ? account.getPortfolio().getId() : state.portfolioId();
+  }
+
   private static @Nullable AccountHistoryState stateOn(
       Account account,
       LocalDate date,
@@ -357,6 +391,12 @@ public class ValueHistoryService {
   }
 
   static Change change(BigDecimal from, BigDecimal to, BigDecimal contributions) {
+    return change(from, to, contributions, null);
+  }
+
+  static Change change(
+      BigDecimal from, BigDecimal to, @Nullable BigDecimal contributions,
+      @Nullable BigDecimal capitalMovements) {
     BigDecimal amount = to.subtract(from);
     BigDecimal percent =
         from.signum() == 0
@@ -366,7 +406,11 @@ public class ValueHistoryService {
         amount,
         percent,
         contributions,
-        contributions == null ? null : amount.subtract(contributions));
+        contributions == null || (capitalMovements == null && !BigDecimal.ZERO.equals(contributions))
+            ? (capitalMovements == null && contributions != null
+                ? amount.subtract(contributions) : null)
+            : amount.subtract(contributions).subtract(capitalMovements),
+        capitalMovements);
   }
 
 }

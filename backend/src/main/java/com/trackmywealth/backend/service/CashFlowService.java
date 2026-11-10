@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.CashFlowContribution;
+import com.trackmywealth.backend.dto.PortfolioCapitalFlows;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse.CurrencyAmount;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
@@ -22,6 +23,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.function.BiPredicate;
 import java.util.stream.Stream;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -219,6 +221,68 @@ public class CashFlowService {
     }
     return new CashFlowContribution(
         contribution.amount(), pending.isEmpty() && contribution.valueKnown(), warnings);
+  }
+
+
+  /**
+   * Portfolio external contributions and internal capital movements. Aggregated per account and
+   * booking date, then selected using the effective portfolio membership at that date. This
+   * prevents moving an account today from retrospectively moving its historical cash flows.
+   */
+  @Transactional(readOnly = true)
+  public PortfolioCapitalFlows portfolioCapitalFlows(
+      List<UUID> accountIds,
+      LocalDate from,
+      LocalDate to,
+      String currency,
+      BiPredicate<UUID, LocalDate> inPortfolioOnDate) {
+    if (accountIds.isEmpty() || from.isAfter(to)) {
+      return new PortfolioCapitalFlows(BigDecimal.ZERO, BigDecimal.ZERO, true, List.of());
+    }
+    List<Object[]> income =
+        transactionRepository.sumHistoryIncomeByAccountDateCurrency(
+            accountIds, INCOME_TYPES, from, to);
+    List<Object[]> spending =
+        transactionRepository.sumHistorySpendingByAccountDateCurrency(
+            accountIds, SPENDING_TYPES, from, to);
+    List<Object[]> internal =
+        transactionRepository.sumHistoryInternalByAccountDateCurrency(accountIds, from, to);
+    List<Object[]> pending =
+        transactionRepository.sumHistoryPendingByAccountDateCurrency(accountIds, from, to);
+    List<Object[]> externalRows =
+        Stream.concat(income.stream(), spending.stream())
+            .filter(row -> inPortfolioOnDate.test((UUID) row[0], (LocalDate) row[1]))
+            .map(CashFlowService::withoutAccountId)
+            .toList();
+    List<Object[]> internalRows =
+        internal.stream()
+            .filter(row -> inPortfolioOnDate.test((UUID) row[0], (LocalDate) row[1]))
+            .map(CashFlowService::withoutAccountId)
+            .toList();
+    boolean hasPending =
+        pending.stream().anyMatch(row -> inPortfolioOnDate.test((UUID) row[0], (LocalDate) row[1]));
+    Map<LocalDate, Map<String, Optional<CurrencyConversionResult>>> rates = new HashMap<>();
+    List<CurrencyAmount> externalConverted = converted(externalRows, currency, rates);
+    List<CurrencyAmount> internalConverted = converted(internalRows, currency, rates);
+    BigDecimal contributions =
+        externalConverted.isEmpty() ? BigDecimal.ZERO : externalConverted.get(0).amount();
+    BigDecimal movements =
+        internalConverted.isEmpty() ? BigDecimal.ZERO : internalConverted.get(0).amount();
+    List<String> warnings = new ArrayList<>();
+    if (hasPending) {
+      warnings.add("Transactions are pending review; portfolio attribution is incomplete.");
+    }
+    boolean known =
+        (externalConverted.isEmpty() || externalConverted.get(0).valueKnown())
+            && (internalConverted.isEmpty() || internalConverted.get(0).valueKnown());
+    if (!known) {
+      warnings.add("Currency conversion unavailable for portfolio capital flows.");
+    }
+    return new PortfolioCapitalFlows(contributions, movements, !hasPending && known, warnings);
+  }
+
+  private static Object[] withoutAccountId(Object[] row) {
+    return new Object[] {row[1], row[2], row[3]};
   }
 
   // US-10-02: with mortgage principal included, the loan is a saving account, so principal paid
