@@ -5,6 +5,7 @@ import { StyleSheet } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import { typedApi } from '@/api/typed-api';
+import { queryKeys } from '@/api/queries/keys';
 import { amountTexts } from '@/components/shared';
 import { showToast } from '@/features/shell/toast';
 import en from '@/i18n/en.json';
@@ -155,7 +156,9 @@ const listCalls = () =>
     })
     .map(([, options]) => (options as { query: Record<string, unknown> }).query);
 
-async function renderDetail(props: { onBack?: () => void } = {}) {
+async function renderDetail(
+  props: { onBack?: () => void; cachedAccounts?: AccountListItem[] } = {},
+) {
   const client = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: Infinity },
@@ -163,6 +166,7 @@ async function renderDetail(props: { onBack?: () => void } = {}) {
     },
   });
   const onBack = props.onBack ?? jest.fn();
+  if (props.cachedAccounts) client.setQueryData(queryKeys.accounts({}), props.cachedAccounts);
   await render(
     <QueryClientProvider client={client}>
       <IntlProvider locale="en" messages={en}>
@@ -194,6 +198,29 @@ beforeEach(() => {
 });
 
 describe('S3 account detail acceptance checks (#494)', () => {
+  it('shows a cached S1 account header with retry when the summary fails offline', async () => {
+    api.get.mockRejectedValue(new Error('offline'));
+    await renderDetail({
+      cachedAccounts: [{ ...listItem, name: 'Cached Girokonto', archived: false }],
+    });
+    expect(await screen.findByTestId('account-cached-fallback')).toHaveTextContent(
+      /Cached Girokonto/,
+    );
+    expect(screen.getByTestId('account-cached-fallback')).toHaveTextContent(/4.*210.*55/);
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+  });
+
+  it('does not leak a cached account header on a 404', async () => {
+    api.get.mockRejectedValue(new ApiError('not found', 404));
+    await renderDetail({
+      cachedAccounts: [{ ...listItem, name: 'Cached Girokonto', archived: false }],
+    });
+    expect(
+      await screen.findByText('This account no longer exists or is not available to you'),
+    ).toBeTruthy();
+    expect(screen.queryByText('Cached Girokonto')).toBeNull();
+  });
+
   it('loads 120 transactions as 50, 50, 20 without duplicates, then restarts at page 0', async () => {
     fakeServer(
       summary(),
