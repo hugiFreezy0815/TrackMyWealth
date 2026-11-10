@@ -137,6 +137,8 @@ public interface TransactionRepository
   String TYPES = "types";
   String BOOKED_BETWEEN = " and t.bookingDate between :from and :to";
   String IN_LEDGER_ORDER = " order by t.bookingDate, t.createdAt, t.id";
+  String HISTORY_ACCOUNT_DATE_CURRENCY_GROUP_BY =
+      " group by t.account.id, t.bookingDate, t.currency";
   String PER_DATE_CURRENCY =
       " group by t.bookingDate, t.currency order by t.bookingDate, t.currency";
 
@@ -729,7 +731,7 @@ public interface TransactionRepository
           + NOT_VOIDED_OR_REVERSAL
           + " and not exists (select 1 from SettlementMatch m where m.status = 'PROPOSED'"
           + " and m.matchKind = 'TRANSFER' and m.cardTransaction = t)"
-          + " group by t.account.id, t.bookingDate, t.currency")
+          + HISTORY_ACCOUNT_DATE_CURRENCY_GROUP_BY)
   List<Object[]> sumHistoryIncomeByAccountDateCurrency(
       @Param(ACCOUNT_IDS) Collection<UUID> accountIds,
       @Param(TYPES) Collection<String> types,
@@ -744,7 +746,7 @@ public interface TransactionRepository
           + NOT_VOIDED_OR_REVERSAL
           + " and not exists (select 1 from SettlementMatch m"
           + " where m.status = 'PROPOSED' and m.paymentTransaction = t)"
-          + " group by t.account.id, t.bookingDate, t.currency")
+          + HISTORY_ACCOUNT_DATE_CURRENCY_GROUP_BY)
   List<Object[]> sumHistorySpendingByAccountDateCurrency(
       @Param(ACCOUNT_IDS) Collection<UUID> accountIds,
       @Param(TYPES) Collection<String> types,
@@ -757,7 +759,7 @@ public interface TransactionRepository
           + " where t.account.id in :accountIds and t.internalTransfer = true"
           + BOOKED_BETWEEN
           + NOT_VOIDED_OR_REVERSAL
-          + " group by t.account.id, t.bookingDate, t.currency")
+          + HISTORY_ACCOUNT_DATE_CURRENCY_GROUP_BY)
   List<Object[]> sumHistoryInternalByAccountDateCurrency(
       @Param(ACCOUNT_IDS) Collection<UUID> accountIds,
       @Param(FROM) LocalDate from,
@@ -784,7 +786,7 @@ public interface TransactionRepository
           + " where m.status = 'PROPOSED' and m.matchKind = 'TRANSFER' and m.cardTransaction = t"
           + " and d.account.id in :accountIds and d.bookingDate between :from and :to"
           + " and d.internalTransfer = false)))"
-          + " group by t.account.id, t.bookingDate, t.currency")
+          + HISTORY_ACCOUNT_DATE_CURRENCY_GROUP_BY)
   List<Object[]> sumHistoryPendingByAccountDateCurrency(
       @Param(ACCOUNT_IDS) Collection<UUID> accountIds,
       @Param(FROM) LocalDate from,

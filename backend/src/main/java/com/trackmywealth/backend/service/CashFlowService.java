@@ -280,7 +280,7 @@ public class CashFlowService {
     return new PortfolioCapitalFlows(contributions, movements, !hasPending && known, warnings);
   }
 
-  private static Object[] withoutAccountId(Object[] row) {
+  private static Object[] withoutAccountId(Object... row) {
     return new Object[] {row[1], row[2], row[3]};
   }
 

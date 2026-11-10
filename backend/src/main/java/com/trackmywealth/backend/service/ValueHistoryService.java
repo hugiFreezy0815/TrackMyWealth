@@ -51,6 +51,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ValueHistoryService {
 
+  private static final String ACTIVE_STATUS = "ACTIVE";
+
   private final AccessControlService accessControlService;
   private final PortfolioLookupService portfolioLookupService;
   private final WorkspaceRepository workspaceRepository;
@@ -377,9 +379,9 @@ public class ValueHistoryService {
         AccountHistoryState atInception = stateOn(account, inception, zone, historyStates);
         boolean included =
             atInception == null
-                ? "ACTIVE".equals(account.getStatus())
+                ? ACTIVE_STATUS.equals(account.getStatus())
                     && (portfolioId == null || portfolioId.equals(account.getPortfolio().getId()))
-                : "ACTIVE".equals(atInception.status())
+                : ACTIVE_STATUS.equals(atInception.status())
                     && (portfolioId == null || portfolioId.equals(atInception.portfolioId()));
         if (included) {
           AccountValuation initial = accountValuationService.valueIn(account, currency, inception);
@@ -400,10 +402,10 @@ public class ValueHistoryService {
           continue;
         }
         boolean beforeIncluded =
-            "ACTIVE".equals(before.status())
+            ACTIVE_STATUS.equals(before.status())
                 && (portfolioId == null || portfolioId.equals(before.portfolioId()));
         boolean afterIncluded =
-            "ACTIVE".equals(after.status())
+            ACTIVE_STATUS.equals(after.status())
                 && (portfolioId == null || portfolioId.equals(after.portfolioId()));
         if (beforeIncluded == afterIncluded) {
           continue;
@@ -452,7 +454,7 @@ public class ValueHistoryService {
                 if (warnings != null) {
                   warnings.add(account.getName() + ": historical lifecycle state unavailable");
                 }
-                return "ACTIVE".equals(account.getStatus())
+                return ACTIVE_STATUS.equals(account.getStatus())
                     && (portfolioId == null || portfolioId.equals(account.getPortfolio().getId()));
               }
               if (!state.verified() && warnings != null) {
@@ -461,7 +463,7 @@ public class ValueHistoryService {
                         + ": portfolio and archive history before tracking"
                         + " may have been restated");
               }
-              return "ACTIVE".equals(state.status())
+              return ACTIVE_STATUS.equals(state.status())
                   && (portfolioId == null || portfolioId.equals(state.portfolioId()));
             })
         .toList();

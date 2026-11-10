@@ -18,19 +18,19 @@ public enum ValueHistoryPeriod {
 
   private static final int MAX_POINTS = 400;
 
-  private final String wireValue;
+  private final String periodCode;
 
   ValueHistoryPeriod(String wireValue) {
-    this.wireValue = wireValue;
+    this.periodCode = wireValue;
   }
 
   public String wireValue() {
-    return wireValue;
+    return periodCode;
   }
 
   public static ValueHistoryPeriod parse(String value) {
     for (ValueHistoryPeriod period : values()) {
-      if (period.wireValue.equals(value)) {
+      if (period.periodCode.equals(value)) {
         return period;
       }
     }
