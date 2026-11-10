@@ -32,8 +32,10 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -204,6 +206,102 @@ public class AccountValuationService {
   public MultiCurrencyValuations valueAllInCurrencies(
       Collection<Account> accounts, Collection<String> targetCurrencies, LocalDate asOf) {
     return valuationsOf(accounts, targetCurrencies, asOf, false);
+  }
+
+  /**
+   * Bulk history valuation for accounts with opening balances. Reads their ledger once, grouped by
+   * account and booking day, then applies the same opening-balance, void/reversal, reconciliation,
+   * FX and warning rules as {@link #valueAll}. Other valuation sources still use the normal path.
+   * The caller must have already checked account access.
+   */
+  @Transactional(readOnly = true)
+  public Map<LocalDate, Map<UUID, AccountValuation>> historyFromOpeningBalances(
+      Collection<Account> accounts, String targetCurrency, List<LocalDate> dates) {
+    if (accounts.isEmpty() || dates.isEmpty()) {
+      return Map.of();
+    }
+    List<Account> candidates =
+        accounts.stream()
+            .filter(AccountValuationService::takesOpeningBalance)
+            .filter(account -> !account.isHoldsPositions())
+            .toList();
+    if (candidates.isEmpty()) {
+      return Map.of();
+    }
+    List<UUID> ids = candidates.stream().map(Account::getId).toList();
+    Map<UUID, SnapshotBalance> openings = new HashMap<>();
+    for (AccountSnapshot snapshot :
+        accountSnapshotRepository.findByAccountIdInAndOpeningBalanceTrue(ids)) {
+      openings.put(snapshot.getAccount().getId(), balanceOf(snapshot));
+    }
+    if (openings.isEmpty()) {
+      return Map.of();
+    }
+    // This query uses the exact ledger eligibility predicate as sumAmountBookedAfterSnapshots.
+    Map<UUID, NavigableMap<LocalDate, BigDecimal>> cumulative = new HashMap<>();
+    for (Object[] row :
+        transactionRepository.sumHistoryAfterOpeningByAccountAndDate(
+            openings.keySet(), dates.get(dates.size() - 1))) {
+      UUID accountId = (UUID) row[0];
+      LocalDate bookingDate = (LocalDate) row[1];
+      BigDecimal amount = (BigDecimal) row[2];
+      cumulative
+          .computeIfAbsent(accountId, unused -> new TreeMap<>())
+          .merge(bookingDate, amount, BigDecimal::add);
+    }
+    for (NavigableMap<LocalDate, BigDecimal> byDate : cumulative.values()) {
+      BigDecimal running = BigDecimal.ZERO;
+      for (Map.Entry<LocalDate, BigDecimal> entry : byDate.entrySet()) {
+        running = running.add(entry.getValue());
+        entry.setValue(running);
+      }
+    }
+    Map<UUID, LocalDate> openingDates = new HashMap<>();
+    openings.forEach((id, opening) -> openingDates.put(id, opening.snapshotDate()));
+    Map<UUID, List<String>> warnings =
+        accountDataQualityService.warningsForAll(candidates, openingDates);
+    Map<UUID, String> currencies = accountCurrencyService.ownCurrencies(candidates);
+    Map<LocalDate, Map<UUID, AccountValuation>> history = new LinkedHashMap<>();
+    for (LocalDate date : dates) {
+      Function<String, Optional<CurrencyConversionResult>> lookup =
+          rateLookup(targetCurrency, date);
+      Map<String, Optional<CurrencyConversionResult>> rates = new HashMap<>();
+      Map<UUID, AccountValuation> atDate = new HashMap<>();
+      for (Account account : candidates) {
+        UUID id = account.getId();
+        SnapshotBalance opening = openings.get(id);
+        if (opening == null) {
+          continue;
+        }
+        String ownCurrency = currencies.get(id);
+        List<String> accountWarnings = warnings.getOrDefault(id, List.of());
+        if (date.isBefore(opening.snapshotDate())) {
+          atDate.put(id, unknown(account, ownCurrency, targetCurrency, accountWarnings));
+          continue;
+        }
+        NavigableMap<LocalDate, BigDecimal> ledger = cumulative.get(id);
+        Map.Entry<LocalDate, BigDecimal> preceding =
+            ledger == null ? null : ledger.floorEntry(date);
+        BigDecimal delta = preceding == null ? BigDecimal.ZERO : preceding.getValue();
+        BigDecimal amount =
+            LIABILITY.equals(account.getNature())
+                ? opening.balance().subtract(delta)
+                : opening.balance().add(delta);
+        atDate.put(
+            id,
+            inCurrency(
+                account,
+                ownCurrency,
+                targetCurrency,
+                Optional.of(
+                    new NativeAccountValue(amount, ValueBasisValues.LEDGER_FROM_OPENING_BALANCE)),
+                nativeCurrency -> rates.computeIfAbsent(nativeCurrency, lookup),
+                date,
+                accountWarnings));
+      }
+      history.put(date, Map.copyOf(atDate));
+    }
+    return Map.copyOf(history);
   }
 
   // The one valuation path. The valuations in each account's own currency are built only when the

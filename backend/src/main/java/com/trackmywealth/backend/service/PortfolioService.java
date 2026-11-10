@@ -4,6 +4,7 @@ import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
 import com.trackmywealth.backend.dto.MultiCurrencyValuations;
 import com.trackmywealth.backend.dto.PortfolioListItemResponse;
+import com.trackmywealth.backend.dto.PortfolioPeriodChange;
 import com.trackmywealth.backend.dto.PortfolioPlacement;
 import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
@@ -80,6 +81,7 @@ public class PortfolioService {
   private final AccountService accountService;
   private final AccountValuationService accountValuationService;
   private final BusinessDateService businessDateService;
+  private final ValueHistoryService historyService;
 
   public PortfolioService(
       WorkspaceAccessService workspaceAccessService,
@@ -91,7 +93,8 @@ public class PortfolioService {
       AccountRepository accountRepository,
       AccountService accountService,
       AccountValuationService accountValuationService,
-      BusinessDateService businessDateService) {
+      BusinessDateService businessDateService,
+      ValueHistoryService historyService) {
     this.workspaceAccessService = workspaceAccessService;
     this.accessControlService = accessControlService;
     this.portfolioLookupService = portfolioLookupService;
@@ -102,6 +105,7 @@ public class PortfolioService {
     this.accountService = accountService;
     this.accountValuationService = accountValuationService;
     this.businessDateService = businessDateService;
+    this.historyService = historyService;
   }
 
   @Transactional
@@ -186,6 +190,9 @@ public class PortfolioService {
     currencies.forEach(currency -> byCurrency.put(currency, valuations.byAccountIn(currency)));
     Map<UUID, PortfolioPlacement> placements = accountService.portfolioPlacementsOf(accounts);
 
+    Map<UUID, PortfolioPeriodChange> monthlyChanges =
+        historyService.monthlyChanges(
+            portfolios, accountRepository.findByWorkspaceId(actor.workspaceId()), asOf);
     List<PortfolioListItemResponse> rows = new ArrayList<>(portfolios.size());
     for (Portfolio portfolio : portfolios) {
       List<UUID> ids = accountIdsByPortfolio.get(portfolio.getId());
@@ -203,7 +210,15 @@ public class PortfolioService {
               portfolio.getPortfolioTypeOverride(),
               portfolio.isPersonalAssetsDefault(),
               () -> ids.stream().map(id -> placements.get(id).section()).toList());
-      rows.add(toListItem(portfolio, type, ids.size(), totals, workspaceCurrency, asOf));
+      rows.add(
+          toListItem(
+              portfolio,
+              type,
+              ids.size(),
+              totals,
+              workspaceCurrency,
+              asOf,
+              monthlyChanges.get(portfolio.getId())));
     }
     return rows;
   }
@@ -214,7 +229,8 @@ public class PortfolioService {
       int activeAccountCount,
       PortfolioTotals totals,
       String workspaceCurrency,
-      LocalDate asOf) {
+      LocalDate asOf,
+      PortfolioPeriodChange change) {
     return new PortfolioListItemResponse(
         portfolio.getId(),
         VersionPreconditionService.persistedVersion(portfolio.getVersion(), VERSIONED_RESOURCE),
@@ -238,7 +254,8 @@ public class PortfolioService {
         asOf,
         portfolio.getCatalogueInstitution() == null
             ? null
-            : portfolio.getCatalogueInstitution().getName());
+            : portfolio.getCatalogueInstitution().getName(),
+        change);
   }
 
   /**

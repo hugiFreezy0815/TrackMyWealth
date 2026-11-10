@@ -6,10 +6,12 @@ import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
 import com.trackmywealth.backend.dto.PortfolioViewResponse;
 import com.trackmywealth.backend.dto.UpdatePortfolioRequest;
+import com.trackmywealth.backend.dto.ValueHistoryResponse;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.PortfolioService;
 import com.trackmywealth.backend.service.PortfolioViewService;
+import com.trackmywealth.backend.service.ValueHistoryService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.ResponseHeader;
@@ -47,11 +49,15 @@ public class PortfolioController {
 
   private final PortfolioService portfolioService;
   private final PortfolioViewService portfolioViewService;
+  private final ValueHistoryService historyService;
 
   public PortfolioController(
-      PortfolioService portfolioService, PortfolioViewService portfolioViewService) {
+      PortfolioService portfolioService,
+      PortfolioViewService portfolioViewService,
+      ValueHistoryService historyService) {
     this.portfolioService = portfolioService;
     this.portfolioViewService = portfolioViewService;
+    this.historyService = historyService;
   }
 
   /**
@@ -121,6 +127,17 @@ public class PortfolioController {
       @RequestParam(required = false) String currency,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return portfolioService.getSummary(portfolioId, actor, currency);
+  }
+
+  @Operation(
+      operationId = "getPortfolioHistory",
+      summary = "Historical value and period change in the portfolio currency")
+  @GetMapping("/{portfolioId}/history")
+  public ValueHistoryResponse getHistory(
+      @PathVariable UUID portfolioId,
+      @RequestParam(defaultValue = "1M") String period,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return historyService.portfolioHistory(portfolioId, period, actor);
   }
 
   @Operation(

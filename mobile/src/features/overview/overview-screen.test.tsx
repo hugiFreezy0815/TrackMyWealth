@@ -63,6 +63,7 @@ const portfolio: Portfolio = {
   valueStatus: 'CURRENT',
   asOf: '2026-11-08',
   institutionName: null,
+  change: { period: '1M', amount: '12.00', percent: '0.51' },
 };
 const accountValuation: NetWorth['accounts'][number] = {
   accountId: 'account-1',

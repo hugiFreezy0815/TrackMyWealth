@@ -1,8 +1,10 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.CashFlowContribution;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse.CurrencyAmount;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
+import com.trackmywealth.backend.dto.PortfolioCapitalFlows;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.SavingsRateMethodology;
 import com.trackmywealth.backend.repository.AccountRepository;
@@ -13,6 +15,7 @@ import com.trackmywealth.backend.validation.CurrencyCodes;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +23,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.function.BiPredicate;
 import java.util.stream.Stream;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -178,6 +182,106 @@ public class CashFlowService {
         convertedSaving,
         convertedPending,
         pending.isEmpty() && allKnown);
+  }
+
+  /**
+   * US-11-06: net external contribution over an arbitrary inclusive range, using exactly the
+   * income/spending rules of the monthly cash-flow endpoint. Internal transfers, card settlements,
+   * voided/deleted entries and pending review are excluded by the shared repository queries.
+   * Returns an unknown amount (not a misleading zero) if a historical FX rate is unavailable, and
+   * marks results incomplete if the cash-flow pending-review rules find unresolved transactions.
+   *
+   * <p>The caller has already authorized the supplied account IDs. Only the contribution interval
+   * is read, not each chart point; FX is resolved on every transaction booking date.
+   */
+  @Transactional(readOnly = true)
+  public CashFlowContribution netContributions(
+      List<UUID> accountIds, LocalDate from, LocalDate to, String currency) {
+    if (accountIds.isEmpty() || from.isAfter(to)) {
+      return new CashFlowContribution(BigDecimal.ZERO, true, List.of());
+    }
+    List<Object[]> income =
+        transactionRepository.sumIncomeByDateAndCurrency(accountIds, INCOME_TYPES, from, to);
+    List<Object[]> spending =
+        transactionRepository.sumSpendingByDateAndCurrency(accountIds, SPENDING_TYPES, from, to);
+    List<Object[]> pending =
+        transactionRepository.sumPendingReviewByDateAndCurrency(accountIds, from, to);
+    List<String> warnings = new ArrayList<>();
+    if (!pending.isEmpty()) {
+      warnings.add("Transactions are pending review; contribution attribution is incomplete.");
+    }
+    List<Object[]> all = Stream.concat(income.stream(), spending.stream()).toList();
+    if (all.isEmpty()) {
+      return new CashFlowContribution(BigDecimal.ZERO, pending.isEmpty(), warnings);
+    }
+    List<CurrencyAmount> converted = converted(all, currency, new HashMap<>());
+    CurrencyAmount contribution = converted.get(0);
+    if (!contribution.valueKnown()) {
+      warnings.add("Currency conversion unavailable for contributions.");
+    }
+    return new CashFlowContribution(
+        contribution.amount(), pending.isEmpty() && contribution.valueKnown(), warnings);
+  }
+
+  /**
+   * Portfolio external contributions and internal capital movements. Aggregated per account and
+   * booking date, then selected using the effective portfolio membership at that date. This
+   * prevents moving an account today from retrospectively moving its historical cash flows.
+   */
+  @Transactional(readOnly = true)
+  public PortfolioCapitalFlows portfolioCapitalFlows(
+      List<UUID> accountIds,
+      LocalDate from,
+      LocalDate to,
+      String currency,
+      BiPredicate<UUID, LocalDate> inPortfolioOnDate) {
+    if (accountIds.isEmpty() || from.isAfter(to)) {
+      return new PortfolioCapitalFlows(BigDecimal.ZERO, BigDecimal.ZERO, true, List.of());
+    }
+    List<Object[]> income =
+        transactionRepository.sumHistoryIncomeByAccountDateCurrency(
+            accountIds, INCOME_TYPES, from, to);
+    List<Object[]> spending =
+        transactionRepository.sumHistorySpendingByAccountDateCurrency(
+            accountIds, SPENDING_TYPES, from, to);
+    List<Object[]> internal =
+        transactionRepository.sumHistoryInternalByAccountDateCurrency(accountIds, from, to);
+    List<Object[]> pending =
+        transactionRepository.sumHistoryPendingByAccountDateCurrency(accountIds, from, to);
+    List<Object[]> externalRows =
+        Stream.concat(income.stream(), spending.stream())
+            .filter(row -> inPortfolioOnDate.test((UUID) row[0], (LocalDate) row[1]))
+            .map(CashFlowService::withoutAccountId)
+            .toList();
+    List<Object[]> internalRows =
+        internal.stream()
+            .filter(row -> inPortfolioOnDate.test((UUID) row[0], (LocalDate) row[1]))
+            .map(CashFlowService::withoutAccountId)
+            .toList();
+    boolean hasPending =
+        pending.stream().anyMatch(row -> inPortfolioOnDate.test((UUID) row[0], (LocalDate) row[1]));
+    Map<LocalDate, Map<String, Optional<CurrencyConversionResult>>> rates = new HashMap<>();
+    List<CurrencyAmount> externalConverted = converted(externalRows, currency, rates);
+    List<CurrencyAmount> internalConverted = converted(internalRows, currency, rates);
+    BigDecimal contributions =
+        externalConverted.isEmpty() ? BigDecimal.ZERO : externalConverted.get(0).amount();
+    BigDecimal movements =
+        internalConverted.isEmpty() ? BigDecimal.ZERO : internalConverted.get(0).amount();
+    List<String> warnings = new ArrayList<>();
+    if (hasPending) {
+      warnings.add("Transactions are pending review; portfolio attribution is incomplete.");
+    }
+    boolean known =
+        (externalConverted.isEmpty() || externalConverted.get(0).valueKnown())
+            && (internalConverted.isEmpty() || internalConverted.get(0).valueKnown());
+    if (!known) {
+      warnings.add("Currency conversion unavailable for portfolio capital flows.");
+    }
+    return new PortfolioCapitalFlows(contributions, movements, !hasPending && known, warnings);
+  }
+
+  private static Object[] withoutAccountId(Object... row) {
+    return new Object[] {row[1], row[2], row[3]};
   }
 
   // US-10-02: with mortgage principal included, the loan is a saving account, so principal paid
