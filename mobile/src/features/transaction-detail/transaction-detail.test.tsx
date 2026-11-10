@@ -497,7 +497,13 @@ describe('S4 transaction detail', () => {
           rejectSave = reject;
         }),
     );
-    await show();
+    const view = await render(
+      <QueryClientProvider client={new QueryClient()}>
+        <IntlProvider locale="en" messages={en}>
+          <TransactionDetail accountId="account-1" transactionId="transaction-1" onBack={jest.fn()} />
+        </IntlProvider>
+      </QueryClientProvider>,
+    );
     await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
     await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
     await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
@@ -506,7 +512,7 @@ describe('S4 transaction detail', () => {
       await fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
     } else {
       await fireEvent.press(screen.getByRole('button', { name: 'Close' }));
-      const modal = screen.UNSAFE_getByType(Modal);
+      const modal = view.UNSAFE_getByType(Modal);
       await fireEvent(modal, 'requestClose');
     }
     expect(screen.getByRole('radio', { name: 'Food › Dining out' })).toBeTruthy();
