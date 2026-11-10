@@ -2,12 +2,13 @@ name: Mobile Native CI
 
 # Builds the iOS and Android release apps from the Expo config and launches each on a simulator
 # or emulator (mobile/scripts/native-smoke.sh), so SDK and native-module upgrades are checked
-# beyond Mobile Web CI's web export. Native builds take a while, so this runs only when the native
-# dependency set, the app config or this check itself changes. Screenshots and logs are uploaded
+# beyond Mobile Web CI's web export. Account and transaction UI changes also need native build
+# evidence before approval. Screenshots and logs are uploaded
 # as the "native-smoke-*" artifacts for review.
 on:
   pull_request:
     paths:
+      - "mobile/src/**"
       - "mobile/package.json"
       - "mobile/package-lock.json"
       - "mobile/.npmrc"
