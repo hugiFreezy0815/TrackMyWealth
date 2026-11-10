@@ -31,7 +31,7 @@ android_assert_signin() {
         grep -Fq 'responding' smoke/android-ui.xml; then
         echo "Emulator launcher ANR obscures sign-in (attempt $attempt)" >>smoke/android-diagnostics.txt
         node=$(awk -v RS='>' 'index($0, "text=\"Wait\"") { print; exit }' smoke/android-ui.xml)
-        if [[ "$node" =~ bounds=\"\\[([0-9]+),([0-9]+)\\]\\[([0-9]+),([0-9]+)\\]\" ]]; then
+        if [[ "$node" =~ bounds=\"\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]\" ]]; then
           x=$(( ( ${BASH_REMATCH[1]} + ${BASH_REMATCH[3]} ) / 2 ))
           y=$(( ( ${BASH_REMATCH[2]} + ${BASH_REMATCH[4]} ) / 2 ))
           echo "Selecting system Wait button to recover launcher (attempt $attempt)" >>smoke/android-diagnostics.txt
