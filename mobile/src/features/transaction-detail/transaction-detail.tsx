@@ -45,7 +45,7 @@ import {
 } from '@/components/shared';
 import { Spacing, TypeScale, Radii } from '@/constants/theme';
 import { moveAccessibilityFocus } from '@/components/shared/accessibility-focus';
-import { transactionTypeLabel } from '@/features/account-detail/model';
+import { transactionTypeLabel, transactionWarningTexts } from '@/features/account-detail/model';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { formatDate, formatDateTime } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
@@ -280,12 +280,17 @@ export function TransactionDetail({
     record.isPlaceholderData ||
     record.isFetching ||
     record.isError;
+  // The focus target changes only when a new authoritative transaction appears,
+  // not when a background refetch creates another object for the same row.
+  const focusableTransactionId =
+    !record.isPlaceholderData && !record.isError && !account.isError
+      ? transaction?.id
+      : undefined;
   useEffect(() => {
-    // A desktop detail panel is not a route transition; announce its loaded heading.
-    if (Platform.OS === 'web' && transaction && !record.isPlaceholderData) {
+    if (Platform.OS === 'web' && focusableTransactionId) {
       moveAccessibilityFocus(detailHeading.current);
     }
-  }, [transaction?.id, record.isPlaceholderData]);
+  }, [focusableTransactionId]);
 
   const date = (value: string) => formatDate(value, intl.locale);
   const german = intl.locale.startsWith('de');
@@ -323,7 +328,19 @@ export function TransactionDetail({
     } catch (failure) {
       if (failure instanceof ApiError && problemReaction(failure).sentCode === 'VERSION_REQUIRED') {
         const refreshed = await record.refetch();
-        if (refreshed.data) return perform(refreshed.data.version);
+        // Query refetch can retain cached data alongside an error. Never retry with that ETag.
+        if (refreshed.error) throw refreshed.error;
+        const freshVersion = refreshed.data?.version;
+        if (
+          refreshed.isError ||
+          refreshed.isPlaceholderData ||
+          !Number.isSafeInteger(freshVersion) ||
+          freshVersion === undefined ||
+          freshVersion < 0
+        ) {
+          throw new Error('Unable to verify the latest transaction version');
+        }
+        return perform(freshVersion);
       }
       throw failure;
     }
@@ -803,9 +820,9 @@ export function TransactionDetail({
         {transaction.reconciliationAdjustment ? (
           <DetailLabel>{intl.formatMessage({ id: 'txn.adjustment' })}</DetailLabel>
         ) : null}
-        {transaction.warnings.map((warning) => (
+        {transactionWarningTexts(transaction.warnings, intl).map((warning) => (
           <Text key={warning} style={{ color: theme.statusWarning }}>
-            ⚠ {intl.formatMessage({ id: 'txn.warning' })}
+            ⚠ {warning}
           </Text>
         ))}
       </View>
