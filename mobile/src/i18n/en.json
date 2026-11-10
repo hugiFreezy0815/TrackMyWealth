@@ -445,6 +445,7 @@
   "account.estimatedFx": "Estimated exchange rate",
   "account.context": "{portfolio} · {type} · {currency}",
   "account.statementOf": "Statement of {date}",
+  "account.valueSourceUnavailable": "Value source not available",
   "account.valueFrom": "The value of this account comes from {basis}",
   "account.valueSourceDate": "Source date: {date}",
   "account.archivedReason": "Restore the account to change it.",
@@ -474,8 +475,6 @@
   "valueBasis.LATEST_SNAPSHOT": "the latest statement",
   "valueBasis.MANUAL_VALUATION": "a manual valuation",
   "account.uncategorizedLabel": "Uncategorised",
-  "account.noLedger": "This account's value comes from its valuation or statement; there is no transaction list.",
-  "account.statementAdjustment": "Statement adjustment",
   "txn.heading": "Transaction",
   "txn.back": "Back to account",
   "txn.picker.title": "Choose a category",
@@ -562,5 +561,7 @@
   "txn.history.deleted.system": "Deleted automatically",
   "txn.history.restored.system": "Restored automatically",
   "txn.history.other.system": "Changed automatically",
-  "txn.history.imported.unknown": "Imported transaction"
+  "txn.history.imported.unknown": "Imported transaction",
+  "account.statementAdjustment": "Statement adjustment",
+  "account.noLedger": "This account's value comes from its valuation or statement; there is no transaction list."
 }

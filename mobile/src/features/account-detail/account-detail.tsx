@@ -4,8 +4,9 @@ import { useIntl } from 'react-intl';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
+import { typedApi } from '@/api/typed-api';
 import { problemReaction } from '@/api/problems';
-import { useConflict } from '@/api/queries/conflict';
+import { retryVersionRequired, useConflict } from '@/api/queries/conflict';
 import { invalidateFinancialData } from '@/api/queries/invalidation';
 import { queryKeys } from '@/api/queries/keys';
 import {
@@ -31,6 +32,7 @@ import {
   OfflineBanner,
 } from '@/components/shared';
 import { Spacing, TypeScale } from '@/constants/theme';
+import { formatDate } from '@/format/date';
 import { showToast } from '@/features/shell/toast';
 import { useOnline } from '@/hooks/use-online';
 import { useTheme } from '@/hooks/use-theme';
@@ -47,11 +49,8 @@ import { AccountHeaderCard, ArchivedBanner } from './account-header';
 import {
   accountTypeLabel,
   accountValuation,
-  asOfLine,
   hasUnknownCategory,
   uniqueTransactions,
-  valueSource,
-  valueSourceLabel,
   type Transaction,
 } from './model';
 import { TransactionResults } from './transaction-results';
@@ -59,7 +58,7 @@ import { TransactionResults } from './transaction-results';
 export type AccountDetailProps = {
   accountId: string;
   onBack: () => void;
-  onTransaction: (id: string) => void;
+  onTransaction?: (id: string) => void;
   onImport: () => void;
   selectedTransactionId?: string | null;
 };
@@ -100,6 +99,9 @@ export function AccountDetail({
   const [sort, setSort] = useState<TransactionSort>('bookingDate,desc');
   const [tab, setTab] = useState<'positions' | 'activity'>('activity');
   const [categoryTarget, setCategoryTarget] = useState<Transaction | null>(null);
+  const [pendingCategoryId, setPendingCategoryId] = useState<string | null>(null);
+  const [reloadingConflict, setReloadingConflict] = useState(false);
+  const writeInFlight = useRef(false);
   const [dialog, setDialog] = useState<OpenDialog>(null);
   const [writeError, setWriteError] = useState<unknown>(null);
   const retryWrite = useRef<(() => void) | null>(null);
@@ -109,7 +111,9 @@ export function AccountDetail({
   const summary = account.data;
   const archived = summary?.status === 'ARCHIVED';
   const hasLedger = !!summary?.hasTransactions;
-  const activeAccounts = useAccounts(summary?.portfolioId);
+  const activeAccounts = useAccounts(summary?.portfolioId, {
+    enabled: !!summary?.portfolioId,
+  });
   const archivedAccounts = useArchivedAccounts(summary?.portfolioId ?? '', archived);
   const value = accountValuation(summary, activeAccounts.data, archivedAccounts.data);
   const categories = useCategories();
@@ -121,7 +125,8 @@ export function AccountDetail({
   const records = uniqueTransactions(transactions.data?.pages ?? []);
   const total = transactions.data?.pages[0]?.page.totalElements ?? 0;
   const countValue = count.data ?? 0;
-  const locked = !online || archived || categoryWrite.isPending || archiveWrite.isPending;
+  const locked =
+    !online || archived || reloadingConflict || categoryWrite.isPending || archiveWrite.isPending;
 
   // Spec S3: the chip is hidden at 0 and the filter falls back to All (server count, page 0).
   // Adjusted while rendering, so the stale filter never reaches a request or a frame.
@@ -140,13 +145,42 @@ export function AccountDetail({
 
   const refresh = () => void invalidateFinancialData(client);
 
+  // A targeted transaction read must not rely on a paged list: the row may move
+  // outside the current filter, or past the loaded page.
+  async function reloadTransactionVersion(transactionId: string) {
+    const latest = await typedApi.get('/api/v1/accounts/{accountId}/transactions/{transactionId}', {
+      params: { accountId, transactionId },
+    });
+    client.setQueryData(queryKeys.transaction(accountId, transactionId), latest);
+    setCategoryTarget((current) =>
+      current?.id === transactionId
+        ? { ...current, version: latest.version, categoryId: latest.categoryId }
+        : current,
+    );
+    return latest;
+  }
+
+  async function reloadAccountVersion() {
+    const latest = await typedApi.get('/api/v1/accounts/{accountId}', {
+      params: { accountId },
+    });
+    client.setQueryData(queryKeys.account(accountId), latest);
+    return latest;
+  }
+
   async function runWrite(write: () => Promise<unknown>, conflictKey: QueryKey) {
+    // Guard the event-handler gap before mutation.isPending updates.
+    if (writeInFlight.current) return;
+    writeInFlight.current = true;
     setWriteError(null);
     retryWrite.current = null;
     try {
       await write();
     } catch (error) {
-      if (await conflict.handle(error, conflictKey)) return;
+      if (await conflict.handle(error, conflictKey)) {
+        setReloadingConflict(true);
+        return;
+      }
       if (isNotFound(error)) {
         showToast('account.notFound');
         onBack();
@@ -154,27 +188,39 @@ export function AccountDetail({
       }
       retryWrite.current = () => void runWrite(write, conflictKey);
       setWriteError(error);
+    } finally {
+      writeInFlight.current = false;
     }
   }
 
   function changeCategory(categoryId: string) {
     const target = categoryTarget;
     if (!target || locked) return;
+    setPendingCategoryId(categoryId);
     void runWrite(async () => {
-      await categoryWrite.mutateAsync({
-        transactionId: target.id,
-        categoryId,
-        version: target.version,
-      });
+      const cached = client.getQueryData<{ version: number }>(
+        queryKeys.transaction(accountId, target.id),
+      );
+      await retryVersionRequired(
+        (version) =>
+          categoryWrite.mutateAsync({ transactionId: target.id, categoryId, version }),
+        cached?.version ?? target.version,
+        () => reloadTransactionVersion(target.id),
+      );
       setCategoryTarget(null);
+      setPendingCategoryId(null);
     }, queryKeys.accountTransactionScope(accountId));
   }
 
   function archiveOrRestore(restore: boolean) {
     if (!summary || !online || archiveWrite.isPending) return;
-    const version = summary.version;
     void runWrite(async () => {
-      await archiveWrite.mutateAsync({ version, restore });
+      const cached = client.getQueryData<{ version: number }>(queryKeys.account(accountId));
+      await retryVersionRequired(
+        (version) => archiveWrite.mutateAsync({ version, restore }),
+        cached?.version ?? summary.version,
+        reloadAccountVersion,
+      );
       setDialog(null);
     }, queryKeys.account(accountId));
   }
@@ -310,11 +356,15 @@ export function AccountDetail({
         )
       ) : !hasLedger ? (
         <EmptyState
-          title={intl.formatMessage(
-            { id: 'account.valueFrom' },
-            { basis: valueSourceLabel(valueSource(summary), intl) },
-          )}
-          description={value ? asOfLine(valueSource(summary), value, intl) : undefined}
+          title={intl.formatMessage({ id: 'account.valueSourceUnavailable' })}
+          description={
+            value
+              ? intl.formatMessage(
+                  { id: 'account.asOf' },
+                  { date: formatDate(value.asOf, intl.locale) },
+                )
+              : undefined
+          }
         />
       ) : (
         <>
@@ -402,7 +452,10 @@ export function AccountDetail({
             context={context}
             byDate={sort.startsWith('bookingDate')}
             onOpen={onTransaction}
-            onCategory={setCategoryTarget}
+            onCategory={(target) => {
+              setPendingCategoryId(null);
+              setCategoryTarget(target);
+            }}
             onEndReached={
               transactions.hasNextPage && !transactions.isFetchNextPageError
                 ? () => {
@@ -456,7 +509,11 @@ export function AccountDetail({
         visible={categoryTarget !== null}
         categories={categories.data ?? []}
         disabled={locked}
-        onClose={() => setCategoryTarget(null)}
+        selectedCategoryId={pendingCategoryId}
+        onClose={() => {
+          setPendingCategoryId(null);
+          setCategoryTarget(null);
+        }}
         onPick={changeCategory}
       />
       <ArchiveDialog
@@ -474,15 +531,38 @@ export function AccountDetail({
       />
       <ConflictDialog
         visible={conflict.conflicted}
-        onClose={conflict.dismiss}
+        onClose={() => {
+          conflict.dismiss();
+          setCategoryTarget(null);
+          setPendingCategoryId(null);
+          setReloadingConflict(false);
+        }}
         onDiscard={() => {
           conflict.dismiss();
           setCategoryTarget(null);
+          setPendingCategoryId(null);
+          setReloadingConflict(false);
           setDialog(null);
         }}
         onReview={() => {
           conflict.dismiss();
-          refresh();
+          setReloadingConflict(true);
+          void (async () => {
+            try {
+              if (categoryTarget) await reloadTransactionVersion(categoryTarget.id);
+              else await reloadAccountVersion();
+              await invalidateFinancialData(client);
+            } catch (error) {
+              if (isNotFound(error)) {
+                showToast('account.notFound');
+                onBack();
+              } else {
+                setWriteError(error);
+              }
+            } finally {
+              setReloadingConflict(false);
+            }
+          })();
         }}
       />
     </View>

@@ -8,10 +8,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { dataWarningMessageIds } from '@/features/overview/overview-model';
 
 import {
-  asOfLine,
   categoryName,
-  valueSource,
-  valueSourceLabel,
   type AccountListItem,
   type AccountSummary,
   type Category,
@@ -108,12 +105,14 @@ export function CategoryPickerDialog({
   visible,
   categories,
   disabled,
+  selectedCategoryId,
   onClose,
   onPick,
 }: {
   visible: boolean;
   categories: Category[];
   disabled: boolean;
+  selectedCategoryId: string | null;
   onClose: () => void;
   onPick: (categoryId: string) => void;
 }) {
@@ -135,11 +134,13 @@ export function CategoryPickerDialog({
             <Pressable
               key={category.id}
               accessibilityRole="button"
+              accessibilityState={{ selected: selectedCategoryId === category.id }}
               disabled={disabled}
               onPress={() => onPick(category.id)}
               style={{ minHeight: 44, justifyContent: 'center' }}
             >
               <Text style={{ color: theme.textPrimary }}>
+                {selectedCategoryId === category.id ? '✓ ' : ''}
                 {categoryName(category, categories, german, true)}
               </Text>
             </Pressable>
@@ -185,7 +186,6 @@ export function ArchiveDialog({
 /** Tap on the value: its basis, dates, the status explanation and the warnings (loaded data). */
 export function ValueExplanationSheet({
   visible,
-  summary,
   value,
   onClose,
 }: {
@@ -199,11 +199,11 @@ export function ValueExplanationSheet({
   if (!value) return null;
   const status = valueStatusTexts(value.valueStatus, value.valueSourceDate, intl);
   const lines = [
+    intl.formatMessage({ id: 'account.valueSourceUnavailable' }),
     intl.formatMessage(
-      { id: 'account.valueFrom' },
-      { basis: valueSourceLabel(valueSource(summary), intl) },
+      { id: 'account.asOf' },
+      { date: formatDate(value.asOf, intl.locale) },
     ),
-    asOfLine(valueSource(summary), value, intl),
     value.valueSourceDate
       ? intl.formatMessage(
           { id: 'account.valueSourceDate' },

@@ -14,7 +14,7 @@ export type TransactionLineProps = {
   context: RowContext;
   /** Sorted by amount: no date headers, so the row shows its own date. */
   showDate: boolean;
-  onOpen: (id: string) => void;
+  onOpen?: (id: string) => void;
   onCategory: (transaction: Transaction) => void;
 };
 
@@ -71,9 +71,10 @@ export function TransactionLine({
       }}
     >
       <Pressable
-        accessibilityRole="button"
+        accessibilityRole={onOpen ? 'button' : undefined}
         accessibilityLabel={label}
-        onPress={() => onOpen(row.id)}
+        disabled={!onOpen}
+        onPress={onOpen ? () => onOpen(row.id) : undefined}
         style={{
           minHeight: 44,
           flexDirection: 'row',

@@ -7,7 +7,6 @@ import type { AccountListItem, AccountSummary, Category, RowContext, Transaction
 import {
   accountTypeLabel,
   accountValuation,
-  asOfLine,
   categoryFor,
   categoryName,
   convertedAmount,
@@ -20,7 +19,6 @@ import {
   reversalOf,
   transactionTypeLabel,
   uniqueTransactions,
-  valueSource,
 } from './model';
 
 const enIntl = createIntl({ locale: 'en', messages: en }, createIntlCache());
@@ -156,18 +154,6 @@ describe('S3 account detail view model', () => {
     expect(transactionTypeLabel('SOMETHING_NEW', enIntl)).toBe('Other');
     expect(accountTypeLabel('SAVINGS', deIntl)).toBe('Sparkonto');
     expect(accountTypeLabel('toString', enIntl)).toBe('Other');
-  });
-
-  it('derives the value source from capabilities and words the as-of line by it', () => {
-    const value = { asOf: '2026-10-20', valueSourceDate: '2026-09-30' };
-    expect(valueSource({ manualValuation: true, hasTransactions: false })).toBe('MANUAL_VALUATION');
-    expect(valueSource({ manualValuation: false, hasTransactions: true })).toBe('LEDGER');
-    expect(valueSource({ manualValuation: false, hasTransactions: false })).toBe('LATEST_SNAPSHOT');
-    expect(asOfLine('LATEST_SNAPSHOT', value, enIntl)).toBe('Statement of 30 Sep 2026');
-    expect(asOfLine('LEDGER', value, enIntl)).toBe('As of 20 Oct 2026');
-    expect(asOfLine('MANUAL_VALUATION', { ...value, valueSourceDate: null }, enIntl)).toBe(
-      'As of 20 Oct 2026',
-    );
   });
 
   describe('reconciliation line (FR-REC)', () => {

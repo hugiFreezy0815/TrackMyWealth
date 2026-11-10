@@ -105,6 +105,8 @@ function fakeServer(account: AccountSummary, rows: Transaction[]) {
   type Options = { params?: Record<string, string>; query?: Record<string, unknown> };
   const routes: Record<string, (options: Options) => unknown> = {
     '/api/v1/accounts/{accountId}': () => state.account,
+    '/api/v1/accounts/{accountId}/transactions/{transactionId}': ({ params }) =>
+      state.rows.find((row) => row.id === params?.transactionId) ?? null,
     '/api/v1/accounts': () => [listItem],
     '/api/v1/categories': () => CATEGORIES,
     '/api/v1/accounts/{accountId}/transactions': ({ query = {} }) => {
@@ -234,6 +236,55 @@ describe('S3 account detail acceptance checks (#494)', () => {
     expect(await screen.findByText('Showing 120 of 120')).toBeTruthy();
     expect(screen.queryByTestId('transactions-end-marker')).toBeNull();
     expect(listCalls().map((query) => query.page)).toEqual([0, 1, 2]);
+  });
+
+  it('automatically reloads and retries with the new version after HTTP 428', async () => {
+    const state = fakeServer(summary(), [txn(0, { version: 2 })]);
+    await renderDetail();
+    await screen.findByText('Showing 1 of 1');
+    state.rows[0] = { ...state.rows[0], version: 3 };
+    api.put.mockRejectedValueOnce(
+      new ApiError('version required', 428, {
+        status: 428,
+        title: 'Precondition required',
+        code: 'VERSION_REQUIRED',
+      }),
+    );
+    await changeCategory('Food', 'Food › Groceries');
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(2));
+    expect(
+      api.put.mock.calls.map(([, options]) => (options as { version: number }).version),
+    ).toEqual([2, 3]);
+    expect(api.get).toHaveBeenCalledWith(
+      '/api/v1/accounts/{accountId}/transactions/{transactionId}',
+      { params: { accountId: 'acc', transactionId: 't000' } },
+    );
+  });
+
+  it('reloads a transaction after 412 and the member can retry at the new version', async () => {
+    const state = fakeServer(summary(), [txn(0, { version: 2 })]);
+    await renderDetail();
+    await screen.findByText('Showing 1 of 1');
+    state.rows[0] = { ...state.rows[0], version: 3 };
+    api.put.mockRejectedValueOnce(
+      new ApiError('changed', 412, { status: 412, title: 'Conflict', code: 'VERSION_CONFLICT' }),
+    );
+    await changeCategory('Food', 'Food › Groceries');
+    await fireEvent.press(await screen.findByText('Review'));
+    await waitFor(() =>
+      expect(api.get).toHaveBeenCalledWith(
+        '/api/v1/accounts/{accountId}/transactions/{transactionId}',
+        { params: { accountId: 'acc', transactionId: 't000' } },
+      ),
+    );
+    await waitFor(() => expect(screen.getByText(/Food › Groceries/)).toBeTruthy());
+    await fireEvent.press(screen.getByText(/Food › Groceries/));
+    await waitFor(() =>
+      expect(api.put).toHaveBeenLastCalledWith(
+        '/api/v1/accounts/{accountId}/transactions/{transactionId}/category',
+        expect.objectContaining({ version: 3, body: { categoryId: 'groceries' } }),
+      ),
+    );
   });
 
   it('counts uncategorised from the server: 3, then 2 after a change, filter kept', async () => {
@@ -378,9 +429,7 @@ describe('S3 account detail acceptance checks (#494)', () => {
     fakeServer(summary({ hasTransactions: false, manualValuation: true }), []);
     await renderDetail();
 
-    expect(
-      await screen.findByText('The value of this account comes from a manual valuation'),
-    ).toBeTruthy();
+    expect(await screen.findByText('Value source not available')).toBeTruthy();
     expect(listCalls()).toEqual([]);
     expect(screen.queryByText('All')).toBeNull();
   });

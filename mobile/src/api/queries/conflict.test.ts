@@ -3,7 +3,7 @@ import { act, renderHook } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { ApiError } from '@/api/client';
-import { ifMatch, useConflict } from './conflict';
+import { ifMatch, retryVersionRequired, useConflict } from './conflict';
 
 const problem = (status: number, code: string) =>
   new ApiError('failed', status, { status, title: 'Problem', code });
@@ -62,6 +62,34 @@ describe('useConflict', () => {
     expect(handled).toBe(false);
     expect(result.current.conflicted).toBe(false);
     expect(client.getQueryState(['accounts', 'a1'])?.isInvalidated).toBe(false);
+  });
+});
+
+describe('retryVersionRequired', () => {
+  it('reloads once and resends a known HTTP 428 with the new server version', async () => {
+    const write = jest.fn()
+      .mockRejectedValueOnce(problem(428, 'VERSION_REQUIRED'))
+      .mockResolvedValue('ok');
+    const reload = jest.fn().mockResolvedValue({ version: 3 });
+    await expect(retryVersionRequired(write, 2, reload)).resolves.toBe('ok');
+    expect(write.mock.calls).toEqual([[2], [3]]);
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry a second 428 or a 412, or an unknown error code', async () => {
+    const reload = jest.fn().mockResolvedValue({ version: 3 });
+    const second428 = jest.fn().mockRejectedValue(problem(428, 'VERSION_REQUIRED'));
+    await expect(retryVersionRequired(second428, 2, reload)).rejects.toThrow(ApiError);
+    expect(second428).toHaveBeenCalledTimes(2);
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    reload.mockClear();
+    for (const error of [problem(412, 'VERSION_CONFLICT'), problem(428, 'NEW_CODE')]) {
+      const write = jest.fn().mockRejectedValue(error);
+      await expect(retryVersionRequired(write, 2, reload)).rejects.toThrow(ApiError);
+      expect(write).toHaveBeenCalledTimes(1);
+    }
+    expect(reload).not.toHaveBeenCalled();
   });
 });
 

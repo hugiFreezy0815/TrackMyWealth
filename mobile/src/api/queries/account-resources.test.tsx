@@ -6,6 +6,7 @@ import { typedApi } from '@/api/typed-api';
 
 import {
   useAccountArchiveAction,
+  useAccounts,
   useAccountTransactions,
   useChangeTransactionCategory,
   useUncategorizedCount,
@@ -42,6 +43,22 @@ beforeEach(() => {
 });
 
 describe('S3 account detail API calls (#494)', () => {
+  it('never fetches an unscoped account list while the portfolio is unknown', async () => {
+    api.get.mockResolvedValue([] as never);
+    const view = await renderHook(
+      ({ portfolioId }: { portfolioId?: string }) =>
+        useAccounts(portfolioId, { enabled: !!portfolioId }),
+      { wrapper: wrapper(), initialProps: { portfolioId: undefined as string | undefined } },
+    );
+    expect(api.get).not.toHaveBeenCalled();
+    await view.rerender({ portfolioId: 'p1' });
+    await waitFor(() =>
+      expect(api.get).toHaveBeenCalledWith('/api/v1/accounts', {
+        query: { portfolioId: 'p1' },
+      }),
+    );
+  });
+
   it('asks for 50 rows per page with the chosen sort and filter', async () => {
     api.get.mockResolvedValue(page(0) as never);
     const view = await renderHook(() => useAccountTransactions('acc', true, 'amount,asc'), {
