@@ -250,6 +250,7 @@ export function Dialog({
   useEscapeKey(visible, requestClose);
   return (
     <Modal
+      testID="shared-dialog-modal"
       transparent
       visible={visible}
       animationType={bottom ? 'slide' : 'fade'}
