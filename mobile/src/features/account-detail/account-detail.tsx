@@ -51,6 +51,7 @@ import { AccountHeaderCard, ArchivedBanner } from './account-header';
 import {
   accountTypeLabel,
   accountValuation,
+  valueBasisExplanation,
   hasUnknownCategory,
   uniqueTransactions,
   type AccountListItem,
@@ -421,7 +422,7 @@ export function AccountDetail({
         )
       ) : !hasLedger ? (
         <EmptyState
-          title={intl.formatMessage({ id: 'account.valueSourceUnavailable' })}
+          title={valueBasisExplanation(value?.valueBasis, intl)}
           description={
             value
               ? intl.formatMessage(

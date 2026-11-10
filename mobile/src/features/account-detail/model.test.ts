@@ -19,6 +19,7 @@ import {
   reversalOf,
   transactionTypeLabel,
   uniqueTransactions,
+  valueBasisExplanation,
 } from './model';
 
 const enIntl = createIntl({ locale: 'en', messages: en }, createIntlCache());
@@ -154,6 +155,20 @@ describe('S3 account detail view model', () => {
     expect(transactionTypeLabel('SOMETHING_NEW', enIntl)).toBe('Other');
     expect(accountTypeLabel('SAVINGS', deIntl)).toBe('Sparkonto');
     expect(accountTypeLabel('toString', enIntl)).toBe('Other');
+  });
+
+  it('explains only authoritative value bases, including estimated and unavailable origins', () => {
+    expect(valueBasisExplanation('LEDGER', enIntl)).toBe('The value of this account comes from its transactions');
+    expect(valueBasisExplanation('LATEST_SNAPSHOT', enIntl)).toBe(
+      'The value of this account comes from the latest statement',
+    );
+    expect(valueBasisExplanation('MANUAL_VALUATION', enIntl)).toBe(
+      'The value of this account comes from a manual valuation',
+    );
+    expect(valueBasisExplanation('ORIGINAL_PRINCIPAL', enIntl)).toContain('estimated outstanding amount');
+    expect(valueBasisExplanation('LEDGER_EMPTY', deIntl)).toContain('angenommener Nullwert');
+    expect(valueBasisExplanation(null, enIntl)).toBe('Value source not available');
+    expect(valueBasisExplanation('AN_UNKNOWN_NEW_BASIS', enIntl)).toBe('Value source not available');
   });
 
   describe('reconciliation line (FR-REC)', () => {

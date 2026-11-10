@@ -17930,6 +17930,10 @@ components:
           - STALE
           - UNRECONCILED
           - UNKNOWN
+        valueBasis:
+          type:
+          - string
+          - "null"
         asOf:
           type: string
           format: date
@@ -17956,6 +17960,7 @@ components:
       - portfolioId
       - portfolioName
       - valueKnown
+      - valueBasis
       - valueSourceDate
       - valueStatus
       - version

@@ -648,5 +648,10 @@
   "txn.history.other.system": "Automatisch geändert",
   "txn.history.imported.unknown": "Transaktion importiert",
   "account.statementAdjustment": "Auszugsanpassung",
-  "account.noLedger": "Der Wert dieses Kontos stammt aus einer Bewertung oder einem Auszug. Es gibt keine Transaktionsliste."
+  "account.noLedger": "Der Wert dieses Kontos stammt aus einer Bewertung oder einem Auszug. Es gibt keine Transaktionsliste.",
+  "valueBasis.LEDGER_EMPTY": "einem leeren Buchungsjournal (angenommener Nullwert)",
+  "valueBasis.LEDGER_FROM_OPENING_BALANCE": "einem Anfangssaldo mit nachfolgenden Buchungen",
+  "valueBasis.LEDGER_FROM_STATEMENT_BALANCE": "einem Kontoauszugssaldo mit nachfolgenden Buchungen",
+  "valueBasis.ORIGINAL_PRINCIPAL": "dem ursprünglichen Darlehensbetrag (geschätzter Restbetrag)",
+  "valueBasis.ORIGINAL_PRINCIPAL_LESS_REPAYMENTS": "dem ursprünglichen Darlehensbetrag abzüglich erfasster Tilgungen (geschätzter Restbetrag)"
 }

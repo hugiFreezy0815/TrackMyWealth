@@ -7,7 +7,13 @@ import { formatDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
 import { dataWarningMessageIds } from '@/features/overview/overview-model';
 
-import { categoryName, type AccountListItem, type AccountSummary, type Category } from './model';
+import {
+  categoryName,
+  valueBasisExplanation,
+  type AccountListItem,
+  type AccountSummary,
+  type Category,
+} from './model';
 
 export const SORTS: readonly { value: TransactionSort; messageId: string }[] = [
   { value: 'bookingDate,desc', messageId: 'account.newest' },
@@ -204,7 +210,7 @@ export function ValueExplanationSheet({
   if (!value) return null;
   const status = valueStatusTexts(value.valueStatus, value.valueSourceDate, intl);
   const lines = [
-    intl.formatMessage({ id: 'account.valueSourceUnavailable' }),
+    valueBasisExplanation(value.valueBasis, intl),
     intl.formatMessage({ id: 'account.asOf' }, { date: formatDate(value.asOf, intl.locale) }),
     value.valueSourceDate
       ? intl.formatMessage(

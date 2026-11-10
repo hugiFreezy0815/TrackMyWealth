@@ -648,5 +648,10 @@
   "txn.history.other.system": "Changed automatically",
   "txn.history.imported.unknown": "Imported transaction",
   "account.statementAdjustment": "Statement adjustment",
-  "account.noLedger": "This account's value comes from its valuation or statement; there is no transaction list."
+  "account.noLedger": "This account's value comes from its valuation or statement; there is no transaction list.",
+  "valueBasis.LEDGER_EMPTY": "an empty ledger (assumed zero)",
+  "valueBasis.LEDGER_FROM_OPENING_BALANCE": "an opening balance adjusted by transactions",
+  "valueBasis.LEDGER_FROM_STATEMENT_BALANCE": "a statement balance adjusted by transactions",
+  "valueBasis.ORIGINAL_PRINCIPAL": "the original principal (estimated outstanding amount)",
+  "valueBasis.ORIGINAL_PRINCIPAL_LESS_REPAYMENTS": "the original principal less recorded repayments (estimated outstanding amount)"
 }

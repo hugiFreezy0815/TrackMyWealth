@@ -32,6 +32,8 @@ import org.jspecify.annotations.Nullable;
  *     towards net worth; {@code valueStatus} describes that same value
  * @param valueStatus how far that value can be trusted ({@link ValueStatus}): {@code UNKNOWN}
  *     without one, {@code STALE} when its snapshot or rate is out of date
+ * @param valueBasis the authoritative origin of the signed balance in the account's own
+ *     currency, directly from {@link AccountValuation#valueBasis()}; null when unknown
  * @param asOf the business date the value is taken on
  * @param valueSourceDate the date of the snapshot, valuation or loan statement {@code balance}
  *     rests on, so a client can show how old it is - set whenever {@code balance} is, even while
@@ -55,6 +57,7 @@ public record AccountListItemResponse(
     @Nullable BigDecimal balanceInWorkspaceCurrency,
     boolean valueKnown,
     ValueStatus valueStatus,
+    @Nullable String valueBasis,
     LocalDate asOf,
     @Nullable LocalDate valueSourceDate,
     List<String> warnings) {

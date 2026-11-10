@@ -1717,6 +1717,7 @@ export interface components {
       valueKnown: boolean;
       /** @enum {string} */
       valueStatus: 'CURRENT' | 'ESTIMATED' | 'STALE' | 'UNRECONCILED' | 'UNKNOWN';
+      valueBasis: string | null;
       /** Format: date */
       asOf: string;
       /** Format: date */
