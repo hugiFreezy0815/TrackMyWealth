@@ -201,7 +201,8 @@ describe('S4 transaction detail', () => {
     fixtures({ ...base, transactionType: 'BUY', quantity: '12345.6789' });
     jest.mocked(useAmountsHidden).mockReturnValue(true);
     await show();
-    const quantity = screen.getByText('••••');
+    const quantity = screen.getByTestId('transaction-quantity');
+    expect(quantity.props.children).toBe('••••');
     expect(quantity.props.accessibilityLabel).not.toContain('12345');
     expect(screen.queryByText('12345.6789')).toBeNull();
   });
