@@ -50,6 +50,7 @@ export default function TransactionDetailRoute() {
       <ShellScreen
         title={intl.formatMessage({ id: 'account.heading' })}
         detailWidth={400}
+        virtualizedNative
         aside={detail}
       >
         <AccountDetail

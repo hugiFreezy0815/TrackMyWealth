@@ -1,6 +1,11 @@
 # #494 Account detail (S3): web check
 
-Date: 2026-11-09. Branch `feat/issue-494-account-detail` (PR #546) with its review fixes.
+Initial evidence: 2026-11-09, generated before the S4 integration and native SectionList changes. Branch `feat/issue-494-account-detail` (PR #546).
+
+**Evidence freshness:** The screenshots and findings below describe the original S3 browser-check
+run, not a fresh run against the latest third-review commits. They must be regenerated with a
+running synthetic-data backend before approval; the CI web export is not a browser screenshot or
+an axe audit.
 
 **Setup.** Local stack (`docker compose -p tmw-pr546 up -d --build`, fresh volume, backend published
 on 8090 so another stack can keep 8080) and `expo start --web --port 8082` against it. Chrome via
@@ -19,7 +24,7 @@ generated passwords go to a scratch env file. Result: 64 transactions, reconcili
 | `account-phone-light.png` | 390 × 844: header ("DKB · Current account · EUR"), balance, "Differs from statement" badge, "⚠ Differs from the statement of 31 Oct 2026 by EUR 724.56", chips "All" / "Uncategorised 4", the banner, date-grouped M25 list, "Showing 50 of 64 · Load more" |
 | `account-phone-dark.png` | The same in dark mode |
 | `account-320.png` | 320 px wide: no horizontal scroll |
-| `account-zoom-200.png` | 640 × 450 at device scale 2 (1280 px at 200 % zoom): no horizontal scroll |
+| `account-zoom-200.png` | 640 × 450, device scale factor 2: a responsive viewport/DPR simulation, **not** an actual 200% browser zoom check |
 | `account-desktop.png` | 1280 × 900: the W06 table (Date, Description, Category, Amount) with the voided row struck through, "Reversal of 28 Jan 2031", "Internal transfer · excluded", uncategorised chips in warning style |
 | `account-desktop-after-flows.png` | After load more, a category change, the amount sort, archive and restore |
 
@@ -38,8 +43,9 @@ generated passwords go to a scratch env file. Result: 64 transactions, reconcili
   inside (Import statement → Archive account → Close); Escape closes it and focus returns to
   "Account actions".
 - No horizontal scroll at 390, 320, 200 % zoom and 1280 px. No page errors, no console errors.
-- axe (phone light, phone dark, desktop): only `document-title`, which is app-wide (see
-  489-web-check), not part of #494.
+- Original axe run: `document-title` was the only finding then (also recorded in
+  489-web-check); root HTML now sets a title. The browser check must be rerun to verify the
+  current app and all assertions rather than assuming the previous result still applies.
 
 **Found and fixed by this check**
 
@@ -53,5 +59,16 @@ generated passwords go to a scratch env file. Result: 64 transactions, reconcili
 - The category picker (about 30 categories) grew taller than the window without scrolling, so its
   title and Close were off screen; its list now scrolls inside the dialog.
 
-**Not covered here.** Native iOS/Android: see the Mobile Native CI run on the PR. Screen reader:
-optional for the UI DoD (PO, 2026-11-09).
+**Not yet covered by reproducible current evidence:** native authenticated S3/S4 interactions
+(account load, 1,000+ transaction scrolling, pagination, category picker, archive/restore and error
+recovery), VoiceOver/TalkBack labels and focus, and true 200% browser zoom. Mobile Native CI now
+builds both release targets on source changes and saves signed-out launch screenshots, but it does
+not log in or exercise the account screens. Any waiver of these checks must be explicitly approved
+by the release owner; none is assumed here.
+
+**Re-run checklist:** start the synthetic local backend and web app; run `seed.mjs`, then
+`account-detail.mjs` with scratch credentials; save the JSON result and all screenshots. Check
+the S4 side panel opening, closing and focus return on desktop, and a real Chrome/Firefox browser
+zoom control at 200% (not DPR simulation). On iOS or Android, use a synthetic account with at
+least 1,250 bookings to check smooth SectionList scrolling, refresh, errors and screen-reader
+navigation. Attach dated evidence and record the tested commit hash before approval.

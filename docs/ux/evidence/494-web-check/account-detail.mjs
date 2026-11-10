@@ -122,6 +122,30 @@ for (const [name, options] of [
     axe: await axe(page),
   };
   await shot(page, 'account-desktop');
+  // S4: selecting a row opens the desktop panel without leaving the account, focuses
+  // its heading after the detail loads and restores focus to the originating row on close.
+  const opener = page.locator('table tbody tr td:nth-child(2) button').first();
+  await opener.focus();
+  await opener.click();
+  const panel = page.getByTestId('shell-detail-panel');
+  await panel.waitFor({ state: 'visible' });
+  await panel.getByRole('heading').first().waitFor({ state: 'visible', timeout: 30000 });
+  await page.waitForFunction(
+    () => !!document.activeElement?.closest('[data-testid="shell-detail-panel"]'),
+    { timeout: 5000 },
+  );
+  results.desktop.detailPanel = {
+    opened: await panel.isVisible(),
+    focusInside: await page.evaluate(
+      () => !!document.activeElement?.closest('[data-testid="shell-detail-panel"]'),
+    ),
+    accountContextPreserved: await page.getByTestId('account-detail').isVisible(),
+  };
+  await panel.getByRole('button', { name: 'Back to account' }).click();
+  await panel.waitFor({ state: 'detached' });
+  results.desktop.detailPanel.focusReturned = await opener.evaluate(
+    (node) => document.activeElement === node,
+  );
   await context.close();
 }
 {
@@ -207,6 +231,14 @@ if (!results.phone.context || results.phone.tables !== 0 || results.phone.rawCod
 }
 if (results.desktop.tableHeaders.join('|') !== 'Date|Description|Category|Amount') {
   failures.push('desktop: semantic transaction table headers are missing');
+}
+if (
+  !results.desktop.detailPanel?.opened ||
+  !results.desktop.detailPanel?.focusInside ||
+  !results.desktop.detailPanel?.focusReturned ||
+  !results.desktop.detailPanel?.accountContextPreserved
+) {
+  failures.push('desktop S4: detail panel, focus or account context failed');
 }
 if (results.flows.importDisabled !== true || !results.flows.writes.length) {
   failures.push('flows: archive/import write controls did not behave as expected');

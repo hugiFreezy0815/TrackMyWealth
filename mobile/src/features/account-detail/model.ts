@@ -63,6 +63,31 @@ export const transactionTypeLabel = (code: string, intl: Intl): string =>
 export const accountTypeLabel = (code: string, intl: Intl): string =>
   intl.formatMessage({ id: labelFor(ACCOUNT_TYPE_LABELS, code, 'accountType.other') });
 
+/** Authoritative account value provenance from the server, not inferred from capabilities. */
+const VALUE_BASIS_LABELS = {
+  LEDGER: 'valueBasis.LEDGER',
+  LEDGER_EMPTY: 'valueBasis.LEDGER_EMPTY',
+  LEDGER_FROM_OPENING_BALANCE: 'valueBasis.LEDGER_FROM_OPENING_BALANCE',
+  LEDGER_FROM_STATEMENT_BALANCE: 'valueBasis.LEDGER_FROM_STATEMENT_BALANCE',
+  LATEST_SNAPSHOT: 'valueBasis.LATEST_SNAPSHOT',
+  MANUAL_VALUATION: 'valueBasis.MANUAL_VALUATION',
+  ORIGINAL_PRINCIPAL: 'valueBasis.ORIGINAL_PRINCIPAL',
+  ORIGINAL_PRINCIPAL_LESS_REPAYMENTS: 'valueBasis.ORIGINAL_PRINCIPAL_LESS_REPAYMENTS',
+} as const;
+
+/** Unknown/new server values never imply that a particular provenance is verified. */
+export function valueBasisExplanation(basis: string | null | undefined, intl: Intl): string {
+  if (!basis) return intl.formatMessage({ id: 'account.valueSourceUnavailable' });
+  const messageId = labelFor(VALUE_BASIS_LABELS, basis, 'account.valueSourceUnavailable');
+  if (messageId === 'account.valueSourceUnavailable') {
+    return intl.formatMessage({ id: messageId });
+  }
+  return intl.formatMessage(
+    { id: 'account.valueFrom' },
+    { basis: intl.formatMessage({ id: messageId }) },
+  );
+}
+
 /** Distinct row warning texts: unknown codes collapse into one generic line. */
 export const transactionWarningTexts = (codes: readonly string[], intl: Intl): string[] =>
   Array.from(
