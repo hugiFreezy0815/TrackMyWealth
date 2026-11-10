@@ -268,6 +268,13 @@ export function TransactionDetail({
     !!categories.data?.some(
       (item) => item.id === id && item.active && item.code !== 'UNCATEGORIZED',
     );
+  const chooseCategory = (id: string) => {
+    setSelectedCategory(id);
+    setCategoryError(null);
+  };
+  const saveSelectedCategory = () => {
+    if (selectedCategory) void saveCategory(selectedCategory);
+  };
 
   async function withVersionRetry<T>(
     perform: (version: number) => Promise<T>,
@@ -430,6 +437,11 @@ export function TransactionDetail({
     category && allCategories.length
       ? categoryLabel(category, parent, german)
       : intl.formatMessage({ id: 'txn.category.fallback' });
+  const pendingCategory = categories.data?.find((item) => item.id === selectedCategory);
+  const pendingParent = categories.data?.find((item) => item.id === pendingCategory?.parentId);
+  const pendingLabel = pendingCategory
+    ? categoryLabel(pendingCategory, pendingParent, german)
+    : intl.formatMessage({ id: 'txn.category.fallback' });
   const changeable = canChangeCategory(transaction, archived);
   const removable = canRemove(transaction, archived);
   const moneyRow = (label: string, amount: string | null, currency: string) =>
@@ -690,38 +702,15 @@ export function TransactionDetail({
                 busy={locked}
                 error={categoryError}
                 onClose={closePicker}
-                onSelect={(id) => {
-                  setSelectedCategory(id);
-                  setCategoryError(null);
-                }}
-                onSave={() => {
-                  if (selectedCategory) void saveCategory(selectedCategory);
-                }}
+                onSelect={chooseCategory}
+                onSave={saveSelectedCategory}
               />
             ) : null}
             {reviewLoading ? <ActivityIndicator /> : null}
             {pendingReview ? (
               <View style={{ gap: Spacing.two }}>
                 <Text accessibilityRole="alert" style={{ color: theme.textPrimary }}>
-                  {intl.formatMessage(
-                    { id: 'txn.picker.pending' },
-                    {
-                      category: selectedCategory
-                      ? (() => {
-                          const item = categories.data?.find(
-                            (candidate) => candidate.id === selectedCategory,
-                          );
-                          return item
-                            ? categoryLabel(
-                                item,
-                                categories.data?.find((parent) => parent.id === item.parentId),
-                                german,
-                              )
-                            : intl.formatMessage({ id: 'txn.category.fallback' });
-                        })()
-                        : intl.formatMessage({ id: 'txn.category.fallback' }),
-                    },
-                  )}
+                  {intl.formatMessage({ id: 'txn.picker.pending' }, { category: pendingLabel })}
                 </Text>
                 {categoryError ? (
                   <Text accessibilityRole="alert" style={{ color: theme.statusLoss }}>
@@ -913,13 +902,8 @@ export function TransactionDetail({
           busy={locked}
           error={categoryError}
           onClose={closePicker}
-          onSelect={(id) => {
-                  setSelectedCategory(id);
-                  setCategoryError(null);
-                }}
-          onSave={() => {
-                  if (selectedCategory) void saveCategory(selectedCategory);
-                }}
+          onSelect={chooseCategory}
+          onSave={saveSelectedCategory}
         />
       ) : null}
       <Dialog

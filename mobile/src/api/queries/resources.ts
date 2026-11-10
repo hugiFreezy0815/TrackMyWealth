@@ -152,6 +152,8 @@ export function useChangeTransactionCategory(accountId: string) {
 /** Display an S3 row instantly, but fetch the authoritative single-row response.
  * Placeholder data is never authoritative and must not enable editing.
  */
+type TransactionsPage = components['schemas']['PageResponseTransactionResponse'];
+
 export function useTransaction(accountId: string, transactionId: string) {
   const client = useQueryClient();
   return useQuery({
@@ -162,15 +164,18 @@ export function useTransaction(accountId: string, transactionId: string) {
       }),
     enabled: !!accountId && !!transactionId,
     refetchOnMount: 'always',
-    placeholderData: () =>
-      client
-        .getQueriesData<InfiniteData<components['schemas']['PageResponseTransactionResponse']>>({
-          queryKey: queryKeys.accountTransactionScope(accountId),
-        })
-        .flatMap(([, data]) =>
-          Array.isArray(data?.pages) ? data.pages.flatMap((page) => page.content) : [],
-        )
-        .find((row) => row.id === transactionId),
+    placeholderData: () => {
+      const cached = client.getQueriesData<InfiniteData<TransactionsPage>>({
+        queryKey: queryKeys.accountTransactionScope(accountId),
+      });
+      for (const [, data] of cached) {
+        for (const page of data?.pages ?? []) {
+          const match = page.content.find((row) => row.id === transactionId);
+          if (match) return match;
+        }
+      }
+      return undefined;
+    },
   });
 }
 /** S4: history pages stay independent of the main transaction list. */
