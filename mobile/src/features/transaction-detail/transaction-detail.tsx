@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ComponentRef, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ComponentRef,
+  type ReactNode,
+} from 'react';
 import { onlineManager } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import {
