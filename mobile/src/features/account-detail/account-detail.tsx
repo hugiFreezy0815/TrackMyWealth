@@ -8,7 +8,7 @@ import { typedApi } from '@/api/typed-api';
 import { problemReaction } from '@/api/problems';
 import { retryVersionRequired, useConflict } from '@/api/queries/conflict';
 import { invalidateFinancialData } from '@/api/queries/invalidation';
-import { queryKeys } from '@/api/queries/keys';
+import { queryKeys, queryRoots } from '@/api/queries/keys';
 import {
   useAccount,
   useAccountArchiveAction,
@@ -30,6 +30,7 @@ import {
   ErrorBanner,
   LoadingSkeleton,
   OfflineBanner,
+  ValueStatusBadge,
 } from '@/components/shared';
 import { Spacing, TypeScale } from '@/constants/theme';
 import { formatDate } from '@/format/date';
@@ -51,6 +52,7 @@ import {
   accountValuation,
   hasUnknownCategory,
   uniqueTransactions,
+  type AccountListItem,
   type Transaction,
 } from './model';
 import { TransactionResults } from './transaction-results';
@@ -108,7 +110,13 @@ export function AccountDetail({ accountId, onBack, onTransaction, onImport }: Ac
     enabled: !!summary?.portfolioId,
   });
   const archivedAccounts = useArchivedAccounts(summary?.portfolioId ?? '', archived);
-  const value = accountValuation(summary, activeAccounts.data, archivedAccounts.data);
+  // The overview's account list may have loaded before the detail deep link. Its server-provided
+  // value remains useful when the detail fetch or its scoped value query fails offline.
+  const cachedValue = client
+    .getQueriesData<AccountListItem[]>({ queryKey: [queryRoots.accounts] })
+    .flatMap(([, rows]) => (Array.isArray(rows) ? rows : []))
+    .find((row) => row?.id === accountId && (!summary || row.archived === archived));
+  const value = accountValuation(summary, activeAccounts.data, archivedAccounts.data) ?? cachedValue;
   const categories = useCategories();
   const count = useUncategorizedCount(accountId, hasLedger);
   const transactions = useAccountTransactions(accountId, uncategorized, sort, hasLedger);
@@ -220,15 +228,57 @@ export function AccountDetail({ accountId, onBack, onTransaction, onImport }: Ac
 
   if (account.isPending && !summary) return <LoadingSkeleton count={8} height={24} />;
   if (account.isError && !summary) {
-    return isNotFound(account.error) ? (
-      <EmptyState
-        title={intl.formatMessage({ id: 'account.notFound' })}
-        actionLabel={intl.formatMessage({ id: 'account.back' })}
-        onAction={onBack}
-      />
-    ) : (
-      <ErrorBanner error={account.error} onRetry={() => void account.refetch()} />
-    );
+    if (isNotFound(account.error)) {
+      return (
+        <EmptyState
+          title={intl.formatMessage({ id: 'account.notFound' })}
+          actionLabel={intl.formatMessage({ id: 'account.back' })}
+          onAction={onBack}
+        />
+      );
+    }
+    // Render only the bounded S1/S2 list item already owned by this signed-in session.
+    // No synthetic account capabilities or reconciliation are invented for the fallback.
+    if (cachedValue) {
+      return (
+        <View testID="account-cached-fallback" style={{ gap: Spacing.three }}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={onBack}
+            style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}
+          >
+            <Text style={{ color: theme.brandLink }}>
+              {intl.formatMessage({ id: 'account.back' })}
+            </Text>
+          </Pressable>
+          <ErrorBanner error={account.error} onRetry={() => void account.refetch()} />
+          <Text
+            accessibilityRole="header"
+            style={{ ...TypeScale.headingLarge, color: theme.textPrimary }}
+          >
+            {cachedValue.name}
+          </Text>
+          <Amount
+            value={cachedValue.balance}
+            currency={cachedValue.currency}
+            valueKnown={cachedValue.valueKnown}
+            style={{ ...TypeScale.headingLarge, color: theme.textPrimary }}
+          />
+          <ValueStatusBadge
+            status={cachedValue.valueStatus}
+            valueSourceDate={cachedValue.valueSourceDate}
+            interactive={false}
+          />
+          <Text style={{ color: theme.textSecondary }}>
+            {intl.formatMessage(
+              { id: 'account.asOf' },
+              { date: formatDate(cachedValue.asOf, intl.locale) },
+            )}
+          </Text>
+        </View>
+      );
+    }
+    return <ErrorBanner error={account.error} onRetry={() => void account.refetch()} />;
   }
   if (!summary) return null;
 
@@ -258,6 +308,9 @@ export function AccountDetail({ accountId, onBack, onTransaction, onImport }: Ac
             account.dataUpdatedAt ? new Date(account.dataUpdatedAt).toISOString() : undefined
           }
         />
+      ) : null}
+      {account.isError ? (
+        <ErrorBanner error={account.error} onRetry={() => void account.refetch()} />
       ) : null}
       {writeError ? (
         <ErrorBanner error={writeError} onRetry={() => retryWrite.current?.()} />
@@ -305,6 +358,9 @@ export function AccountDetail({ accountId, onBack, onTransaction, onImport }: Ac
         onRetryValue={refresh}
         onExplainValue={() => setDialog('value')}
       />
+      {value && (activeAccounts.isError || archivedAccounts.isError) ? (
+        <ErrorBanner error={activeAccounts.error ?? archivedAccounts.error} onRetry={refresh} />
+      ) : null}
       {archived ? (
         <ArchivedBanner
           archivedAt={summary.archivedAt}

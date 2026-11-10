@@ -186,3 +186,32 @@ for (const [name, options] of [
 
 await browser.close();
 console.log(JSON.stringify(results, null, 2));
+
+// Critical accessibility and correctness regressions must fail this check automatically.
+const failures = [];
+for (const target of ['phone', 'account-phone-dark', 'desktop']) {
+  for (const violation of results[target].axe ?? []) {
+    failures.push(`${target}: axe ${violation}`);
+  }
+}
+for (const [target, result] of Object.entries(results)) {
+  if (Array.isArray(result.hScroll) && result.hScroll.length) {
+    failures.push(`${target}: horizontal overflow: ${result.hScroll.join(', ')}`);
+  }
+  if (Array.isArray(result.errors) && result.errors.length) {
+    failures.push(`${target}: browser errors: ${result.errors.join('; ')}`);
+  }
+}
+if (!results.phone.context || results.phone.tables !== 0 || results.phone.rawCodes.length) {
+  failures.push('phone: broken account context, unexpected table or raw API codes');
+}
+if (results.desktop.tableHeaders.join('|') !== 'Date|Description|Category|Amount') {
+  failures.push('desktop: semantic transaction table headers are missing');
+}
+if (results.flows.importDisabled !== true || !results.flows.writes.length) {
+  failures.push('flows: archive/import write controls did not behave as expected');
+}
+if (failures.length) {
+  console.error(failures.join('\n'));
+  process.exitCode = 1;
+}
