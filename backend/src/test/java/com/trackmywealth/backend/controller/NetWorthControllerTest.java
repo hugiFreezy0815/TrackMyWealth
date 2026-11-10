@@ -398,6 +398,92 @@ class NetWorthControllerTest {
   }
 
   @Test
+  void migratedBaselineBeforePeriodIsAuthoritativeForRecentHistory() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse portfolio = createPortfolio(token, "Migrated portfolio", "CHF");
+    UUID accountId = createAccount(token, cash("Migrated cash", portfolio.id())).id();
+    seedOpeningBalance(accountId, "2000", today().minusDays(21));
+    simulateMigratedBaseline(accountId, today().minusDays(14));
+
+    ValueHistoryResponse response = portfolioHistory(token, portfolio.id(), "1W");
+
+    assertThat(response.complete()).isTrue();
+    assertThat(response.warnings()).noneMatch(w -> w.contains("may have been restated"));
+    assertThat(valueOn(response, today())).isEqualByComparingTo("2000");
+  }
+
+  @Test
+  void migratedBaselineStillWarnsBeforeTrackingBegan() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse portfolio = createPortfolio(token, "Migration uncertainty", "CHF");
+    UUID accountId = createAccount(token, cash("Old cash", portfolio.id())).id();
+    seedOpeningBalance(accountId, "2000", today().minusDays(21));
+    simulateMigratedBaseline(accountId, today().minusDays(3));
+
+    ValueHistoryResponse response = portfolioHistory(token, portfolio.id(), "1W");
+
+    assertThat(response.complete()).isFalse();
+    assertThat(response.warnings()).anyMatch(w -> w.contains("may have been restated"));
+    assertThat(valueOn(response, today())).isEqualByComparingTo("2000");
+  }
+
+  @Test
+  void unrelatedPortfolioInceptionCannotInvalidateTheRequestedPortfolio() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse portfolioA = createPortfolio(token, "Established", "CHF");
+    PortfolioResponse portfolioB = createPortfolio(token, "Recent", "CHF");
+    UUID known = createAccount(token, cash("Established cash", portfolioA.id())).id();
+    UUID uncertain = createAccount(token, cash("Newly observed cash", portfolioB.id())).id();
+    seedOpeningBalance(known, "3000", today().minusDays(14));
+    seedOpeningBalance(uncertain, "1000", today().minusDays(3));
+
+    ValueHistoryResponse established = portfolioHistory(token, portfolioA.id(), "1W");
+    ValueHistoryResponse recent = portfolioHistory(token, portfolioB.id(), "1W");
+
+    assertThat(established.complete()).isTrue();
+    assertThat(established.warnings()).noneMatch(w -> w.contains("Newly observed cash"));
+    assertThat(valueOn(established, today())).isEqualByComparingTo("3000");
+    assertThat(recent.complete()).isFalse();
+    assertThat(recent.warnings()).anyMatch(w -> w.contains("inception before first activity"));
+  }
+
+  @Test
+  void maximumPortfolioHistoryStartsWithHistoricalMembershipNotOtherActivity()
+      throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse older = createPortfolio(token, "Older", "CHF");
+    PortfolioResponse newer = createPortfolio(token, "Newer", "CHF");
+    AccountSummaryResponse oldAccount = createAccount(token, cash("Old", older.id()));
+    UUID newAccount = createAccount(token, cash("New", newer.id())).id();
+    LocalDate oldStart = today().minusDays(400);
+    LocalDate newStart = today().minusDays(5);
+    seedOpeningBalance(oldAccount.id(), "1000", oldStart);
+    seedOpeningBalance(newAccount, "2000", newStart);
+
+    // A later reassignment must not pull the destination portfolio back to the original
+    // account's much earlier inception.
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + oldAccount.id() + "/reassign-portfolio")
+        .header("If-Match", "\"" + oldAccount.version() + "\"")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new ReassignAccountPortfolioRequest(newer.id()))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    ValueHistoryResponse oldHistory = portfolioHistory(token, older.id(), "MAX");
+    ValueHistoryResponse newHistory = portfolioHistory(token, newer.id(), "MAX");
+
+    assertThat(oldHistory.from()).isEqualTo(oldStart);
+    assertThat(newHistory.from()).isEqualTo(newStart);
+    assertThat(oldHistory.points().get(0).date()).isEqualTo(oldStart);
+    assertThat(newHistory.points().get(0).date()).isEqualTo(newStart);
+    assertThat(oldHistory.points()).hasSizeLessThanOrEqualTo(400);
+    assertThat(newHistory.points()).hasSizeLessThanOrEqualTo(400);
+  }
+
+  @Test
   void foreignWorkspacePortfolioHistoryReturnsNotFound() throws Exception {
     String token = bootstrapAdministrator();
     UUID foreignWorkspace = UUID.randomUUID();
@@ -765,6 +851,20 @@ class NetWorthControllerTest {
           1, date.atTime(12, 0).atZone(ZoneId.of("Europe/Zurich")).toOffsetDateTime());
       statement.setObject(2, accountId);
       statement.setInt(3, position);
+      assertThat(statement.executeUpdate()).isEqualTo(1);
+    }
+  }
+
+  private void simulateMigratedBaseline(UUID accountId, LocalDate date) throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "UPDATE account_history_state SET verified = FALSE, effective_at = ?"
+                    + " WHERE id = (SELECT id FROM account_history_state"
+                    + " WHERE account_id = ? ORDER BY event_sequence LIMIT 1)")) {
+      statement.setObject(
+          1, date.atTime(12, 0).atZone(ZoneId.of("Europe/Zurich")).toOffsetDateTime());
+      statement.setObject(2, accountId);
       assertThat(statement.executeUpdate()).isEqualTo(1);
     }
   }

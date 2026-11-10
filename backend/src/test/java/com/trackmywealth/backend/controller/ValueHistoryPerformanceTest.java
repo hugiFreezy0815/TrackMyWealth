@@ -67,7 +67,7 @@ class ValueHistoryPerformanceTest {
   @Autowired EntityManagerFactory entityManagerFactory;
 
   @Test
-  void oneMonthHistoryP95IsUnderEightHundredMilliseconds() throws Exception {
+  void oneYearHistoryP95IsUnderEightHundredMilliseconds() throws Exception {
     RestTestClient anonymous =
         RestTestClient.bindToServer().baseUrl("http://localhost:%d".formatted(port)).build();
     String token =
@@ -123,29 +123,34 @@ class ValueHistoryPerformanceTest {
       ValueHistoryResponse response = history(client);
       double millis = (System.nanoTime() - start) / 1_000_000.0;
       samples.add(millis);
-      assertThat(response.points()).hasSizeBetween(29, 32);
+      assertThat(response.points()).hasSizeBetween(52, 54);
       assertThat(response.points().get(response.points().size() - 1).date()).isEqualTo(today);
     }
     Collections.sort(samples);
+    double p50 = samples.get((int) Math.ceil(0.50 * samples.size()) - 1);
     double p95 = samples.get((int) Math.ceil(0.95 * samples.size()) - 1);
+    long queryCount = sessionFactory.getStatistics().getPrepareStatementCount();
     System.out.printf(
-        "HISTORY_PERF p95=%.2fms, min=%.2fms, max=%.2fms, "
-            + "hibernatePreparedStatements=%d, accounts=%d, transactions=%d%n",
+        "HISTORY_PERF period=1Y p50=%.2fms, p95=%.2fms, min=%.2fms, max=%.2fms, "
+            + "hibernatePreparedStatements=%d, statementsPerRequest=%.1f, "
+            + "accounts=%d, transactions=%d%n",
+        p50,
         p95,
         samples.get(0),
         samples.get(samples.size() - 1),
-        sessionFactory.getStatistics().getPrepareStatementCount(),
+        queryCount,
+        (double) queryCount / samples.size(),
         ACCOUNTS,
         ACCOUNTS * TRANSACTIONS_PER_ACCOUNT);
     assertThat(p95)
-        .as("1M history p95 for 20 accounts and 50,000 transactions")
+        .as("1Y history p95 for 20 accounts and 50,000 transactions")
         .isLessThan(MAX_P95_MS);
   }
 
   private ValueHistoryResponse history(RestTestClient client) {
     return client
         .get()
-        .uri("/api/v1/net-worth/history?period=1M")
+        .uri("/api/v1/net-worth/history?period=1Y")
         .exchange()
         .expectStatus()
         .isOk()
@@ -164,7 +169,7 @@ class ValueHistoryPerformanceTest {
                 "INSERT INTO account_snapshot (workspace_id, account_id, snapshot_date, balance,"
                     + " currency, is_opening_balance) SELECT workspace_id, id, ?, 10000.00,"
                     + " native_currency, TRUE FROM account WHERE id = ?")) {
-          opening.setObject(1, today.minusDays(40));
+          opening.setObject(1, today.minusYears(1).minusDays(1));
           opening.setObject(2, accountId);
           assertThat(opening.executeUpdate()).isEqualTo(1);
         }
@@ -172,7 +177,7 @@ class ValueHistoryPerformanceTest {
             connection.prepareStatement(
                 "INSERT INTO transaction (workspace_id, account_id, transaction_type,"
                     + " booking_date, amount, currency) "
-                    + "SELECT a.workspace_id, a.id, 'INCOME', CAST(? AS date) - (n % 28),"
+                    + "SELECT a.workspace_id, a.id, 'INCOME', CAST(? AS date) - (n % 365),"
                     + " 1.00, a.native_currency FROM account a"
                     + " CROSS JOIN generate_series(1, 2500) AS n WHERE a.id = ?")) {
           transactions.setObject(1, today);
@@ -185,10 +190,10 @@ class ValueHistoryPerformanceTest {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement plan =
             connection.prepareStatement(
-                "EXPLAIN (ANALYZE, BUFFERS) SELECT account_id, SUM(amount)"
+                "EXPLAIN (ANALYZE, BUFFERS) SELECT account_id, booking_date, SUM(amount)"
                     + " FROM transaction WHERE booking_date BETWEEN ? AND ?"
-                    + " GROUP BY account_id")) {
-      plan.setObject(1, today.minusDays(30));
+                    + " GROUP BY account_id, booking_date")) {
+      plan.setObject(1, today.minusYears(1));
       plan.setObject(2, today);
       try (ResultSet rows = plan.executeQuery()) {
         while (rows.next()) {

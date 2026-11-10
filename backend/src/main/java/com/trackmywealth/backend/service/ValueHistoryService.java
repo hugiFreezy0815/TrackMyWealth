@@ -126,13 +126,20 @@ public class ValueHistoryService {
       @Nullable UUID portfolioId) {
     ValueHistoryPeriod period = ValueHistoryPeriod.parse(periodParam);
     LocalDate today = businessDateService.today();
-    LocalDate from =
-        period.start(today, historyStartRepository.firstActivity(actor.workspaceId(), null, today));
-    List<LocalDate> dates = period.dates(from, today);
     List<UUID> allIds = accounts.stream().map(Account::getId).toList();
     Map<UUID, LocalDate> firstEvidence = historyStartRepository.firstEvidence(allIds);
     Map<UUID, List<AccountHistoryState>> historyStates =
         accountHistoryStateRepository.historyFor(allIds);
+    ZoneId zone = businessDateService.zone();
+    // A portfolio's MAX window must follow dated membership, not the accounts' current
+    // portfolio ids. The workspace-wide earliest activity remains unchanged.
+    LocalDate firstActivity =
+        portfolioId == null
+            ? historyStartRepository.firstActivity(actor.workspaceId(), null, today)
+            : firstPortfolioActivity(
+                accounts, portfolioId, firstEvidence, historyStates, zone, today);
+    LocalDate from = period.start(today, firstActivity);
+    List<LocalDate> dates = period.dates(from, today);
     Map<UUID, PortfolioPlacement> placements =
         withSections ? accountService.portfolioPlacementsOf(accounts) : Map.of();
     Map<LocalDate, Map<UUID, AccountValuation>> openingHistory =
@@ -147,8 +154,12 @@ public class ValueHistoryService {
     // signal when the selected period extends into that uncertain interval.
     for (Account account : accounts) {
       if (account.getOpenedAt() == null) {
-        LocalDate firstActivity = firstEvidence.get(account.getId());
-        if (firstActivity != null && from.isBefore(firstActivity)) {
+        LocalDate evidence = firstEvidence.get(account.getId());
+        if (evidence != null
+            && from.isBefore(evidence)
+            && (portfolioId == null
+                || affectsPortfolioBeforeEvidence(
+                    account, portfolioId, from, evidence, historyStates, zone))) {
           warnings.add(account.getName() + ": inception before first activity is uncertain");
           complete = false;
         }
@@ -400,15 +411,7 @@ public class ValueHistoryService {
     ZoneId zone = businessDateService.zone();
     for (Account account : accounts) {
       List<AccountHistoryState> states = historyStates.getOrDefault(account.getId(), List.of());
-      LocalDate created =
-          account.getCreatedAt() == null
-              ? null
-              : account.getCreatedAt().atZoneSameInstant(zone).toLocalDate();
-      LocalDate inception = account.getOpenedAt() != null ? account.getOpenedAt() : created;
-      LocalDate evidence = firstEvidence.get(account.getId());
-      if (evidence != null && (inception == null || evidence.isBefore(inception))) {
-        inception = evidence;
-      }
+      LocalDate inception = inceptionDate(account, zone, firstEvidence.get(account.getId()));
       if (inception != null && inception.isAfter(from) && !inception.isAfter(to)) {
         AccountHistoryState atInception = stateOn(account, inception, zone, historyStates);
         boolean included =
@@ -458,6 +461,96 @@ public class ValueHistoryService {
     return new CashFlowContribution(complete ? total : null, complete, List.copyOf(warnings));
   }
 
+  /**
+   * Financial inception may predate the account row when snapshots, transactions, or manual
+   * valuations were entered with their historical dates.
+   */
+  private static @Nullable LocalDate inceptionDate(
+      Account account, ZoneId zone, @Nullable LocalDate evidence) {
+    LocalDate created =
+        account.getCreatedAt() == null
+            ? null
+            : account.getCreatedAt().atZoneSameInstant(zone).toLocalDate();
+    LocalDate inception = account.getOpenedAt() != null ? account.getOpenedAt() : created;
+    return evidence != null && (inception == null || evidence.isBefore(inception))
+        ? evidence
+        : inception;
+  }
+
+  /**
+   * The first date this portfolio could have included an account. Account activity in another
+   * portfolio before a later reassignment must never pull this portfolio's MAX window backward.
+   * For migrated pre-tracking intervals, the baseline is our best available attribution and the
+   * normal history warning exposes any uncertainty.
+   */
+  private static LocalDate firstPortfolioActivity(
+      Collection<Account> accounts,
+      UUID portfolioId,
+      Map<UUID, LocalDate> firstEvidence,
+      Map<UUID, List<AccountHistoryState>> historyStates,
+      ZoneId zone,
+      LocalDate today) {
+    LocalDate earliest = today;
+    for (Account account : accounts) {
+      LocalDate inception = inceptionDate(account, zone, firstEvidence.get(account.getId()));
+      if (inception == null || inception.isAfter(today)) {
+        continue;
+      }
+      AccountHistoryState atInception = stateOn(account, inception, zone, historyStates);
+      boolean includedAtInception =
+          atInception == null
+              ? ACTIVE_STATUS.equals(account.getStatus())
+                  && portfolioId.equals(account.getPortfolio().getId())
+              : ACTIVE_STATUS.equals(atInception.status())
+                  && portfolioId.equals(atInception.portfolioId());
+      if (includedAtInception && inception.isBefore(earliest)) {
+        earliest = inception;
+      }
+      for (AccountHistoryState event : historyStates.getOrDefault(account.getId(), List.of())) {
+        LocalDate date = event.effectiveAt().atZoneSameInstant(zone).toLocalDate();
+        if (!date.isBefore(inception)
+            && date.isBefore(earliest)
+            && ACTIVE_STATUS.equals(event.status())
+            && portfolioId.equals(event.portfolioId())) {
+          earliest = date;
+        }
+      }
+    }
+    return earliest;
+  }
+
+  /**
+   * An account from another portfolio cannot make a portfolio's entire history incomplete.
+   * Consider only membership while the possibly-unobserved inception interval overlaps the
+   * requested window, including an entry into the portfolio during that interval.
+   */
+  private static boolean affectsPortfolioBeforeEvidence(
+      Account account,
+      UUID portfolioId,
+      LocalDate from,
+      LocalDate evidence,
+      Map<UUID, List<AccountHistoryState>> historyStates,
+      ZoneId zone) {
+    AccountHistoryState atStart = stateOn(account, from, zone, historyStates);
+    if (atStart == null
+        ? ACTIVE_STATUS.equals(account.getStatus())
+            && portfolioId.equals(account.getPortfolio().getId())
+        : ACTIVE_STATUS.equals(atStart.status())
+            && portfolioId.equals(atStart.portfolioId())) {
+      return true;
+    }
+    for (AccountHistoryState state : historyStates.getOrDefault(account.getId(), List.of())) {
+      LocalDate date = state.effectiveAt().atZoneSameInstant(zone).toLocalDate();
+      if (!date.isBefore(from)
+          && date.isBefore(evidence)
+          && ACTIVE_STATUS.equals(state.status())
+          && portfolioId.equals(state.portfolioId())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private static List<Account> onDate(
       Collection<Account> accounts,
       LocalDate date,
@@ -469,15 +562,8 @@ public class ValueHistoryService {
     return accounts.stream()
         .filter(
             account -> {
-              LocalDate created =
-                  account.getCreatedAt() == null
-                      ? null
-                      : account.getCreatedAt().atZoneSameInstant(businessZone).toLocalDate();
-              LocalDate inception = account.getOpenedAt() != null ? account.getOpenedAt() : created;
-              LocalDate evidence = firstEvidence.get(account.getId());
-              if (evidence != null && (inception == null || evidence.isBefore(inception))) {
-                inception = evidence;
-              }
+              LocalDate inception =
+                  inceptionDate(account, businessZone, firstEvidence.get(account.getId()));
               if (inception == null || date.isBefore(inception)) {
                 return false;
               }
@@ -491,7 +577,11 @@ public class ValueHistoryService {
                 return ACTIVE_STATUS.equals(account.getStatus())
                     && (portfolioId == null || portfolioId.equals(account.getPortfolio().getId()));
               }
-              if (!state.verified() && warnings != null) {
+              // A migration baseline is authoritative from its effective date onward;
+              // only its pre-baseline reconstruction is unverified.
+              if (!state.verified()
+                  && date.isBefore(state.effectiveAt().atZoneSameInstant(businessZone).toLocalDate())
+                  && warnings != null) {
                 warnings.add(
                     account.getName()
                         + ": portfolio and archive history before tracking"
