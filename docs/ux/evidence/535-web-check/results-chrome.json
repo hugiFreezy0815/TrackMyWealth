@@ -1,0 +1,113 @@
+{
+  "browser": "157.0.8103.39",
+  "screenshots": {
+    "phone-390": {
+      "sign-in": {
+        "hScroll": false
+      },
+      "overview": {
+        "hScroll": false
+      },
+      "settings": {
+        "hScroll": false
+      },
+      "log": []
+    },
+    "tablet-800": {
+      "sign-in": {
+        "hScroll": false
+      },
+      "overview": {
+        "hScroll": false
+      },
+      "settings": {
+        "hScroll": false
+      },
+      "log": []
+    },
+    "desktop-1280": {
+      "sign-in": {
+        "hScroll": false
+      },
+      "overview": {
+        "hScroll": false
+      },
+      "settings": {
+        "hScroll": false
+      },
+      "log": []
+    }
+  },
+  "signOut": {
+    "afterSignOut": {
+      "path": "/overview",
+      "signInForm": true,
+      "sessionData": null,
+      "freshDocument": true
+    },
+    "backAfterSignOut": [
+      {
+        "path": "/accounts/{accountId}",
+        "signInForm": true,
+        "sessionData": null
+      },
+      {
+        "path": "/overview",
+        "signInForm": true,
+        "sessionData": null
+      },
+      {
+        "path": "blank",
+        "signInForm": false,
+        "sessionData": null
+      }
+    ],
+    "backAfterSignOutLog": [
+      "[pageshow] persisted=false /",
+      "[pageshow] persisted=false /overview",
+      "[pageshow] persisted=false /accounts/{accountId}",
+      "[pageshow] persisted=false blank"
+    ],
+    "leaveAfterSignOutThenBack": [
+      {
+        "path": "/overview",
+        "signInForm": true,
+        "sessionData": null
+      },
+      {
+        "path": "/accounts/{accountId}",
+        "signInForm": true,
+        "sessionData": null
+      },
+      {
+        "path": "/overview",
+        "signInForm": true,
+        "sessionData": null
+      },
+      {
+        "path": "blank",
+        "signInForm": false,
+        "sessionData": null
+      }
+    ],
+    "leaveAfterSignOutThenBackLog": [
+      "[pageshow] persisted=false /actuator/health",
+      "[pageshow] persisted=false /overview",
+      "[pageshow] persisted=true /overview",
+      "[pageshow] persisted=false /overview",
+      "[pageshow] persisted=false /accounts/{accountId}",
+      "[pageshow] persisted=false blank"
+    ],
+    "leaveWhileSignedInThenBack": {
+      "path": "/accounts/{accountId}",
+      "signInForm": false,
+      "sessionData": "DKB",
+      "accountListVisible": true
+    },
+    "leaveWhileSignedInThenBackLog": [
+      "[pageshow] persisted=false /actuator/health",
+      "[pageshow] persisted=false /",
+      "[pageshow] persisted=true /accounts/{accountId}"
+    ]
+  }
+}
