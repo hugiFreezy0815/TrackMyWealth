@@ -406,10 +406,10 @@ public class ValueHistoryService {
         amount,
         percent,
         contributions,
-        contributions == null || (capitalMovements == null && !BigDecimal.ZERO.equals(contributions))
-            ? (capitalMovements == null && contributions != null
-                ? amount.subtract(contributions) : null)
-            : amount.subtract(contributions).subtract(capitalMovements),
+        contributions == null
+            ? null
+            : amount.subtract(contributions).subtract(
+                capitalMovements == null ? BigDecimal.ZERO : capitalMovements),
         capitalMovements);
   }
 

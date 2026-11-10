@@ -19062,8 +19062,16 @@ components:
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
+        capitalMovements:
+          type:
+          - string
+          - "null"
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
       required:
       - amount
+      - capitalMovements
       - contributions
       - marketAndFx
       - percent

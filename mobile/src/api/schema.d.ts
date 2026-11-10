@@ -2128,6 +2128,11 @@ export interface components {
        * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
        */
       marketAndFx: DecimalString | null;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      capitalMovements: DecimalString | null;
     };
     Conflict: {
       /** @enum {string} */
