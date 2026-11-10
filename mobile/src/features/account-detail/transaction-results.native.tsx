@@ -47,12 +47,13 @@ export function TransactionResults({
   );
   const lastTenRef = useRef(lastTen);
   lastTenRef.current = lastTen;
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 1 }).current;
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
       const trigger = loadMore.current;
       if (!trigger || !viewableItems.some((token) => token.isViewable && token.item && lastTenRef.current.has((token.item as Transaction).id))) return;
       // One automatic request per loaded tail; the next page produces a new tail.
-      const tail = [...lastTenRef.current].at(-1);
+      const tail = [...lastTenRef.current].slice(-1)[0];
       if (!tail || lastTriggered.current === tail) return;
       lastTriggered.current = tail;
       trigger();
@@ -96,7 +97,7 @@ export function TransactionResults({
         />
       )}
       onViewableItemsChanged={onViewableItemsChanged}
-      viewabilityConfig={{ itemVisiblePercentThreshold: 1 }}
+      viewabilityConfig={viewabilityConfig}
       initialNumToRender={12}
       maxToRenderPerBatch={12}
       windowSize={7}
