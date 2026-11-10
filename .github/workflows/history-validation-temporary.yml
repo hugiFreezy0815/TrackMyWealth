@@ -1,0 +1,37 @@
+name: History temporary validation
+on:
+  push:
+    branches: [feat/477-value-history]
+    paths: [".github/workflows/history-validation-temporary.yml"]
+permissions:
+  contents: read
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Format in disposable checkout
+        run: cd backend && ./mvnw -B spotless:apply
+      - name: Print formatted files for review
+        run: |
+          git diff --name-only -- '*.java' | while IFS= read -r path; do
+            printf 'FORMAT_FILE_START:%s\n' "$path"
+            base64 -w0 "$path"
+            printf '\nFORMAT_FILE_END:%s\n' "$path"
+          done
+  benchmark:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Run history performance fixture
+        run: cd backend && HISTORY_PERF=true ./mvnw -B -Dtest=ValueHistoryPerformanceTest test
