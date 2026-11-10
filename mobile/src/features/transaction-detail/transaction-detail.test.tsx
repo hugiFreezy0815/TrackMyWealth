@@ -329,7 +329,10 @@ describe('S4 transaction detail', () => {
         title: 'Version required',
       }),
     );
-    const refetch = jest.fn(async () => ({ data: { ...base, version: 8 }, isPlaceholderData: true }));
+    const refetch = jest.fn(async () => ({
+      data: { ...base, version: 8 },
+      isPlaceholderData: true,
+    }));
     jest.mocked(useTransaction).mockReturnValue({
       ...success(base),
       refetch,
@@ -375,21 +378,28 @@ describe('S4 transaction detail', () => {
   it.each([
     ['en', en, 'Before the opening balance: not counted in the balance', 'Check this transaction'],
     ['de-CH', de, 'Vor dem Anfangssaldo: zählt nicht zum Saldo', 'Prüfe diese Transaktion'],
-  ])('reuses S3 warning translations and deduplicates unknown warnings in %s', async (locale, messages, known, unknown) => {
-    fixtures({
-      ...base,
-      warnings: ['BOOKED_BEFORE_OPENING_BALANCE', 'UNKNOWN_ONE', 'UNKNOWN_TWO'],
-    });
-    await render(
-      <QueryClientProvider client={new QueryClient()}>
-        <IntlProvider locale={locale} messages={messages}>
-          <TransactionDetail accountId="account-1" transactionId="transaction-1" onBack={jest.fn()} />
-        </IntlProvider>
-      </QueryClientProvider>,
-    );
-    expect(screen.getByText(`⚠ ${known}`)).toBeTruthy();
-    expect(screen.getAllByText(`⚠ ${unknown}`)).toHaveLength(1);
-  });
+  ])(
+    'reuses S3 warning translations and deduplicates unknown warnings in %s',
+    async (locale, messages, known, unknown) => {
+      fixtures({
+        ...base,
+        warnings: ['BOOKED_BEFORE_OPENING_BALANCE', 'UNKNOWN_ONE', 'UNKNOWN_TWO'],
+      });
+      await render(
+        <QueryClientProvider client={new QueryClient()}>
+          <IntlProvider locale={locale} messages={messages}>
+            <TransactionDetail
+              accountId="account-1"
+              transactionId="transaction-1"
+              onBack={jest.fn()}
+            />
+          </IntlProvider>
+        </QueryClientProvider>,
+      );
+      expect(screen.getByText(`⚠ ${known}`)).toBeTruthy();
+      expect(screen.getAllByText(`⚠ ${unknown}`)).toHaveLength(1);
+    },
+  );
 
   it('does not refocus the same detail panel when its transaction data refreshes', async () => {
     const { moveAccessibilityFocus } = jest.requireMock(
@@ -399,19 +409,29 @@ describe('S4 transaction detail', () => {
     const view = await render(
       <QueryClientProvider client={client}>
         <IntlProvider locale="en" messages={en}>
-          <TransactionDetail accountId="account-1" transactionId="transaction-1" onBack={jest.fn()} />
+          <TransactionDetail
+            accountId="account-1"
+            transactionId="transaction-1"
+            onBack={jest.fn()}
+          />
         </IntlProvider>
       </QueryClientProvider>,
     );
     if (Platform.OS === 'web') expect(moveAccessibilityFocus).toHaveBeenCalledTimes(1);
     const originalFocusCalls = moveAccessibilityFocus.mock.calls.length;
-    jest.mocked(useTransaction).mockReturnValue(
-      success({ ...base, version: 8 }) as unknown as ReturnType<typeof useTransaction>,
-    );
+    jest
+      .mocked(useTransaction)
+      .mockReturnValue(
+        success({ ...base, version: 8 }) as unknown as ReturnType<typeof useTransaction>,
+      );
     await view.rerender(
       <QueryClientProvider client={client}>
         <IntlProvider locale="en" messages={en}>
-          <TransactionDetail accountId="account-1" transactionId="transaction-1" onBack={jest.fn()} />
+          <TransactionDetail
+            accountId="account-1"
+            transactionId="transaction-1"
+            onBack={jest.fn()}
+          />
         </IntlProvider>
       </QueryClientProvider>,
     );

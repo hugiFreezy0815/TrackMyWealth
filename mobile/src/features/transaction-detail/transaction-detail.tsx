@@ -286,9 +286,7 @@ export function TransactionDetail({
   // The focus target changes only when a new authoritative transaction appears,
   // not when a background refetch creates another object for the same row.
   const focusableTransactionId =
-    !record.isPlaceholderData && !record.isError && !account.isError
-      ? transaction?.id
-      : undefined;
+    !record.isPlaceholderData && !record.isError && !account.isError ? transaction?.id : undefined;
   useEffect(() => {
     if (Platform.OS === 'web' && focusableTransactionId) {
       moveAccessibilityFocus(detailHeading.current);
@@ -637,7 +635,9 @@ export function TransactionDetail({
       ? {
           key: 'quantity',
           label: intl.formatMessage({ id: 'txn.quantity' }),
-          value: <Figure testID="transaction-quantity" value={transaction.quantity} kind="quantity" />,
+          value: (
+            <Figure testID="transaction-quantity" value={transaction.quantity} kind="quantity" />
+          ),
         }
       : null,
     moneyRow(
