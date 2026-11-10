@@ -593,6 +593,8 @@ export function TransactionDetail({
         : !changeable
           ? 'txn.category.locked'
           : null;
+  const showCategoryEditExplanation =
+    !archived && !transaction.reconciliationAdjustment && !!categoryEditExplanation;
   const moneyRow = (label: string, amount: string | null, currency: string) =>
     amount === null
       ? null
@@ -834,7 +836,7 @@ export function TransactionDetail({
                     : 'txn.category.automatic',
               })}
             </Text>
-            {!changeable && categoryEditExplanation && !pendingReview && !archived && !transaction.reconciliationAdjustment ? (
+            {!changeable && showCategoryEditExplanation && !pendingReview ? (
               <Text accessibilityRole="alert" style={{ color: theme.statusWarning }}>
                 {intl.formatMessage({ id: categoryEditExplanation })}
               </Text>
@@ -904,7 +906,7 @@ export function TransactionDetail({
                     if (selectedCategory) void saveCategory(selectedCategory);
                   }}
                 />
-                {!changeable && categoryEditExplanation && !archived && !transaction.reconciliationAdjustment ? (
+                {!changeable && showCategoryEditExplanation ? (
                   <Text accessibilityRole="alert" style={{ color: theme.statusWarning }}>
                     {intl.formatMessage({ id: categoryEditExplanation })}
                   </Text>
