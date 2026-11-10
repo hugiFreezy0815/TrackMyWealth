@@ -85,6 +85,7 @@ class NetWorthControllerTest {
       for (String table :
           List.of(
               "fx_rate",
+              "transaction",
               "snapshot_holding",
               "account_snapshot",
               "custom_asset_valuation",
@@ -466,7 +467,7 @@ class NetWorthControllerTest {
     PortfolioResponse source = createPortfolio(token, "Source", "CHF");
     PortfolioResponse destination = createPortfolio(token, "Destination", "CHF");
     AccountSummaryResponse account = createAccount(token, cash("Moving account", source.id()));
-    seedOpeningBalance(account.id(), "5000");
+    seedOpeningBalance(account.id(), "5000", today().minusDays(9));
 
     client(token)
         .post()
@@ -537,8 +538,8 @@ class NetWorthControllerTest {
     PortfolioResponse destination = createPortfolio(token, "Receiving portfolio", "CHF");
     UUID from = createAccount(token, cash("Source cash", source.id())).id();
     UUID to = createAccount(token, cash("Destination cash", destination.id())).id();
-    seedOpeningBalance(from, "7000");
-    seedOpeningBalance(to, "3000");
+    seedOpeningBalance(from, "7000", today().minusDays(9));
+    seedOpeningBalance(to, "3000", today().minusDays(9));
 
     seedTransfer(from, to, "-5000");
     seedTransfer(to, from, "5000");
@@ -734,13 +735,18 @@ class NetWorthControllerTest {
   // An opening balance a few days back, in the account's own currency. It never goes stale
   // (#380), so the account's value is CURRENT.
   private void seedOpeningBalance(UUID accountId, String balance) throws Exception {
+    seedOpeningBalance(accountId, balance, today().minusDays(3));
+  }
+
+  private void seedOpeningBalance(UUID accountId, String balance, LocalDate snapshotDate)
+      throws Exception {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(
                 "INSERT INTO account_snapshot (workspace_id, account_id, snapshot_date, balance,"
                     + " currency, is_opening_balance) SELECT workspace_id, id, ?, ?,"
                     + " native_currency, TRUE FROM account WHERE id = ?")) {
-      statement.setObject(1, today().minusDays(3));
+      statement.setObject(1, snapshotDate);
       statement.setBigDecimal(2, new BigDecimal(balance));
       statement.setObject(3, accountId);
       assertThat(statement.executeUpdate()).isEqualTo(1);
@@ -767,7 +773,7 @@ class NetWorthControllerTest {
         PreparedStatement statement =
             connection.prepareStatement(
                 "INSERT INTO transaction (workspace_id, account_id, transaction_type,"
-                    + " booking_date, amount, currency, internal_transfer, counterparty_account_id)"
+                    + " booking_date, amount, currency, is_internal_transfer, counterparty_account_id)"
                     + " SELECT workspace_id, id, 'TRANSFER', ?, ?, native_currency, TRUE, ?"
                     + " FROM account WHERE id = ?")) {
       statement.setObject(1, today().minusDays(1));
@@ -783,7 +789,7 @@ class NetWorthControllerTest {
         PreparedStatement statement =
             connection.prepareStatement(
                 "INSERT INTO transaction (workspace_id, account_id, transaction_type,"
-                    + " booking_date, amount, currency, internal_transfer)"
+                    + " booking_date, amount, currency, is_internal_transfer)"
                     + " SELECT workspace_id, id, 'TRANSFER', ?, -100, native_currency, FALSE"
                     + " FROM account WHERE id = ?")) {
       statement.setObject(1, today().minusDays(1));
