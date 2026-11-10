@@ -116,7 +116,8 @@ export function AccountDetail({ accountId, onBack, onTransaction, onImport }: Ac
     .getQueriesData<AccountListItem[]>({ queryKey: [queryRoots.accounts] })
     .flatMap(([, rows]) => (Array.isArray(rows) ? rows : []))
     .find((row) => row?.id === accountId && (!summary || row.archived === archived));
-  const value = accountValuation(summary, activeAccounts.data, archivedAccounts.data) ?? cachedValue;
+  const value =
+    accountValuation(summary, activeAccounts.data, archivedAccounts.data) ?? cachedValue;
   const categories = useCategories();
   const count = useUncategorizedCount(accountId, hasLedger);
   const transactions = useAccountTransactions(accountId, uncategorized, sort, hasLedger);
@@ -135,8 +136,7 @@ export function AccountDetail({ accountId, onBack, onTransaction, onImport }: Ac
 
   // Spec S3 row 4: a category id the cached list lacks triggers one reload of /categories.
   const reloadedCategories = useRef(false);
-  const unknownCategory =
-    categories.isSuccess && hasUnknownCategory(records, categories.data ?? []);
+  const unknownCategory = categories.isSuccess && hasUnknownCategory(records, categories.data ?? []);
   const reloadCategories = categories.refetch;
   useEffect(() => {
     if (!unknownCategory || reloadedCategories.current) return;
