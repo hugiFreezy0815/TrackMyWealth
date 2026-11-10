@@ -237,7 +237,6 @@ export function useTransactionDetailActions(accountId: string, transactionId: st
   return { setCategory, resetCategory, remove };
 }
 
-
 export const useCategories = (includeInactive = false) =>
   useQuery({
     queryKey: queryKeys.categories(includeInactive),

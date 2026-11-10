@@ -300,7 +300,6 @@ describe('S4 transaction detail', () => {
     expect(setCategory).not.toHaveBeenCalled();
   });
 
-
   it('closes the picker on a 412, preserves the choice, and saves using the reviewed server ETag', async () => {
     jest.mocked(useConflict).mockImplementation(useMockConflict);
     const refetch = jest.fn(async () => ({ data: { ...base, version: 8 } }));
@@ -328,7 +327,9 @@ describe('S4 transaction detail', () => {
     expect(screen.queryByRole('radio', { name: 'Food › Dining out' })).toBeNull();
     await fireEvent.press(screen.getByRole('button', { name: 'Review and save again' }));
     await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.getByText(/Your pending choice: Food › Dining out/)).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByText(/Your pending choice: Food › Dining out/)).toBeTruthy(),
+    );
     await fireEvent.press(screen.getByRole('button', { name: 'Save again' }));
     await waitFor(() =>
       expect(setCategory).toHaveBeenNthCalledWith(2, { categoryId: 'dining', version: 8 }),
@@ -378,22 +379,28 @@ describe('S4 transaction detail', () => {
     const deactivated = categories.map((item) =>
       item.id === 'groceries' ? { ...item, active: false } : item,
     );
-    jest.mocked(useCategories).mockImplementation((includeInactive = false) =>
-      success(includeInactive ? deactivated : deactivated.filter((item) => item.active)) as
-        unknown as ReturnType<typeof useCategories>,
-    );
+    jest
+      .mocked(useCategories)
+      .mockImplementation(
+        (includeInactive = false) =>
+          success(
+            includeInactive ? deactivated : deactivated.filter((item) => item.active),
+          ) as unknown as ReturnType<typeof useCategories>,
+      );
     jest.mocked(useTransactionHistory).mockReturnValue(
       success({
         pages: [
           {
-            content: [{
-              occurredAt: '2026-11-09T10:00:00Z',
-              kind: 'CATEGORY_CHANGED',
-              fromCategoryId: 'groceries',
-              toCategoryId: 'dining',
-              actorDisplayName: null,
-              reason: null,
-            }],
+            content: [
+              {
+                occurredAt: '2026-11-09T10:00:00Z',
+                kind: 'CATEGORY_CHANGED',
+                fromCategoryId: 'groceries',
+                toCategoryId: 'dining',
+                actorDisplayName: null,
+                reason: null,
+              },
+            ],
             page: { number: 0, size: 50, totalElements: 1, totalPages: 1 },
           },
         ],
@@ -410,26 +417,34 @@ describe('S4 transaction detail', () => {
     const onRelated = jest.fn();
     jest.mocked(useTransactionHistory).mockReturnValue({
       ...success({
-        pages: [{
-          content: [{
-            kind: 'CORRECTED',
-            occurredAt: '2026-11-09T10:00:00Z',
-            relatedTransactionId: 'previous-transaction',
-            actorDisplayName: null,
-            fromCategoryId: null,
-            toCategoryId: null,
-            reason: null,
-          }],
-          page: { number: 0, size: 50, totalElements: 51, totalPages: 2 },
-        }],
+        pages: [
+          {
+            content: [
+              {
+                kind: 'CORRECTED',
+                occurredAt: '2026-11-09T10:00:00Z',
+                relatedTransactionId: 'previous-transaction',
+                actorDisplayName: null,
+                fromCategoryId: null,
+                toCategoryId: null,
+                reason: null,
+              },
+            ],
+            page: { number: 0, size: 50, totalElements: 51, totalPages: 2 },
+          },
+        ],
       }),
       hasNextPage: true,
       fetchNextPage: more,
     } as unknown as ReturnType<typeof useTransactionHistory>);
     await render(
       <IntlProvider locale="en" messages={en}>
-        <TransactionDetail accountId="account-1" transactionId="transaction-1"
-          onBack={jest.fn()} onRelatedTransaction={onRelated} />
+        <TransactionDetail
+          accountId="account-1"
+          transactionId="transaction-1"
+          onBack={jest.fn()}
+          onRelatedTransaction={onRelated}
+        />
       </IntlProvider>,
     );
     expect(screen.getByText('Corrected automatically')).toBeTruthy();

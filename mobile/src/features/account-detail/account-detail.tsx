@@ -123,7 +123,8 @@ export function AccountDetail({
     .getQueriesData<AccountListItem[]>({ queryKey: [queryRoots.accounts] })
     .flatMap(([, rows]) => (Array.isArray(rows) ? rows : []))
     .find((row) => row?.id === accountId && (!summary || row.archived === archived));
-  const value = accountValuation(summary, activeAccounts.data, archivedAccounts.data) ?? cachedValue;
+  const value =
+    accountValuation(summary, activeAccounts.data, archivedAccounts.data) ?? cachedValue;
   const categories = useCategories();
   const count = useUncategorizedCount(accountId, hasLedger);
   const transactions = useAccountTransactions(accountId, uncategorized, sort, hasLedger);
@@ -210,8 +211,7 @@ export function AccountDetail({
         queryKeys.transaction(accountId, target.id),
       );
       await retryVersionRequired(
-        (version) =>
-          categoryWrite.mutateAsync({ transactionId: target.id, categoryId, version }),
+        (version) => categoryWrite.mutateAsync({ transactionId: target.id, categoryId, version }),
         cached?.version ?? target.version,
         () => reloadTransactionVersion(target.id),
       );
