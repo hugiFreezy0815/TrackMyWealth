@@ -213,6 +213,58 @@ describe('S4 transaction detail', () => {
     expect(screen.getByText('Bank · Current account')).toBeTruthy();
   });
 
+  it('masks trade quantity in visible text and accessibility labels', async () => {
+    fixtures({ ...base, transactionType: 'BUY', quantity: '12345.6789' });
+    jest.mocked(useAmountsHidden).mockReturnValue(true);
+    await show();
+    const quantity = screen.getByTestId('transaction-quantity');
+    expect(quantity.props.children).toBe('••••');
+    expect(quantity.props.accessibilityLabel).not.toContain('12345');
+    expect(screen.queryByText('12345.6789')).toBeNull();
+  });
+
+  it('renders the trade quantity when privacy masking is off', async () => {
+    fixtures({ ...base, transactionType: 'BUY', quantity: '12345.6789' });
+    await show();
+    expect(screen.queryByText('••••')).toBeNull();
+    expect(screen.getByText(/12.*345/)).toBeTruthy();
+  });
+
+  it('retains cached details and allows retry after a failed refetch', async () => {
+    const refetch = jest.fn();
+    jest.mocked(useTransaction).mockReturnValue({
+      ...success(base),
+      isError: true,
+      error: new ApiError('Service unavailable', 503),
+      refetch,
+    } as unknown as ReturnType<typeof useTransaction>);
+    await show();
+    expect(screen.getByText('Migros')).toBeTruthy();
+    const retry = screen.getByRole('button', { name: /Retry/i });
+    await fireEvent.press(retry);
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['loading', 'archived'])('locks S4 writes when account is %s', async (status) => {
+    jest.mocked(useAccount).mockReturnValue({
+      ...success(status === 'archived' ? { status: 'ARCHIVED' } : undefined),
+      isPending: status === 'loading',
+    } as unknown as ReturnType<typeof useAccount>);
+    await show();
+    const category = screen.getByRole('button', { name: 'Change category' });
+    expect(category.props.disabled ?? category.props.accessibilityState?.disabled).toBe(true);
+    await fireEvent.press(category);
+    expect(setCategory).not.toHaveBeenCalled();
+  });
+
+  it('shows automatic category provenance and current server values', async () => {
+    await show();
+    expect(screen.getByText('Migros')).toBeTruthy();
+    expect(screen.getByText('Food › Groceries · automatic')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Reset category' })).toBeNull();
+    expect(screen.getByText('Bank · Current account')).toBeTruthy();
+  });
+
   it('sends the server ETag version with a category override', async () => {
     await show();
     await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
