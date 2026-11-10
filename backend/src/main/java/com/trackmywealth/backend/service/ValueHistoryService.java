@@ -163,7 +163,7 @@ public class ValueHistoryService {
     ValueHistorySnapshot end = Objects.requireNonNull(last);
     List<UUID> accountIds = accounts.stream().map(Account::getId).toList();
     CashFlowContribution membership =
-        membershipMovements(accounts, from, today, currency, portfolioId, historyStates);
+        membershipMovements(accounts, from, today, currency, portfolioId, firstEvidence, historyStates);
     complete &= membership.complete();
     warnings.addAll(membership.warnings());
     Change change;
@@ -337,6 +337,7 @@ public class ValueHistoryService {
       LocalDate to,
       String currency,
       @Nullable UUID portfolioId,
+      Map<UUID, LocalDate> firstEvidence,
       Map<UUID, List<AccountHistoryState>> historyStates) {
     BigDecimal total = BigDecimal.ZERO;
     Set<String> warnings = new TreeSet<>();
@@ -345,6 +346,35 @@ public class ValueHistoryService {
     for (Account account : accounts) {
       List<AccountHistoryState> states =
           historyStates.getOrDefault(account.getId(), List.of());
+      LocalDate created =
+          account.getCreatedAt() == null
+              ? null : account.getCreatedAt().atZoneSameInstant(zone).toLocalDate();
+      LocalDate inception = account.getOpenedAt() != null ? account.getOpenedAt() : created;
+      LocalDate evidence = firstEvidence.get(account.getId());
+      if (evidence != null && (inception == null || evidence.isBefore(inception))) {
+        inception = evidence;
+      }
+      if (inception != null && inception.isAfter(from) && !inception.isAfter(to)) {
+        AccountHistoryState atInception = stateOn(account, inception, zone, historyStates);
+        boolean included =
+            atInception == null
+                ? "ACTIVE".equals(account.getStatus())
+                    && (portfolioId == null
+                        || portfolioId.equals(account.getPortfolio().getId()))
+                : "ACTIVE".equals(atInception.status())
+                    && (portfolioId == null
+                        || portfolioId.equals(atInception.portfolioId()));
+        if (included) {
+          AccountValuation initial = accountValuationService.valueIn(account, currency, inception);
+          warnings.addAll(initial.warnings());
+          if (initial.valueKnown()) {
+            total = total.add(SignedAmounts.of(initial));
+          } else {
+            complete = false;
+            warnings.add(account.getName() + ": opening value unavailable");
+          }
+        }
+      }
       for (int i = 1; i < states.size(); i++) {
         AccountHistoryState before = states.get(i - 1);
         AccountHistoryState after = states.get(i);
