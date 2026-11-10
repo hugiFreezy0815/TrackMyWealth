@@ -31,27 +31,66 @@ android_assert_text() {
 }
 
 android_assert_running() {
-  adb shell pidof "$app_id" >/dev/null || fail "app is not running after $1"
+  local pid
+  pid=$(adb shell pidof "$app_id" 2>>smoke/android-adb-errors.txt) ||
+    fail "app is not running after $1 (see smoke/android-adb-errors.txt)"
+  [[ -n "$pid" ]] || fail "app has no PID after $1"
+  printf 'App PID after %s: %s\n' "$1" "$pid" | tee -a smoke/android-diagnostics.txt
+}
+
+# A large `adb logcat -d` can disconnect with exit 255 after a successful emulator launch.
+# Bound the read, retry transient ADB errors, and never let an optional diagnostic mask
+# the actual app-PID / visible-screen assertions. Preserve any error details as artifacts.
+android_capture_logcat() {
+  local attempt
+  for attempt in 1 2 3; do
+    if adb shell logcat -d -t 400 >smoke/android-logcat.txt 2>>smoke/android-adb-errors.txt; then
+      echo "logcat captured on attempt $attempt" >>smoke/android-diagnostics.txt
+      return 0
+    fi
+    echo "logcat collection failed on attempt $attempt" >>smoke/android-diagnostics.txt
+    sleep 2
+  done
+  echo "::warning::Android logcat collection failed after three attempts; app and UI checks continue"
+  echo "logcat unavailable; see android-adb-errors.txt" >smoke/android-logcat.txt
+}
+
+android_capture_state() {
+  {
+    echo "=== ADB devices ==="
+    adb devices -l || true
+    echo "=== App PID ==="
+    adb shell pidof "$app_id" || true
+    echo "=== Foreground activity ==="
+    adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity|ResumedActivity' || true
+  } >>smoke/android-diagnostics.txt 2>>smoke/android-adb-errors.txt
 }
 
 case "$platform" in
   android)
+    : >smoke/android-diagnostics.txt
+    : >smoke/android-adb-errors.txt
+    # Diagnostics survive failures of screenshot, UI dump and the Android emulator runner.
+    trap 'android_capture_state; android_capture_logcat' EXIT
     adb install -r android/app/build/outputs/apk/release/app-release.apk
-    adb logcat -c
+    adb logcat -c 2>>smoke/android-adb-errors.txt ||
+      echo "::warning::Cannot clear logcat before launch"
     adb shell am start -W -n "$app_id/.MainActivity"
     sleep "$settle_seconds"
-    adb exec-out screencap -p >smoke/android-home.png
-    # Saved before the checks: a launch crash is exactly when the uploaded log is needed.
-    adb logcat -d >smoke/android-logcat.txt
+    android_capture_state
+    if ! adb exec-out screencap -p >smoke/android-home.png 2>>smoke/android-adb-errors.txt; then
+      fail "screenshot failed (see smoke/android-adb-errors.txt)"
+    fi
+    # Collect diagnostics first, so a subsequent UI or process failure retains actionable logs.
+    android_capture_logcat
     android_assert_running "launch"
 
     # Signed out on a fresh install: the sign-in form, not the tabs, and no crash restoring a session.
     android_assert_text "Sign in"
-
-    adb logcat -d >smoke/android-logcat.txt
     if grep -q "FATAL EXCEPTION" smoke/android-logcat.txt; then
       fail "fatal exception in logcat (see smoke/android-logcat.txt)"
     fi
+    trap - EXIT
     ;;
   ios)
     device=$(xcrun simctl list devices available -j |
