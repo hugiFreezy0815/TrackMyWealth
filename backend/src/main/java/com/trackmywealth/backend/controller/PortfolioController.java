@@ -132,7 +132,6 @@ public class PortfolioController {
   @Operation(
       operationId = "getPortfolioHistory",
       summary = "Historical value and period change in the portfolio currency")
-  @ProblemCodes({ProblemCode.NOT_FOUND, ProblemCode.VALIDATION_FAILED})
   @GetMapping("/{portfolioId}/history")
   public ValueHistoryResponse getHistory(
       @PathVariable UUID portfolioId,

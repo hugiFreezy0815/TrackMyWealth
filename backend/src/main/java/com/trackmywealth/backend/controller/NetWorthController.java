@@ -32,7 +32,7 @@ public class NetWorthController {
   @Operation(
       operationId = "getNetWorthHistory",
       summary = "Historical workspace net worth and period change")
-  @ProblemCodes({ProblemCode.VALIDATION_FAILED, ProblemCode.NOT_FOUND})
+  @ProblemCodes({ProblemCode.NOT_FOUND})
   @GetMapping("/history")
   public ValueHistoryResponse getHistory(
       @RequestParam(defaultValue = "1M") String period,

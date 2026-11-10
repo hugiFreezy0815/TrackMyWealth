@@ -1,4 +1,4 @@
-package com.trackmywealth.backend.service;
+package com.trackmywealth.backend.dto;
 
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ProblemCode;

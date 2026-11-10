@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.CashFlowContribution;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse.CurrencyAmount;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
@@ -13,6 +14,7 @@ import com.trackmywealth.backend.validation.CurrencyCodes;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -184,28 +186,39 @@ public class CashFlowService {
    * US-11-06: net external contribution over an arbitrary inclusive range, using exactly the
    * income/spending rules of the monthly cash-flow endpoint. Internal transfers, card settlements,
    * voided/deleted entries and pending review are excluded by the shared repository queries.
-   * Returns null (not a misleading zero) if a historical FX rate is unavailable.
+   * Returns an unknown amount (not a misleading zero) if a historical FX rate is unavailable, and
+   * marks results incomplete if the cash-flow pending-review rules find unresolved transactions.
    *
    * <p>The caller has already authorized the supplied account IDs. Only the contribution interval
    * is read, not each chart point; FX is resolved on every transaction booking date.
    */
   @Transactional(readOnly = true)
-  public BigDecimal netContributions(
+  public CashFlowContribution netContributions(
       List<UUID> accountIds, LocalDate from, LocalDate to, String currency) {
     if (accountIds.isEmpty() || from.isAfter(to)) {
-      return BigDecimal.ZERO;
+      return new CashFlowContribution(BigDecimal.ZERO, true, List.of());
     }
     List<Object[]> income =
         transactionRepository.sumIncomeByDateAndCurrency(accountIds, INCOME_TYPES, from, to);
     List<Object[]> spending =
         transactionRepository.sumSpendingByDateAndCurrency(accountIds, SPENDING_TYPES, from, to);
+    List<Object[]> pending =
+        transactionRepository.sumPendingReviewByDateAndCurrency(accountIds, from, to);
+    List<String> warnings = new ArrayList<>();
+    if (!pending.isEmpty()) {
+      warnings.add("Transactions are pending review; contribution attribution is incomplete.");
+    }
     List<Object[]> all = Stream.concat(income.stream(), spending.stream()).toList();
     if (all.isEmpty()) {
-      return BigDecimal.ZERO;
+      return new CashFlowContribution(BigDecimal.ZERO, pending.isEmpty(), warnings);
     }
     List<CurrencyAmount> converted = converted(all, currency, new HashMap<>());
     CurrencyAmount contribution = converted.get(0);
-    return contribution.valueKnown() ? contribution.amount() : null;
+    if (!contribution.valueKnown()) {
+      warnings.add("Currency conversion unavailable for contributions.");
+    }
+    return new CashFlowContribution(
+        contribution.amount(), pending.isEmpty() && contribution.valueKnown(), warnings);
   }
 
   // US-10-02: with mortgage principal included, the loan is a saving account, so principal paid

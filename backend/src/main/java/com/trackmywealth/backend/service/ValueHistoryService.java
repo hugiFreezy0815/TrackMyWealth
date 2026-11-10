@@ -1,11 +1,14 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccountValuation;
+import com.trackmywealth.backend.dto.CashFlowContribution;
 import com.trackmywealth.backend.dto.PortfolioPeriodChange;
 import com.trackmywealth.backend.dto.PortfolioPlacement;
 import com.trackmywealth.backend.dto.PortfolioSection;
 import com.trackmywealth.backend.dto.SignedAmounts;
 import com.trackmywealth.backend.dto.ValueBasisValues;
+import com.trackmywealth.backend.dto.ValueHistoryPeriod;
+import com.trackmywealth.backend.dto.ValueHistorySnapshot;
 import com.trackmywealth.backend.dto.ValueHistoryResponse;
 import com.trackmywealth.backend.dto.ValueHistoryResponse.Change;
 import com.trackmywealth.backend.dto.ValueHistoryResponse.Point;
@@ -32,10 +35,8 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 /**
  * US-11-06: historical valuation calculated entirely by the server. Uses the same dated account
@@ -84,7 +85,8 @@ public class ValueHistoryService {
     Workspace workspace =
         workspaceRepository
             .findById(actor.workspaceId())
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
+            .orElseThrow(
+                () -> accessControlService.denyAsNotFound(actor, "Workspace", actor.workspaceId()));
     String currency = CurrencyCodes.requestedOrDefault(requestedCurrency, workspace.getCurrency());
     List<Account> accounts =
         accessControlService.accountsWithAccess(
@@ -120,12 +122,12 @@ public class ValueHistoryService {
         withSections ? accountService.portfolioPlacementsOf(accounts) : Map.of();
     List<Point> points = new ArrayList<>(dates.size());
     Set<String> warnings = new TreeSet<>();
-    Snapshot first = null;
-    Snapshot last = null;
+    ValueHistorySnapshot first = null;
+    ValueHistorySnapshot last = null;
     boolean complete = true;
     for (LocalDate date : dates) {
       List<Account> eligible = onDate(accounts, date, businessDateService.zone());
-      Snapshot snapshot = snapshot(eligible, currency, date, placements, warnings);
+      ValueHistorySnapshot snapshot = snapshot(eligible, currency, date, placements, warnings);
       points.add(new Point(date, snapshot.value(), snapshot.estimated()));
       complete &= snapshot.complete();
       if (first == null) {
@@ -133,16 +135,15 @@ public class ValueHistoryService {
       }
       last = snapshot;
     }
-    Snapshot start = Objects.requireNonNull(first);
-    Snapshot end = Objects.requireNonNull(last);
+    ValueHistorySnapshot start = Objects.requireNonNull(first);
+    ValueHistorySnapshot end = Objects.requireNonNull(last);
     List<UUID> accountIds = accounts.stream().map(Account::getId).toList();
-    BigDecimal contributions =
+    CashFlowContribution contributions =
         cashFlowService.netContributions(accountIds, from.plusDays(1), today, currency);
-    if (contributions == null) {
-      complete = false;
-      warnings.add("Currency conversion unavailable for contributions.");
-    }
-    Change change = change(start.value(), end.value(), contributions);
+    complete &= contributions.complete();
+    warnings.addAll(contributions.warnings());
+    Change change =
+        change(start.value(), end.value(), contributions.complete() ? contributions.amount() : null);
     List<SectionChange> sections = new ArrayList<>();
     if (withSections) {
       for (PortfolioSection section : PortfolioSection.values()) {
@@ -216,7 +217,7 @@ public class ValueHistoryService {
     return Map.copyOf(result);
   }
 
-  private Snapshot snapshot(
+  private ValueHistorySnapshot snapshot(
       List<Account> accounts,
       String currency,
       LocalDate asOf,
@@ -245,7 +246,7 @@ public class ValueHistoryService {
         sections.merge(placement.section(), SignedAmounts.of(valuation), BigDecimal::add);
       }
     }
-    return new Snapshot(sum(valuations), complete, estimated, Map.copyOf(sections));
+    return new ValueHistorySnapshot(sum(valuations), complete, estimated, Map.copyOf(sections));
   }
 
   private static List<Account> onDate(
@@ -283,9 +284,4 @@ public class ValueHistoryService {
         contributions == null ? null : amount.subtract(contributions));
   }
 
-  private record Snapshot(
-      BigDecimal value,
-      boolean complete,
-      boolean estimated,
-      Map<PortfolioSection, BigDecimal> sections) {}
 }
