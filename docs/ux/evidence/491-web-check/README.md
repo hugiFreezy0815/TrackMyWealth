@@ -53,5 +53,5 @@ react-native-web scroll view for the capture.
 **Not covered here**
 
 - iOS/Android (no simulator on this machine): the native CI build and a device check.
-- A screen reader pass (optional for UI stories, PO 2026-11-09).
+- A screen reader pass (not required for UI stories, PO 2026-11-10).
 - The 3-minute first-run timing by a person.

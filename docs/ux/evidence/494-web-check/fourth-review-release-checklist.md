@@ -31,13 +31,13 @@ At the time of the fourth-review analysis, #548 also contains native smoke-test 
 | S4 selection, Back, desktop panel close, focus return, picker Save/Cancel | Native iOS/Android and desktop web; screen recording and keyboard focus trace | **Not yet verified end to end** |
 | Responsive 320px, desktop 400px panel, no horizontal scrolling or browser errors | Browser at executed SHA; Playwright JSON, console output and screenshots | **Requires fresh browser run** |
 | Browser **actual** 200% zoom (not `deviceScaleFactor: 2`) | Chrome or Firefox zoom control at 200%; record browser/version, effective viewport, screenshot and overflow result | **Requires manual browser check** |
-| Accessible masked values, error announcements, modal/picker focus, enlarged text | VoiceOver iOS and/or TalkBack Android plus browser keyboard; accessibility recording and Dynamic Type setting | **Requires real assistive-technology check** |
+| Accessible masked values, error announcements, modal/picker focus, enlarged text | VoiceOver iOS and/or TalkBack Android plus browser keyboard; accessibility recording and Dynamic Type setting | **VoiceOver/TalkBack waived by the PO (2026-11-10)**; browser keyboard and enlarged text still to be checked |
 
 ### Browser rerun
 
 1. Start an isolated local backend with synthetic data (see [the original runbook](README.md)); retain generated scratch credentials outside git. Run `seed.mjs` against that stack. The existing seed produces approximately 64 transactions, **not** the required native 1,250-row stress case.
 2. Start the Expo web app against the local API, then run `account-detail.mjs` with `TMW_API`, `TMW_APP`, `TMW_EMAIL`, `TMW_PASSWORD`, the seeded account ID and a fresh output directory. The script covers S3, an S4 panel open/close check, accessibility scan and screenshots. Inspect its JSON, captured console errors and page-overflow checks; preserve a date/SHA manifest.
-3. Separately exercise the S4 category-picker Save/Cancel, actual browser 200% zoom, and any focus/screen-reader behaviors the existing script does not assert. Do **not** label its `account-zoom-200` screenshot as genuine browser zoom: it changes viewport and device pixel ratio only.
+3. Separately exercise the S4 category-picker Save/Cancel, actual browser 200% zoom, and any keyboard-focus behaviors the existing script does not assert. Do **not** label its `account-zoom-200` screenshot as genuine browser zoom: it changes viewport and device pixel ratio only.
 4. Use a **distinct** synthetic 1,250-row dataset for native performance and paging verification, so the browser seed and results are not misrepresented as a stress run.
 
 ### Required release sign-offs (not granted here)
@@ -45,7 +45,7 @@ At the time of the fourth-review analysis, #548 also contains native smoke-test 
 - [ ] Authenticated Android scenarios, with device, SHA, screenshots/logs
 - [ ] Authenticated iOS scenarios, with device, SHA, screenshots/logs
 - [ ] Updated browser/S4 results and real 200% zoom evidence
-- [ ] VoiceOver or TalkBack, keyboard focus and large-text evidence
+- [ ] Keyboard focus and large-text evidence (VoiceOver/TalkBack waived by the PO, 2026-11-10)
 - [ ] Integration owner confirms #546 is independently safe to merge
 - [ ] Reviewer approvals; no unresolved release exceptions without explicit release-owner waiver
 - [ ] All required CI green on the **final** commit

@@ -35,4 +35,5 @@ has no FX rates, so the EUR accounts have an unknown value. That covers the "Est
 
 - German copy: the app language comes from the member's profile, and a second member cannot
   be created in the MVP. The Jest tests cover the DE catalogue.
-- Native screen reader: still to be done on a device.
+- Native screen reader (VoiceOver/TalkBack): not required (PO, 2026-11-10); the Jest
+  accessibility tests and the web axe check cover the labels.

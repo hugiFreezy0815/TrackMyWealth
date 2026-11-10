@@ -61,14 +61,15 @@ generated passwords go to a scratch env file. Result: 64 transactions, reconcili
 
 **Not yet covered by reproducible current evidence:** native authenticated S3/S4 interactions
 (account load, 1,000+ transaction scrolling, pagination, category picker, archive/restore and error
-recovery), VoiceOver/TalkBack labels and focus, and true 200% browser zoom. Mobile Native CI now
+recovery) and true 200% browser zoom. Mobile Native CI now
 builds both release targets on source changes and saves signed-out launch screenshots, but it does
 not log in or exercise the account screens. Any waiver of these checks must be explicitly approved
-by the release owner; none is assumed here.
+by the release owner. The only waiver so far: the PO decided on 2026-11-10 that a VoiceOver/TalkBack
+check is not required; Jest accessibility tests and the web axe scan cover the labels.
 
 **Re-run checklist:** start the synthetic local backend and web app; run `seed.mjs`, then
 `account-detail.mjs` with scratch credentials; save the JSON result and all screenshots. Check
 the S4 side panel opening, closing and focus return on desktop, and a real Chrome/Firefox browser
 zoom control at 200% (not DPR simulation). On iOS or Android, use a synthetic account with at
-least 1,250 bookings to check smooth SectionList scrolling, refresh, errors and screen-reader
-navigation. Attach dated evidence and record the tested commit hash before approval.
+least 1,250 bookings to check smooth SectionList scrolling, refresh and errors. Attach dated
+evidence and record the tested commit hash before approval.

@@ -28,7 +28,7 @@ Use a disposable local stack with synthetic data and test accounts only. Never u
 | Desktop browser, authenticated | S3 row opens S4 400-px panel; close restores keyboard focus and preserves account context | NOT RUN |
 | Web, authenticated | Category picker search/Save/Cancel; 412 recovery; no console errors/overflow; automated axe scan | NOT RUN |
 | Actual Chrome/Firefox browser | Browser **zoom** set to 200% (not merely DPR=2), 320-CSS-pixel equivalent, no hidden controls or horizontal page scrolling | NOT RUN |
-| VoiceOver iOS and/or TalkBack Android | Masked quantities/amounts are not spoken; dialog/picker focus, status/error announcements, Retry and Dynamic Type | NOT RUN |
+| VoiceOver iOS and/or TalkBack Android | Masked quantities/amounts are not spoken; dialog/picker focus, status/error announcements, Retry and Dynamic Type | NOT REQUIRED (waived by the PO, 2026-11-10) |
 
 ### Reproducible web procedure
 
