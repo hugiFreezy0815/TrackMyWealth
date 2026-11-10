@@ -1,4 +1,11 @@
-import { useRef, useState, useSyncExternalStore, type ComponentRef, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ComponentRef,
+  type ReactNode,
+} from 'react';
 import { onlineManager, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import {
@@ -258,6 +265,7 @@ export function TransactionDetail({
   const [categorySubmitting, setCategorySubmitting] = useState(false);
   const [serverArchived, setServerArchived] = useState(false);
   const categoryControl = useRef<ComponentRef<typeof Pressable>>(null);
+  const detailHeading = useRef<ComponentRef<typeof Text>>(null);
   const transaction = record.data;
   const archived = serverArchived || account.data?.status === 'ARCHIVED';
   const changing =
@@ -272,6 +280,13 @@ export function TransactionDetail({
     record.isPlaceholderData ||
     record.isFetching ||
     record.isError;
+  useEffect(() => {
+    // A desktop detail panel is not a route transition; announce its loaded heading.
+    if (Platform.OS === 'web' && transaction && !record.isPlaceholderData) {
+      moveAccessibilityFocus(detailHeading.current);
+    }
+  }, [transaction?.id, record.isPlaceholderData]);
+
   const date = (value: string) => formatDate(value, intl.locale);
   const german = intl.locale.startsWith('de');
 
@@ -499,6 +514,24 @@ export function TransactionDetail({
     reloadCategoryReview();
   };
 
+  // Do not expose cached transaction amounts or merchant data after authorization fails.
+  // Includes revalidation of both the transaction and its parent account.
+  const accessFailure = [record.error, account.error].find(
+    (failure) =>
+      failure instanceof ApiError &&
+      (failure.status === 401 || failure.status === 403 || failure.status === 404),
+  );
+  if (accessFailure instanceof ApiError) {
+    return accessFailure.status === 404 ? (
+      <EmptyState
+        title={intl.formatMessage({ id: 'txn.notFound' })}
+        actionLabel={intl.formatMessage({ id: 'txn.back' })}
+        onAction={onBack}
+      />
+    ) : (
+      <ErrorBanner error={accessFailure} />
+    );
+  }
   if (record.isError && isTransactionMissing(record.error)) {
     return (
       <EmptyState
@@ -718,7 +751,9 @@ export function TransactionDetail({
           }}
         />
         <Text
+          ref={detailHeading}
           accessibilityRole="header"
+          tabIndex={-1}
           style={{ ...TypeScale.headingMedium, color: theme.textPrimary }}
         >
           {name === 'VALUATION_ADJUSTMENT'
