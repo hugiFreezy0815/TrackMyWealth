@@ -186,6 +186,22 @@ describe('S4 transaction detail', () => {
     fixtures();
   });
 
+  it.each([401, 403, 404])(
+    'hides cached S4 amounts and merchant on account authorization failure HTTP %s',
+    async (status) => {
+      jest.mocked(useAccount).mockReturnValue({
+        ...success({ status: 'ACTIVE', nativeCurrency: 'CHF' }),
+        isError: true,
+        error: new ApiError('denied', status),
+      } as unknown as ReturnType<typeof useAccount>);
+      await show();
+      expect(screen.queryByTestId('transaction-detail')).toBeNull();
+      expect(screen.queryByText('Migros')).toBeNull();
+      expect(screen.queryByText(/84.35/)).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Change category' })).toBeNull();
+    },
+  );
+
   it('shows automatic category provenance and current server values', async () => {
     await show();
     expect(screen.getByText('Migros')).toBeTruthy();
