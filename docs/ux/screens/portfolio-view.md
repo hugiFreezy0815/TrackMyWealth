@@ -31,8 +31,8 @@ Overview
 │ Institution DKB · Germany · portfolio currency EUR │
 │ EUR 76'856.45                      [Estimated]     │
 │ ≈ CHF 71'953.01   ⓘ 1 EUR = 0.9362 CHF · 20 Oct    │
-│ (↗ +EUR 1'412.60 · +1.9%) past month               │  ← GAP-HISTORY (#477)
-│ [ value chart ]   (1M)(YTD)(1Y)(Max)               │  ← GAP-HISTORY (#477)
+│ (↗ +EUR 1'412.60 · +1.9%) past month               │  ← HISTORY API (#477; frontend integration pending)
+│ [ value chart ]   (1M)(YTD)(1Y)(Max)               │  ← HISTORY API (#477; frontend integration pending)
 └────────────────────────────────────────────────────┘
 ┌ [▣] Cash & savings                  EUR 19'210.55 ┐
 │ Girokonto                              4'210.55  > │
@@ -71,7 +71,7 @@ Overview
 1. `GET /api/v1/portfolios/{portfolioId}/view` → `PortfolioViewResponse`: the complete header, rows and import footer, including #482.
 2. For each account in a `DEPOT` section: `GET /api/v1/accounts/{accountId}/positions`
    (**delivered by #478**: latest holdings snapshot, server-valued positions).
-3. `GET /api/v1/portfolios/{portfolioId}/history?period=1M` (**GAP-HISTORY (#477)**).
+3. `GET /api/v1/portfolios/{portfolioId}/history?period=1M` (backend endpoint delivered by #477; chart integration pending).
 
 The header uses the tab's `PortfolioListItemResponse` (already loaded by S1) until (1) arrives.
 That way the name, logo and total never flash empty.
@@ -88,7 +88,7 @@ That way the name, logo and total never flash empty.
 | 6 | Status | `ValueStatusBadge`; `total.incomplete` | | `valueStatus`, `complete`, `warnings[]` |
 | 7 | Converted total | `amount.approx` "≈ {amount}" | | `totalInWorkspaceCurrency`, `workspaceCurrency`; only if the currencies differ |
 | 8 | FX hint `[advanced]` | `fx.rate` "1 {from} = {rate} {to} · {date}" | ⓘ opens explanation | `conversionRate`, `conversionRateDate` (#482). `{date}` is `conversionRateDate`, the valuation date. When `conversionRateCarriedForward` is true, mark the hint like a carried-forward value (PR-011); when `conversionRateStale` is true, use the stale marking. The rate is the one accounts in the portfolio currency are converted with; an account in a third currency is converted with its own rate |
-| 9 | Change chip, chart, period switch | as S1 #8–#11 | | **GAP-HISTORY (#477)** (portfolio scope) |
+| 9 | Change chip, chart, period switch | as S1 #8–#11 | | **HISTORY API (#477; frontend integration pending)** (portfolio scope) |
 
 ## Sections
 
@@ -163,7 +163,7 @@ No last import: "No import yet" + the button.
 | Tap an account row | S3 for that account | - |
 | "Show all positions" / tap a position | S3 for the depot (position detail M07 is not in sprint 7) | - |
 | Tap the total or a subtotal | Explanation sheet: currency, `asOf`, `complete`, the warnings, "≈" conversion basis | loaded data |
-| Period switch | as S1 | GAP-HISTORY (#477) |
+| Period switch | as S1 | `/api/v1/portfolios/{portfolioId}/history?period=…` |
 | Pull to refresh | Reloads 1–3 | |
 
 ## Differences from Figma
@@ -189,3 +189,18 @@ No last import: "No import yet" + the button.
   `null`, there is no chip.
 - Given an unknown `section` value from a newer server, the rows show under "Other" and nothing
   crashes.
+
+## Historical portfolio API status (#477)
+
+The backend delivers `GET /api/v1/portfolios/{portfolioId}/history?period={1W|1M|YTD|1Y|MAX}`.
+It values accounts in the portfolio currency using portfolio membership and archive/restore
+state effective on the sampled date. The separate `change.contributions` field represents
+booked external capital contributions, `change.capitalMovements` covers internal movements
+across portfolios and account inception/lifecycle or reassignment, and
+`change.marketAndFx` is the residual after those flows. The history response also includes
+`complete`, `warnings[]` and `points[].estimated`.
+
+For unresolved transfers or loan repayments and missing FX/valuation data, attribution may
+be null and the view must show incomplete-data warnings rather than a fabricated market return.
+Historical state recorded before the new lifecycle tracking can be restated and is explicitly
+flagged as uncertain. The backend API is available; the chart/period-switch UI remains pending.
