@@ -210,8 +210,7 @@ class CashFlowServiceTest {
   @Test
   void historyContributionsAreIncompleteWhenTransactionsAwaitReview() {
     pending(row(DAY_1, "CHF", "5000"));
-    var result =
-        service.netContributions(List.of(UUID.randomUUID()), DAY_1, DAY_3, "CHF");
+    var result = service.netContributions(List.of(UUID.randomUUID()), DAY_1, DAY_3, "CHF");
     assertThat(result.complete()).isFalse();
     assertThat(result.amount()).isEqualByComparingTo("0");
     assertThat(result.warnings()).anyMatch(warning -> warning.contains("pending review"));
@@ -222,8 +221,7 @@ class CashFlowServiceTest {
   @Test
   void historyContributionsWithMissingFxAreUnknown() {
     income(row(DAY_1, "EUR", "100"));
-    var result =
-        service.netContributions(List.of(UUID.randomUUID()), DAY_1, DAY_3, "CHF");
+    var result = service.netContributions(List.of(UUID.randomUUID()), DAY_1, DAY_3, "CHF");
     assertThat(result.complete()).isFalse();
     assertThat(result.amount()).isNull();
     assertThat(result.warnings()).anyMatch(warning -> warning.contains("Currency conversion"));
@@ -234,8 +232,7 @@ class CashFlowServiceTest {
     income(row(DAY_1, "EUR", "100"), row(DAY_2, "EUR", "100"));
     rate("EUR", DAY_1, "1.0", false, false);
     rate("EUR", DAY_2, "1.2", false, false);
-    var result =
-        service.netContributions(List.of(UUID.randomUUID()), DAY_1, DAY_3, "CHF");
+    var result = service.netContributions(List.of(UUID.randomUUID()), DAY_1, DAY_3, "CHF");
     assertThat(result.complete()).isTrue();
     assertThat(result.amount()).isEqualByComparingTo("220.0");
     assertThat(result.warnings()).isEmpty();

@@ -11,8 +11,8 @@ import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.NetWorthSectionResponse;
 import com.trackmywealth.backend.dto.PortfolioListItemResponse;
 import com.trackmywealth.backend.dto.PortfolioResponse;
-import com.trackmywealth.backend.dto.ReassignAccountPortfolioRequest;
 import com.trackmywealth.backend.dto.PortfolioSection;
+import com.trackmywealth.backend.dto.ReassignAccountPortfolioRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.ValueHistoryResponse;
 import com.trackmywealth.backend.dto.ValueStatus;
@@ -26,7 +26,6 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -379,16 +378,18 @@ class NetWorthControllerTest {
   @Test
   void newlyCreatedAccountWithoutHistoricalEvidenceDoesNotAppearBeforeCreation() throws Exception {
     String token = bootstrapAdministrator();
-    UUID cash = createAccount(token, cash("New cash", createPortfolio(token, "Bank", "CHF").id())).id();
+    UUID cash =
+        createAccount(token, cash("New cash", createPortfolio(token, "Bank", "CHF").id())).id();
     seedOpeningBalance(cash, "2000");
 
     ValueHistoryResponse history = history(token, "1M");
     // Backdated opening snapshots are legitimate evidence, but the value must not be
     // fabricated before the first dated source.
     LocalDate earliest = today().minusDays(3);
-    assertThat(history.points().stream()
-            .filter(point -> point.date().isBefore(earliest))
-            .map(ValueHistoryResponse.Point::value))
+    assertThat(
+            history.points().stream()
+                .filter(point -> point.date().isBefore(earliest))
+                .map(ValueHistoryResponse.Point::value))
         .allSatisfy(value -> assertThat(value).isEqualByComparingTo("0"));
     assertThat(history.points().get(history.points().size() - 1).value())
         .isEqualByComparingTo("2000");
@@ -402,7 +403,8 @@ class NetWorthControllerTest {
     try (Connection connection = dataSource.getConnection()) {
       connection.setAutoCommit(false);
       try (PreparedStatement context =
-              connection.prepareStatement("SELECT set_config('app.current_workspace_id', ?, true)");
+              connection.prepareStatement(
+                  "SELECT set_config('app.current_workspace_id', ?, true)");
           PreparedStatement insert =
               connection.prepareStatement("INSERT INTO workspace (id, name) VALUES (?, ?)")) {
         context.setString(1, foreignWorkspace.toString());
@@ -436,16 +438,24 @@ class NetWorthControllerTest {
     String token = bootstrapAdministrator();
     PortfolioResponse portfolio = createPortfolio(token, "EUR Bank", "EUR");
     UUID cash =
-        createAccount(token, AccountRequests.account("EUR savings", "CASH", "EUR")
-            .portfolioId(portfolio.id()).build()).id();
+        createAccount(
+                token,
+                AccountRequests.account("EUR savings", "CASH", "EUR")
+                    .portfolioId(portfolio.id())
+                    .build())
+            .id();
     seedOpeningBalance(cash, "1000");
     seedFxRateOn("EUR", "CHF", today().minusDays(2), "1.00");
     seedFxRateOn("EUR", "CHF", today(), "1.20");
 
     ValueHistoryResponse history = history(token, "1W");
-    assertThat(history.points().stream()
-        .filter(point -> point.date().equals(today().minusDays(2)))
-        .findFirst().orElseThrow().value()).isEqualByComparingTo("1000");
+    assertThat(
+            history.points().stream()
+                .filter(point -> point.date().equals(today().minusDays(2)))
+                .findFirst()
+                .orElseThrow()
+                .value())
+        .isEqualByComparingTo("1000");
     assertThat(history.points().get(history.points().size() - 1).value())
         .isEqualByComparingTo("1200");
   }
@@ -484,23 +494,34 @@ class NetWorthControllerTest {
   void archiveAndRestoreRetainThePreviousArchivedInterval() throws Exception {
     String token = bootstrapAdministrator();
     PortfolioResponse portfolio = createPortfolio(token, "History", "CHF");
-    AccountSummaryResponse account = createAccount(token, cash("Temporarily archived", portfolio.id()));
+    AccountSummaryResponse account =
+        createAccount(token, cash("Temporarily archived", portfolio.id()));
     seedOpeningBalance(account.id(), "5000");
 
     AccountSummaryResponse archived =
-        client(token).post().uri("/api/v1/accounts/" + account.id() + "/archive")
+        client(token)
+            .post()
+            .uri("/api/v1/accounts/" + account.id() + "/archive")
             .header("If-Match", "\"" + account.version() + "\"")
-            .exchange().expectStatus().isOk()
-            .expectBody(AccountSummaryResponse.class).returnResult().getResponseBody();
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(AccountSummaryResponse.class)
+            .returnResult()
+            .getResponseBody();
 
     // Backdate the two recorded state events to simulate an archive interval spanning
     // business days; the HTTP endpoints still perform the actual transitions.
     backdateAccountState(account.id(), 0, today().minusDays(4));
     backdateAccountState(account.id(), 1, today().minusDays(2));
 
-    client(token).post().uri("/api/v1/accounts/" + account.id() + "/restore")
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + account.id() + "/restore")
         .header("If-Match", "\"" + archived.version() + "\"")
-        .exchange().expectStatus().isOk();
+        .exchange()
+        .expectStatus()
+        .isOk();
 
     ValueHistoryResponse history = portfolioHistory(token, portfolio.id(), "1W");
     assertThat(valueOn(history, today().minusDays(3))).isEqualByComparingTo("5000");
@@ -592,15 +613,23 @@ class NetWorthControllerTest {
   }
 
   private ValueHistoryResponse portfolioHistory(String token, UUID portfolioId, String period) {
-    return client(token).get()
+    return client(token)
+        .get()
         .uri("/api/v1/portfolios/" + portfolioId + "/history?period=" + period)
-        .exchange().expectStatus().isOk()
-        .expectBody(ValueHistoryResponse.class).returnResult().getResponseBody();
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(ValueHistoryResponse.class)
+        .returnResult()
+        .getResponseBody();
   }
 
   private static BigDecimal valueOn(ValueHistoryResponse history, LocalDate date) {
-    return history.points().stream().filter(point -> point.date().equals(date))
-        .findFirst().orElseThrow().value();
+    return history.points().stream()
+        .filter(point -> point.date().equals(date))
+        .findFirst()
+        .orElseThrow()
+        .value();
   }
 
   private ValueHistoryResponse history(String token, String period) {
@@ -718,23 +747,22 @@ class NetWorthControllerTest {
     }
   }
 
-  private void backdateAccountState(UUID accountId, int position, LocalDate date)
-      throws Exception {
+  private void backdateAccountState(UUID accountId, int position, LocalDate date) throws Exception {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(
                 "UPDATE account_history_state SET effective_at = ? WHERE id = ("
                     + "SELECT id FROM account_history_state WHERE account_id = ? ORDER BY id"
                     + " OFFSET ? LIMIT 1)")) {
-      statement.setObject(1, date.atTime(12, 0).atZone(ZoneId.of("Europe/Zurich")).toOffsetDateTime());
+      statement.setObject(
+          1, date.atTime(12, 0).atZone(ZoneId.of("Europe/Zurich")).toOffsetDateTime());
       statement.setObject(2, accountId);
       statement.setInt(3, position);
       assertThat(statement.executeUpdate()).isEqualTo(1);
     }
   }
 
-  private void seedTransfer(UUID accountId, UUID counterparty, String amount)
-      throws Exception {
+  private void seedTransfer(UUID accountId, UUID counterparty, String amount) throws Exception {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(

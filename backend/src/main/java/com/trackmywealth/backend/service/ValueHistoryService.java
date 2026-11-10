@@ -10,11 +10,11 @@ import com.trackmywealth.backend.dto.PortfolioSection;
 import com.trackmywealth.backend.dto.SignedAmounts;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.dto.ValueHistoryPeriod;
-import com.trackmywealth.backend.dto.ValueHistorySnapshot;
 import com.trackmywealth.backend.dto.ValueHistoryResponse;
 import com.trackmywealth.backend.dto.ValueHistoryResponse.Change;
 import com.trackmywealth.backend.dto.ValueHistoryResponse.Point;
 import com.trackmywealth.backend.dto.ValueHistoryResponse.SectionChange;
+import com.trackmywealth.backend.dto.ValueHistorySnapshot;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.Portfolio;
 import com.trackmywealth.backend.entity.Workspace;
@@ -111,7 +111,8 @@ public class ValueHistoryService {
         accessControlService.accountsWithAccess(
             accessControlService.requireActingMember(actor),
             accountRepository.findByWorkspaceId(actor.workspaceId()));
-    return history(periodParam, portfolio.getPortfolioCurrency(), accounts, actor, false, portfolioId);
+    return history(
+        periodParam, portfolio.getPortfolioCurrency(), accounts, actor, false, portfolioId);
   }
 
   private ValueHistoryResponse history(
@@ -155,15 +156,19 @@ public class ValueHistoryService {
       }
       last = snapshot;
     }
-    if (warnings.stream().anyMatch(w -> w.contains("historical lifecycle state unavailable")
-        || w.contains("may have been restated"))) {
+    if (warnings.stream()
+        .anyMatch(
+            w ->
+                w.contains("historical lifecycle state unavailable")
+                    || w.contains("may have been restated"))) {
       complete = false;
     }
     ValueHistorySnapshot start = Objects.requireNonNull(first);
     ValueHistorySnapshot end = Objects.requireNonNull(last);
     List<UUID> accountIds = accounts.stream().map(Account::getId).toList();
     CashFlowContribution membership =
-        membershipMovements(accounts, from, today, currency, portfolioId, firstEvidence, historyStates);
+        membershipMovements(
+            accounts, from, today, currency, portfolioId, firstEvidence, historyStates);
     complete &= membership.complete();
     warnings.addAll(membership.warnings());
     Change change;
@@ -262,12 +267,15 @@ public class ValueHistoryService {
     Map<UUID, Set<UUID>> idsAtEnd = new HashMap<>();
     for (Account account : eligibleAtStart) {
       AccountHistoryState state = stateOn(account, from, businessDateService.zone(), historyStates);
-      idsAtStart.computeIfAbsent(state.portfolioId(), unused -> new java.util.HashSet<>())
+      idsAtStart
+          .computeIfAbsent(state.portfolioId(), unused -> new java.util.HashSet<>())
           .add(account.getId());
     }
     for (Account account : eligibleAtEnd) {
-      AccountHistoryState state = stateOn(account, today, businessDateService.zone(), historyStates);
-      idsAtEnd.computeIfAbsent(state.portfolioId(), unused -> new java.util.HashSet<>())
+      AccountHistoryState state =
+          stateOn(account, today, businessDateService.zone(), historyStates);
+      idsAtEnd
+          .computeIfAbsent(state.portfolioId(), unused -> new java.util.HashSet<>())
           .add(account.getId());
     }
     var start = accountValuationService.valueAllInCurrencies(eligibleAtStart, currencies, from);
@@ -325,7 +333,6 @@ public class ValueHistoryService {
     return new ValueHistorySnapshot(sum(valuations), complete, estimated, Map.copyOf(sections));
   }
 
-
   /**
    * An account changing portfolio or entering/leaving the tracked balance is a capital movement,
    * not a market gain/loss. Read its value at the effective transition date, rather than treating
@@ -344,11 +351,11 @@ public class ValueHistoryService {
     boolean complete = true;
     ZoneId zone = businessDateService.zone();
     for (Account account : accounts) {
-      List<AccountHistoryState> states =
-          historyStates.getOrDefault(account.getId(), List.of());
+      List<AccountHistoryState> states = historyStates.getOrDefault(account.getId(), List.of());
       LocalDate created =
           account.getCreatedAt() == null
-              ? null : account.getCreatedAt().atZoneSameInstant(zone).toLocalDate();
+              ? null
+              : account.getCreatedAt().atZoneSameInstant(zone).toLocalDate();
       LocalDate inception = account.getOpenedAt() != null ? account.getOpenedAt() : created;
       LocalDate evidence = firstEvidence.get(account.getId());
       if (evidence != null && (inception == null || evidence.isBefore(inception))) {
@@ -359,11 +366,9 @@ public class ValueHistoryService {
         boolean included =
             atInception == null
                 ? "ACTIVE".equals(account.getStatus())
-                    && (portfolioId == null
-                        || portfolioId.equals(account.getPortfolio().getId()))
+                    && (portfolioId == null || portfolioId.equals(account.getPortfolio().getId()))
                 : "ACTIVE".equals(atInception.status())
-                    && (portfolioId == null
-                        || portfolioId.equals(atInception.portfolioId()));
+                    && (portfolioId == null || portfolioId.equals(atInception.portfolioId()));
         if (included) {
           AccountValuation initial = accountValuationService.valueIn(account, currency, inception);
           warnings.addAll(initial.warnings());
@@ -436,12 +441,13 @@ public class ValueHistoryService {
                   warnings.add(account.getName() + ": historical lifecycle state unavailable");
                 }
                 return "ACTIVE".equals(account.getStatus())
-                    && (portfolioId == null
-                        || portfolioId.equals(account.getPortfolio().getId()));
+                    && (portfolioId == null || portfolioId.equals(account.getPortfolio().getId()));
               }
               if (!state.verified() && warnings != null) {
-                warnings.add(account.getName() + ": portfolio and archive history before tracking"
-                    + " may have been restated");
+                warnings.add(
+                    account.getName()
+                        + ": portfolio and archive history before tracking"
+                        + " may have been restated");
               }
               return "ACTIVE".equals(state.status())
                   && (portfolioId == null || portfolioId.equals(state.portfolioId()));
@@ -492,7 +498,9 @@ public class ValueHistoryService {
   }
 
   static Change change(
-      BigDecimal from, BigDecimal to, @Nullable BigDecimal contributions,
+      BigDecimal from,
+      BigDecimal to,
+      @Nullable BigDecimal contributions,
       @Nullable BigDecimal capitalMovements) {
     BigDecimal amount = to.subtract(from);
     BigDecimal percent =
@@ -505,9 +513,9 @@ public class ValueHistoryService {
         contributions,
         contributions == null
             ? null
-            : amount.subtract(contributions).subtract(
-                capitalMovements == null ? BigDecimal.ZERO : capitalMovements),
+            : amount
+                .subtract(contributions)
+                .subtract(capitalMovements == null ? BigDecimal.ZERO : capitalMovements),
         capitalMovements);
   }
-
 }

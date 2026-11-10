@@ -1,10 +1,10 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.CashFlowContribution;
-import com.trackmywealth.backend.dto.PortfolioCapitalFlows;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse.CurrencyAmount;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
+import com.trackmywealth.backend.dto.PortfolioCapitalFlows;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.SavingsRateMethodology;
 import com.trackmywealth.backend.repository.AccountRepository;
@@ -222,7 +222,6 @@ public class CashFlowService {
     return new CashFlowContribution(
         contribution.amount(), pending.isEmpty() && contribution.valueKnown(), warnings);
   }
-
 
   /**
    * Portfolio external contributions and internal capital movements. Aggregated per account and

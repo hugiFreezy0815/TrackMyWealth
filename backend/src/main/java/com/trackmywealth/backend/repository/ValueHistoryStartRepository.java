@@ -45,9 +45,9 @@ public class ValueHistoryStartRepository {
       """;
 
   /**
-   * Per-account dated evidence, read once for the whole chart instead of at every history point.
-   * A missing opening date must not imply the account existed indefinitely. Valid backdated
-   * bookings, snapshots and manual valuations still predate the account record when appropriate.
+   * Per-account dated evidence, read once for the whole chart instead of at every history point. A
+   * missing opening date must not imply the account existed indefinitely. Valid backdated bookings,
+   * snapshots and manual valuations still predate the account record when appropriate.
    */
   private static final String FIRST_EVIDENCE =
       """
@@ -84,8 +84,7 @@ public class ValueHistoryStartRepository {
         (org.springframework.jdbc.core.RowCallbackHandler)
             rs ->
                 result.put(
-                    rs.getObject("account_id", UUID.class),
-                    rs.getObject("min", LocalDate.class)));
+                    rs.getObject("account_id", UUID.class), rs.getObject("min", LocalDate.class)));
     return Map.copyOf(result);
   }
 

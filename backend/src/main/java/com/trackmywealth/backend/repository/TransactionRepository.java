@@ -717,7 +717,6 @@ public interface TransactionRepository
       @Param(FROM) LocalDate from,
       @Param("to") LocalDate to);
 
-
   /**
    * Signed per-account/date/currency external income, preserving the monthly cash-flow
    * classification and proposed-transfer exclusion for historical portfolio membership.
