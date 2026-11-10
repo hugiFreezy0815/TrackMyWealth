@@ -362,9 +362,7 @@ describe('S4 transaction detail', () => {
     await waitFor(() => expect(screen.getByText('This item was changed meanwhile')).toBeTruthy());
     await fireEvent.press(screen.getByRole('button', { name: 'Review and save again' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Retry review' })).toBeTruthy());
-    expect(
-      screen.getByRole('button', { name: 'Save again' }).props['aria-disabled'],
-    ).toBe(true);
+    expect(screen.getByRole('button', { name: 'Save again' }).props['aria-disabled']).toBe(true);
     expect(setCategory).toHaveBeenCalledTimes(1);
     await fireEvent.press(screen.getByRole('button', { name: 'Retry review' }));
     await waitFor(() => expect(refetch).toHaveBeenCalledTimes(2));
