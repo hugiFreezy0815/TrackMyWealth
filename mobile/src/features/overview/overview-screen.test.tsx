@@ -198,6 +198,7 @@ const unreconciledAccount = (id: string, name: string): Account => ({
   portfolioName: 'Euro Bank',
   currency: 'CHF',
   archived: false,
+  hasTransactions: true,
   balance: '10.00',
   workspaceCurrency: 'CHF',
   balanceInWorkspaceCurrency: '10.00',
@@ -233,7 +234,7 @@ describe('Overview S1 (#489)', () => {
     expect(screen.getByText('Estimated')).toBeTruthy();
     expect(screen.getByText('Cash & savings')).toBeTruthy();
     expect(screen.getByText(/≈CHF/)).toBeTruthy();
-    expect(screen.getByText('Euro Bank')).toBeTruthy();
+    expect(screen.getAllByText('Euro Bank')[0]).toBeTruthy();
   });
 
   it('falls back to the German tab label without exposing technical terminology', async () => {
@@ -254,7 +255,7 @@ describe('Overview S1 (#489)', () => {
       );
     await renderOverview();
     expect(screen.getByRole('button', { name: /Net worth.*478160.56/i })).toBeTruthy();
-    expect(screen.getByText('Euro Bank')).toBeTruthy();
+    expect(screen.getAllByText('Euro Bank')[0]).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
     expect(jest.mocked(useCashFlow).mock.results[0].value.refetch).toHaveBeenCalledTimes(1);
   });
@@ -354,10 +355,13 @@ describe('Overview S1 (#489)', () => {
     expect(useCashFlow).toHaveBeenLastCalledWith(expect.any(String), 'EUR', { enabled: true });
   });
 
-  it('hides unsupported portfolio navigation until the Portfolio View is implemented', async () => {
-    await renderOverview();
-    expect(screen.queryByRole('tab', { name: 'Euro Bank' })).toBeNull();
-    expect(screen.queryByRole('button', { name: /Euro Bank/ })).toBeNull();
+  it('navigates from a portfolio tab and the portfolio row to the new S2 screen', async () => {
+    const navigate = jest.fn();
+    await renderOverview('en', { onPortfolio: navigate });
+    await fireEvent.press(screen.getByRole('tab', { name: 'Euro Bank' }));
+    expect(navigate).toHaveBeenCalledWith('portfolio-1');
+    await fireEvent.press(screen.getByRole('button', { name: 'Euro Bank' }));
+    expect(navigate).toHaveBeenCalledTimes(2);
   });
 
   it('waits for the workspace currency instead of firing currency-less figure requests', async () => {
@@ -392,7 +396,7 @@ describe('Overview S1 (#489)', () => {
         ]) as unknown as ReturnType<typeof usePortfolios>,
       );
     await renderOverview();
-    expect(screen.getByText('Euro Bank')).toBeTruthy();
+    expect(screen.getAllByText('Euro Bank')[0]).toBeTruthy();
     expect(screen.queryByText(/≈/)).toBeNull();
   });
 
@@ -540,15 +544,31 @@ describe('Overview S1 (#489)', () => {
     expect(screen.queryByTestId('overview-side-column')).toBeNull();
   });
 
-  it('keeps the tablist to tabs: the selected first tab and the "+ Add portfolio" tab', async () => {
+  it('keeps the tablist accessible, with the selected first tab, portfolio and add tab', async () => {
     const add = jest.fn();
     await renderOverview('en', { onAddPortfolio: add });
     const tabs = screen.getAllByRole('tab');
-    expect(tabs).toHaveLength(2);
+    expect(tabs).toHaveLength(3);
     expect(tabs[0]).toBeSelected();
     expect(tabs[1]).not.toBeSelected();
+    expect(tabs[2]).not.toBeSelected();
     await fireEvent.press(screen.getByRole('tab', { name: '+ Add portfolio' }));
     expect(add).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows and dismisses a safe notice when a portfolio deep link was removed', async () => {
+    await renderOverview('en', { missingPortfolioNotice: true });
+    expect(screen.getByText('This portfolio no longer exists.')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByText('This portfolio no longer exists.')).toBeNull();
+  });
+
+  it('offers the web Import statement entry point for account selection', async () => {
+    mockWindow.width = 1280;
+    const openImport = jest.fn();
+    await renderOverview('en', { onImportStatement: openImport });
+    await fireEvent.press(screen.getByRole('button', { name: 'Import statement' }));
+    expect(openImport).toHaveBeenCalledTimes(1);
   });
 
   it('leaves the page heading to the shell and shows only the greeting', async () => {

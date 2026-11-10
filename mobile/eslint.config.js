@@ -28,7 +28,7 @@ const LITERAL_UI_STRING_SYNTAX = [
   'JSXAttribute[name.name=/^(accessibilityLabel|accessibilityHint|aria-label|placeholder|title|label)$/] > Literal',
 ].map((selector) => ({ selector, message: LITERAL_UI_STRING_MESSAGE }));
 
-// Flat config also replaces no-restricted-imports options per file, so both entries live here and
+// Flat config also replaces no-restricted-imports options per file, so all entries live here and
 // every block that sets the rule lists the ones its files need.
 // US-29-05 (#375): app code calls the API through typedApi, whose paths and types come from the
 // contract; the untyped transport stays inside src/api (and its tests).
@@ -43,6 +43,13 @@ const PRIVATE_AMOUNTS_ONLY = {
   importNames: ['formatAmount', 'a11yAmount'],
   message:
     'Render money with PrivacyAmount (@/features/privacy/privacy-amount): it honours "Hide amounts" (FR-CLI-005).',
+};
+// UX-02 §7: "Hide amounts" also masks percentages, units and rates (#493).
+const PRIVATE_FIGURES_ONLY = {
+  name: '@/format/figure',
+  importNames: ['formatFigure', 'a11yFigure'],
+  message:
+    'Render units, percentages and rates with Figure (@/components/shared): it honours "Hide amounts" (FR-CLI-005).',
 };
 
 module.exports = defineConfig([
@@ -63,13 +70,20 @@ module.exports = defineConfig([
     files: ['src/**/*.{ts,tsx}'],
     ignores: ['src/api/**', '**/*.test.{ts,tsx}'],
     rules: {
-      'no-restricted-imports': ['error', { paths: [TYPED_API_ONLY, PRIVATE_AMOUNTS_ONLY] }],
+      'no-restricted-imports': [
+        'error',
+        { paths: [TYPED_API_ONLY, PRIVATE_AMOUNTS_ONLY, PRIVATE_FIGURES_ONLY] },
+      ],
     },
   },
   {
-    // The amount component that formats money; it applies the privacy mask itself. PrivacyAmount
-    // (#487) renders through the shared Amount (#488), so both honour "Hide amounts".
-    files: ['src/components/shared/amount.tsx', 'src/features/privacy/privacy-amount.tsx'],
+    // The amount and figure components format numbers; they apply the privacy mask themselves.
+    // PrivacyAmount (#487) renders through the shared Amount (#488), so both honour "Hide amounts".
+    files: [
+      'src/components/shared/amount.tsx',
+      'src/components/shared/figure.tsx',
+      'src/features/privacy/privacy-amount.tsx',
+    ],
     rules: {
       'no-restricted-imports': ['error', { paths: [TYPED_API_ONLY] }],
     },

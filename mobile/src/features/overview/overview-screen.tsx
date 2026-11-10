@@ -1,5 +1,4 @@
-import { useState, useSyncExternalStore } from 'react';
-import { onlineManager } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useIntl } from 'react-intl';
 import {
   Platform,
@@ -21,6 +20,7 @@ import {
 import { ErrorBanner, LoadingSkeleton, OfflineBanner } from '@/components/shared';
 import { Spacing } from '@/constants/theme';
 import { formatDate } from '@/format/date';
+import { useOnline } from '@/hooks/use-online';
 import { useTheme } from '@/hooks/use-theme';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { CashFlowCard } from './cash-flow-card';
@@ -38,6 +38,9 @@ import { AssetsLiabilitiesCard, NetWorthCard, type FinancialPart } from './total
 export type OverviewScreenProps = {
   onAddPortfolio: () => void;
   onReviewAccount: (accountId: string) => void;
+  onPortfolio?: (portfolioId: string) => void;
+  missingPortfolioNotice?: boolean;
+  onImportStatement?: () => void;
 };
 
 /** S1 web layout: two columns from 1024 px, the right one 360 px wide. */
@@ -57,16 +60,14 @@ function greetingId(hour: number): string {
   return hour < 18 ? GREETINGS.afternoon : GREETINGS.evening;
 }
 
-function useOnline(): boolean {
-  return useSyncExternalStore(
-    (notify) => onlineManager.subscribe(notify),
-    () => onlineManager.isOnline(),
-    () => true,
-  );
-}
-
 /** US-01-15 / S1: independent TanStack queries, no financial arithmetic in the UI. */
-export function OverviewScreen({ onAddPortfolio, onReviewAccount }: OverviewScreenProps) {
+export function OverviewScreen({
+  onAddPortfolio,
+  onReviewAccount,
+  onPortfolio,
+  missingPortfolioNotice = false,
+  onImportStatement,
+}: OverviewScreenProps) {
   const intl = useIntl();
   const theme = useTheme();
   const { width } = useWindowDimensions();
@@ -74,6 +75,7 @@ export function OverviewScreen({ onAddPortfolio, onReviewAccount }: OverviewScre
   const compact = width < COMPACT_BREAKPOINT;
   const online = useOnline();
   const [selectedCurrency, selectCurrency] = useState<string | null>(null);
+  const [dismissMissing, setDismissMissing] = useState(false);
   const [explanation, setExplanation] = useState<FinancialPart | null>(null);
   const hidden = useAmountsHidden();
   // Recomputed on every render, so a session that crosses a month boundary asks for the new month.
@@ -139,7 +141,12 @@ export function OverviewScreen({ onAddPortfolio, onReviewAccount }: OverviewScre
         <ErrorBanner error={portfolios.error} onRetry={() => void portfolios.refetch()} />
       ) : null}
       {portfolios.data ? (
-        <PortfoliosCard items={portfolioItems} hidden={hidden} intl={intl} />
+        <PortfoliosCard
+          items={portfolioItems}
+          hidden={hidden}
+          intl={intl}
+          onPortfolio={onPortfolio}
+        />
       ) : null}
       {waitingFor(cashFlow) ? <LoadingSkeleton count={3} /> : null}
       {cashFlow.isError ? (
@@ -170,6 +177,27 @@ export function OverviewScreen({ onAddPortfolio, onReviewAccount }: OverviewScre
     >
       {/* The shell (#487) renders the page heading "Overview"; the screen adds the greeting. */}
       <InfoText>{msg(intl, greetingId(new Date().getHours()))}</InfoText>
+      {missingPortfolioNotice && !dismissMissing ? (
+        <View
+          accessibilityRole="alert"
+          style={{
+            padding: Spacing.two,
+            borderLeftWidth: 4,
+            borderLeftColor: theme.statusWarning,
+            backgroundColor: theme.statusWarningSubtle,
+            gap: Spacing.one,
+          }}
+        >
+          <Text style={{ color: theme.textPrimary }}>{msg(intl, 'portfolio.missing')}</Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setDismissMissing(true)}
+            style={{ minHeight: 44, alignSelf: 'flex-start', justifyContent: 'center' }}
+          >
+            <Text style={{ color: theme.brandLink }}>{msg(intl, 'ui.close')}</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {Platform.OS === 'web' ? (
         <Pressable
           accessibilityRole="button"
@@ -178,6 +206,16 @@ export function OverviewScreen({ onAddPortfolio, onReviewAccount }: OverviewScre
           style={{ minHeight: 44, alignSelf: 'flex-start', justifyContent: 'center' }}
         >
           <Text style={{ color: theme.brandLink }}>{msg(intl, 'overview.refresh')}</Text>
+        </Pressable>
+      ) : null}
+      {onImportStatement ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={msg(intl, 'statement.title')}
+          onPress={onImportStatement}
+          style={{ minHeight: 44, alignSelf: 'flex-start', justifyContent: 'center' }}
+        >
+          <Text style={{ color: theme.brandLink }}>{msg(intl, 'statement.title')}</Text>
         </Pressable>
       ) : null}
       {!online ? (
@@ -198,6 +236,8 @@ export function OverviewScreen({ onAddPortfolio, onReviewAccount }: OverviewScre
             intl={intl}
             offline={!online}
             onAddPortfolio={onAddPortfolio}
+            portfolios={portfolioItems}
+            onPortfolio={onPortfolio}
           />
           <CurrencyScope
             currency={currency ?? workspace.data.currency}

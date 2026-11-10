@@ -18111,6 +18111,8 @@ components:
           type: string
         archived:
           type: boolean
+        hasTransactions:
+          type: boolean
         balance:
           type:
           - string
@@ -18156,6 +18158,7 @@ components:
       - balance
       - balanceInWorkspaceCurrency
       - currency
+      - hasTransactions
       - id
       - name
       - nature

@@ -8,6 +8,8 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Optional;
+import java.util.regex.Pattern;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
@@ -46,20 +48,29 @@ public class MfaEncryptionService {
 
   private static final String HOSTED_TOPOLOGY = "hosted";
 
+  private static final Pattern BASE64 =
+      Pattern.compile("(?:[A-Za-z0-9+/]{4})+(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?");
+
   private static final Logger LOG = LoggerFactory.getLogger(MfaEncryptionService.class);
 
+  /** #544: read by the startup migration only, never on the authentication path. */
+  private static final SecretKeySpec LEGACY_PLACEHOLDER_KEY =
+      new SecretKeySpec(placeholderBytes(), "AES");
+
   private final SecretKeySpec key;
+  private final boolean placeholderKey;
   private final SecureRandom secureRandom = new SecureRandom();
 
   public MfaEncryptionService(
       MfaProperties properties,
       @Value("${app.deployment.topology:self-hosted}") String deploymentTopology) {
-    byte[] keyBytes = Base64.getDecoder().decode(properties.encryptionKey());
+    byte[] keyBytes = decodeKey(properties.encryptionKey());
     if (keyBytes.length != KEY_LENGTH_BYTES) {
       throw new IllegalStateException(
           "app.security.mfa.encryption-key must decode (Base64) to exactly 32 bytes for AES-256");
     }
-    if (MessageDigest.isEqual(keyBytes, PLACEHOLDER_PHRASE.getBytes(StandardCharsets.UTF_8))) {
+    this.placeholderKey = MessageDigest.isEqual(keyBytes, placeholderBytes());
+    if (placeholderKey) {
       if (HOSTED_TOPOLOGY.equals(deploymentTopology)) {
         throw new IllegalStateException(
             "app.security.mfa.encryption-key is still the public placeholder - set MFA_ENCRYPTION_KEY"
@@ -71,6 +82,28 @@ public class MfaEncryptionService {
               + " (Base64 of 32 random bytes, e.g. `openssl rand -base64 32`) before real use.");
     }
     this.key = new SecretKeySpec(keyBytes, "AES");
+  }
+
+  /**
+   * Docker Compose forwards an unset key as an empty string: treated like the documented
+   * self-hosted default (the placeholder, which hosted mode still refuses), never as an AES key.
+   * Base64 is checked up front, as in {@link AccountIdentifierService}, so the decoder never throws
+   * - its message could quote part of the key (e.g. the {@code CHANGE-ME} of .env.example).
+   */
+  static byte[] decodeKey(String configuredKey) {
+    if (configuredKey == null || configuredKey.isBlank()) {
+      return placeholderBytes();
+    }
+    if (!BASE64.matcher(configuredKey).matches()) {
+      throw new IllegalStateException(
+          "app.security.mfa.encryption-key must be Base64 - set MFA_ENCRYPTION_KEY to the output"
+              + " of `openssl rand -base64 32`");
+    }
+    return Base64.getDecoder().decode(configuredKey);
+  }
+
+  private static byte[] placeholderBytes() {
+    return PLACEHOLDER_PHRASE.getBytes(StandardCharsets.UTF_8);
   }
 
   public String encrypt(String plaintext) {
@@ -88,14 +121,63 @@ public class MfaEncryptionService {
     }
   }
 
+  /** Whether this deployment still encrypts new secrets with the public development key. */
+  boolean usesPlaceholderKey() {
+    return placeholderKey;
+  }
+
+  /**
+   * Only for the startup migration: return a new ciphertext when the stored secret was encrypted
+   * with the historical public key. Already-rotated records remain byte-for-byte unchanged.
+   *
+   * <p>Unlike normal login, migration may read the public legacy key. Unknown/corrupted ciphertext
+   * is never reset or ignored: startup fails so the operator can restore the original key or a
+   * database backup. No fallback is available on the authentication path.
+   */
+  Optional<String> reencryptFromPlaceholder(String encoded) {
+    if (placeholderKey || tryDecrypt(encoded, key).isPresent()) {
+      return Optional.empty();
+    }
+    String plaintext =
+        tryDecrypt(encoded, LEGACY_PLACEHOLDER_KEY)
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "An existing MFA secret cannot be decrypted with the configured or legacy"
+                            + " key. Restore the previous encryption key or database backup"
+                            + " before restarting."));
+    return Optional.of(encrypt(plaintext));
+  }
+
+  /** The plaintext, or empty when {@code encoded} is corrupt or not encrypted with {@code key}. */
+  private static Optional<String> tryDecrypt(String encoded, SecretKeySpec decryptionKey) {
+    try {
+      return Optional.of(decryptWithKey(encoded, decryptionKey));
+    } catch (IllegalStateException wrongKeyOrCorrupt) {
+      return Optional.empty();
+    }
+  }
+
   /** Reverses {@link #encrypt}; throws if {@code encoded} was not produced by it with this key. */
   public String decrypt(String encoded) {
-    byte[] combined = Base64.getDecoder().decode(encoded);
+    return decryptWithKey(encoded, key);
+  }
+
+  private static String decryptWithKey(String encoded, SecretKeySpec decryptionKey) {
+    final byte[] combined;
+    try {
+      combined = Base64.getDecoder().decode(encoded);
+    } catch (IllegalArgumentException e) {
+      throw new IllegalStateException("Invalid MFA ciphertext encoding", e);
+    }
+    if (combined.length <= IV_LENGTH_BYTES + TAG_LENGTH_BITS / Byte.SIZE) {
+      throw new IllegalStateException("Invalid MFA ciphertext length");
+    }
     byte[] iv = Arrays.copyOfRange(combined, 0, IV_LENGTH_BYTES);
     byte[] ciphertext = Arrays.copyOfRange(combined, IV_LENGTH_BYTES, combined.length);
     try {
       Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-      cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(TAG_LENGTH_BITS, iv));
+      cipher.init(Cipher.DECRYPT_MODE, decryptionKey, new GCMParameterSpec(TAG_LENGTH_BITS, iv));
       return new String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8);
     } catch (GeneralSecurityException e) {
       throw new IllegalStateException("Failed to decrypt MFA secret", e);

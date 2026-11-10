@@ -1736,6 +1736,7 @@ export interface components {
       portfolioName: string;
       currency: string;
       archived: boolean;
+      hasTransactions: boolean;
       /**
        * Format: decimal
        * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.

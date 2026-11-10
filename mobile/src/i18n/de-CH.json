@@ -1,4 +1,7 @@
 {
   "valueStatus.dismiss": "Erklärung schliessen",
-  "ui.close": "Schliessen"
+  "ui.close": "Schliessen",
+  "toast.dismiss": "Tippe, um die Meldung zu schliessen.",
+  "addPortfolio.name.optional": "Optional. Ohne Namen heisst der Tab {name}.",
+  "addAccount.type.warning": "Du kannst den Kontotyp später nicht ändern. Schliesse das Konto und erstelle ein neues, falls nötig."
 }
