@@ -242,6 +242,127 @@ describe('S4 transaction detail', () => {
     });
   });
 
+  it('does not retry a 428 when the refetch fails but still returns stale cached data', async () => {
+    setCategory.mockRejectedValueOnce(
+      new ApiError('version required', 428, {
+        code: 'VERSION_REQUIRED',
+        status: 428,
+        title: 'Version required',
+      }),
+    );
+    const refetchError = new Error('network unavailable');
+    const refetch = jest.fn(async () => ({ data: base, error: refetchError }));
+    jest.mocked(useTransaction).mockReturnValue({
+      ...success(base),
+      refetch,
+    } as unknown as ReturnType<typeof useTransaction>);
+    await show();
+    await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
+    expect(await screen.findByText(/Couldn't save the category/)).toBeTruthy();
+    expect(setCategory).toHaveBeenCalledTimes(1);
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('✓ Food › Dining out')).toBeTruthy();
+  });
+
+  it('does not retry a 428 with a placeholder response', async () => {
+    setCategory.mockRejectedValueOnce(
+      new ApiError('version required', 428, {
+        code: 'VERSION_REQUIRED',
+        status: 428,
+        title: 'Version required',
+      }),
+    );
+    const refetch = jest.fn(async () => ({ data: { ...base, version: 8 }, isPlaceholderData: true }));
+    jest.mocked(useTransaction).mockReturnValue({
+      ...success(base),
+      refetch,
+    } as unknown as ReturnType<typeof useTransaction>);
+    await show();
+    await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
+    expect(await screen.findByText(/Couldn't save the category/)).toBeTruthy();
+    expect(setCategory).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes a 404 during the 428 refetch to the not-found recovery', async () => {
+    setCategory.mockRejectedValueOnce(
+      new ApiError('version required', 428, {
+        code: 'VERSION_REQUIRED',
+        status: 428,
+        title: 'Version required',
+      }),
+    );
+    const missing = new ApiError('transaction missing', 404, {
+      code: 'NOT_FOUND',
+      status: 404,
+      title: 'Not found',
+    });
+    const refetch = jest.fn(async () => ({ data: base, error: missing }));
+    jest.mocked(useTransaction).mockReturnValue({
+      ...success(base),
+      refetch,
+    } as unknown as ReturnType<typeof useTransaction>);
+    const onBack = await show();
+    await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
+    expect(
+      await screen.findByText('This transaction no longer exists or is unavailable to you'),
+    ).toBeTruthy();
+    expect(setCategory).toHaveBeenCalledTimes(1);
+    await fireEvent.press(screen.getByRole('button', { name: 'Back to account' }));
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['en', en, 'Before the opening balance: not counted in the balance', 'Check this transaction'],
+    ['de-CH', de, 'Vor dem Anfangssaldo: zählt nicht zum Saldo', 'Prüfe diese Transaktion'],
+  ])('reuses S3 warning translations and deduplicates unknown warnings in %s', async (locale, messages, known, unknown) => {
+    fixtures({
+      ...base,
+      warnings: ['BOOKED_BEFORE_OPENING_BALANCE', 'UNKNOWN_ONE', 'UNKNOWN_TWO'],
+    });
+    await render(
+      <QueryClientProvider client={new QueryClient()}>
+        <IntlProvider locale={locale} messages={messages}>
+          <TransactionDetail accountId="account-1" transactionId="transaction-1" onBack={jest.fn()} />
+        </IntlProvider>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText(`⚠ ${known}`)).toBeTruthy();
+    expect(screen.getAllByText(`⚠ ${unknown}`)).toHaveLength(1);
+  });
+
+  it('does not refocus the same detail panel when its transaction data refreshes', async () => {
+    const { moveAccessibilityFocus } = jest.requireMock(
+      '@/components/shared/accessibility-focus',
+    ) as { moveAccessibilityFocus: jest.Mock };
+    const client = new QueryClient();
+    const view = await render(
+      <QueryClientProvider client={client}>
+        <IntlProvider locale="en" messages={en}>
+          <TransactionDetail accountId="account-1" transactionId="transaction-1" onBack={jest.fn()} />
+        </IntlProvider>
+      </QueryClientProvider>,
+    );
+    if (Platform.OS === 'web') expect(moveAccessibilityFocus).toHaveBeenCalledTimes(1);
+    const originalFocusCalls = moveAccessibilityFocus.mock.calls.length;
+    jest.mocked(useTransaction).mockReturnValue(
+      success({ ...base, version: 8 }) as unknown as ReturnType<typeof useTransaction>,
+    );
+    await view.rerender(
+      <QueryClientProvider client={client}>
+        <IntlProvider locale="en" messages={en}>
+          <TransactionDetail accountId="account-1" transactionId="transaction-1" onBack={jest.fn()} />
+        </IntlProvider>
+      </QueryClientProvider>,
+    );
+    expect(moveAccessibilityFocus).toHaveBeenCalledTimes(originalFocusCalls);
+  });
+
   it('shows reset only for user overrides, and sends the original ETag version', async () => {
     fixtures({ ...base, categoryAssignedBy: 'USER' });
     await show();
