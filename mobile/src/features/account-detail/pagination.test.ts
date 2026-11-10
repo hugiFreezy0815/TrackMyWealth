@@ -11,7 +11,10 @@ describe('last-ten-row transaction pagination', () => {
 
   it('requests each loaded tail at most once, then allows the next page', () => {
     expect(nextPageTrigger(firstPage, ['txn-41'], 'txn-50')).toBeNull();
-    const secondPage = [...firstPage, ...Array.from({ length: 50 }, (_, index) => `txn-${index + 51}`)];
+    const secondPage = [
+      ...firstPage,
+      ...Array.from({ length: 50 }, (_, index) => `txn-${index + 51}`),
+    ];
     expect(nextPageTrigger(secondPage, ['txn-90'], 'txn-50')).toBeNull();
     expect(nextPageTrigger(secondPage, ['txn-91'], 'txn-50')).toBe('txn-100');
     expect(nextPageTrigger(secondPage, ['txn-92'], 'txn-100')).toBeNull();
