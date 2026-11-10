@@ -81,8 +81,11 @@ public class ValueHistoryStartRepository {
     jdbcTemplate.query(
         FIRST_EVIDENCE,
         new MapSqlParameterSource("accountIds", accountIds),
-        rs -> result.put(
-            rs.getObject("account_id", UUID.class), rs.getObject("min", LocalDate.class)));
+        (org.springframework.jdbc.core.RowCallbackHandler)
+            rs ->
+                result.put(
+                    rs.getObject("account_id", UUID.class),
+                    rs.getObject("min", LocalDate.class)));
     return Map.copyOf(result);
   }
 
