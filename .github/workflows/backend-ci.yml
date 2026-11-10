@@ -9,6 +9,8 @@ on:
       # (api/openapi.yaml edited by hand) is checked too.
       - "api/**"
       - ".github/workflows/backend-ci.yml"
+  # Manual fallback for verifying GitHub App-authored commits when synchronize events are absent.
+  workflow_dispatch:
   pull_request:
     paths:
       - "backend/**"
