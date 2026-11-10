@@ -131,13 +131,14 @@ describe('AuthScreen', () => {
     expect(screen.getByRole('header')).toHaveTextContent('Anmelden');
   });
 
-  it('keeps the button name for screen readers while the request runs', async () => {
+  it('keeps the button name and announces its state while the request runs', async () => {
     jest.mocked(signIn).mockReturnValueOnce(new Promise(() => {}));
     await render(withIntl(<AuthScreen mfaRequired={false} />));
 
     await fireEvent.press(screen.getByRole('button', { name: 'Sign in' }));
 
-    const button = await screen.findByRole('button', { name: 'Sign in', busy: true });
+    const button = screen.getByRole('button', { name: 'Sign in' });
+    expect(button).toBeBusy();
     expect(button).toBeDisabled();
   });
 });

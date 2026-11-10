@@ -152,8 +152,6 @@ export function OverviewNameEditor({ workspace, mode, onFinished, onSkip }: Prop
           <View
             accessible
             accessibilityRole="tab"
-            accessibilityState={{ selected: true }}
-            // react-native-web ignores accessibilityState; RN maps aria-* back on native.
             aria-selected
             accessibilityLabel={displayName}
             testID="overview-name-preview"

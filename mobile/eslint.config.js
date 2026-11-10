@@ -3,7 +3,12 @@ const { defineConfig } = require('eslint/config');
 const expoConfig = require('eslint-config-expo/flat');
 const prettierConfig = require('eslint-config-prettier');
 
-// #452: kept in one place because two blocks below set no-restricted-syntax.
+// Flat config replaces no-restricted-syntax options per file.
+const ACCESSIBLE_STATE_SYNTAX = {
+  selector: 'JSXAttribute[name.name="accessibilityState"]',
+  message: 'Use aria-* state props so React Native Web exposes the state (#540).',
+};
+
 const ENUM_FALLBACK_SYNTAX = [
   {
     selector:
@@ -101,7 +106,7 @@ module.exports = defineConfig([
     ignores: ['**/*.test.{ts,tsx}', 'src/api/schema.d.ts', 'src/api/enum-label.ts'],
     rules: {
       'default-case': 'error',
-      'no-restricted-syntax': ['error', ...ENUM_FALLBACK_SYNTAX],
+      'no-restricted-syntax': ['error', ACCESSIBLE_STATE_SYNTAX, ...ENUM_FALLBACK_SYNTAX],
     },
   },
   {
@@ -124,7 +129,12 @@ module.exports = defineConfig([
       'src/app/dev/**',
     ],
     rules: {
-      'no-restricted-syntax': ['error', ...ENUM_FALLBACK_SYNTAX, ...LITERAL_UI_STRING_SYNTAX],
+      'no-restricted-syntax': [
+        'error',
+        ACCESSIBLE_STATE_SYNTAX,
+        ...ENUM_FALLBACK_SYNTAX,
+        ...LITERAL_UI_STRING_SYNTAX,
+      ],
     },
   },
   {

@@ -25,9 +25,9 @@ export default function SettingsRoute() {
             {intl.formatMessage({ id: 'privacy.hideAmounts.detail' })}
           </ThemedText>
         </View>
+        {/* The native switch and web checkbox already expose the switch role. */}
         <Switch
           accessibilityLabel={intl.formatMessage({ id: 'privacy.hideAmounts' })}
-          accessibilityRole="switch"
           value={hidden}
           onValueChange={(value) => void setAmountsHidden(value)}
         />

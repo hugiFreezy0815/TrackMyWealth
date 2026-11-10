@@ -25,7 +25,6 @@ export function CurrencyScope({
     <View style={{ gap: 8 }}>
       <Pressable
         accessibilityRole="button"
-        accessibilityState={{ expanded }}
         aria-expanded={expanded}
         accessibilityLabel={msg(intl, 'overview.scope.choose')}
         accessibilityHint={msg(intl, 'overview.scope', { currency })}

@@ -50,8 +50,8 @@ export function AppShell({ identity }: { identity: Identity | null }) {
             key={item.href}
             role={web ? 'link' : 'tab'}
             accessibilityLabel={label}
-            accessibilityState={{ selected }}
-            {...(web && selected ? { 'aria-current': 'page' } : {})}
+            aria-current={web && selected ? 'page' : undefined}
+            aria-selected={web ? undefined : selected}
             onPress={() => router.navigate(item.href)}
             style={({ pressed }) => [
               styles.navigationItem,

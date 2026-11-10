@@ -1,5 +1,5 @@
 import { useIntl } from 'react-intl';
-import { Pressable, ScrollView, Text, useWindowDimensions } from 'react-native';
+import { Platform, Pressable, ScrollView, Text, useWindowDimensions } from 'react-native';
 
 import type { TransactionSort } from '@/api/queries/resources';
 import { ActionButton, BottomSheet, Dialog, valueStatusTexts } from '@/components/shared';
@@ -145,7 +145,10 @@ export function CategoryPickerDialog({
             <Pressable
               key={category.id}
               accessibilityRole="button"
-              accessibilityState={{ selected: selectedCategoryId === category.id }}
+              aria-current={
+                Platform.OS === 'web' && selectedCategoryId === category.id ? 'true' : undefined
+              }
+              aria-selected={Platform.OS === 'web' ? undefined : selectedCategoryId === category.id}
               disabled={disabled}
               onPress={() => onPick(category.id)}
               style={{ minHeight: 44, justifyContent: 'center' }}

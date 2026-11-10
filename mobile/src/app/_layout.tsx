@@ -67,9 +67,10 @@ export default function TabLayout() {
 
 function RestoringSession() {
   const intl = useIntl();
+  const label = intl.formatMessage({ id: 'session.restoring' });
   return (
-    <View accessibilityRole="progressbar" accessibilityState={{ busy: true }}>
-      <ThemedText>{intl.formatMessage({ id: 'session.restoring' })}</ThemedText>
+    <View accessible accessibilityRole="progressbar" accessibilityLabel={label} aria-busy>
+      <ThemedText>{label}</ThemedText>
     </View>
   );
 }

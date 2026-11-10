@@ -107,7 +107,8 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
           accessibilityRole="button"
           // The spinner replaces the text while busy; the button keeps its name for screen readers.
           accessibilityLabel={submitLabel}
-          accessibilityState={{ disabled: busy, busy }}
+          aria-busy={busy}
+          aria-disabled={busy}
           style={[styles.submit, { backgroundColor: theme.primary }, busy && styles.disabled]}
           onPress={() => void submit()}
           disabled={busy}
@@ -123,7 +124,7 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
         {mfaRequired && (
           <Pressable
             accessibilityRole="button"
-            accessibilityState={{ disabled: busy }}
+            aria-disabled={busy}
             style={styles.back}
             onPress={startOver}
             disabled={busy}

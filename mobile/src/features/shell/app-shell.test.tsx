@@ -70,7 +70,8 @@ describe('AppShell navigation per device (US-01-13)', () => {
     const tabs = screen.getAllByRole('tab');
     expect(tabs.map((tab) => tab.props.accessibilityLabel)).toEqual(['Overview', 'More']);
     expect(screen.queryByTestId('shell-sidebar')).toBeNull();
-    expect(screen.getByRole('tab', { name: 'Overview', selected: true })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Overview' })).toBeSelected();
+    expect(screen.getByRole('tab', { name: 'More' })).not.toBeSelected();
   });
 
   it('keeps the phone layout on a 600–1023 px tablet', async () => {
@@ -94,6 +95,10 @@ describe('AppShell navigation per device (US-01-13)', () => {
     expect(links.map((link) => link.props.accessibilityLabel)).toEqual(['Overview', 'Settings']);
     expect(links[0].props['aria-current']).toBe('page');
     expect(links[1].props['aria-current']).toBeUndefined();
+    for (const link of links) {
+      expect(link.props['aria-selected']).toBeUndefined();
+      expect(link).not.toBeSelected();
+    }
   });
 
   it('gives the administrator Reference data and no financial Overview', async () => {
