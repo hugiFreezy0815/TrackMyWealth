@@ -549,6 +549,8 @@
   "txn.picker.saveAgain": "Save again",
   "txn.picker.discard": "Discard selection",
   "txn.picker.pending": "Your pending choice: {category}. Review the current category above, then save again or discard.",
+  "txn.category.removed": "This transaction was removed. Its category can no longer be changed.",
+  "txn.category.locked": "This transaction can no longer be categorised.",
   "txn.category.unavailable": "This category can't be used. Pick another one.",
   "txn.category.refreshFailed": "Couldn't reload the latest transaction and categories. Try reviewing again before saving.",
   "txn.category.saveFailed": "Couldn't save the category. Check the connection and try again.",
