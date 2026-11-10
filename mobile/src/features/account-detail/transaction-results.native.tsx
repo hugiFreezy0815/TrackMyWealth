@@ -54,8 +54,8 @@ export function TransactionResults({
       contentContainerStyle={{ paddingBottom: 24 }}
       sections={sections}
       keyExtractor={(item) => item.id}
-      ListHeaderComponent={listHeader ? <View style={{ gap: 12 }}>{listHeader}</View> : null}
-      ListFooterComponent={listFooter ? <View style={{ gap: 12 }}>{listFooter}</View> : null}
+      ListHeaderComponent={listHeader ? <View style={{ gap: 12 }}>{listHeader}</View> : undefined}
+      ListFooterComponent={listFooter ? <View style={{ gap: 12 }}>{listFooter}</View> : undefined}
       renderSectionHeader={({ section }) =>
         section.date ? (
           <Text
