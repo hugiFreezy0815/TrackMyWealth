@@ -143,8 +143,8 @@ public class ValueHistoryService {
     // signal when the selected period extends into that uncertain interval.
     for (Account account : accounts) {
       if (account.getOpenedAt() == null) {
-        LocalDate first = firstEvidence.get(account.getId());
-        if (first != null && from.isBefore(first)) {
+        LocalDate firstActivity = firstEvidence.get(account.getId());
+        if (firstActivity != null && from.isBefore(firstActivity)) {
           warnings.add(account.getName() + ": inception before first activity is uncertain");
           complete = false;
         }
