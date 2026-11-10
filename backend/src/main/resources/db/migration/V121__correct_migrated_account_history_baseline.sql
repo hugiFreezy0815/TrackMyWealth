@@ -7,11 +7,12 @@
 ALTER TABLE account_history_state NO FORCE ROW LEVEL SECURITY;
 
 UPDATE account_history_state
-SET effective_at = (
-    SELECT installed_on AT TIME ZONE current_setting('TimeZone')
-    FROM flyway_schema_history
-    WHERE version = '120'
-)
+SET
+    effective_at = (
+        SELECT installed_on AT TIME ZONE current_setting('TimeZone')
+        FROM flyway_schema_history
+        WHERE version = '120'
+    )
 WHERE verified = FALSE;
 
 ALTER TABLE account_history_state FORCE ROW LEVEL SECURITY;

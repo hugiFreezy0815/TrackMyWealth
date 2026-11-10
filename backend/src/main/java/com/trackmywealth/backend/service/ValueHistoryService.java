@@ -479,9 +479,9 @@ public class ValueHistoryService {
 
   /**
    * The first date this portfolio could have included an account. Account activity in another
-   * portfolio before a later reassignment must never pull this portfolio's MAX window backward.
-   * For migrated pre-tracking intervals, the baseline is our best available attribution and the
-   * normal history warning exposes any uncertainty.
+   * portfolio before a later reassignment must never pull this portfolio's MAX window backward. For
+   * migrated pre-tracking intervals, the baseline is our best available attribution and the normal
+   * history warning exposes any uncertainty.
    */
   private static LocalDate firstPortfolioActivity(
       Collection<Account> accounts,
@@ -520,9 +520,9 @@ public class ValueHistoryService {
   }
 
   /**
-   * An account from another portfolio cannot make a portfolio's entire history incomplete.
-   * Consider only membership while the possibly-unobserved inception interval overlaps the
-   * requested window, including an entry into the portfolio during that interval.
+   * An account from another portfolio cannot make a portfolio's entire history incomplete. Consider
+   * only membership while the possibly-unobserved inception interval overlaps the requested window,
+   * including an entry into the portfolio during that interval.
    */
   private static boolean affectsPortfolioBeforeEvidence(
       Account account,
@@ -535,8 +535,7 @@ public class ValueHistoryService {
     if (atStart == null
         ? ACTIVE_STATUS.equals(account.getStatus())
             && portfolioId.equals(account.getPortfolio().getId())
-        : ACTIVE_STATUS.equals(atStart.status())
-            && portfolioId.equals(atStart.portfolioId())) {
+        : ACTIVE_STATUS.equals(atStart.status()) && portfolioId.equals(atStart.portfolioId())) {
       return true;
     }
     for (AccountHistoryState state : historyStates.getOrDefault(account.getId(), List.of())) {
@@ -580,7 +579,8 @@ public class ValueHistoryService {
               // A migration baseline is authoritative from its effective date onward;
               // only its pre-baseline reconstruction is unverified.
               if (!state.verified()
-                  && date.isBefore(state.effectiveAt().atZoneSameInstant(businessZone).toLocalDate())
+                  && date.isBefore(
+                      state.effectiveAt().atZoneSameInstant(businessZone).toLocalDate())
                   && warnings != null) {
                 warnings.add(
                     account.getName()

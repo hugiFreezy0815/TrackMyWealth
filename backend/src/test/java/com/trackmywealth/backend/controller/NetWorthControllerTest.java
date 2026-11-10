@@ -448,8 +448,7 @@ class NetWorthControllerTest {
   }
 
   @Test
-  void maximumPortfolioHistoryStartsWithHistoricalMembershipNotOtherActivity()
-      throws Exception {
+  void maximumPortfolioHistoryStartsWithHistoricalMembershipNotOtherActivity() throws Exception {
     String token = bootstrapAdministrator();
     PortfolioResponse older = createPortfolio(token, "Older", "CHF");
     PortfolioResponse newer = createPortfolio(token, "Newer", "CHF");
