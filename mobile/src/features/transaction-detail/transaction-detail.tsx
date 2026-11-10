@@ -1,7 +1,7 @@
 import { useRef, useState, useSyncExternalStore, type ComponentRef, type ReactNode } from 'react';
 import { onlineManager } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { ActivityIndicator, InteractionManager, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import { useConflict } from '@/api/queries/conflict';
@@ -223,7 +223,7 @@ export function TransactionDetail({
 
   const focusCategory = () => {
     if (Platform.OS === 'web') moveAccessibilityFocus(categoryControl.current);
-    else InteractionManager.runAfterInteractions(() => moveAccessibilityFocus(categoryControl.current));
+    else requestAnimationFrame(() => moveAccessibilityFocus(categoryControl.current));
   };
   const closePicker = () => {
     setPicker(false);
