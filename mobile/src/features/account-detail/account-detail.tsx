@@ -515,7 +515,9 @@ export function AccountDetail({
               <EmptyState
                 title={intl.formatMessage({ id: 'account.noTransactions' })}
                 description={intl.formatMessage({ id: 'account.importHint' })}
-                actionLabel={archived || !online ? undefined : intl.formatMessage({ id: 'account.import' })}
+                actionLabel={
+                  archived || !online ? undefined : intl.formatMessage({ id: 'account.import' })
+                }
                 onAction={archived || !online ? undefined : onImport}
               />
             )
