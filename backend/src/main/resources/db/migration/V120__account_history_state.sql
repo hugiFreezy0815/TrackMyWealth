@@ -16,10 +16,15 @@ CREATE INDEX idx_account_history_state_lookup
 
 -- Pre-existing account transitions cannot be recovered from account.archived_at or
 -- account.portfolio_id. Backfill the current state as an explicitly unverified baseline.
+-- The migration owner is bound by FORCE RLS and has no request workspace context.
+-- Temporarily let only the table owner bypass its existing read policy while holding
+-- the migration's exclusive DDL lock; restore FORCE before this transaction commits.
+ALTER TABLE account NO FORCE ROW LEVEL SECURITY;
 INSERT INTO account_history_state
     (workspace_id, account_id, portfolio_id, status, effective_at, verified)
 SELECT workspace_id, id, portfolio_id, status, COALESCE(created_at, clock_timestamp()), FALSE
 FROM account;
+ALTER TABLE account FORCE ROW LEVEL SECURITY;
 
 ALTER TABLE account_history_state ENABLE ROW LEVEL SECURITY;
 ALTER TABLE account_history_state FORCE ROW LEVEL SECURITY;
