@@ -39,6 +39,7 @@ import {
   Dialog,
   EmptyState,
   ErrorBanner,
+  Figure,
   KeyValueList,
   LoadingSkeleton,
   OfflineBanner,
@@ -267,6 +268,8 @@ export function TransactionDetail({
   const categoryControl = useRef<ComponentRef<typeof Pressable>>(null);
   const detailHeading = useRef<ComponentRef<typeof Text>>(null);
   const transaction = record.data;
+  // Unknown/loading account status is not evidence that writes are permitted.
+  const accountActive = !account.isError && account.data?.status === 'ACTIVE';
   const archived = serverArchived || account.data?.status === 'ARCHIVED';
   const changing =
     categorySubmitting ||
@@ -275,7 +278,7 @@ export function TransactionDetail({
     actions.remove.isPending;
   const locked =
     !online ||
-    archived ||
+    !accountActive ||
     changing ||
     record.isPlaceholderData ||
     record.isFetching ||
@@ -634,7 +637,7 @@ export function TransactionDetail({
       ? {
           key: 'quantity',
           label: intl.formatMessage({ id: 'txn.quantity' }),
-          value: transaction.quantity,
+          value: <Figure testID="transaction-quantity" value={transaction.quantity} kind="quantity" />,
         }
       : null,
     moneyRow(
