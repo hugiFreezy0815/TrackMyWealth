@@ -1,4 +1,4 @@
-import { useMemo, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { SectionList, Text, View } from 'react-native';
 import { useIntl } from 'react-intl';
 
@@ -8,6 +8,8 @@ import { useTheme } from '@/hooks/use-theme';
 import { groupHeading, groupedTransactions, type RowContext, type Transaction } from './model';
 import { nextPageTrigger } from './pagination';
 import { TransactionLine } from './transaction-line';
+
+const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 1 };
 
 export type TransactionResultsProps = {
   transactions: Transaction[];
@@ -40,13 +42,15 @@ export function TransactionResults({
   const intl = useIntl();
   const theme = useTheme();
   const loadMore = useRef(onEndReached);
-  loadMore.current = onEndReached;
   const lastTriggered = useRef<string | null>(null);
   const ids = useMemo(() => transactions.map((item) => item.id), [transactions]);
   const idsRef = useRef(ids);
-  idsRef.current = ids;
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 1 }).current;
-  const onViewableItemsChanged = useRef(
+  useEffect(() => {
+    loadMore.current = onEndReached;
+    idsRef.current = ids;
+  }, [onEndReached, ids]);
+  // SectionList requires a stable callback identity; refs are read only by its events.
+  const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: { isViewable: boolean; item: unknown }[] }) => {
       if (!loadMore.current) return;
       const visibleIds = viewableItems
@@ -57,7 +61,8 @@ export function TransactionResults({
       lastTriggered.current = tail;
       loadMore.current();
     },
-  ).current;
+    [],
+  );
   const sections = useMemo(
     () =>
       groupedTransactions(transactions, byDate).map((group, index) => ({
@@ -96,7 +101,7 @@ export function TransactionResults({
         />
       )}
       onViewableItemsChanged={onViewableItemsChanged}
-      viewabilityConfig={viewabilityConfig}
+      viewabilityConfig={VIEWABILITY_CONFIG}
       initialNumToRender={12}
       maxToRenderPerBatch={12}
       windowSize={7}
