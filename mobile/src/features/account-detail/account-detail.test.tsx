@@ -228,12 +228,12 @@ describe('S3 account detail acceptance checks (#494)', () => {
         ).toBeTruthy();
       } else {
         expect(
-        await screen.findByText(
-          status === 401
-            ? 'Your session has ended. Sign in again.'
-            : 'This is not possible right now.',
-        ),
-      ).toBeTruthy();
+          await screen.findByText(
+            status === 401
+              ? 'Your session has ended. Sign in again.'
+              : 'This is not possible right now.',
+          ),
+        ).toBeTruthy();
       }
     },
   );
