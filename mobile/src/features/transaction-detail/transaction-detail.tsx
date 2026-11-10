@@ -6,7 +6,7 @@ import {
   type ComponentRef,
   type ReactNode,
 } from 'react';
-import { onlineManager } from '@tanstack/react-query';
+import { onlineManager, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import {
   ActivityIndicator,
@@ -20,6 +20,8 @@ import {
 
 import { ApiError } from '@/api/client';
 import { useConflict } from '@/api/queries/conflict';
+import { invalidateFinancialData } from '@/api/queries/invalidation';
+import { queryKeys } from '@/api/queries/keys';
 import {
   useAccount,
   useCategories,
@@ -44,7 +46,7 @@ import {
 } from '@/components/shared';
 import { Spacing, TypeScale, Radii } from '@/constants/theme';
 import { moveAccessibilityFocus } from '@/components/shared/accessibility-focus';
-import { transactionTypeLabel } from '@/features/account-detail/model';
+import { transactionTypeLabel, transactionWarningTexts } from '@/features/account-detail/model';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { formatDate, formatDateTime } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
@@ -79,6 +81,7 @@ function CategoryPicker({
   onClose,
   onSelect,
   onSave,
+  closeDisabled = false,
 }: {
   categories: Category[];
   visible: boolean;
@@ -88,6 +91,7 @@ function CategoryPicker({
   onClose: () => void;
   onSelect: (id: string) => void;
   onSave: () => void;
+  closeDisabled?: boolean;
 }) {
   const intl = useIntl();
   const theme = useTheme();
@@ -211,6 +215,7 @@ function CategoryPicker({
     <BottomSheet
       visible={visible}
       onClose={onClose}
+      closeDisabled={closeDisabled}
       title={intl.formatMessage({ id: 'txn.picker.title' })}
     >
       {content}
@@ -228,6 +233,7 @@ export function TransactionDetail({
 }: TransactionDetailProps) {
   const intl = useIntl();
   const theme = useTheme();
+  const client = useQueryClient();
   const hidden = useAmountsHidden();
   const online = useSyncExternalStore(
     (notify) => onlineManager.subscribe(notify),
@@ -255,23 +261,38 @@ export function TransactionDetail({
   // ETag confirmed by the conflict review; never infer it from an old cached row.
   const [reviewVersion, setReviewVersion] = useState<number | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
+  // Mutation promises may settle before React Query publishes isPending.
+  const categorySaving = useRef(false);
+  const [categorySubmitting, setCategorySubmitting] = useState(false);
+  const [serverArchived, setServerArchived] = useState(false);
   const categoryControl = useRef<ComponentRef<typeof Pressable>>(null);
   const detailHeading = useRef<ComponentRef<typeof Text>>(null);
   const transaction = record.data;
+  // Unknown/loading account status is not evidence that writes are permitted.
+  const accountActive = !account.isError && account.data?.status === 'ACTIVE';
+  const archived = serverArchived || account.data?.status === 'ARCHIVED';
+  const changing =
+    categorySubmitting ||
+    actions.setCategory.isPending ||
+    actions.resetCategory.isPending ||
+    actions.remove.isPending;
+  const locked =
+    !online ||
+    !accountActive ||
+    changing ||
+    record.isPlaceholderData ||
+    record.isFetching ||
+    record.isError;
+  // The focus target changes only when a new authoritative transaction appears,
+  // not when a background refetch creates another object for the same row.
+  const focusableTransactionId =
+    !record.isPlaceholderData && !record.isError && !account.isError ? transaction?.id : undefined;
   useEffect(() => {
-    // The desktop side panel is not a route transition: announce the selected detail
-    // once the server record has loaded rather than leaving focus on the old table row.
-    if (Platform.OS === 'web' && transaction && !record.isPlaceholderData) {
+    if (Platform.OS === 'web' && focusableTransactionId) {
       moveAccessibilityFocus(detailHeading.current);
     }
-  }, [transaction?.id, record.isPlaceholderData]);
-  const archived = account.data?.status === 'ARCHIVED';
-  // An unknown account status is not proof that mutations are permitted.
-  const accountActive = !account.isError && account.data?.status === 'ACTIVE';
-  const changing =
-    actions.setCategory.isPending || actions.resetCategory.isPending || actions.remove.isPending;
-  const locked =
-    !online || !accountActive || changing || record.isPlaceholderData || record.isFetching;
+  }, [focusableTransactionId]);
+
   const date = (value: string) => formatDate(value, intl.locale);
   const german = intl.locale.startsWith('de');
 
@@ -280,6 +301,7 @@ export function TransactionDetail({
     else requestAnimationFrame(() => moveAccessibilityFocus(categoryControl.current));
   };
   const closePicker = () => {
+    if (categorySaving.current || changing) return;
     setPicker(false);
     setSelectedCategory(null);
     setCategoryError(null);
@@ -307,20 +329,65 @@ export function TransactionDetail({
     } catch (failure) {
       if (failure instanceof ApiError && problemReaction(failure).sentCode === 'VERSION_REQUIRED') {
         const refreshed = await record.refetch();
-        if (refreshed.data) return perform(refreshed.data.version);
+        // Query refetch can retain cached data alongside an error. Never retry with that ETag.
+        if (refreshed.error) throw refreshed.error;
+        const freshVersion = refreshed.data?.version;
+        if (
+          refreshed.isError ||
+          refreshed.isPlaceholderData ||
+          !Number.isSafeInteger(freshVersion) ||
+          freshVersion === undefined ||
+          freshVersion < 0
+        ) {
+          throw new Error('Unable to verify the latest transaction version');
+        }
+        return perform(freshVersion);
       }
       throw failure;
     }
   }
 
-  async function handleWriteError(failure: unknown): Promise<void> {
-    if (
-      failure instanceof ApiError &&
-      (failure.status === 404 || problemReaction(failure).sentCode === 'NOT_FOUND')
-    ) {
+  const isTransactionMissing = (failure: unknown) =>
+    failure instanceof ApiError &&
+    (failure.status === 404 || problemReaction(failure).sentCode === 'NOT_FOUND');
+
+  const isAccountArchived = (failure: unknown) =>
+    failure instanceof ApiError && problemReaction(failure).sentCode === 'ACCOUNT_ARCHIVED';
+
+  const refreshAfterServerChange = () => {
+    void invalidateFinancialData(client);
+    void account.refetch();
+  };
+
+  function handleTerminalWriteError(failure: unknown): boolean {
+    if (isTransactionMissing(failure)) {
+      setPicker(false);
+      setSelectedCategory(null);
+      setPendingReview(false);
+      setReviewVersion(null);
       setError(failure);
-      return;
+      client.removeQueries({
+        queryKey: queryKeys.transaction(accountId, transactionId),
+        exact: true,
+      });
+      refreshAfterServerChange();
+      return true;
     }
+    if (isAccountArchived(failure)) {
+      setServerArchived(true);
+      setPicker(false);
+      setSelectedCategory(null);
+      setPendingReview(false);
+      setReviewVersion(null);
+      setError(failure);
+      refreshAfterServerChange();
+      return true;
+    }
+    return false;
+  }
+
+  async function handleWriteError(failure: unknown): Promise<void> {
+    if (handleTerminalWriteError(failure)) return;
     if (!(await conflict.handle(failure, ['accounts', accountId, 'transactions', transactionId]))) {
       setError(failure);
     }
@@ -328,6 +395,7 @@ export function TransactionDetail({
 
   async function saveCategory(id: string): Promise<void> {
     if (
+      categorySaving.current ||
       !transaction ||
       locked ||
       !canChangeCategory(transaction, archived) ||
@@ -335,6 +403,8 @@ export function TransactionDetail({
       (pendingReview && reviewVersion === null)
     )
       return;
+    categorySaving.current = true;
+    setCategorySubmitting(true);
     setError(null);
     setCategoryError(null);
     try {
@@ -349,6 +419,7 @@ export function TransactionDetail({
       setNotice('txn.saved');
       focusCategory();
     } catch (failure) {
+      if (handleTerminalWriteError(failure)) return;
       const code = failure instanceof ApiError ? problemReaction(failure).sentCode : null;
       if (code === 'VERSION_CONFLICT') {
         // Never render a native sheet and a conflict modal at once.
@@ -372,6 +443,9 @@ export function TransactionDetail({
       } else {
         setCategoryError(intl.formatMessage({ id: 'txn.category.saveFailed' }));
       }
+    } finally {
+      categorySaving.current = false;
+      setCategorySubmitting(false);
     }
   }
 
@@ -461,8 +535,8 @@ export function TransactionDetail({
     reloadCategoryReview();
   };
 
-  // A previously loaded detail must not survive an authorization failure on either
-  // the transaction or its parent account (including failed revalidation with cached data).
+  // Do not expose cached transaction amounts or merchant data after authorization fails.
+  // Includes revalidation of both the transaction and its parent account.
   const accessFailure = [record.error, account.error].find(
     (failure) =>
       failure instanceof ApiError &&
@@ -477,6 +551,24 @@ export function TransactionDetail({
       />
     ) : (
       <ErrorBanner error={accessFailure} />
+    );
+  }
+  if (record.isError && isTransactionMissing(record.error)) {
+    return (
+      <EmptyState
+        title={intl.formatMessage({ id: 'txn.notFound' })}
+        actionLabel={intl.formatMessage({ id: 'txn.back' })}
+        onAction={onBack}
+      />
+    );
+  }
+  if (error && isTransactionMissing(error)) {
+    return (
+      <EmptyState
+        title={intl.formatMessage({ id: 'txn.notFound' })}
+        actionLabel={intl.formatMessage({ id: 'txn.back' })}
+        onAction={onBack}
+      />
     );
   }
   if (!transaction && record.isPending) return <LoadingSkeleton count={6} height={24} />;
@@ -510,16 +602,33 @@ export function TransactionDetail({
     : intl.formatMessage({ id: 'txn.category.fallback' });
   const changeable = canChangeCategory(transaction, archived);
   const removable = canRemove(transaction, archived);
+  const categoryEditExplanation = archived
+    ? 'txn.archived'
+    : transaction.voidedAt || transaction.deletedAt
+      ? 'txn.category.removed'
+      : transaction.reconciliationAdjustment
+        ? 'txn.adjustmentLocked'
+        : !changeable
+          ? 'txn.category.locked'
+          : null;
+  const showCategoryEditExplanation =
+    !archived && !transaction.reconciliationAdjustment && !!categoryEditExplanation;
   const moneyRow = (label: string, amount: string | null, currency: string) =>
     amount === null
       ? null
       : { key: label, label, value: <Amount value={amount} currency={currency} /> };
   const tradeRows = [
-    security.data
+    transaction.securityId
       ? {
           key: 'security',
           label: intl.formatMessage({ id: 'txn.security' }),
-          value: security.data.displayName,
+          value: security.isError ? (
+            <View style={{ gap: Spacing.one }}>
+              <ErrorBanner error={security.error} onRetry={() => void security.refetch()} />
+            </View>
+          ) : (
+            (security.data?.displayName ?? <LoadingSkeleton count={1} />)
+          ),
         }
       : null,
     transaction.quantity
@@ -626,11 +735,11 @@ export function TransactionDetail({
         />
       ) : null}
       {archived ? (
-        <Text style={{ color: theme.statusWarning }}>
+        <Text accessibilityRole="alert" style={{ color: theme.statusWarning }}>
           {intl.formatMessage({ id: 'txn.archived' })}
         </Text>
       ) : null}
-      {record.isError && record.error ? (
+      {record.isError && !isTransactionMissing(record.error) ? (
         <ErrorBanner error={record.error} onRetry={() => void record.refetch()} />
       ) : null}
       {error ? (
@@ -714,9 +823,9 @@ export function TransactionDetail({
         {transaction.reconciliationAdjustment ? (
           <DetailLabel>{intl.formatMessage({ id: 'txn.adjustment' })}</DetailLabel>
         ) : null}
-        {transaction.warnings.map((warning) => (
+        {transactionWarningTexts(transaction.warnings, intl).map((warning) => (
           <Text key={warning} style={{ color: theme.statusWarning }}>
-            ⚠ {intl.formatMessage({ id: 'txn.warning' })}
+            ⚠ {warning}
           </Text>
         ))}
       </View>
@@ -747,6 +856,11 @@ export function TransactionDetail({
                     : 'txn.category.automatic',
               })}
             </Text>
+            {!changeable && showCategoryEditExplanation && !pendingReview ? (
+              <Text accessibilityRole="alert" style={{ color: theme.statusWarning }}>
+                {intl.formatMessage({ id: categoryEditExplanation })}
+              </Text>
+            ) : null}
             {changeable ? (
               <Pressable
                 ref={categoryControl}
@@ -804,6 +918,7 @@ export function TransactionDetail({
                   disabled={
                     locked ||
                     reviewVersion === null ||
+                    !changeable ||
                     !selectedCategory ||
                     !categoryIsValid(selectedCategory)
                   }
@@ -811,6 +926,11 @@ export function TransactionDetail({
                     if (selectedCategory) void saveCategory(selectedCategory);
                   }}
                 />
+                {!changeable && showCategoryEditExplanation ? (
+                  <Text accessibilityRole="alert" style={{ color: theme.statusWarning }}>
+                    {intl.formatMessage({ id: categoryEditExplanation })}
+                  </Text>
+                ) : null}
                 <ActionButton
                   label={intl.formatMessage({ id: 'txn.picker.discard' })}
                   onPress={() => {
@@ -992,6 +1112,7 @@ export function TransactionDetail({
           onClose={closePicker}
           onSelect={chooseCategory}
           onSave={saveSelectedCategory}
+          closeDisabled={changing}
         />
       ) : null}
       <Dialog
