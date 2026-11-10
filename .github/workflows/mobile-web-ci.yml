@@ -73,6 +73,13 @@ jobs:
       - name: Format check
         run: npx prettier --check .
 
+      # Temporary diagnostic for S4: print only the formatter diff, then remove this step.
+      - name: Show formatting corrections
+        if: failure()
+        run: |
+          npx prettier --write src/api/queries/resources.ts src/api/queries/transaction-resources.test.tsx src/features/account-detail/account-detail.tsx src/features/transaction-detail/transaction-detail.test.tsx
+          git --no-pager diff -- src/api/queries/resources.ts src/api/queries/transaction-resources.test.tsx src/features/account-detail/account-detail.tsx src/features/transaction-detail/transaction-detail.test.tsx
+
       - name: Test
         run: npx jest --ci
 
