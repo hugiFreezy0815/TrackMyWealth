@@ -43,6 +43,7 @@ export default function AccountDetailRoute() {
       title={intl.formatMessage({ id: 'account.heading' })}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />}
       detailWidth={400}
+      virtualizedNative
       aside={
         webPanel && selectedTransaction ? (
           <TransactionDetail
@@ -60,6 +61,8 @@ export default function AccountDetailRoute() {
     >
       <AccountDetail
         accountId={accountId ?? ''}
+        refreshing={refreshing}
+        onRefresh={() => void refresh()}
         onBack={() => router.replace('/overview')}
         onTransaction={openTransaction}
         selectedTransactionId={webPanel ? selectedTransaction : null}

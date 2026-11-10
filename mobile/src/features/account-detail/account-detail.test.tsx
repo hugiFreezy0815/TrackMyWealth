@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, type InfiniteData } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import { IntlProvider, createIntl, createIntlCache } from 'react-intl';
 import { StyleSheet } from 'react-native';
@@ -358,7 +358,7 @@ describe('S3 account detail acceptance checks (#494)', () => {
       summary(),
       Array.from({ length: 120 }, (_, index) => txn(index)),
     );
-    await renderDetail();
+    const { client } = await renderDetail();
 
     expect(await screen.findByText('Showing 50 of 120')).toBeTruthy();
     await fireEvent.press(screen.getByText('Load more'));
@@ -366,8 +366,12 @@ describe('S3 account detail acceptance checks (#494)', () => {
     await fireEvent.press(screen.getByText('Load more'));
     expect(await screen.findByText('Showing 120 of 120')).toBeTruthy();
     expect(screen.queryByText('Load more')).toBeNull();
-    const rows = screen.getAllByLabelText(/^Shop \d{3},/);
-    expect(new Set(rows.map((row) => row.props.accessibilityLabel)).size).toBe(120);
+    const pages = client.getQueryData<InfiniteData<{ content: Transaction[] }>>(
+      queryKeys.accountTransactions('acc', { uncategorized: false, sort: 'bookingDate,desc' }),
+    );
+    const ids = pages?.pages.flatMap((page) => page.content.map((row) => row.id)) ?? [];
+    expect(ids).toHaveLength(120);
+    expect(new Set(ids).size).toBe(120);
     expect(listCalls().map((query) => query.page)).toEqual([0, 1, 2]);
 
     await changeCategory('Food', 'Food › Groceries');
@@ -376,7 +380,7 @@ describe('S3 account detail acceptance checks (#494)', () => {
     expect(listCalls().at(-1)).toMatchObject({ page: 0, uncategorized: false });
   });
 
-  it('loads the next page on a phone once the last 10 rows come into view', async () => {
+  it('loads next pages at the native SectionList end without nested scroll markers', async () => {
     fakeServer(
       summary(),
       Array.from({ length: 120 }, (_, index) => txn(index)),
@@ -384,17 +388,32 @@ describe('S3 account detail acceptance checks (#494)', () => {
     await renderDetail();
     expect(await screen.findByText('Showing 50 of 120')).toBeTruthy();
 
-    // The marker sits before row 41 of 50, i.e. 10 rows before the end.
-    const marker = screen.getByTestId('transactions-end-marker');
-    const rows = screen.getAllByLabelText(/^Shop \d{3},/);
-    expect(rows.indexOf(screen.getByLabelText(/^Shop 040,/))).toBe(40);
-    await act(async () => fireEvent(marker, 'layout'));
+    const list = screen.getByTestId('account-transaction-list');
+    expect(list.props.initialNumToRender).toBe(12);
+    expect(list.props.windowSize).toBe(7);
+    await act(async () => fireEvent(list, 'onEndReached'));
     expect(await screen.findByText('Showing 100 of 120')).toBeTruthy();
 
-    await act(async () => fireEvent(screen.getByTestId('transactions-end-marker'), 'layout'));
+    await act(async () =>
+      fireEvent(screen.getByTestId('account-transaction-list'), 'onEndReached'),
+    );
     expect(await screen.findByText('Showing 120 of 120')).toBeTruthy();
     expect(screen.queryByTestId('transactions-end-marker')).toBeNull();
     expect(listCalls().map((query) => query.page)).toEqual([0, 1, 2]);
+  });
+
+  it('uses a virtualized SectionList with headers inside the scroll owner for 1,000+ rows', async () => {
+    fakeServer(
+      summary(),
+      Array.from({ length: 1250 }, (_, index) => txn(index)),
+    );
+    await renderDetail();
+    const list = await screen.findByTestId('account-transaction-list');
+    expect(list.props.maxToRenderPerBatch).toBe(12);
+    expect(list.props.windowSize).toBe(7);
+    expect(screen.getByText('Girokonto')).toBeTruthy();
+    expect(await screen.findByText('Showing 50 of 1250')).toBeTruthy();
+    expect(listCalls()).toHaveLength(1);
   });
 
   it('automatically reloads and retries with the new version after HTTP 428', async () => {

@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import type { ReactElement, ReactNode } from 'react';
 import {
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -31,6 +32,8 @@ type Props = {
   refreshControl?: ReactElement<RefreshControlProps>;
   /** S4 transaction details use a 400px desktop side panel. */
   detailWidth?: number;
+  /** One native SectionList owns scrolling on this screen; never nest it in a ScrollView. */
+  virtualizedNative?: boolean;
 };
 
 export function ShellScreen({
@@ -40,47 +43,65 @@ export function ShellScreen({
   privacyToggle = true,
   refreshControl,
   detailWidth = DETAIL_PANEL_WIDTH,
+  virtualizedNative = false,
 }: Props) {
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const layout = layoutFor(width);
   const besideContent = aside != null && layout === 'desktop';
   const scroll = useShellScrollEvents();
+  const nativeVirtualized = virtualizedNative && Platform.OS !== 'web';
+  const frame = (
+    <View
+      style={[
+        styles.frame,
+        besideContent && styles.frameWithPanel,
+        besideContent && { maxWidth: 960 + 24 + detailWidth },
+        nativeVirtualized && { flex: 1 },
+      ]}
+    >
+      <View style={styles.content}>
+        <View style={styles.header}>
+          <ThemedText type="subtitle" role="heading" style={styles.heading}>
+            {title}
+          </ThemedText>
+          {privacyToggle && <AmountVisibilityToggle />}
+        </View>
+        <ShellScrollProvider events={scroll.events}>{children}</ShellScrollProvider>
+      </View>
+      {aside != null && (
+        <View
+          role="complementary"
+          testID="shell-detail-panel"
+          style={besideContent ? [styles.panelBeside, { width: detailWidth }] : styles.panelBelow}
+        >
+          {aside}
+        </View>
+      )}
+    </View>
+  );
+  if (nativeVirtualized) {
+    return (
+      <View
+        style={[
+          styles.scroll,
+          layout === 'phone' && styles.scrollPhone,
+          { flex: 1, backgroundColor: theme.background },
+        ]}
+      >
+        {frame}
+      </View>
+    );
+  }
   return (
     <ScrollView
       style={{ backgroundColor: theme.background }}
       refreshControl={refreshControl}
-      // Content such as an infinite list learns about scrolling (useWhenOnScreen).
       onScroll={scroll.notify}
       scrollEventThrottle={100}
       contentContainerStyle={[styles.scroll, layout === 'phone' && styles.scrollPhone]}
     >
-      <View
-        style={[
-          styles.frame,
-          besideContent && styles.frameWithPanel,
-          besideContent && { maxWidth: 960 + 24 + detailWidth },
-        ]}
-      >
-        <View style={styles.content}>
-          <View style={styles.header}>
-            <ThemedText type="subtitle" role="heading" style={styles.heading}>
-              {title}
-            </ThemedText>
-            {privacyToggle && <AmountVisibilityToggle />}
-          </View>
-          <ShellScrollProvider events={scroll.events}>{children}</ShellScrollProvider>
-        </View>
-        {aside != null && (
-          <View
-            role="complementary"
-            testID="shell-detail-panel"
-            style={besideContent ? [styles.panelBeside, { width: detailWidth }] : styles.panelBelow}
-          >
-            {aside}
-          </View>
-        )}
-      </View>
+      {frame}
     </ScrollView>
   );
 }

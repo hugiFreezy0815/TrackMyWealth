@@ -203,6 +203,7 @@ const unreconciledAccount = (id: string, name: string): Account => ({
   balanceInWorkspaceCurrency: '10.00',
   valueKnown: true,
   valueStatus: 'UNRECONCILED',
+  valueBasis: 'LEDGER',
   asOf: '2026-11-08',
   valueSourceDate: null,
   warnings: [],

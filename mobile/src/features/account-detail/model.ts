@@ -76,10 +76,7 @@ const VALUE_BASIS_LABELS = {
 } as const;
 
 /** Unknown/new server values never imply that a particular provenance is verified. */
-export function valueBasisExplanation(
-  basis: string | null | undefined,
-  intl: Intl,
-): string {
+export function valueBasisExplanation(basis: string | null | undefined, intl: Intl): string {
   if (!basis || !Object.prototype.hasOwnProperty.call(VALUE_BASIS_LABELS, basis)) {
     return intl.formatMessage({ id: 'account.valueSourceUnavailable' });
   }

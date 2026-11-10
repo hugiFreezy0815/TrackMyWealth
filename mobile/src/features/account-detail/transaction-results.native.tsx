@@ -1,9 +1,8 @@
-import { useRef, type ComponentRef } from 'react';
-import { Text, View } from 'react-native';
+import { useMemo, type ReactNode } from 'react';
+import { SectionList, Text, View } from 'react-native';
 import { useIntl } from 'react-intl';
 
 import { TypeScale } from '@/constants/theme';
-import { useWhenOnScreen } from '@/features/shell/scroll-events';
 import { useTheme } from '@/hooks/use-theme';
 
 import { groupHeading, groupedTransactions, type RowContext, type Transaction } from './model';
@@ -16,19 +15,15 @@ export type TransactionResultsProps = {
   onOpen?: (id: string) => void;
   onCategory: (transaction: Transaction) => void;
   selectedTransactionId?: string | null;
-  /** Phone infinite scroll: the next page loads once the last 10 rows come into view. */
   onEndReached?: () => void;
+  /** The account controls are part of the same virtualized scroll content, not a parent ScrollView. */
+  listHeader?: ReactNode;
+  listFooter?: ReactNode;
+  refreshing?: boolean;
+  onRefresh?: () => void;
 };
 
-/** How many rows before the end the next page starts loading (spec S3 "Paging"). */
-export const END_REACHED_ROWS = 10;
-
-function EndMarker({ onVisible }: { onVisible: () => void }) {
-  const ref = useRef<ComponentRef<typeof View>>(null);
-  const check = useWhenOnScreen(ref, onVisible, true);
-  return <View ref={ref} testID="transactions-end-marker" onLayout={check} />;
-}
-
+/** Native transactions use a single virtualized SectionList even after 1,000+ rows. */
 export function TransactionResults({
   transactions,
   context,
@@ -36,38 +31,59 @@ export function TransactionResults({
   onOpen,
   onCategory,
   onEndReached,
+  listHeader,
+  listFooter,
+  refreshing = false,
+  onRefresh,
 }: TransactionResultsProps) {
   const intl = useIntl();
   const theme = useTheme();
-  const markerId = onEndReached
-    ? transactions[Math.max(0, transactions.length - END_REACHED_ROWS)]?.id
-    : undefined;
+  const sections = useMemo(
+    () =>
+      groupedTransactions(transactions, byDate).map((group, index) => ({
+        key: group.date ?? `unsorted-${index}`,
+        date: group.date,
+        data: group.rows,
+      })),
+    [transactions, byDate],
+  );
   return (
-    <View>
-      {groupedTransactions(transactions, byDate).map((group, index) => (
-        <View key={group.date ?? `amount-${index}`}>
-          {group.date ? (
-            <Text
-              accessibilityRole="header"
-              style={{ ...TypeScale.labelMedium, color: theme.textSecondary }}
-            >
-              {groupHeading(group.date, intl)}
-            </Text>
-          ) : null}
-          {group.rows.map((row) => (
-            <View key={row.id}>
-              {row.id === markerId && onEndReached ? <EndMarker onVisible={onEndReached} /> : null}
-              <TransactionLine
-                transaction={row}
-                context={context}
-                showDate={!byDate}
-                onOpen={onOpen}
-                onCategory={onCategory}
-              />
-            </View>
-          ))}
-        </View>
-      ))}
-    </View>
+    <SectionList
+      testID="account-transaction-list"
+      style={{ flex: 1 }}
+      contentContainerStyle={{ paddingBottom: 24 }}
+      sections={sections}
+      keyExtractor={(item) => item.id}
+      ListHeaderComponent={listHeader ? <View style={{ gap: 12 }}>{listHeader}</View> : null}
+      ListFooterComponent={listFooter ? <View style={{ gap: 12 }}>{listFooter}</View> : null}
+      renderSectionHeader={({ section }) =>
+        section.date ? (
+          <Text
+            accessibilityRole="header"
+            style={{ ...TypeScale.labelMedium, color: theme.textSecondary }}
+          >
+            {groupHeading(section.date, intl)}
+          </Text>
+        ) : null
+      }
+      renderItem={({ item }) => (
+        <TransactionLine
+          transaction={item}
+          context={context}
+          showDate={!byDate}
+          onOpen={onOpen}
+          onCategory={onCategory}
+        />
+      )}
+      onEndReached={onEndReached}
+      onEndReachedThreshold={0.5}
+      initialNumToRender={12}
+      maxToRenderPerBatch={12}
+      windowSize={7}
+      stickySectionHeadersEnabled={false}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+      keyboardShouldPersistTaps="handled"
+    />
   );
 }

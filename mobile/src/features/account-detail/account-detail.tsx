@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, Text, View } from 'react-native';
 
 import { ApiError, NetworkError } from '@/api/client';
 import { typedApi } from '@/api/typed-api';
@@ -66,6 +66,9 @@ export type AccountDetailProps = {
   /** The selected transaction in a desktop S4 panel, if any. */
   selectedTransactionId?: string | null;
   onImport: () => void;
+  /** Native pull-to-refresh shares the same single SectionList scroll owner. */
+  refreshing?: boolean;
+  onRefresh?: () => void;
 };
 
 type OpenDialog = 'actions' | 'sort' | 'archive' | 'value' | null;
@@ -109,6 +112,8 @@ export function AccountDetail({
   onTransaction,
   selectedTransactionId,
   onImport,
+  refreshing = false,
+  onRefresh,
 }: AccountDetailProps) {
   const intl = useIntl();
   const theme = useTheme();
@@ -318,8 +323,10 @@ export function AccountDetail({
     includeParent: false,
   };
 
-  return (
-    <View testID="account-detail" style={{ flex: 1, gap: Spacing.three }}>
+  // The header and controls scroll WITH the transactions on native. This keeps one
+  // virtualized scroll owner (SectionList) rather than nesting a list in ShellScreen's ScrollView.
+  const accountHeader = (
+    <View style={{ gap: Spacing.three }}>
       <Pressable
         accessibilityRole="button"
         onPress={onBack}
@@ -513,44 +520,82 @@ export function AccountDetail({
               />
             )
           ) : null}
-          <TransactionResults
-            transactions={records}
-            selectedTransactionId={selectedTransactionId}
-            context={context}
-            byDate={sort.startsWith('bookingDate')}
-            onOpen={onTransaction}
-            onCategory={(target) => {
-              setPendingCategoryId(null);
-              setCategoryTarget(target);
-            }}
-            onEndReached={
-              transactions.hasNextPage && !transactions.isFetchNextPageError
-                ? () => {
-                    if (!transactions.isFetchingNextPage) void transactions.fetchNextPage();
-                  }
-                : undefined
-            }
-          />
-          {records.length ? (
-            <Text accessibilityLiveRegion="polite" style={{ color: theme.textSecondary }}>
-              {intl.formatMessage({ id: 'account.showing' }, { shown: records.length, total })}
-            </Text>
-          ) : null}
-          {transactions.isFetchNextPageError ? (
-            <ErrorBanner
-              error={transactions.error}
-              onRetry={() => void transactions.fetchNextPage()}
-            />
-          ) : null}
-          {transactions.hasNextPage && !transactions.isFetchNextPageError ? (
-            <ActionButton
-              disabled={transactions.isFetchingNextPage}
-              label={intl.formatMessage({ id: 'account.loadMore' })}
-              onPress={() => void transactions.fetchNextPage()}
-            />
-          ) : null}
-          {transactions.isFetchingNextPage ? <ActivityIndicator /> : null}
         </>
+      )}
+    </View>
+  );
+  const showingTransactions = hasLedger && !(summary.holdsPositions && tab === 'positions');
+  const accountFooter = showingTransactions ? (
+    <View style={{ gap: Spacing.three }}>
+      {records.length ? (
+        <Text accessibilityLiveRegion="polite" style={{ color: theme.textSecondary }}>
+          {intl.formatMessage({ id: 'account.showing' }, { shown: records.length, total })}
+        </Text>
+      ) : null}
+      {transactions.isFetchNextPageError ? (
+        <ErrorBanner error={transactions.error} onRetry={() => void transactions.fetchNextPage()} />
+      ) : null}
+      {transactions.hasNextPage && !transactions.isFetchNextPageError ? (
+        <ActionButton
+          disabled={transactions.isFetchingNextPage}
+          label={intl.formatMessage({ id: 'account.loadMore' })}
+          onPress={() => void transactions.fetchNextPage()}
+        />
+      ) : null}
+      {transactions.isFetchingNextPage ? <ActivityIndicator /> : null}
+    </View>
+  ) : null;
+
+  return (
+    <View testID="account-detail" style={{ flex: 1, gap: Spacing.three }}>
+      {Platform.OS === 'web' ? (
+        <>
+          {accountHeader}
+          {showingTransactions ? (
+            <TransactionResults
+              transactions={records}
+              selectedTransactionId={selectedTransactionId}
+              context={context}
+              byDate={sort.startsWith('bookingDate')}
+              onOpen={onTransaction}
+              onCategory={(target) => {
+                setPendingCategoryId(null);
+                setCategoryTarget(target);
+              }}
+              onEndReached={
+                transactions.hasNextPage && !transactions.isFetchNextPageError
+                  ? () => {
+                      if (!transactions.isFetchingNextPage) void transactions.fetchNextPage();
+                    }
+                  : undefined
+              }
+            />
+          ) : null}
+          {accountFooter}
+        </>
+      ) : (
+        <TransactionResults
+          transactions={showingTransactions ? records : []}
+          selectedTransactionId={selectedTransactionId}
+          context={context}
+          byDate={sort.startsWith('bookingDate')}
+          onOpen={onTransaction}
+          onCategory={(target) => {
+            setPendingCategoryId(null);
+            setCategoryTarget(target);
+          }}
+          onEndReached={
+            showingTransactions && transactions.hasNextPage && !transactions.isFetchNextPageError
+              ? () => {
+                  if (!transactions.isFetchingNextPage) void transactions.fetchNextPage();
+                }
+              : undefined
+          }
+          listHeader={accountHeader}
+          listFooter={accountFooter}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+        />
       )}
       <ActionsDialog
         visible={dialog === 'actions'}

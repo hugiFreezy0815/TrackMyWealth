@@ -1,4 +1,5 @@
 import { useIntl } from 'react-intl';
+import type { ReactNode } from 'react';
 import { useWindowDimensions } from 'react-native';
 
 import { Amount } from '@/components/shared';
@@ -17,6 +18,8 @@ export type TransactionResultsProps = {
   onOpen?: (id: string) => void;
   onCategory: (transaction: Transaction) => void;
   selectedTransactionId?: string | null;
+  listHeader?: ReactNode;
+  listFooter?: ReactNode;
   /** Native only: web pages with the "Load more" button (spec S3 "Paging"). */
   onEndReached?: () => void;
 };

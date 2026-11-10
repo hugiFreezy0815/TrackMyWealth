@@ -442,6 +442,24 @@ export function TransactionDetail({
     reloadCategoryReview();
   };
 
+  // A previously loaded detail must not survive an authorization failure on either
+  // the transaction or its parent account (including failed revalidation with cached data).
+  const accessFailure = [record.error, account.error].find(
+    (failure) =>
+      failure instanceof ApiError &&
+      (failure.status === 401 || failure.status === 403 || failure.status === 404),
+  );
+  if (accessFailure instanceof ApiError) {
+    return accessFailure.status === 404 ? (
+      <EmptyState
+        title={intl.formatMessage({ id: 'txn.notFound' })}
+        actionLabel={intl.formatMessage({ id: 'txn.back' })}
+        onAction={onBack}
+      />
+    ) : (
+      <ErrorBanner error={accessFailure} />
+    );
+  }
   if (!transaction && record.isPending) return <LoadingSkeleton count={6} height={24} />;
   if (!transaction) {
     const notFound = record.error instanceof ApiError && record.error.status === 404;
