@@ -279,9 +279,7 @@ describe('S4 transaction detail', () => {
     await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
     await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
     await waitFor(() => expect(screen.getByText(/Couldn't save the category/)).toBeTruthy());
-    expect(screen.getByRole('radio', { name: 'Food › Dining out' }).props['aria-checked']).toBe(
-      true,
-    );
+    expect(screen.getByText('✓ Food › Dining out')).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
     await waitFor(() => expect(setCategory).toHaveBeenCalledTimes(2));
   });
@@ -364,7 +362,9 @@ describe('S4 transaction detail', () => {
     await waitFor(() => expect(screen.getByText('This item was changed meanwhile')).toBeTruthy());
     await fireEvent.press(screen.getByRole('button', { name: 'Review and save again' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Retry review' })).toBeTruthy());
-    expect(screen.getByRole('button', { name: 'Save again' }).props.disabled).toBe(true);
+    expect(
+      screen.getByRole('button', { name: 'Save again' }).props['aria-disabled'],
+    ).toBe(true);
     expect(setCategory).toHaveBeenCalledTimes(1);
     await fireEvent.press(screen.getByRole('button', { name: 'Retry review' }));
     await waitFor(() => expect(refetch).toHaveBeenCalledTimes(2));
