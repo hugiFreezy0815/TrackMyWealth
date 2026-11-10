@@ -380,7 +380,7 @@ describe('S4 transaction detail', () => {
     );
     jest.mocked(useCategories).mockImplementation((includeInactive = false) =>
       success(includeInactive ? deactivated : deactivated.filter((item) => item.active)) as
-        ReturnType<typeof useCategories>,
+        unknown as ReturnType<typeof useCategories>,
     );
     jest.mocked(useTransactionHistory).mockReturnValue(
       success({
