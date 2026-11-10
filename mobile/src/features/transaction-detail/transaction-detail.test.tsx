@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Modal, Platform } from 'react-native';
@@ -471,6 +471,183 @@ describe('S4 transaction detail', () => {
       await fireEvent.press(screen.getByRole('button', { name: 'Close' }));
     }
     expect(setCategory).not.toHaveBeenCalled();
+  });
+
+  it('keeps the category sheet visible when dismissal is attempted during a pending save', async () => {
+    let rejectSave: ((error: Error) => void) | undefined;
+    setCategory.mockImplementationOnce(
+      () =>
+        new Promise<Transaction>((_resolve, reject) => {
+          rejectSave = reject;
+        }),
+    );
+    await show();
+    await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
+    await waitFor(() => expect(setCategory).toHaveBeenCalledTimes(1));
+    if (Platform.OS === 'web') {
+      await fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+    } else {
+      await fireEvent.press(screen.getByRole('button', { name: 'Close' }));
+      const modal = screen.UNSAFE_getByType(Modal);
+      await fireEvent(modal, 'requestClose');
+    }
+    expect(screen.getByRole('radio', { name: 'Food › Dining out' })).toBeTruthy();
+    await act(async () => rejectSave?.(new Error('offline')));
+    expect(await screen.findByText(/Couldn't save the category/)).toBeTruthy();
+    expect(screen.getByText('✓ Food › Dining out')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
+    await waitFor(() => expect(setCategory).toHaveBeenCalledTimes(2));
+  });
+
+  it('shows back-to-account recovery and hides cached details if a category write returns NOT_FOUND', async () => {
+    setCategory.mockRejectedValueOnce(
+      new ApiError('not found', 404, {
+        code: 'NOT_FOUND',
+        status: 404,
+        title: 'Missing transaction',
+      }),
+    );
+    const onBack = await show();
+    await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
+    expect(await screen.findByText('This transaction no longer exists or is unavailable to you')).toBeTruthy();
+    expect(screen.queryByText('Migros')).toBeNull();
+    await fireEvent.press(screen.getByRole('button', { name: 'Back to account' }));
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides a cached transaction after its background read reports 404', async () => {
+    const client = new QueryClient();
+    const renderScreen = () => (
+      <QueryClientProvider client={client}>
+        <IntlProvider locale="en" messages={en}>
+          <TransactionDetail accountId="account-1" transactionId="transaction-1" onBack={jest.fn()} />
+        </IntlProvider>
+      </QueryClientProvider>
+    );
+    const view = await render(renderScreen());
+    expect(screen.getByText('Migros')).toBeTruthy();
+    const failure = new ApiError('not found', 404, {
+      code: 'NOT_FOUND',
+      status: 404,
+      title: 'Missing transaction',
+    });
+    jest.mocked(useTransaction).mockReturnValue({
+      ...success(base),
+      error: failure,
+      isError: true,
+    } as unknown as ReturnType<typeof useTransaction>);
+    await view.rerender(renderScreen());
+    expect(screen.queryByText('Migros')).toBeNull();
+    expect(screen.getByText('This transaction no longer exists or is unavailable to you')).toBeTruthy();
+  });
+
+  it('marks an account archived if the server rejects a category change', async () => {
+    setCategory.mockRejectedValueOnce(
+      new ApiError('archived', 409, {
+        code: 'ACCOUNT_ARCHIVED',
+        status: 409,
+        title: 'Account archived',
+      }),
+    );
+    await show();
+    await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
+    expect(await screen.findByText('Restore the account to change its transactions.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Change category' })).toBeNull();
+    expect(setCategory).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables Save again and explains when the conflict review finds a voided transaction', async () => {
+    jest.mocked(useConflict).mockImplementation(useMockConflict);
+    const voided = { ...base, version: 8, voidedAt: '2026-11-09T10:00:00Z' };
+    jest.mocked(useTransaction).mockImplementation(() => {
+      const [transaction, setTransaction] = useState<Transaction>(base);
+      return {
+        ...success(transaction),
+        refetch: jest.fn(async () => {
+          setTransaction(voided);
+          return { data: voided };
+        }),
+      } as unknown as ReturnType<typeof useTransaction>;
+    });
+    jest.mocked(useCategories).mockReturnValue({
+      ...success(categories),
+      refetch: jest.fn(async () => ({ data: categories })),
+    } as unknown as ReturnType<typeof useCategories>);
+    setCategory.mockRejectedValueOnce(
+      new ApiError('conflict', 412, { code: 'VERSION_CONFLICT', status: 412, title: 'Conflict' }),
+    );
+    await show();
+    await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Review and save again' }));
+    expect(await screen.findByText('This transaction was removed. Its category can no longer be changed.')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Save again' }));
+    expect(setCategory).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['BUY', 'SELL', 'DIVIDEND'])(
+    'shows a retryable security-name error while retaining trade details for %s',
+    async (transactionType) => {
+      fixtures({
+        ...base,
+        transactionType,
+        securityId: 'security-1',
+        categoryId: null,
+        quantity: '10',
+        grossAmount: '100.00',
+      });
+      const refetch = jest.fn();
+      jest.mocked(useSecurity).mockReturnValue({
+        ...success(undefined),
+        isError: true,
+        error: new Error('security unavailable'),
+        refetch,
+      } as unknown as ReturnType<typeof useSecurity>);
+      const client = new QueryClient();
+      const renderScreen = () => (
+        <QueryClientProvider client={client}>
+          <IntlProvider locale="en" messages={en}>
+            <TransactionDetail accountId="account-1" transactionId="transaction-1" onBack={jest.fn()} />
+          </IntlProvider>
+        </QueryClientProvider>
+      );
+      const view = await render(renderScreen());
+      expect(screen.getByText('Security')).toBeTruthy();
+      expect(screen.getByText('Something went wrong.')).toBeTruthy();
+      expect(screen.getByText('Gross amount')).toBeTruthy();
+      await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+      expect(refetch).toHaveBeenCalledTimes(1);
+      jest.mocked(useSecurity).mockReturnValue(
+        success({ displayName: 'Test Security' }) as unknown as ReturnType<typeof useSecurity>,
+      );
+      await view.rerender(renderScreen());
+      expect(screen.getByText('Test Security')).toBeTruthy();
+      expect(screen.getByText('Gross amount')).toBeTruthy();
+    },
+  );
+
+  it('uses informal German for category errors and pending review copy', async () => {
+    const client = new QueryClient();
+    await render(
+      <QueryClientProvider client={client}>
+        <IntlProvider locale="de-CH" messages={de}>
+          <TransactionDetail accountId="account-1" transactionId="transaction-1" onBack={jest.fn()} />
+        </IntlProvider>
+      </QueryClientProvider>,
+    );
+    await fireEvent.press(screen.getByRole('button', { name: 'Kategorie ändern' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Essen › Restaurant' }));
+    setCategory.mockRejectedValueOnce(new Error('offline'));
+    await fireEvent.press(screen.getByRole('button', { name: 'Kategorie speichern' }));
+    expect(await screen.findByText(/Prüfe deine Verbindung/)).toBeTruthy();
+    expect(screen.queryByText(/Prüfen Sie/)).toBeNull();
   });
 
   it('refreshes active category choices following a validation rejection', async () => {
