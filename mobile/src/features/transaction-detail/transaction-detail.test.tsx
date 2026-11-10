@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { useState } from 'react';
-import { Platform } from 'react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Modal, Platform } from 'react-native';
 import { IntlProvider } from 'react-intl';
 import {
   useAccount,
@@ -15,6 +16,7 @@ import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import type { components } from '@/api/schema';
 import { ApiError } from '@/api/client';
 import en from '@/i18n/en.json';
+import de from '@/i18n/de.json';
 import { TransactionDetail } from './transaction-detail';
 
 jest.mock('@/global.css', () => ({}));
@@ -166,10 +168,13 @@ function useMockConflict() {
 
 async function show() {
   const onBack = jest.fn();
+  const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } });
   await render(
-    <IntlProvider locale="en" messages={en}>
-      <TransactionDetail accountId="account-1" transactionId="transaction-1" onBack={onBack} />
-    </IntlProvider>,
+    <QueryClientProvider client={client}>
+      <IntlProvider locale="en" messages={en}>
+        <TransactionDetail accountId="account-1" transactionId="transaction-1" onBack={onBack} />
+      </IntlProvider>
+    </QueryClientProvider>,
   );
   return onBack;
 }
@@ -436,14 +441,16 @@ describe('S4 transaction detail', () => {
       fetchNextPage: more,
     } as unknown as ReturnType<typeof useTransactionHistory>);
     await render(
-      <IntlProvider locale="en" messages={en}>
-        <TransactionDetail
-          accountId="account-1"
-          transactionId="transaction-1"
-          onBack={jest.fn()}
-          onRelatedTransaction={onRelated}
-        />
-      </IntlProvider>,
+      <QueryClientProvider client={new QueryClient()}>
+        <IntlProvider locale="en" messages={en}>
+          <TransactionDetail
+            accountId="account-1"
+            transactionId="transaction-1"
+            onBack={jest.fn()}
+            onRelatedTransaction={onRelated}
+          />
+        </IntlProvider>
+      </QueryClientProvider>,
     );
     expect(screen.getByText('Corrected automatically')).toBeTruthy();
     await fireEvent.press(screen.getByRole('link', { name: 'Open the previous transaction' }));
