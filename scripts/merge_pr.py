@@ -32,9 +32,10 @@ import sys
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
-# Mobile Native CI builds and launches the apps only when the native dependency set, the app config
-# or the check itself changes.
+# Native builds and emulator/simulator smoke checks now also gate source changes,
+# not only dependency/config changes. Keep the workflow trigger and this list identical.
 MOBILE_NATIVE_PATHS = (
+    "mobile/src/",
     "mobile/package.json",
     "mobile/package-lock.json",
     "mobile/.npmrc",

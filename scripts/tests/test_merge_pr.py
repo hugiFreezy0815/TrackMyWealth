@@ -147,8 +147,8 @@ class ProblemsTest(unittest.TestCase):
         )
         self.assertEqual(
             required_checks(["mobile/src/app/index.tsx"]),
-            ["semgrep", "gitleaks", "build-web"],
-            "app code alone does not need the native builds",
+            ["semgrep", "gitleaks", "build-web", "android", "ios"],
+            "changes to app source also need native validation",
         )
         self.assertEqual(required_checks(["scripts/merge_pr.py"]), ["semgrep", "gitleaks", "scripts"])
         self.assertEqual(
