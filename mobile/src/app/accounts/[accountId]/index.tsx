@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { Platform, useWindowDimensions } from 'react-native';
+import { Platform, RefreshControl, useWindowDimensions } from 'react-native';
 import { useIntl } from 'react-intl';
-import { AccountDetail } from '@/features/account-detail/account-detail';
+import { AccountDetail, useAccountRefresh } from '@/features/account-detail/account-detail';
 import { isAdministrator } from '@/features/auth/session';
 import { useIdentity } from '@/features/auth/use-identity';
 import { homeFor } from '@/features/shell/navigation';
@@ -14,21 +14,23 @@ export default function AccountDetailRoute() {
   const router = useRouter();
   const intl = useIntl();
   const identity = useIdentity();
+  const { refreshing, refresh } = useAccountRefresh();
   const { width } = useWindowDimensions();
+  const webPanel = Platform.OS === 'web' && width >= 1024;
   const [selectedTransaction, setSelectedTransaction] = useState<string | null>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
-  const webPanel = Platform.OS === 'web' && width >= 1024;
 
   if (isAdministrator(identity)) return <Redirect href={homeFor(true)} />;
   const openTransaction = (transactionId: string) => {
     if (webPanel) {
-      previousFocus.current = document.activeElement as HTMLElement | null;
+      if (!selectedTransaction) previousFocus.current = document.activeElement as HTMLElement | null;
       setSelectedTransaction(transactionId);
-    } else
+    } else {
       router.push({
         pathname: '/accounts/[accountId]/transactions/[transactionId]',
         params: { accountId: accountId ?? '', transactionId },
       });
+    }
   };
   const closePanel = () => {
     setSelectedTransaction(null);
@@ -38,13 +40,16 @@ export default function AccountDetailRoute() {
   return (
     <ShellScreen
       title={intl.formatMessage({ id: 'account.heading' })}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />}
       detailWidth={400}
       aside={
         webPanel && selectedTransaction ? (
           <TransactionDetail
+            key={selectedTransaction}
             accountId={accountId ?? ''}
             transactionId={selectedTransaction}
             onBack={closePanel}
+            onRelatedTransaction={openTransaction}
             onAccount={(id) =>
               router.push({ pathname: '/accounts/[accountId]', params: { accountId: id } })
             }

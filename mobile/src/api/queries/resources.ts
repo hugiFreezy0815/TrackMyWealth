@@ -1,7 +1,8 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
+
+import type { components } from '@/api/schema';
 
 import { typedApi } from '@/api/typed-api';
-import type { components } from '@/api/schema';
 import { ifMatch } from './conflict';
 import { invalidateFinancialData } from './invalidation';
 import { queryKeys } from './keys';
@@ -143,15 +144,30 @@ export function useChangeTransactionCategory(accountId: string) {
   });
 }
 
-export const useTransaction = (accountId: string, transactionId: string) =>
-  useQuery({
+/** Display an S3 row instantly, but fetch the authoritative single-row response.
+ * Placeholder data is never authoritative and must not enable editing.
+ */
+export function useTransaction(accountId: string, transactionId: string) {
+  const client = useQueryClient();
+  return useQuery({
     queryKey: queryKeys.transaction(accountId, transactionId),
     queryFn: () =>
       typedApi.get('/api/v1/accounts/{accountId}/transactions/{transactionId}', {
         params: { accountId, transactionId },
       }),
     enabled: !!accountId && !!transactionId,
+    refetchOnMount: 'always',
+    placeholderData: () =>
+      client
+        .getQueriesData<InfiniteData<components['schemas']['PageResponseTransactionResponse']>>({
+          queryKey: queryKeys.accountTransactionScope(accountId),
+        })
+        .flatMap(([, data]) =>
+          Array.isArray(data?.pages) ? data.pages.flatMap((page) => page.content) : [],
+        )
+        .find((row) => row.id === transactionId),
   });
+}
 /** S4: history pages stay independent of the main transaction list. */
 export const useTransactionHistory = (accountId: string, transactionId: string) =>
   useInfiniteQuery({
@@ -180,9 +196,6 @@ export function useTransactionDetailActions(accountId: string, transactionId: st
   const sync = async (updated?: components['schemas']['TransactionResponse']) => {
     if (updated) client.setQueryData(queryKeys.transaction(accountId, transactionId), updated);
     await invalidateFinancialData(client);
-    await client.invalidateQueries({
-      queryKey: queryKeys.transactionHistory(accountId, transactionId),
-    });
   };
   const setCategory = useMutation({
     mutationFn: ({ categoryId, version }: { categoryId: string; version: number }) =>
@@ -212,6 +225,7 @@ export function useTransactionDetailActions(accountId: string, transactionId: st
   });
   return { setCategory, resetCategory, remove };
 }
+
 
 export const useCategories = (includeInactive = false) =>
   useQuery({

@@ -30,8 +30,10 @@ export default function TransactionDetailRoute() {
     });
   const detail = (
     <TransactionDetail
+      key={transactionId ?? ''}
       accountId={accountId ?? ''}
       transactionId={transactionId ?? ''}
+      onRelatedTransaction={openTransaction}
       onBack={parent}
       onAccount={(id) =>
         router.push({

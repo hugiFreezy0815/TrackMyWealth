@@ -178,7 +178,8 @@ describe('S4 transaction detail', () => {
   it('sends the server ETag version with a category override', async () => {
     await show();
     await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
-    await fireEvent.press(screen.getByRole('button', { name: 'Food › Dining out' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
     await waitFor(() =>
       expect(setCategory).toHaveBeenCalledWith({ categoryId: 'dining', version: 7 }),
     );
@@ -198,7 +199,8 @@ describe('S4 transaction detail', () => {
     } as unknown as ReturnType<typeof useTransaction>);
     await show();
     await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
-    await fireEvent.press(screen.getByRole('button', { name: 'Food › Dining out' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
     await waitFor(() => {
       expect(setCategory).toHaveBeenNthCalledWith(1, { categoryId: 'dining', version: 7 });
       expect(setCategory).toHaveBeenNthCalledWith(2, { categoryId: 'dining', version: 8 });
@@ -245,4 +247,56 @@ describe('S4 transaction detail', () => {
     expect(screen.getByText('Tax withheld')).toBeTruthy();
     expect(screen.getByText('Net amount')).toBeTruthy();
   });
+  it('keeps a changed selection local until explicit Save', async () => {
+    await show();
+    await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
+    expect(setCategory).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
+    await waitFor(() => expect(setCategory).toHaveBeenCalledWith({ categoryId: 'dining', version: 7 }));
+  });
+
+  it('preserves the selected category and displays a local error on network failure', async () => {
+    setCategory.mockRejectedValueOnce(new Error('offline'));
+    await show();
+    await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
+    await waitFor(() => expect(screen.getByText(/Couldn't save the category/)).toBeTruthy());
+    expect(screen.getByRole('radio', { name: 'Food › Dining out' }).props['aria-checked']).toBe(true);
+    await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
+    await waitFor(() => expect(setCategory).toHaveBeenCalledTimes(2));
+  });
+
+  it('disables mutation actions while the S3 placeholder is being revalidated', async () => {
+    jest.mocked(useTransaction).mockReturnValue({
+      ...success(base),
+      isPlaceholderData: true,
+      isFetching: true,
+    } as unknown as ReturnType<typeof useTransaction>);
+    await show();
+    expect(screen.getByRole('button', { name: 'Change category' }).props.accessibilityState?.disabled ?? screen.getByRole('button', { name: 'Change category' }).props.disabled).toBe(true);
+    expect(setCategory).not.toHaveBeenCalled();
+  });
+
+  it('refreshes active category choices following a validation rejection', async () => {
+    const refetch = jest.fn(async () => ({ data: categories.filter((c) => c.id !== 'dining') }));
+    jest.mocked(useCategories).mockReturnValue({
+      ...success(categories),
+      refetch,
+    } as unknown as ReturnType<typeof useCategories>);
+    setCategory.mockRejectedValueOnce(new ApiError('invalid category', 422, {
+      code: 'VALIDATION_FAILED',
+      status: 422,
+      title: 'Validation failed',
+    }));
+    await show();
+    await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
+    await waitFor(() => expect(refetch).toHaveBeenCalled());
+    expect(screen.getByText("This category can't be used. Pick another one.")).toBeTruthy();
+    expect(setCategory).toHaveBeenCalledTimes(1);
+  });
+
 });

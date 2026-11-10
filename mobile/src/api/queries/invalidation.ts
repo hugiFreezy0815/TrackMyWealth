@@ -1,4 +1,4 @@
-import type { InfiniteData, Query, QueryClient } from '@tanstack/react-query';
+import type { InfiniteData, Query, QueryClient, QueryFilters } from '@tanstack/react-query';
 
 import { queryRoots } from './keys';
 
@@ -18,13 +18,16 @@ function isPaged(query: Query): boolean {
 }
 
 /**
- * Marks all financial data stale and refetches what is on screen. A paged list keeps only its
- * first page before the refetch: TanStack refetches every loaded page of an invalidated infinite
- * query, but a change can shift rows across pages, so the list restarts at page 0. The first
- * page stays rendered meanwhile (and while offline, when the refetch is paused).
+ * Keeps only the first page of every loaded paged list matching `filters`, then invalidates the
+ * matches. TanStack refetches every loaded page of an invalidated infinite query, but a change
+ * can shift rows across pages, so the list restarts at page 0. The first page stays rendered
+ * meanwhile (and while offline, when the refetch is paused).
  */
-export async function invalidateFinancialData(client: QueryClient): Promise<void> {
-  for (const query of client.getQueryCache().findAll({ predicate: isFinancial })) {
+export async function invalidateFromFirstPage(
+  client: QueryClient,
+  filters: QueryFilters,
+): Promise<void> {
+  for (const query of client.getQueryCache().findAll(filters)) {
     if (!isPaged(query)) continue;
     client.setQueryData<InfiniteData<unknown>>(query.queryKey, (data) =>
       data && data.pages.length > 1
@@ -32,5 +35,10 @@ export async function invalidateFinancialData(client: QueryClient): Promise<void
         : data,
     );
   }
-  await client.invalidateQueries({ predicate: isFinancial });
+  await client.invalidateQueries(filters);
+}
+
+/** Marks all financial data stale and refetches what is on screen, paged lists from page 0. */
+export function invalidateFinancialData(client: QueryClient): Promise<void> {
+  return invalidateFromFirstPage(client, { predicate: isFinancial });
 }

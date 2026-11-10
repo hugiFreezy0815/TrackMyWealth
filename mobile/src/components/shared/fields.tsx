@@ -202,20 +202,26 @@ export function AmountField({
 }
 
 export type PickerOption = ChipOption;
-/** A single choice among currencies: a labelled radio group of chips (`ChipGroup`). */
-export function CurrencyPicker({
-  label,
-  value,
-  options,
-  onChange,
-  disabled = false,
-}: {
+export type ChoiceFieldProps = {
   label: string;
   value: string | null;
   options: PickerOption[];
   onChange: (value: string) => void;
   disabled?: boolean;
-}) {
+  /** A server or input error, announced as an alert under the choices. */
+  error?: string;
+  hint?: string;
+};
+/** A single choice among a few options: a labelled radio group of chips (`ChipGroup`). */
+export function ChoiceField({
+  label,
+  value,
+  options,
+  onChange,
+  disabled = false,
+  error,
+  hint,
+}: ChoiceFieldProps) {
   const theme = useTheme();
   return (
     <View style={{ gap: Spacing.two }}>
@@ -227,8 +233,17 @@ export function CurrencyPicker({
         onSelect={onChange}
         disabled={disabled}
       />
+      <FieldMessages hint={hint} error={error} />
     </View>
   );
+}
+
+/**
+ * A choice among a few currencies (the overview's scope, the first-run workspace currency).
+ * For the whole ISO list use `SelectField` with `currencyOptions`.
+ */
+export function CurrencyPicker(props: ChoiceFieldProps) {
+  return <ChoiceField {...props} />;
 }
 
 export function isValidIsoDate(value: string): boolean {

@@ -1,38 +1,59 @@
-import { useState, useSyncExternalStore } from 'react';
-import { onlineManager } from '@tanstack/react-query';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+
+import { ApiError } from '@/api/client';
+import { problemReaction } from '@/api/problems';
+import { useConflict } from '@/api/queries/conflict';
+import { invalidateFinancialData } from '@/api/queries/invalidation';
+import { queryKeys } from '@/api/queries/keys';
 import {
   useAccount,
-  useAccounts,
   useAccountArchiveAction,
   useAccountPositions,
   useAccountTransactions,
+  useAccounts,
   useArchivedAccounts,
   useCategories,
   useChangeTransactionCategory,
   useUncategorizedCount,
   type TransactionSort,
 } from '@/api/queries/resources';
-import { useConflict } from '@/api/queries/conflict';
-import { ApiError } from '@/api/client';
-import { problemReaction } from '@/api/problems';
 import {
   ActionButton,
   Amount,
   ChipGroup,
   ConflictDialog,
-  Dialog,
   EmptyState,
   ErrorBanner,
   LoadingSkeleton,
   OfflineBanner,
-  ValueStatusBadge,
 } from '@/components/shared';
 import { Spacing, TypeScale } from '@/constants/theme';
-import { formatDate } from '@/format/date';
+import { showToast } from '@/features/shell/toast';
+import { useOnline } from '@/hooks/use-online';
 import { useTheme } from '@/hooks/use-theme';
-import { accountValuation, categoryName, uniqueTransactions, type Transaction } from './model';
+
+import {
+  ActionsDialog,
+  ArchiveDialog,
+  CategoryPickerDialog,
+  SortDialog,
+  ValueExplanationSheet,
+  sortMessageId,
+} from './account-dialogs';
+import { AccountHeaderCard, ArchivedBanner } from './account-header';
+import {
+  accountTypeLabel,
+  accountValuation,
+  asOfLine,
+  hasUnknownCategory,
+  uniqueTransactions,
+  valueSource,
+  valueSourceLabel,
+  type Transaction,
+} from './model';
 import { TransactionResults } from './transaction-results';
 
 export type AccountDetailProps = {
@@ -43,109 +64,118 @@ export type AccountDetailProps = {
   selectedTransactionId?: string | null;
 };
 
-const SORTS: TransactionSort[] = [
-  'bookingDate,desc',
-  'bookingDate,asc',
-  'amount,desc',
-  'amount,asc',
-];
-const SORT_KEYS = ['account.newest', 'account.oldest', 'account.largest', 'account.smallest'];
+type OpenDialog = 'actions' | 'sort' | 'archive' | 'value' | null;
 
-export function AccountDetail({
-  accountId,
-  onBack,
-  onTransaction,
-  onImport,
-  selectedTransactionId,
-}: AccountDetailProps) {
+const isNotFound = (error: unknown) =>
+  error instanceof ApiError &&
+  (error.status === 404 || problemReaction(error).sentCode === 'NOT_FOUND');
+
+/** Pull-to-refresh: every financial query reloads, paged lists from page 0, filter and sort kept. */
+export function useAccountRefresh() {
+  const client = useQueryClient();
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await invalidateFinancialData(client);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [client]);
+  return { refreshing, refresh };
+}
+
+export function AccountDetail({ accountId, onBack, onTransaction, onImport, selectedTransactionId }: AccountDetailProps) {
   const intl = useIntl();
   const theme = useTheme();
-  const online = useSyncExternalStore(
-    (subscribe) => onlineManager.subscribe(subscribe),
-    () => onlineManager.isOnline(),
-    () => true,
-  );
+  const online = useOnline();
+  const client = useQueryClient();
   const [uncategorized, setUncategorized] = useState(false);
   const [sort, setSort] = useState<TransactionSort>('bookingDate,desc');
-  const [tab, setTab] = useState('activity');
+  const [tab, setTab] = useState<'positions' | 'activity'>('activity');
   const [categoryTarget, setCategoryTarget] = useState<Transaction | null>(null);
-  const [archiveConfirmation, setArchiveConfirmation] = useState(false);
-  const [showActions, setShowActions] = useState(false);
-  const [showSort, setShowSort] = useState(false);
-  const [showValue, setShowValue] = useState(false);
+  const [dialog, setDialog] = useState<OpenDialog>(null);
   const [writeError, setWriteError] = useState<unknown>(null);
+  const retryWrite = useRef<(() => void) | null>(null);
   const conflict = useConflict();
+
   const account = useAccount(accountId);
   const summary = account.data;
   const archived = summary?.status === 'ARCHIVED';
+  const hasLedger = !!summary?.hasTransactions;
   const activeAccounts = useAccounts(summary?.portfolioId);
   const archivedAccounts = useArchivedAccounts(summary?.portfolioId ?? '', archived);
   const value = accountValuation(summary, activeAccounts.data, archivedAccounts.data);
   const categories = useCategories();
-  const transactions = useAccountTransactions(
-    accountId,
-    uncategorized,
-    sort,
-    !!summary?.hasTransactions,
-  );
-  const count = useUncategorizedCount(accountId, !!summary?.hasTransactions);
+  const count = useUncategorizedCount(accountId, hasLedger);
+  const transactions = useAccountTransactions(accountId, uncategorized, sort, hasLedger);
   const positions = useAccountPositions(accountId, !!summary?.holdsPositions);
   const categoryWrite = useChangeTransactionCategory(accountId);
   const archiveWrite = useAccountArchiveAction(accountId);
   const records = uniqueTransactions(transactions.data?.pages ?? []);
   const total = transactions.data?.pages[0]?.page.totalElements ?? 0;
   const countValue = count.data ?? 0;
-  const refreshing = account.isRefetching || transactions.isRefetching;
   const locked = !online || archived || categoryWrite.isPending || archiveWrite.isPending;
 
-  const refresh = () => {
-    void Promise.allSettled([
-      account.refetch(),
-      activeAccounts.refetch(),
-      ...(archived ? [archivedAccounts.refetch()] : []),
-      ...(summary?.hasTransactions
-        ? [transactions.refetch(), count.refetch(), categories.refetch()]
-        : []),
-      ...(summary?.holdsPositions ? [positions.refetch()] : []),
-    ]);
-  };
+  // Spec S3: the chip is hidden at 0 and the filter falls back to All (server count, page 0).
+  // Adjusted while rendering, so the stale filter never reaches a request or a frame.
+  if (uncategorized && count.data === 0) setUncategorized(false);
 
-  async function changeCategory(categoryId: string) {
-    if (!categoryTarget || locked) return;
+  // Spec S3 row 4: a category id the cached list lacks triggers one reload of /categories.
+  const reloadedCategories = useRef(false);
+  const unknownCategory =
+    categories.isSuccess && hasUnknownCategory(records, categories.data ?? []);
+  const reloadCategories = categories.refetch;
+  useEffect(() => {
+    if (!unknownCategory || reloadedCategories.current) return;
+    reloadedCategories.current = true;
+    void reloadCategories();
+  }, [unknownCategory, reloadCategories]);
+
+  const refresh = () => void invalidateFinancialData(client);
+
+  async function runWrite(write: () => Promise<unknown>, conflictKey: QueryKey) {
     setWriteError(null);
+    retryWrite.current = null;
     try {
-      await categoryWrite.mutateAsync({
-        transactionId: categoryTarget.id,
-        categoryId,
-        version: categoryTarget.version,
-      });
-      setCategoryTarget(null);
+      await write();
     } catch (error) {
-      if (!(await conflict.handle(error, ['accounts', accountId, 'transactions']))) {
-        setWriteError(error);
+      if (await conflict.handle(error, conflictKey)) return;
+      if (isNotFound(error)) {
+        showToast('account.notFound');
+        onBack();
+        return;
       }
+      retryWrite.current = () => void runWrite(write, conflictKey);
+      setWriteError(error);
     }
   }
 
-  async function archiveOrRestore(restore: boolean) {
+  function changeCategory(categoryId: string) {
+    const target = categoryTarget;
+    if (!target || locked) return;
+    void runWrite(async () => {
+      await categoryWrite.mutateAsync({
+        transactionId: target.id,
+        categoryId,
+        version: target.version,
+      });
+      setCategoryTarget(null);
+    }, queryKeys.accountTransactionScope(accountId));
+  }
+
+  function archiveOrRestore(restore: boolean) {
     if (!summary || !online || archiveWrite.isPending) return;
-    setWriteError(null);
-    try {
-      await archiveWrite.mutateAsync({ version: summary.version, restore });
-      setArchiveConfirmation(false);
-    } catch (error) {
-      if (!(await conflict.handle(error, ['accounts', accountId]))) {
-        setWriteError(error);
-      }
-    }
+    const version = summary.version;
+    void runWrite(async () => {
+      await archiveWrite.mutateAsync({ version, restore });
+      setDialog(null);
+    }, queryKeys.account(accountId));
   }
 
   if (account.isPending && !summary) return <LoadingSkeleton count={8} height={24} />;
   if (account.isError && !summary) {
-    const notFound =
-      account.error instanceof ApiError &&
-      (account.error.status === 404 || problemReaction(account.error).sentCode === 'NOT_FOUND');
-    return notFound ? (
+    return isNotFound(account.error) ? (
       <EmptyState
         title={intl.formatMessage({ id: 'account.notFound' })}
         actionLabel={intl.formatMessage({ id: 'account.back' })}
@@ -157,6 +187,14 @@ export function AccountDetail({
   }
   if (!summary) return null;
 
+  const context = {
+    categories: categories.data ?? [],
+    loaded: records,
+    accountCurrency: summary.nativeCurrency,
+    archived,
+    includeParent: false,
+  };
+
   return (
     <View testID="account-detail" style={{ flex: 1, gap: Spacing.three }}>
       <Pressable
@@ -165,7 +203,7 @@ export function AccountDetail({
         style={{ minHeight: 44, alignSelf: 'flex-start', justifyContent: 'center' }}
       >
         <Text style={{ color: theme.brandLink }}>
-          {'‹ '}
+          <Text aria-hidden>‹ </Text>
           {intl.formatMessage({ id: 'account.back' })}
         </Text>
       </Pressable>
@@ -176,7 +214,9 @@ export function AccountDetail({
           }
         />
       ) : null}
-      {writeError ? <ErrorBanner error={writeError} onRetry={() => setWriteError(null)} /> : null}
+      {writeError ? (
+        <ErrorBanner error={writeError} onRetry={() => retryWrite.current?.()} />
+      ) : null}
       <View
         style={{
           flexDirection: 'row',
@@ -187,7 +227,14 @@ export function AccountDetail({
       >
         <View style={{ flex: 1 }}>
           <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
-            {value?.portfolioName ?? ''} · {summary.accountType} · {summary.nativeCurrency}
+            {intl.formatMessage(
+              { id: 'account.context' },
+              {
+                portfolio: value?.portfolioName ?? '–',
+                type: accountTypeLabel(summary.accountType, intl),
+                currency: summary.nativeCurrency,
+              },
+            )}
           </Text>
           <Text
             accessibilityRole="header"
@@ -199,124 +246,26 @@ export function AccountDetail({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={intl.formatMessage({ id: 'account.actions' })}
-          onPress={() => setShowActions(true)}
+          onPress={() => setDialog('actions')}
           style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
         >
           <Text style={{ color: theme.textPrimary, fontSize: 24 }}>⋯</Text>
         </Pressable>
       </View>
-      <View
-        style={{
-          padding: Spacing.three,
-          backgroundColor: theme.bgSurface,
-          borderRadius: 16,
-          gap: Spacing.two,
-        }}
-      >
-        <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
-          {intl.formatMessage({
-            id: summary.holdsPositions
-              ? 'account.marketValue'
-              : summary.manualValuation
-                ? 'account.value'
-                : 'account.balance',
-          })}
-        </Text>
-        {value ? (
-          <Pressable
-            onPress={() => setShowValue(true)}
-            accessibilityRole="button"
-            accessibilityLabel={intl.formatMessage({ id: 'account.explain' })}
-            style={{ minHeight: 44, justifyContent: 'center' }}
-          >
-            <Amount
-              value={value.balance}
-              currency={value.currency}
-              valueKnown={value.valueKnown}
-              style={{ ...TypeScale.headingLarge, color: theme.textPrimary }}
-            />
-            {value.currency !== value.workspaceCurrency &&
-            value.balanceInWorkspaceCurrency !== null ? (
-              <Amount
-                value={value.balanceInWorkspaceCurrency}
-                currency={value.workspaceCurrency}
-                approx
-                style={{ color: theme.textSecondary }}
-              />
-            ) : null}
-            <ValueStatusBadge
-              status={value.valueStatus}
-              valueSourceDate={value.valueSourceDate}
-              interactive={false}
-            />
-            <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
-              {intl.formatMessage(
-                { id: 'account.asOf' },
-                { date: formatDate(value.asOf, intl.locale) },
-              )}
-            </Text>
-          </Pressable>
-        ) : activeAccounts.isPending || archivedAccounts.isPending ? (
-          <LoadingSkeleton count={2} />
-        ) : (
-          <ErrorBanner error={activeAccounts.error ?? archivedAccounts.error} onRetry={refresh} />
-        )}
-        {summary.reconciliation.status === 'OPEN_DIFFERENCE' ? (
-          <Text style={{ color: theme.statusWarning }}>
-            ⚠ {intl.formatMessage({ id: 'account.difference' })}
-            {' · '}
-            {summary.reconciliation.asOf
-              ? formatDate(summary.reconciliation.asOf, intl.locale)
-              : ''}
-            {summary.reconciliation.openDifference && summary.reconciliation.currency ? (
-              <Amount
-                value={summary.reconciliation.openDifference}
-                currency={summary.reconciliation.currency}
-              />
-            ) : null}
-          </Text>
-        ) : summary.reconciliation.status === 'RECONCILED' ? (
-          <Text style={{ color: theme.textPrimary }}>
-            ✓ {intl.formatMessage({ id: 'account.reconciled' })}
-            {summary.reconciliation.asOf
-              ? ' · ' + formatDate(summary.reconciliation.asOf, intl.locale)
-              : ''}
-          </Text>
-        ) : ['NEVER', 'NO_OPENING_BALANCE', 'DISMISSED_DIFFERENCE'].includes(
-            summary.reconciliation.status,
-          ) ? (
-          <Text style={{ color: theme.textSecondary }}>
-            {intl.formatMessage({
-              id:
-                summary.reconciliation.status === 'NEVER'
-                  ? 'account.neverReconciled'
-                  : summary.reconciliation.status === 'NO_OPENING_BALANCE'
-                    ? 'account.noOpening'
-                    : 'account.dismissedDifference',
-            })}
-          </Text>
-        ) : null}
-      </View>
+      <AccountHeaderCard
+        summary={summary}
+        value={value}
+        valuePending={activeAccounts.isPending || (archived && archivedAccounts.isPending)}
+        valueError={activeAccounts.error ?? archivedAccounts.error}
+        onRetryValue={refresh}
+        onExplainValue={() => setDialog('value')}
+      />
       {archived ? (
-        <View
-          style={{
-            padding: Spacing.three,
-            backgroundColor: theme.statusWarningSubtle,
-            gap: Spacing.two,
-          }}
-        >
-          <Text style={{ color: theme.textPrimary }}>
-            {intl.formatMessage(
-              { id: 'account.archived' },
-              { date: summary.archivedAt ? summary.archivedAt.slice(0, 10) : '' },
-            )}
-          </Text>
-          <ActionButton
-            label={intl.formatMessage({ id: 'account.restore' })}
-            disabled={!online || archiveWrite.isPending}
-            onPress={() => void archiveOrRestore(true)}
-          />
-        </View>
+        <ArchivedBanner
+          archivedAt={summary.archivedAt}
+          disabled={!online || archiveWrite.isPending}
+          onRestore={() => archiveOrRestore(true)}
+        />
       ) : null}
       {summary.holdsPositions ? (
         <ChipGroup
@@ -325,7 +274,7 @@ export function AccountDetail({
             { value: 'activity', label: intl.formatMessage({ id: 'account.activity' }) },
           ]}
           selected={[tab]}
-          onSelect={setTab}
+          onSelect={(next) => setTab(next === 'positions' ? 'positions' : 'activity')}
         />
       ) : null}
       {summary.holdsPositions && tab === 'positions' ? (
@@ -353,8 +302,14 @@ export function AccountDetail({
         ) : (
           <EmptyState title={intl.formatMessage({ id: 'account.noPositions' })} />
         )
-      ) : !summary.hasTransactions ? (
-        <EmptyState title={intl.formatMessage({ id: 'account.noLedger' })} />
+      ) : !hasLedger ? (
+        <EmptyState
+          title={intl.formatMessage(
+            { id: 'account.valueFrom' },
+            { basis: valueSourceLabel(valueSource(summary), intl) },
+          )}
+          description={value ? asOfLine(valueSource(summary), value, intl) : undefined}
+        />
       ) : (
         <>
           <ChipGroup
@@ -373,38 +328,40 @@ export function AccountDetail({
                   ]
                 : []),
             ]}
-            selected={[uncategorized && countValue > 0 ? 'uncategorized' : 'all']}
+            selected={[uncategorized ? 'uncategorized' : 'all']}
             onSelect={(next) => setUncategorized(next === 'uncategorized')}
           />
-          {uncategorized && count.data === 0 ? (
-            <ActionButton
-              label={intl.formatMessage({ id: 'account.all' })}
-              onPress={() => setUncategorized(false)}
-            />
-          ) : null}
           {countValue > 0 ? (
             <Pressable
+              testID="account-needs-category"
               accessibilityRole="button"
               onPress={() => setUncategorized(true)}
               style={{
                 padding: Spacing.two,
                 backgroundColor: theme.statusWarningSubtle,
                 minHeight: 44,
+                gap: Spacing.one,
               }}
             >
               <Text style={{ color: theme.statusWarning }}>
-                {intl.formatMessage({ id: 'account.needsCategory' }, { count: countValue })} ·{' '}
+                ⚠ {intl.formatMessage({ id: 'account.needsCategory' }, { count: countValue })}
+              </Text>
+              <Text style={{ color: theme.textSecondary }}>
+                {intl.formatMessage({ id: 'account.needsCategoryNote' })}
+              </Text>
+              <Text style={{ color: theme.brandLink }}>
                 {intl.formatMessage({ id: 'account.review' })}
               </Text>
             </Pressable>
           ) : null}
           <Pressable
             accessibilityRole="button"
-            onPress={() => setShowSort(true)}
+            accessibilityHint={intl.formatMessage({ id: 'account.sort' })}
+            onPress={() => setDialog('sort')}
             style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}
           >
             <Text style={{ color: theme.brandLink }}>
-              {intl.formatMessage({ id: SORT_KEYS[SORTS.indexOf(sort)] })} ⌄
+              {intl.formatMessage({ id: sortMessageId(sort) })} ⌄
             </Text>
           </Pressable>
           {count.isError ? (
@@ -418,29 +375,35 @@ export function AccountDetail({
             <ErrorBanner error={transactions.error} onRetry={() => void transactions.refetch()} />
           ) : null}
           {records.length === 0 && transactions.isSuccess ? (
-            <EmptyState
-              title={intl.formatMessage({
-                id: uncategorized ? 'account.noUncategorized' : 'account.noTransactions',
-              })}
-              description={
-                uncategorized ? undefined : intl.formatMessage({ id: 'account.importHint' })
-              }
-              actionLabel={
-                uncategorized
-                  ? intl.formatMessage({ id: 'account.all' })
-                  : intl.formatMessage({ id: 'account.import' })
-              }
-              onAction={uncategorized ? () => setUncategorized(false) : onImport}
-            />
+            uncategorized ? (
+              <EmptyState
+                title={intl.formatMessage({ id: 'account.noUncategorized' })}
+                actionLabel={intl.formatMessage({ id: 'account.showAll' })}
+                onAction={() => setUncategorized(false)}
+              />
+            ) : (
+              <EmptyState
+                title={intl.formatMessage({ id: 'account.noTransactions' })}
+                description={intl.formatMessage({ id: 'account.importHint' })}
+                actionLabel={archived ? undefined : intl.formatMessage({ id: 'account.import' })}
+                onAction={archived ? undefined : onImport}
+              />
+            )
           ) : null}
           <TransactionResults
             transactions={records}
-            categories={categories.data ?? []}
-            archived={archived}
+            selectedTransactionId={selectedTransactionId}
+            context={context}
             byDate={sort.startsWith('bookingDate')}
             onOpen={onTransaction}
-            selectedTransactionId={selectedTransactionId}
             onCategory={setCategoryTarget}
+            onEndReached={
+              transactions.hasNextPage && !transactions.isFetchNextPageError
+                ? () => {
+                    if (!transactions.isFetchingNextPage) void transactions.fetchNextPage();
+                  }
+                : undefined
+            }
           />
           {records.length ? (
             <Text accessibilityLiveRegion="polite" style={{ color: theme.textSecondary }}>
@@ -453,7 +416,7 @@ export function AccountDetail({
               onRetry={() => void transactions.fetchNextPage()}
             />
           ) : null}
-          {transactions.hasNextPage ? (
+          {transactions.hasNextPage && !transactions.isFetchNextPageError ? (
             <ActionButton
               disabled={transactions.isFetchingNextPage}
               label={intl.formatMessage({ id: 'account.loadMore' })}
@@ -463,111 +426,59 @@ export function AccountDetail({
           {transactions.isFetchingNextPage ? <ActivityIndicator /> : null}
         </>
       )}
-      <Dialog
-        visible={showActions}
-        title={intl.formatMessage({ id: 'account.actions' })}
-        onClose={() => setShowActions(false)}
-      >
-        <ActionButton
-          label={intl.formatMessage({ id: 'account.import' })}
-          onPress={() => {
-            setShowActions(false);
-            onImport();
-          }}
-        />
-        {!archived ? (
-          <ActionButton
-            label={intl.formatMessage({ id: 'account.archive' })}
-            disabled={!online}
-            onPress={() => {
-              setShowActions(false);
-              setArchiveConfirmation(true);
-            }}
-          />
-        ) : null}
-      </Dialog>
-      <Dialog
-        visible={showSort}
-        title={intl.formatMessage({ id: 'account.sort' })}
-        onClose={() => setShowSort(false)}
-      >
-        {SORTS.map((choice, index) => (
-          <Pressable
-            key={choice}
-            accessibilityRole="radio"
-            aria-checked={sort === choice}
-            onPress={() => {
-              setSort(choice);
-              setShowSort(false);
-            }}
-            style={{ minHeight: 44, justifyContent: 'center' }}
-          >
-            <Text style={{ color: theme.textPrimary }}>
-              {sort === choice ? '✓ ' : ''}
-              {intl.formatMessage({ id: SORT_KEYS[index] })}
-            </Text>
-          </Pressable>
-        ))}
-      </Dialog>
-      <Dialog
+      <ActionsDialog
+        visible={dialog === 'actions'}
+        archived={archived}
+        online={online}
+        onClose={() => setDialog(null)}
+        onImport={() => {
+          setDialog(null);
+          onImport();
+        }}
+        onArchive={() => setDialog('archive')}
+      />
+      <SortDialog
+        visible={dialog === 'sort'}
+        sort={sort}
+        onClose={() => setDialog(null)}
+        onSort={(next) => {
+          setSort(next);
+          setDialog(null);
+        }}
+      />
+      <CategoryPickerDialog
         visible={categoryTarget !== null}
-        title={intl.formatMessage({ id: 'account.changeCategory' })}
+        categories={categories.data ?? []}
+        disabled={locked}
         onClose={() => setCategoryTarget(null)}
-      >
-        {categories.data
-          ?.filter((category) => category.active && category.code !== 'UNCATEGORIZED')
-          .map((category) => (
-            <Pressable
-              key={category.id}
-              accessibilityRole="button"
-              disabled={locked}
-              onPress={() => void changeCategory(category.id)}
-              style={{ minHeight: 44, justifyContent: 'center' }}
-            >
-              <Text style={{ color: theme.textPrimary }}>
-                {categoryName(category, categories.data ?? [], intl.locale.startsWith('de'), true)}
-              </Text>
-            </Pressable>
-          ))}
-      </Dialog>
-      <Dialog
-        visible={archiveConfirmation}
-        title={intl.formatMessage({ id: 'account.archive' })}
-        onClose={() => setArchiveConfirmation(false)}
-      >
-        <Text style={{ color: theme.textPrimary }}>
-          {intl.formatMessage({ id: 'account.archiveConfirm' }, { name: summary.name })}
-        </Text>
-        <ActionButton
-          disabled={!online || archiveWrite.isPending}
-          label={intl.formatMessage({ id: 'account.archive' })}
-          onPress={() => void archiveOrRestore(false)}
-        />
-      </Dialog>
-      <Dialog
-        visible={showValue}
-        title={intl.formatMessage({ id: 'account.explain' })}
-        onClose={() => setShowValue(false)}
-      >
-        <Text style={{ color: theme.textPrimary }}>
-          {value?.asOf ? formatDate(value.asOf, intl.locale) : ''}
-        </Text>
-        <Text style={{ color: theme.textSecondary }}>{value?.warnings.join(', ')}</Text>
-      </Dialog>
+        onPick={changeCategory}
+      />
+      <ArchiveDialog
+        visible={dialog === 'archive'}
+        name={summary.name}
+        disabled={!online || archiveWrite.isPending}
+        onClose={() => setDialog(null)}
+        onConfirm={() => archiveOrRestore(false)}
+      />
+      <ValueExplanationSheet
+        visible={dialog === 'value'}
+        summary={summary}
+        value={value}
+        onClose={() => setDialog(null)}
+      />
       <ConflictDialog
         visible={conflict.conflicted}
         onClose={conflict.dismiss}
         onDiscard={() => {
           conflict.dismiss();
           setCategoryTarget(null);
-          setArchiveConfirmation(false);
+          setDialog(null);
         }}
         onReview={() => {
           conflict.dismiss();
           refresh();
         }}
       />
-      {refreshing ? <ActivityIndicator /> : null}
     </View>
   );
 }

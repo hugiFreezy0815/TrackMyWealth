@@ -94,8 +94,8 @@ statement. Importing holdings in the app is coming soon." with Discard (#367).
 | With warnings | `warnings` | warning (hidden when 0) |
 
 **Filter chips:** All {total} · New · Duplicates · Errors · Skipped. They map to
-`GET …/imports/{batchId}/rows?status={NEW|DUPLICATE|ERROR|SKIPPED}&page&size=50&sort=rowNumber,asc`.
-All sends no `status`. The rows are paged; a filter change reloads from page 0.
+`GET …/imports/{batchId}/rows?status={PARSED|DUPLICATE|ERROR|SKIPPED}&page&size=50&sort=rowNumber,asc`.
+All sends no `status`. A new row has the row status `PARSED` (the API's name); the UI calls it "New". The rows are paged; a filter change reloads from page 0.
 
 **Row** (`ImportRowResponse`):
 
@@ -106,7 +106,7 @@ All sends no `status`. The rows are paged; a filter change reloads from page 0.
 | Amount | `canonical.amount`, `canonical.currency`; original amount and rate `[advanced]` |
 | Type | `transactionType.{canonical.transactionType}` |
 | Duplicate hint | `duplicateOf`: "Matches the booking of {bookingDate}: {merchantDescription} {amount}" |
-| Include switch | `included`. Shown for NEW (default on) and DUPLICATE (default **off**). Label "Import" / "Skip" |
+| Include switch | `included`. Shown for PARSED, i.e. new (default on) and DUPLICATE (default **off**). Label "Import" / "Skip" |
 | Error | ERROR/SKIPPED rows: `error.message` (already in the member's language; `code` keys the icon). No switch |
 | Warnings | `warnings[].message` as a ⚠ line |
 | Re-check | `recheck`: `NEW` "Will now be imported", `DUPLICATE` "Now a duplicate", `REPOINTED` "Now matches another booking" |

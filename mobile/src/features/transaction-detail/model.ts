@@ -64,7 +64,7 @@ export function historyDescription(
   key: string;
   values: Record<string, string>;
 } {
-  const actor = entry.actorDisplayName ?? '';
+  const actor = entry.actorDisplayName?.trim() ?? '';
   const from = historyCategory(entry.fromCategoryId, categories, german);
   const to = historyCategory(entry.toCategoryId, categories, german);
   const values = {
@@ -86,5 +86,10 @@ export function historyDescription(
     DELETED: 'txn.history.deleted',
     RESTORED: 'txn.history.restored',
   };
-  return { key: kinds[entry.kind] ?? 'txn.history.other', values };
+  const kind = kinds[entry.kind] ?? 'txn.history.other';
+  const needsActor = ['CREATED', 'CATEGORY_CHANGED', 'CATEGORY_RESET', 'CORRECTED', 'VOIDED', 'DELETED', 'RESTORED'].includes(entry.kind) || !kinds[entry.kind];
+  let key = needsActor && !actor ? kind + '.system' : kind;
+  if (entry.kind === 'VOIDED' && !entry.reason) key += '.noReason';
+  if (entry.kind === 'IMPORTED' && !entry.importBatch) key += '.unknown';
+  return { key, values };
 }

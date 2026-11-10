@@ -81,5 +81,11 @@ describe('S4 transaction detail rules', () => {
     expect(historyDescription({ ...entry, kind: 'FUTURE_KIND' }, categories, true).key).toBe(
       'txn.history.other',
     );
+    expect(historyDescription({ ...entry, kind: 'CORRECTED', actorDisplayName: null }, categories, true).key).toBe('txn.history.corrected.system');
+    expect(historyDescription({ ...entry, kind: 'RESTORED', actorDisplayName: null }, categories, true).key).toBe('txn.history.restored.system');
+    expect(historyDescription({ ...entry, kind: 'IMPORTED', importBatch: null, actorDisplayName: null }, categories, true).key).toBe('txn.history.imported.unknown');
+    expect(historyDescription({ ...entry, kind: 'UNKNOWN', actorDisplayName: null }, categories, true).key).toBe('txn.history.other.system');
+    const inactive = categories.map((category) => ({ ...category, active: false }));
+    expect(historyDescription(entry, inactive, true).values.from).toBe('Lebensmittel');
   });
 });

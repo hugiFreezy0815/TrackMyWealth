@@ -163,6 +163,7 @@ class AccountListControllerTest {
     assertThat(chf.valueStatus()).isEqualTo(ValueStatus.CURRENT);
     assertThat(chf.asOf()).isEqualTo(today());
     assertThat(chf.archived()).isFalse();
+    assertThat(chf.hasTransactions()).isTrue();
     assertThat(chf.version()).isZero();
 
     AccountListItemResponse eur = byId.get(giro);
@@ -258,6 +259,8 @@ class AccountListControllerTest {
     assertThat(byId.get(oldVested).valueStatus()).isEqualTo(ValueStatus.STALE);
     assertThat(byId.get(oldVested).valueSourceDate()).isEqualTo(longAgo);
     assertThat(byId.get(oldVested).valueKnown()).isTrue();
+    // #492: a vested benefits account keeps no ledger, so it is no statement import target.
+    assertThat(byId.get(oldVested).hasTransactions()).isFalse();
     assertThat(byId.get(oldVested).balance()).isEqualByComparingTo("80000");
     assertThat(byId.get(oldCar).valueStatus()).isEqualTo(ValueStatus.STALE);
     assertThat(byId.get(oldCar).valueSourceDate()).isEqualTo(longAgo);

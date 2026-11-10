@@ -4,6 +4,8 @@ import { useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { ApiError } from '@/api/client';
 import { problemReaction } from '@/api/problems';
 
+import { invalidateFromFirstPage } from './invalidation';
+
 /** Preserve the caller's form values; reload only the resource behind the conflict dialog. */
 export function useConflict() {
   const client = useQueryClient();
@@ -13,7 +15,8 @@ export function useConflict() {
       return false;
     }
     setConflicted(true);
-    await client.invalidateQueries({ queryKey: key });
+    // A paged list behind the conflict restarts at page 0, like after any other write.
+    await invalidateFromFirstPage(client, { queryKey: key });
     return true;
   }
   return { conflicted, dismiss: () => setConflicted(false), handle };

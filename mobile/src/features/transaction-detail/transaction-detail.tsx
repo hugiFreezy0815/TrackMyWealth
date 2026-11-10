@@ -1,7 +1,7 @@
-import { useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useRef, useState, useSyncExternalStore, type ComponentRef, type ReactNode } from 'react';
 import { onlineManager } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, InteractionManager, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import { useConflict } from '@/api/queries/conflict';
@@ -17,6 +17,7 @@ import { problemReaction } from '@/api/problems';
 import {
   ActionButton,
   Amount,
+  BottomSheet,
   ConflictDialog,
   Dialog,
   EmptyState,
@@ -26,6 +27,8 @@ import {
   OfflineBanner,
 } from '@/components/shared';
 import { Spacing, TypeScale, Radii } from '@/constants/theme';
+import { moveAccessibilityFocus } from '@/components/shared/accessibility-focus';
+import { transactionTypeLabel } from '@/features/account-detail/model';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { formatDate, formatDateTime } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
@@ -43,6 +46,7 @@ export type TransactionDetailProps = {
   transactionId: string;
   onBack: () => void;
   onAccount?: (id: string) => void;
+  onRelatedTransaction?: (id: string) => void;
 };
 
 function DetailLabel({ children }: { children: ReactNode }) {
@@ -55,20 +59,25 @@ function CategoryPicker({
   visible,
   selected,
   busy,
+  error,
   onClose,
   onSelect,
+  onSave,
 }: {
   categories: Category[];
   visible: boolean;
   selected: string | null;
   busy: boolean;
+  error: string | null;
   onClose: () => void;
   onSelect: (id: string) => void;
+  onSave: () => void;
 }) {
   const intl = useIntl();
   const theme = useTheme();
   const [search, setSearch] = useState('');
   const german = intl.locale.startsWith('de');
+  const validChoice = categories.some((item) => item.id === selected && item.active && item.code !== 'UNCATEGORIZED');
   const choices = categories.filter((category) => {
     if (!category.active || category.code === 'UNCATEGORIZED') return false;
     const label = categoryLabel(
@@ -76,21 +85,17 @@ function CategoryPicker({
       categories.find((candidate) => candidate.id === category.parentId),
       german,
     );
-    return label
-      .toLocaleLowerCase(intl.locale)
-      .includes(search.trim().toLocaleLowerCase(intl.locale));
+    return label.toLocaleLowerCase(intl.locale).includes(search.trim().toLocaleLowerCase(intl.locale));
   });
-  return (
-    <Dialog
-      visible={visible}
-      onClose={onClose}
-      title={intl.formatMessage({ id: 'txn.picker.title' })}
-    >
+  const content = (
+    <>
       <TextInput
         accessibilityLabel={intl.formatMessage({ id: 'txn.picker.search' })}
         value={search}
         onChangeText={setSearch}
         editable={!busy}
+        autoCapitalize="none"
+        autoCorrect={false}
         placeholder={intl.formatMessage({ id: 'txn.picker.search' })}
         placeholderTextColor={theme.textSecondary}
         style={{
@@ -102,12 +107,18 @@ function CategoryPicker({
           minHeight: 44,
         }}
       />
-      <ScrollView style={{ maxHeight: 360 }} contentContainerStyle={{ gap: Spacing.one }}>
+      <ScrollView
+        accessibilityRole="radiogroup"
+        accessibilityLabel={intl.formatMessage({ id: 'txn.picker.title' })}
+        keyboardShouldPersistTaps="handled"
+        style={{ maxHeight: 360 }}
+        contentContainerStyle={{ gap: Spacing.one }}
+      >
         {choices.map((category) => (
           <Pressable
             key={category.id}
-            accessibilityRole="button"
-            aria-disabled={busy}
+            accessibilityRole="radio"
+            aria-checked={selected === category.id}
             disabled={busy}
             onPress={() => onSelect(category.id)}
             accessibilityLabel={categoryLabel(
@@ -133,8 +144,36 @@ function CategoryPicker({
           </Text>
         ) : null}
       </ScrollView>
+      {error ? <Text accessibilityRole="alert" style={{ color: theme.statusLoss }}>{error}</Text> : null}
       {busy ? <ActivityIndicator /> : null}
-    </Dialog>
+      <ActionButton
+        label={intl.formatMessage({ id: 'txn.picker.save' })}
+        disabled={busy || !validChoice}
+        onPress={onSave}
+      />
+      {Platform.OS === 'web' ? (
+        <ActionButton label={intl.formatMessage({ id: 'txn.picker.cancel' })} onPress={onClose} disabled={busy} />
+      ) : null}
+    </>
+  );
+  if (Platform.OS === 'web') {
+    return (
+      <View
+        accessibilityRole="region"
+        accessibilityLabel={intl.formatMessage({ id: 'txn.picker.title' })}
+        style={{ borderWidth: 1, borderColor: theme.borderDefault, borderRadius: Radii.card, padding: Spacing.two, gap: Spacing.two }}
+      >
+        <Text accessibilityRole="header" style={{ ...TypeScale.headingMedium, color: theme.textPrimary }}>
+          {intl.formatMessage({ id: 'txn.picker.title' })}
+        </Text>
+        {content}
+      </View>
+    );
+  }
+  return (
+    <BottomSheet visible={visible} onClose={onClose} title={intl.formatMessage({ id: 'txn.picker.title' })}>
+      {content}
+    </BottomSheet>
   );
 }
 
@@ -144,6 +183,7 @@ export function TransactionDetail({
   transactionId,
   onBack,
   onAccount,
+  onRelatedTransaction,
 }: TransactionDetailProps) {
   const intl = useIntl();
   const theme = useTheme();
@@ -156,6 +196,7 @@ export function TransactionDetail({
   const record = useTransaction(accountId, transactionId);
   const account = useAccount(accountId);
   const categories = useCategories();
+  const historicalCategories = useCategories(true);
   const history = useTransactionHistory(accountId, transactionId);
   const security = useSecurity(record.data?.securityId ?? '');
   const actions = useTransactionDetailActions(accountId, transactionId);
@@ -167,13 +208,31 @@ export function TransactionDetail({
   const [advanced, setAdvanced] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
+  const [categoryConflict, setCategoryConflict] = useState(false);
+  const [pendingReview, setPendingReview] = useState(false);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const categoryControl = useRef<ComponentRef<typeof Pressable>>(null);
   const transaction = record.data;
   const archived = account.data?.status === 'ARCHIVED';
   const changing =
     actions.setCategory.isPending || actions.resetCategory.isPending || actions.remove.isPending;
-  const locked = !online || archived || changing;
+  const locked = !online || archived || changing || record.isPlaceholderData || record.isFetching;
   const date = (value: string) => formatDate(value, intl.locale);
   const german = intl.locale.startsWith('de');
+
+  const focusCategory = () => {
+    if (Platform.OS === 'web') moveAccessibilityFocus(categoryControl.current);
+    else InteractionManager.runAfterInteractions(() => moveAccessibilityFocus(categoryControl.current));
+  };
+  const closePicker = () => {
+    setPicker(false);
+    setSelectedCategory(null);
+    setCategoryError(null);
+    focusCategory();
+  };
+  const categoryIsValid = (id: string) =>
+    !!categories.data?.some((item) => item.id === id && item.active && item.code !== 'UNCATEGORIZED');
 
   async function withVersionRetry<T>(
     perform: (version: number) => Promise<T>,
@@ -204,9 +263,9 @@ export function TransactionDetail({
   }
 
   async function saveCategory(id: string): Promise<void> {
-    if (!transaction || locked || !canChangeCategory(transaction, archived)) return;
-    setSelectedCategory(id);
+    if (!transaction || locked || !canChangeCategory(transaction, archived) || !categoryIsValid(id)) return;
     setError(null);
+    setCategoryError(null);
     try {
       await withVersionRetry(
         (version) => actions.setCategory.mutateAsync({ categoryId: id, version }),
@@ -214,9 +273,28 @@ export function TransactionDetail({
       );
       setPicker(false);
       setSelectedCategory(null);
+      setPendingReview(false);
       setNotice('txn.saved');
+      focusCategory();
     } catch (failure) {
-      await handleWriteError(failure);
+      const code = failure instanceof ApiError ? problemReaction(failure).sentCode : null;
+      if (code === 'VERSION_CONFLICT') {
+        // Never render a native sheet and a conflict modal at once.
+        setPicker(false);
+        setCategoryConflict(true);
+        setPendingReview(false);
+        await conflict.handle(failure, ['accounts', accountId, 'transactions', transactionId]);
+        return;
+      }
+      if (code === 'UNPROCESSABLE' || code === 'VALIDATION_FAILED') {
+        setCategoryError(intl.formatMessage({ id: 'txn.category.unavailable' }));
+        const refreshed = await categories.refetch();
+        if (!refreshed.data?.some((item) => item.id === id && item.active && item.code !== 'UNCATEGORIZED')) {
+          setSelectedCategory(null);
+        }
+      } else {
+        setCategoryError(intl.formatMessage({ id: 'txn.category.saveFailed' }));
+      }
     }
   }
 
@@ -249,9 +327,35 @@ export function TransactionDetail({
       setConfirmRemove(false);
       onBack();
     } catch (failure) {
+      setConfirmRemove(false);
       await handleWriteError(failure);
     }
   }
+
+  const reviewConflict = () => {
+    conflict.dismiss();
+    if (!categoryConflict) {
+      void record.refetch();
+      return;
+    }
+    setCategoryConflict(false);
+    setReviewLoading(true);
+    void Promise.all([record.refetch(), categories.refetch()])
+      .then(([fresh, latestCategories]) => {
+        if (!fresh.data) {
+          setError(fresh.error);
+          return;
+        }
+        const pending = selectedCategory;
+        if (pending && !latestCategories.data?.some((item) => item.id === pending && item.active && item.code !== 'UNCATEGORIZED')) {
+          setSelectedCategory(null);
+          setCategoryError(intl.formatMessage({ id: 'txn.category.unavailable' }));
+        }
+        setPendingReview(true);
+      })
+      .catch((failure: unknown) => setError(failure))
+      .finally(() => setReviewLoading(false));
+  };
 
   if (!transaction && record.isPending) return <LoadingSkeleton count={6} height={24} />;
   if (!transaction) {
@@ -266,11 +370,14 @@ export function TransactionDetail({
       <ErrorBanner error={record.error} onRetry={() => void record.refetch()} />
     );
   }
-  const name = transactionTitle(transaction);
-  const category = categories.data?.find((item) => item.id === transaction.categoryId);
-  const parent = categories.data?.find((item) => item.id === category?.parentId);
+  const name = transactionTitle(transaction) === transaction.transactionType
+    ? transactionTypeLabel(transaction.transactionType, intl)
+    : transactionTitle(transaction);
+  const allCategories = historicalCategories.data ?? categories.data ?? [];
+  const category = allCategories.find((item) => item.id === transaction.categoryId);
+  const parent = allCategories.find((item) => item.id === category?.parentId);
   const categoryText =
-    category && categories.data
+    category && allCategories.length
       ? categoryLabel(category, parent, german)
       : intl.formatMessage({ id: 'txn.category.fallback' });
   const changeable = canChangeCategory(transaction, archived);
@@ -434,7 +541,7 @@ export function TransactionDetail({
             : name}
         </Text>
         <DetailLabel>
-          {date(transaction.bookingDate)} · {transaction.transactionType}
+          {date(transaction.bookingDate)} · {transactionTypeLabel(transaction.transactionType, intl)}
         </DetailLabel>
         <Text style={{ color: theme.textSecondary }}>
           {intl.formatMessage({
@@ -505,14 +612,52 @@ export function TransactionDetail({
               })}
             </Text>
             {changeable ? (
-              <ActionButton
-                label={intl.formatMessage({ id: 'txn.changeCategory' })}
+              <Pressable
+                ref={categoryControl}
+                accessibilityRole="button"
+                accessibilityLabel={intl.formatMessage({ id: 'txn.changeCategory' })}
                 disabled={locked}
+                aria-disabled={locked}
                 onPress={() => {
                   setSelectedCategory(transaction.categoryId);
+                  setCategoryError(null);
+                  setPendingReview(false);
                   setPicker(true);
                 }}
+                style={{ minHeight: 44, justifyContent: 'center' }}
+              >
+                <Text style={{ color: theme.brandLink }}>{intl.formatMessage({ id: 'txn.changeCategory' })}</Text>
+              </Pressable>
+            ) : null}
+            {Platform.OS === 'web' && picker ? (
+              <CategoryPicker
+                visible
+                categories={categories.data ?? []}
+                selected={selectedCategory}
+                busy={locked}
+                error={categoryError}
+                onClose={closePicker}
+                onSelect={(id) => { setSelectedCategory(id); setCategoryError(null); }}
+                onSave={() => { if (selectedCategory) void saveCategory(selectedCategory); }}
               />
+            ) : null}
+            {reviewLoading ? <ActivityIndicator /> : null}
+            {pendingReview ? (
+              <View style={{ gap: Spacing.two }}>
+                <Text accessibilityRole="alert" style={{ color: theme.textPrimary }}>
+                  {intl.formatMessage({ id: 'txn.picker.pending' }, {
+                    category: selectedCategory
+                      ? (() => {
+                          const item = categories.data?.find((candidate) => candidate.id === selectedCategory);
+                          return item ? categoryLabel(item, categories.data?.find((parent) => parent.id === item.parentId), german) : intl.formatMessage({ id: 'txn.category.fallback' });
+                        })()
+                      : intl.formatMessage({ id: 'txn.category.fallback' }),
+                  })}
+                </Text>
+                {categoryError ? <Text accessibilityRole="alert" style={{ color: theme.statusLoss }}>{categoryError}</Text> : null}
+                <ActionButton label={intl.formatMessage({ id: 'txn.picker.saveAgain' })} disabled={locked || !selectedCategory || !categoryIsValid(selectedCategory)} onPress={() => { if (selectedCategory) void saveCategory(selectedCategory); }} />
+                <ActionButton label={intl.formatMessage({ id: 'txn.picker.discard' })} onPress={() => { setPendingReview(false); setSelectedCategory(null); setCategoryError(null); focusCategory(); }} />
+              </View>
             ) : null}
             {changeable && transaction.categoryAssignedBy === 'USER' ? (
               <ActionButton
@@ -616,7 +761,8 @@ export function TransactionDetail({
         {history.data?.pages
           .flatMap((page) => page.content)
           .map((entry, index) => {
-            const message = historyDescription(entry, categories.data ?? [], german);
+            const message = historyDescription(entry, allCategories, german);
+            const relatedId = entry.relatedTransactionId;
             return (
               <View
                 key={`${entry.occurredAt}-${index}`}
@@ -630,6 +776,11 @@ export function TransactionDetail({
                   {intl.formatMessage({ id: message.key }, message.values)}
                 </Text>
                 <DetailLabel>{formatDateTime(entry.occurredAt, intl.locale)}</DetailLabel>
+                {relatedId && entry.kind === 'CORRECTED' && onRelatedTransaction ? (
+                  <Pressable accessibilityRole="link" onPress={() => onRelatedTransaction(relatedId)} style={{ minHeight: 44, justifyContent: 'center' }}>
+                    <Text style={{ color: theme.brandLink }}>{intl.formatMessage({ id: 'txn.history.openCorrected' })}</Text>
+                  </Pressable>
+                ) : null}
               </View>
             );
           })}
@@ -660,14 +811,17 @@ export function TransactionDetail({
           {intl.formatMessage({ id: 'txn.adjustmentLocked' })}
         </Text>
       ) : null}
-      {picker ? (
+
+      {Platform.OS !== 'web' && picker ? (
         <CategoryPicker
           visible
           categories={categories.data ?? []}
           selected={selectedCategory}
           busy={locked}
-          onClose={() => setPicker(false)}
-          onSelect={(id) => void saveCategory(id)}
+          error={categoryError}
+          onClose={closePicker}
+          onSelect={(id) => { setSelectedCategory(id); setCategoryError(null); }}
+          onSave={() => { if (selectedCategory) void saveCategory(selectedCategory); }}
         />
       ) : null}
       <Dialog
@@ -707,16 +861,17 @@ export function TransactionDetail({
       </Dialog>
       <ConflictDialog
         visible={conflict.conflicted}
-        onClose={conflict.dismiss}
-        onReview={() => {
-          conflict.dismiss();
-          void record.refetch();
-        }}
+        onClose={reviewConflict}
+        onReview={reviewConflict}
         onDiscard={() => {
           conflict.dismiss();
           setPicker(false);
           setSelectedCategory(null);
+          setCategoryError(null);
+          setPendingReview(false);
+          setCategoryConflict(false);
           setConfirmRemove(false);
+          focusCategory();
         }}
       />
     </View>
