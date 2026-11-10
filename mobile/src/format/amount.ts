@@ -2,6 +2,8 @@ import type { IntlShape } from 'react-intl';
 
 import type { DecimalString } from '@/api/decimal';
 
+import { decimalParts, isPlainDecimal, type DecimalParts, type SignRole } from './decimal-parts';
+
 /**
  * The UI contract of #378 (docs/ux/check-amount-format.mjs): exact decimal strings, never
  * Number(). The string goes straight into Intl.NumberFormat (NumberFormat v3), which keeps every
@@ -9,7 +11,7 @@ import type { DecimalString } from '@/api/decimal';
  */
 export type AmountOptions = {
   /** 'change' shows an explicit + on positive values. */
-  signRole?: 'balance' | 'change';
+  signRole?: SignRole;
   /** Prefix ≈ for an estimated value. */
   approx?: boolean;
   /** false for UNKNOWN values. */
@@ -20,20 +22,12 @@ export type AmountOptions = {
 
 export type AmountIntl = Pick<IntlShape, 'locale' | 'messages' | 'formatMessage'>;
 
-const PLAIN_DECIMAL = /^-?\d+(\.\d+)?$/;
 const MINUS = '−'; // U+2212 MINUS SIGN
 const NBSP = '\u00A0'; // U+00A0 between currency code and number
 const HIDDEN = '••••';
 const UNKNOWN = '–'; // U+2013 EN DASH
-// UX-02 house format (PO 2026-11-09): every UI language displays the Swiss grouping, an ASCII
-// apostrophe, and a decimal point, e.g. 1'111'111.00. Only the spoken form follows the locale.
-const DISPLAY_GROUP = "'";
-const DISPLAY_DECIMAL = '.';
-// Formatted with 'en' and the separators replaced: Latin digits, one rule for every locale.
-const DISPLAY_LOCALE = 'en';
 
 const scaleCache = new Map<string, number>();
-const formatterCache = new Map<string, Intl.NumberFormat>();
 
 /** The currency's minor-unit scale (CHF/EUR 2, JPY 0), from CLDR. */
 function currencyScale(currency: string): number {
@@ -46,61 +40,16 @@ function currencyScale(currency: string): number {
   return scale;
 }
 
-function decimalFormatter(locale: string, scale: number): Intl.NumberFormat {
-  const key = `${locale}|${scale}`;
-  let formatter = formatterCache.get(key);
-  if (!formatter) {
-    formatter = new Intl.NumberFormat(locale, {
-      style: 'decimal',
-      minimumFractionDigits: scale,
-      maximumFractionDigits: scale,
-      roundingMode: 'halfExpand', // commercial rounding, display only
-      useGrouping: true,
-    } as Intl.NumberFormatOptions);
-    formatterCache.set(key, formatter);
-  }
-  return formatter;
-}
-
-type FormattedNumber = { sign: '' | 'minus' | 'plus'; grouped: string; plain: string };
-
 function formatNumber(
   value: DecimalString,
   currency: string,
   locale: string,
   signRole: AmountOptions['signRole'],
-): FormattedNumber {
-  if (typeof value !== 'string' || !PLAIN_DECIMAL.test(value)) {
-    throw new TypeError('Expected a plain DecimalString');
-  }
-  const canonical = Intl.getCanonicalLocales(locale)[0] ?? locale;
-  const negative = value.startsWith('-');
-  // Type-only cast: NumberFormat v3 formats the string itself, the value never becomes a number.
-  const exactInput = (negative ? value.slice(1) : value) as unknown as number;
+): DecimalParts {
+  // Validate before the currency lookup, so a bad value fails the same way for every currency.
+  if (!isPlainDecimal(value)) throw new TypeError('Expected a plain DecimalString');
   const scale = currencyScale(currency);
-  const parts = decimalFormatter(DISPLAY_LOCALE, scale).formatToParts(exactInput);
-  const zero = parts.every(
-    (part) => !['integer', 'fraction'].includes(part.type) || /^0+$/.test(part.value),
-  );
-  return {
-    sign: zero ? '' : negative ? 'minus' : signRole === 'change' ? 'plus' : '',
-    grouped: parts
-      .map((part) =>
-        part.type === 'group'
-          ? DISPLAY_GROUP
-          : part.type === 'decimal'
-            ? DISPLAY_DECIMAL
-            : part.value,
-      )
-      .join(''),
-    // Screen readers read separators aloud ("apostrophe"), so the spoken form has no grouping;
-    // its decimal separator is the reader's locale ("Komma" in German).
-    plain: decimalFormatter(canonical, scale)
-      .formatToParts(exactInput)
-      .filter((part) => part.type !== 'group')
-      .map((part) => part.value)
-      .join(''),
-  };
+  return decimalParts(value, { min: scale, max: scale }, locale, signRole);
 }
 
 export function formatAmount(
