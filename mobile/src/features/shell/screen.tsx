@@ -1,6 +1,14 @@
 import { useRouter } from 'expo-router';
-import type { ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import type { ReactElement, ReactNode } from 'react';
+import {
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+  type RefreshControlProps,
+} from 'react-native';
 import { useIntl } from 'react-intl';
 
 import { ThemedText } from '@/components/themed-text';
@@ -8,6 +16,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { AmountVisibilityToggle } from '@/features/privacy/amount-visibility-toggle';
 
 import { layoutFor } from './navigation';
+import { ShellScrollProvider, useShellScrollEvents } from './scroll-events';
 
 /** W01/W06: the nominal width of the desktop detail panel. */
 export const DETAIL_PANEL_WIDTH = 360;
@@ -19,38 +28,80 @@ type Props = {
   aside?: ReactNode;
   /** The eye control on every screen (FR-CLI-005); Settings shows its own labelled switch. */
   privacyToggle?: boolean;
+  /** Pull-to-refresh for the whole screen (a `RefreshControl`). */
+  refreshControl?: ReactElement<RefreshControlProps>;
+  /** S4 transaction details use a 400px desktop side panel. */
+  detailWidth?: number;
+  /** One native SectionList owns scrolling on this screen; never nest it in a ScrollView. */
+  virtualizedNative?: boolean;
 };
 
-export function ShellScreen({ title, children, aside, privacyToggle = true }: Props) {
+export function ShellScreen({
+  title,
+  children,
+  aside,
+  privacyToggle = true,
+  refreshControl,
+  detailWidth = DETAIL_PANEL_WIDTH,
+  virtualizedNative = false,
+}: Props) {
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const layout = layoutFor(width);
   const besideContent = aside != null && layout === 'desktop';
+  const scroll = useShellScrollEvents();
+  const nativeVirtualized = virtualizedNative && Platform.OS !== 'web';
+  const frame = (
+    <View
+      style={[
+        styles.frame,
+        besideContent && styles.frameWithPanel,
+        besideContent && { maxWidth: 960 + 24 + detailWidth },
+        nativeVirtualized && { flex: 1 },
+      ]}
+    >
+      <View style={styles.content}>
+        <View style={styles.header}>
+          <ThemedText type="subtitle" role="heading" style={styles.heading}>
+            {title}
+          </ThemedText>
+          {privacyToggle && <AmountVisibilityToggle />}
+        </View>
+        <ShellScrollProvider events={scroll.events}>{children}</ShellScrollProvider>
+      </View>
+      {aside != null && (
+        <View
+          role="complementary"
+          testID="shell-detail-panel"
+          style={besideContent ? [styles.panelBeside, { width: detailWidth }] : styles.panelBelow}
+        >
+          {aside}
+        </View>
+      )}
+    </View>
+  );
+  if (nativeVirtualized) {
+    return (
+      <View
+        style={[
+          styles.scroll,
+          layout === 'phone' && styles.scrollPhone,
+          { flex: 1, backgroundColor: theme.background },
+        ]}
+      >
+        {frame}
+      </View>
+    );
+  }
   return (
     <ScrollView
       style={{ backgroundColor: theme.background }}
+      refreshControl={refreshControl}
+      onScroll={scroll.notify}
+      scrollEventThrottle={100}
       contentContainerStyle={[styles.scroll, layout === 'phone' && styles.scrollPhone]}
     >
-      <View style={[styles.frame, besideContent && styles.frameWithPanel]}>
-        <View style={styles.content}>
-          <View style={styles.header}>
-            <ThemedText type="subtitle" role="heading" style={styles.heading}>
-              {title}
-            </ThemedText>
-            {privacyToggle && <AmountVisibilityToggle />}
-          </View>
-          {children}
-        </View>
-        {aside != null && (
-          <View
-            role="complementary"
-            testID="shell-detail-panel"
-            style={besideContent ? styles.panelBeside : styles.panelBelow}
-          >
-            {aside}
-          </View>
-        )}
-      </View>
+      {frame}
     </ScrollView>
   );
 }

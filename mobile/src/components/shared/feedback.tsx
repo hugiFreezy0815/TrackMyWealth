@@ -7,6 +7,7 @@ import { problemReaction, type ClientReaction, type ProblemReaction } from '@/ap
 import { Radii, Spacing, TypeScale } from '@/constants/theme';
 import { formatDate, formatDateTime } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
+import { useEscapeKey } from './escape-key';
 
 export function EmptyState({
   title,
@@ -43,15 +44,18 @@ export function ActionButton({
   label,
   onPress,
   disabled = false,
+  accessibilityHint,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  accessibilityHint?: string;
 }) {
   const theme = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityHint={accessibilityHint}
       aria-disabled={disabled}
       disabled={disabled}
       onPress={onPress}
@@ -224,6 +228,8 @@ type DialogProps = {
   children: ReactNode;
   /** The close button's text; "Close" by default. */
   closeLabel?: string;
+  /** Prevent dismissing a modal while a form submission is in flight. */
+  closeDisabled?: boolean;
 };
 
 export function Dialog({
@@ -232,17 +238,23 @@ export function Dialog({
   onClose,
   children,
   closeLabel,
+  closeDisabled = false,
   placement = 'center',
 }: DialogProps & { placement?: 'center' | 'bottom' }) {
   const theme = useTheme();
   const intl = useIntl();
   const bottom = placement === 'bottom';
+  const requestClose = () => {
+    if (!closeDisabled) onClose();
+  };
+  useEscapeKey(visible, requestClose);
   return (
     <Modal
+      testID="shared-dialog-modal"
       transparent
       visible={visible}
       animationType={bottom ? 'slide' : 'fade'}
-      onRequestClose={onClose}
+      onRequestClose={requestClose}
     >
       <View
         style={{
@@ -272,8 +284,10 @@ export function Dialog({
           {children}
           <Pressable
             accessibilityRole="button"
-            onPress={onClose}
-            style={{ minHeight: 44, justifyContent: 'center' }}
+            disabled={closeDisabled}
+            aria-disabled={closeDisabled}
+            onPress={requestClose}
+            style={{ minHeight: 44, justifyContent: 'center', opacity: closeDisabled ? 0.5 : 1 }}
           >
             <Text style={{ ...TypeScale.labelMedium, color: theme.brandLink }}>
               {closeLabel ?? intl.formatMessage({ id: 'ui.close' })}

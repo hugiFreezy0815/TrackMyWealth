@@ -2,7 +2,7 @@ import { createIntl, createIntlCache } from 'react-intl';
 
 import de from '@/i18n/de.json';
 import en from '@/i18n/en.json';
-import { formatDate, formatDateTime, formatRelativeDay } from './date';
+import { formatDate, formatDateTime, formatInstantDate, formatRelativeDay } from './date';
 
 const deIntl = createIntl({ locale: 'de-CH', messages: { ...en, ...de } }, createIntlCache());
 const enIntl = createIntl({ locale: 'en', messages: en }, createIntlCache());
@@ -38,6 +38,13 @@ describe('date formatting', () => {
   it('shows an unreadable instant as "–"', () => {
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     expect(formatDateTime('not a time', 'en')).toBe('–');
+  });
+
+  it('formats the local calendar day of an instant without a time', () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(formatInstantDate('2026-11-08T12:00:00Z', 'en')).toMatch(/^\d{1,2} Nov 2026$/);
+    expect(formatInstantDate('2026-11-08T12:00:00Z', 'de-CH')).toMatch(/^\d{2}\.11\.2026$/);
+    expect(formatInstantDate('not a time', 'en')).toBe('–');
   });
 
   it('says today and yesterday from the catalogue, else the date', () => {

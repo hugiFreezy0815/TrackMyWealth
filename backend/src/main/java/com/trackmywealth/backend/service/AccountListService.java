@@ -129,6 +129,7 @@ public class AccountListService {
         SignedAmounts.of(inWorkspace),
         inWorkspace.valueKnown(),
         ValueStatus.of(inWorkspace),
+        inOwn.valueBasis(),
         asOf,
         // The value's own date, which converting it does not change: set as long as balance is,
         // even when no FX rate gives it a value in the workspace's currency.

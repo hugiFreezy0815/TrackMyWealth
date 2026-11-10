@@ -53,6 +53,15 @@ export function formatDateTime(timestamp: string, locale: string): string {
   return `${dateText(instant, locale)}, ${time}`;
 }
 
+/** The calendar day of an instant (ISO 8601 with offset) in the device's time zone. */
+export function formatInstantDate(timestamp: string, locale: string): string {
+  const instant = new Date(timestamp);
+  if (typeof timestamp !== 'string' || Number.isNaN(instant.getTime())) {
+    return unreadable(timestamp);
+  }
+  return dateText(instant, locale);
+}
+
 const localDay = (day: Date) =>
   [
     day.getFullYear(),

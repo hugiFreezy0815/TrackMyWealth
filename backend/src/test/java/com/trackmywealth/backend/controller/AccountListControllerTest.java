@@ -15,6 +15,7 @@ import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.SignedAmounts;
+import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
@@ -160,6 +161,7 @@ class AccountListControllerTest {
     assertThat(chf.workspaceCurrency()).isEqualTo("CHF");
     assertThat(chf.balanceInWorkspaceCurrency()).isEqualByComparingTo("5000");
     assertThat(chf.valueKnown()).isTrue();
+    assertThat(chf.valueBasis()).isEqualTo(ValueBasisValues.LEDGER_FROM_OPENING_BALANCE);
     assertThat(chf.valueStatus()).isEqualTo(ValueStatus.CURRENT);
     assertThat(chf.asOf()).isEqualTo(today());
     assertThat(chf.archived()).isFalse();
@@ -178,6 +180,7 @@ class AccountListControllerTest {
     assertThat(loan.balance()).isEqualByComparingTo("-10000");
     assertThat(loan.balanceInWorkspaceCurrency()).isEqualByComparingTo("-10000");
     assertThat(loan.valueStatus()).isEqualTo(ValueStatus.ESTIMATED);
+    assertThat(loan.valueBasis()).isEqualTo(ValueBasisValues.ORIGINAL_PRINCIPAL);
   }
 
   @Test
@@ -256,6 +259,9 @@ class AccountListControllerTest {
 
     Map<UUID, AccountListItemResponse> byId = byId(list(token, ""));
 
+    assertThat(byId.get(oldVested).valueBasis()).isEqualTo(ValueBasisValues.LATEST_SNAPSHOT);
+    assertThat(byId.get(oldCar).valueBasis()).isEqualTo(ValueBasisValues.MANUAL_VALUATION);
+    assertThat(byId.get(nothing).valueBasis()).isNull();
     assertThat(byId.get(oldVested).valueStatus()).isEqualTo(ValueStatus.STALE);
     assertThat(byId.get(oldVested).valueSourceDate()).isEqualTo(longAgo);
     assertThat(byId.get(oldVested).valueKnown()).isTrue();
