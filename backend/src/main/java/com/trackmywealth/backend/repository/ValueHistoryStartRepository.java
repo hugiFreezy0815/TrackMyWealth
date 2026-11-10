@@ -2,6 +2,9 @@ package com.trackmywealth.backend.repository;
 
 import java.sql.Types;
 import java.time.LocalDate;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -41,10 +44,46 @@ public class ValueHistoryStartRepository {
       ) activity
       """;
 
+  /**
+   * Per-account dated evidence, read once for the whole chart instead of at every history point.
+   * A missing opening date must not imply the account existed indefinitely. Valid backdated
+   * bookings, snapshots and manual valuations still predate the account record when appropriate.
+   */
+  private static final String FIRST_EVIDENCE =
+      """
+      SELECT account_id, MIN(activity_date) FROM (
+        SELECT t.account_id, t.booking_date AS activity_date
+          FROM transaction t
+          WHERE t.account_id IN (:accountIds) AND t.deleted_at IS NULL
+            AND t.voided_at IS NULL AND t.replaces_transaction_id IS NULL
+        UNION ALL
+        SELECT s.account_id, s.snapshot_date
+          FROM account_snapshot s
+          WHERE s.account_id IN (:accountIds) AND s.withdrawn_at IS NULL
+        UNION ALL
+        SELECT v.account_id, v.valuation_date
+          FROM custom_asset_valuation v
+          WHERE v.account_id IN (:accountIds)
+      ) events GROUP BY account_id
+      """;
+
   private final NamedParameterJdbcTemplate jdbcTemplate;
 
   public ValueHistoryStartRepository(NamedParameterJdbcTemplate jdbcTemplate) {
     this.jdbcTemplate = jdbcTemplate;
+  }
+
+  public Map<UUID, LocalDate> firstEvidence(Collection<UUID> accountIds) {
+    if (accountIds.isEmpty()) {
+      return Map.of();
+    }
+    Map<UUID, LocalDate> result = new HashMap<>();
+    jdbcTemplate.query(
+        FIRST_EVIDENCE,
+        new MapSqlParameterSource("accountIds", accountIds),
+        rs -> result.put(
+            rs.getObject("account_id", UUID.class), rs.getObject("min", LocalDate.class)));
+    return Map.copyOf(result);
   }
 
   public LocalDate firstActivity(UUID workspaceId, @Nullable UUID portfolioId, LocalDate today) {

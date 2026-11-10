@@ -24,6 +24,7 @@ import com.trackmywealth.backend.validation.CurrencyCodes;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumMap;
@@ -118,6 +119,8 @@ public class ValueHistoryService {
     LocalDate from =
         period.start(today, historyStartRepository.firstActivity(actor.workspaceId(), portfolioId, today));
     List<LocalDate> dates = period.dates(from, today);
+    Map<UUID, LocalDate> firstEvidence =
+        historyStartRepository.firstEvidence(accounts.stream().map(Account::getId).toList());
     Map<UUID, PortfolioPlacement> placements =
         withSections ? accountService.portfolioPlacementsOf(accounts) : Map.of();
     List<Point> points = new ArrayList<>(dates.size());
@@ -126,7 +129,7 @@ public class ValueHistoryService {
     ValueHistorySnapshot last = null;
     boolean complete = true;
     for (LocalDate date : dates) {
-      List<Account> eligible = onDate(accounts, date, businessDateService.zone());
+      List<Account> eligible = onDate(accounts, date, businessDateService.zone(), firstEvidence);
       ValueHistorySnapshot snapshot = snapshot(eligible, currency, date, placements, warnings);
       points.add(new Point(date, snapshot.value(), snapshot.estimated()));
       complete &= snapshot.complete();
@@ -183,8 +186,12 @@ public class ValueHistoryService {
     LocalDate from = today.minusMonths(1);
     Set<String> currencies = new TreeSet<>();
     portfolios.forEach(portfolio -> currencies.add(portfolio.getPortfolioCurrency()));
-    List<Account> eligibleAtStart = onDate(accounts, from, businessDateService.zone());
-    List<Account> eligibleAtEnd = onDate(accounts, today, businessDateService.zone());
+    Map<UUID, LocalDate> firstEvidence =
+        historyStartRepository.firstEvidence(accounts.stream().map(Account::getId).toList());
+    List<Account> eligibleAtStart =
+        onDate(accounts, from, businessDateService.zone(), firstEvidence);
+    List<Account> eligibleAtEnd =
+        onDate(accounts, today, businessDateService.zone(), firstEvidence);
     Map<UUID, List<Account>> groups = new HashMap<>();
     for (Account account : accounts) {
       groups
@@ -250,9 +257,26 @@ public class ValueHistoryService {
   }
 
   private static List<Account> onDate(
-      Collection<Account> accounts, LocalDate date, java.time.ZoneId businessZone) {
+      Collection<Account> accounts,
+      LocalDate date,
+      ZoneId businessZone,
+      Map<UUID, LocalDate> firstEvidence) {
     return accounts.stream()
-        .filter(account -> account.getOpenedAt() == null || !date.isBefore(account.getOpenedAt()))
+        .filter(
+            account -> {
+              LocalDate created =
+                  account.getCreatedAt() == null
+                      ? null
+                      : account.getCreatedAt().atZoneSameInstant(businessZone).toLocalDate();
+              LocalDate inception = account.getOpenedAt() != null ? account.getOpenedAt() : created;
+              LocalDate evidence = firstEvidence.get(account.getId());
+              if (evidence != null && (inception == null || evidence.isBefore(inception))) {
+                inception = evidence;
+              }
+              // No known start date: don't manufacture historic balances. A createdAt date is
+              // available for persisted accounts; this fallback is defensive only.
+              return inception != null && !date.isBefore(inception);
+            })
         .filter(
             account ->
                 account.getArchivedAt() == null

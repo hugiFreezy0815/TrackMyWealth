@@ -374,6 +374,24 @@ class NetWorthControllerTest {
   }
 
   @Test
+  void newlyCreatedAccountWithoutHistoricalEvidenceDoesNotAppearBeforeCreation() throws Exception {
+    String token = bootstrapAdministrator();
+    UUID cash = createAccount(token, cash("New cash", createPortfolio(token, "Bank", "CHF").id())).id();
+    seedOpeningBalance(cash, "2000");
+
+    ValueHistoryResponse history = history(token, "1M");
+    // Backdated opening snapshots are legitimate evidence, but the value must not be
+    // fabricated before the first dated source.
+    LocalDate earliest = today().minusDays(3);
+    assertThat(history.points().stream()
+            .filter(point -> point.date().isBefore(earliest))
+            .map(ValueHistoryResponse.Point::value))
+        .allSatisfy(value -> assertThat(value).isEqualByComparingTo("0"));
+    assertThat(history.points().get(history.points().size() - 1).value())
+        .isEqualByComparingTo("2000");
+  }
+
+  @Test
   void invalidHistoryPeriodIsRejectedWithValidationFailed() {
     String token = bootstrapAdministrator();
 
