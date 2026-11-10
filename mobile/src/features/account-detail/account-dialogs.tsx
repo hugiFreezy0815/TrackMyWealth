@@ -7,12 +7,7 @@ import { formatDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
 import { dataWarningMessageIds } from '@/features/overview/overview-model';
 
-import {
-  categoryName,
-  type AccountListItem,
-  type AccountSummary,
-  type Category,
-} from './model';
+import { categoryName, type AccountListItem, type AccountSummary, type Category } from './model';
 
 export const SORTS: readonly { value: TransactionSort; messageId: string }[] = [
   { value: 'bookingDate,desc', messageId: 'account.newest' },
@@ -50,20 +45,30 @@ export function ActionsDialog({
     >
       <ActionButton
         label={intl.formatMessage({ id: 'account.import' })}
-        disabled={archived}
+        disabled={archived || !online}
+        accessibilityHint={
+          archived
+            ? intl.formatMessage({ id: 'account.archivedReason' })
+            : !online
+              ? intl.formatMessage({ id: 'account.offlineImportDisabled' })
+              : undefined
+        }
         onPress={onImport}
       />
-      {archived ? (
+      {archived || !online ? (
         <Text style={{ color: theme.textSecondary }}>
-          {intl.formatMessage({ id: 'account.archivedReason' })}
+          {intl.formatMessage({
+            id: archived ? 'account.archivedReason' : 'account.offlineImportDisabled',
+          })}
         </Text>
-      ) : (
+      ) : null}
+      {!archived ? (
         <ActionButton
           label={intl.formatMessage({ id: 'account.archive' })}
           disabled={!online}
           onPress={onArchive}
         />
-      )}
+      ) : null}
     </Dialog>
   );
 }

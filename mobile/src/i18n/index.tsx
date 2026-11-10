@@ -1,4 +1,5 @@
-import { useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
+import { Platform } from 'react-native';
 import { IntlProvider } from 'react-intl';
 
 import { DEVICE_LOCALE } from './device-intl';
@@ -40,6 +41,13 @@ export function AppIntlProvider({
 }) {
   const locale = resolveLocale(language);
   const messages = useMemo(() => messagesFor(locale), [locale]);
+  useEffect(() => {
+    // Expo's +html.tsx is rendered only once at build time. Reflect the member's chosen
+    // BCP 47 locale after hydration and whenever the authenticated language changes.
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      document.documentElement.lang = locale;
+    }
+  }, [locale]);
   return (
     <IntlProvider locale={locale} defaultLocale="en" messages={messages}>
       {children}

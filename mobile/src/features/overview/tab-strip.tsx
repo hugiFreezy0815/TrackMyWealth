@@ -2,56 +2,100 @@ import type { ReactNode } from 'react';
 import type { IntlShape } from 'react-intl';
 import { Platform, Pressable, ScrollView, Text, View } from 'react-native';
 
+import type { components } from '@/api/schema';
 import { Radii, Spacing, TypeScale } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { msg } from './overview-text';
 
 const MAX_UNTRUNCATED = 24;
+type Portfolio = components['schemas']['PortfolioListItemResponse'];
 
-/**
- * S1 `PortfolioTabs`. Until the Portfolio View (US-04-12) merges, only the first tab and
- * "+ Add portfolio" show. Phone: the strip scrolls horizontally; web: it wraps.
- */
+/** Tabs are navigation: the selected portfolio renders S2; the first tab renders S1. */
 export function TabStrip({
   name,
   intl,
   offline,
   onAddPortfolio,
+  portfolios = [],
+  selectedId = null,
+  onOverview,
+  onPortfolio,
 }: {
   name: string | null;
   intl: IntlShape;
   offline: boolean;
   onAddPortfolio: () => void;
+  portfolios?: readonly Portfolio[];
+  selectedId?: string | null;
+  onOverview?: () => void;
+  onPortfolio?: (id: string) => void;
 }) {
   const theme = useTheme();
   const label = name || msg(intl, 'overview.tab.allPortfolios');
-  const tabs: ReactNode = (
-    <>
-      <View
-        accessible
+  const tab = (text: string, selected: boolean, onPress?: () => void, key?: string): ReactNode => {
+    const style = {
+      minHeight: 44,
+      maxWidth: 256,
+      paddingHorizontal: 16,
+      justifyContent: 'center',
+      borderRadius: Radii.pill,
+      backgroundColor: selected ? theme.bgInverse : theme.bgSurface,
+      borderWidth: selected ? 0 : 1,
+      borderColor: theme.borderInteractive,
+    } as const;
+    return onPress ? (
+      <Pressable
+        key={key}
         accessibilityRole="tab"
-        accessibilityState={{ selected: true }}
-        // react-native-web ignores accessibilityState; RN maps aria-* back on native.
-        aria-selected
-        accessibilityLabel={label}
-        style={{
-          minHeight: 44,
-          maxWidth: 256,
-          paddingHorizontal: 16,
-          justifyContent: 'center',
-          borderRadius: Radii.pill,
-          backgroundColor: theme.bgInverse,
-        }}
+        accessibilityLabel={text}
+        accessibilityState={{ selected }}
+        aria-selected={selected}
+        onPress={onPress}
+        style={style}
       >
         <Text
-          numberOfLines={label.length > MAX_UNTRUNCATED ? 1 : undefined}
-          style={{ ...TypeScale.labelMedium, color: theme.bgSurface }}
+          numberOfLines={text.length > MAX_UNTRUNCATED ? 1 : undefined}
+          style={{
+            ...TypeScale.labelMedium,
+            color: selected ? theme.bgSurface : theme.textPrimary,
+          }}
         >
-          {label}
+          {text}
+        </Text>
+      </Pressable>
+    ) : (
+      <View
+        key={key}
+        accessible
+        accessibilityRole="tab"
+        accessibilityState={{ selected }}
+        aria-selected={selected}
+        accessibilityLabel={text}
+        style={style}
+      >
+        <Text
+          numberOfLines={text.length > MAX_UNTRUNCATED ? 1 : undefined}
+          style={{
+            ...TypeScale.labelMedium,
+            color: selected ? theme.bgSurface : theme.textPrimary,
+          }}
+        >
+          {text}
         </Text>
       </View>
-      {/* The spec's last tab: a tablist may only hold tabs, so it is an unselected tab that
-          starts the add-portfolio flow instead of switching content. */}
+    );
+  };
+  const tabs: ReactNode = (
+    <>
+      {tab(label, selectedId == null, onOverview, 'all')}
+      {portfolios.map((item) =>
+        tab(
+          item.name,
+          item.id === selectedId,
+          onPortfolio ? () => onPortfolio(item.id) : undefined,
+          item.id,
+        ),
+      )}
       <Pressable
         accessibilityRole="tab"
         accessibilityState={{ selected: false, disabled: offline }}
@@ -76,7 +120,6 @@ export function TabStrip({
       </Pressable>
     </>
   );
-
   if (Platform.OS === 'web') {
     return (
       <View

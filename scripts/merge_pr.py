@@ -43,14 +43,23 @@ MOBILE_NATIVE_PATHS = (
     ".github/workflows/mobile-native-ci.yml",
 )
 
+BACKEND_CI_PATHS = (
+    "backend/",
+    "docker-compose.yml",
+    ".env.example",
+    "api/",
+    ".github/workflows/backend-ci.yml",
+)
+
 # Job name -> (workflow it belongs to, the paths whose change makes that workflow run on a pull
 # request; None when it runs on every pull request). A check run is named after its job. A path
 # ending in "/" covers everything below it.
 REQUIRED_CHECKS: Dict[str, Tuple[str, Optional[Tuple[str, ...]]]] = {
     "semgrep": ("Semgrep", None),
     "gitleaks": ("Secret scanning", None),
-    "test": ("Backend CI", ("backend/", "api/", ".github/workflows/backend-ci.yml")),
-    "sql-lint": ("Backend CI", ("backend/", "api/", ".github/workflows/backend-ci.yml")),
+    # #544: the Backend CI build also checks that Compose forwards the backend's secrets.
+    "test": ("Backend CI", BACKEND_CI_PATHS),
+    "sql-lint": ("Backend CI", BACKEND_CI_PATHS),
     # #372: oasdiff of main's api/openapi.yaml against the PR's, whenever the code or the contract
     # (or the check itself) changes.
     "api-breaking": (
