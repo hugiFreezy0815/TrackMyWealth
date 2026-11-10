@@ -526,7 +526,9 @@ export function TransactionDetail({
       ? {
           key: 'quantity',
           label: intl.formatMessage({ id: 'txn.quantity' }),
-          value: <Figure testID="transaction-quantity" value={transaction.quantity} kind="quantity" />,
+          value: (
+            <Figure testID="transaction-quantity" value={transaction.quantity} kind="quantity" />
+          ),
         }
       : null,
     moneyRow(
