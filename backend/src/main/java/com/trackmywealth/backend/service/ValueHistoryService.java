@@ -124,7 +124,7 @@ public class ValueHistoryService {
     ValueHistoryPeriod period = ValueHistoryPeriod.parse(periodParam);
     LocalDate today = businessDateService.today();
     LocalDate from =
-        period.start(today, historyStartRepository.firstActivity(actor.workspaceId(), portfolioId, today));
+        period.start(today, historyStartRepository.firstActivity(actor.workspaceId(), null, today));
     List<LocalDate> dates = period.dates(from, today);
     List<UUID> allIds = accounts.stream().map(Account::getId).toList();
     Map<UUID, LocalDate> firstEvidence = historyStartRepository.firstEvidence(allIds);
@@ -162,6 +162,10 @@ public class ValueHistoryService {
     ValueHistorySnapshot start = Objects.requireNonNull(first);
     ValueHistorySnapshot end = Objects.requireNonNull(last);
     List<UUID> accountIds = accounts.stream().map(Account::getId).toList();
+    CashFlowContribution membership =
+        membershipMovements(accounts, from, today, currency, portfolioId, historyStates);
+    complete &= membership.complete();
+    warnings.addAll(membership.warnings());
     Change change;
     if (portfolioId == null) {
       CashFlowContribution contributions =
@@ -169,9 +173,16 @@ public class ValueHistoryService {
       complete &= contributions.complete();
       warnings.addAll(contributions.warnings());
       change =
-          change(start.value(), end.value(),
-              contributions.complete() ? contributions.amount() : null);
+          change(
+              start.value(),
+              end.value(),
+              contributions.complete() ? contributions.amount() : null,
+              membership.complete() ? membership.amount() : null);
     } else {
+      Map<UUID, Account> accountsById = new HashMap<>();
+      for (Account account : accounts) {
+        accountsById.put(account.getId(), account);
+      }
       PortfolioCapitalFlows flows =
           cashFlowService.portfolioCapitalFlows(
               accountIds,
@@ -179,18 +190,24 @@ public class ValueHistoryService {
               today,
               currency,
               (accountId, date) -> {
-                Account account = accounts.stream()
-                    .filter(a -> a.getId().equals(accountId)).findFirst().orElse(null);
+                Account account = accountsById.get(accountId);
                 return account != null
-                    && portfolioId.equals(portfolioOfOnDate(
-                        account, date, businessDateService.zone(), historyStates));
+                    && portfolioId.equals(
+                        portfolioOfOnDate(
+                            account, date, businessDateService.zone(), historyStates));
               });
       complete &= flows.complete();
       warnings.addAll(flows.warnings());
+      BigDecimal capitalMovements =
+          flows.complete() && membership.complete()
+              ? flows.capitalMovements().add(membership.amount())
+              : null;
       change =
-          change(start.value(), end.value(),
+          change(
+              start.value(),
+              end.value(),
               flows.complete() ? flows.contributions() : null,
-              flows.complete() ? flows.capitalMovements() : null);
+              capitalMovements);
     }
     List<SectionChange> sections = new ArrayList<>();
     if (withSections) {
@@ -306,6 +323,56 @@ public class ValueHistoryService {
       }
     }
     return new ValueHistorySnapshot(sum(valuations), complete, estimated, Map.copyOf(sections));
+  }
+
+
+  /**
+   * An account changing portfolio or entering/leaving the tracked balance is a capital movement,
+   * not a market gain/loss. Read its value at the effective transition date, rather than treating
+   * the abrupt change in the chart as performance.
+   */
+  private CashFlowContribution membershipMovements(
+      List<Account> accounts,
+      LocalDate from,
+      LocalDate to,
+      String currency,
+      @Nullable UUID portfolioId,
+      Map<UUID, List<AccountHistoryState>> historyStates) {
+    BigDecimal total = BigDecimal.ZERO;
+    Set<String> warnings = new TreeSet<>();
+    boolean complete = true;
+    ZoneId zone = businessDateService.zone();
+    for (Account account : accounts) {
+      List<AccountHistoryState> states =
+          historyStates.getOrDefault(account.getId(), List.of());
+      for (int i = 1; i < states.size(); i++) {
+        AccountHistoryState before = states.get(i - 1);
+        AccountHistoryState after = states.get(i);
+        LocalDate day = after.effectiveAt().atZoneSameInstant(zone).toLocalDate();
+        if (!day.isAfter(from) || day.isAfter(to)) {
+          continue;
+        }
+        boolean beforeIncluded =
+            "ACTIVE".equals(before.status())
+                && (portfolioId == null || portfolioId.equals(before.portfolioId()));
+        boolean afterIncluded =
+            "ACTIVE".equals(after.status())
+                && (portfolioId == null || portfolioId.equals(after.portfolioId()));
+        if (beforeIncluded == afterIncluded) {
+          continue;
+        }
+        AccountValuation value = accountValuationService.valueIn(account, currency, day);
+        warnings.addAll(value.warnings());
+        if (!value.valueKnown()) {
+          complete = false;
+          warnings.add(account.getName() + ": value unknown at portfolio/lifecycle change");
+          continue;
+        }
+        BigDecimal signed = SignedAmounts.of(value);
+        total = total.add(afterIncluded ? signed : signed.negate());
+      }
+    }
+    return new CashFlowContribution(complete ? total : null, complete, List.copyOf(warnings));
   }
 
   private static List<Account> onDate(
