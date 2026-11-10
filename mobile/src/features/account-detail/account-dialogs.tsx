@@ -7,12 +7,7 @@ import { formatDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
 import { dataWarningMessageIds } from '@/features/overview/overview-model';
 
-import {
-  categoryName,
-  type AccountListItem,
-  type AccountSummary,
-  type Category,
-} from './model';
+import { categoryName, type AccountListItem, type AccountSummary, type Category } from './model';
 
 export const SORTS: readonly { value: TransactionSort; messageId: string }[] = [
   { value: 'bookingDate,desc', messageId: 'account.newest' },

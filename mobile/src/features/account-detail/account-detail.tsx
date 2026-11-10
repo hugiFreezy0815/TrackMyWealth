@@ -136,7 +136,8 @@ export function AccountDetail({ accountId, onBack, onTransaction, onImport }: Ac
 
   // Spec S3 row 4: a category id the cached list lacks triggers one reload of /categories.
   const reloadedCategories = useRef(false);
-  const unknownCategory = categories.isSuccess && hasUnknownCategory(records, categories.data ?? []);
+  const unknownCategory =
+    categories.isSuccess && hasUnknownCategory(records, categories.data ?? []);
   const reloadCategories = categories.refetch;
   useEffect(() => {
     if (!unknownCategory || reloadedCategories.current) return;
@@ -203,8 +204,7 @@ export function AccountDetail({ accountId, onBack, onTransaction, onImport }: Ac
         queryKeys.transaction(accountId, target.id),
       );
       await retryVersionRequired(
-        (version) =>
-          categoryWrite.mutateAsync({ transactionId: target.id, categoryId, version }),
+        (version) => categoryWrite.mutateAsync({ transactionId: target.id, categoryId, version }),
         cached?.version ?? target.version,
         () => reloadTransactionVersion(target.id),
       );
