@@ -348,7 +348,10 @@ export function TransactionDetail({
       setPendingReview(false);
       setReviewVersion(null);
       setError(failure);
-      client.removeQueries({ queryKey: queryKeys.transaction(accountId, transactionId), exact: true });
+      client.removeQueries({
+        queryKey: queryKeys.transaction(accountId, transactionId),
+        exact: true,
+      });
       refreshAfterServerChange();
       return true;
     }
@@ -581,16 +584,15 @@ export function TransactionDetail({
     : intl.formatMessage({ id: 'txn.category.fallback' });
   const changeable = canChangeCategory(transaction, archived);
   const removable = canRemove(transaction, archived);
-  const categoryEditExplanation =
-    archived
-      ? 'txn.archived'
-      : transaction.voidedAt || transaction.deletedAt
-        ? 'txn.category.removed'
-        : transaction.reconciliationAdjustment
-          ? 'txn.adjustmentLocked'
-          : !changeable
-            ? 'txn.category.locked'
-            : null;
+  const categoryEditExplanation = archived
+    ? 'txn.archived'
+    : transaction.voidedAt || transaction.deletedAt
+      ? 'txn.category.removed'
+      : transaction.reconciliationAdjustment
+        ? 'txn.adjustmentLocked'
+        : !changeable
+          ? 'txn.category.locked'
+          : null;
   const moneyRow = (label: string, amount: string | null, currency: string) =>
     amount === null
       ? null
@@ -604,8 +606,8 @@ export function TransactionDetail({
             <View style={{ gap: Spacing.one }}>
               <ErrorBanner error={security.error} onRetry={() => void security.refetch()} />
             </View>
-          ) : security.data?.displayName ?? (
-            <LoadingSkeleton count={1} />
+          ) : (
+            (security.data?.displayName ?? <LoadingSkeleton count={1} />)
           ),
         }
       : null,

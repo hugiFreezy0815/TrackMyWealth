@@ -500,7 +500,11 @@ describe('S4 transaction detail', () => {
     await render(
       <QueryClientProvider client={new QueryClient()}>
         <IntlProvider locale="en" messages={en}>
-          <TransactionDetail accountId="account-1" transactionId="transaction-1" onBack={jest.fn()} />
+          <TransactionDetail
+            accountId="account-1"
+            transactionId="transaction-1"
+            onBack={jest.fn()}
+          />
         </IntlProvider>
       </QueryClientProvider>,
     );
@@ -535,7 +539,9 @@ describe('S4 transaction detail', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
     await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
     await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
-    expect(await screen.findByText('This transaction no longer exists or is unavailable to you')).toBeTruthy();
+    expect(
+      await screen.findByText('This transaction no longer exists or is unavailable to you'),
+    ).toBeTruthy();
     expect(screen.queryByText('Migros')).toBeNull();
     await fireEvent.press(screen.getByRole('button', { name: 'Back to account' }));
     expect(onBack).toHaveBeenCalledTimes(1);
@@ -546,7 +552,11 @@ describe('S4 transaction detail', () => {
     const renderScreen = () => (
       <QueryClientProvider client={client}>
         <IntlProvider locale="en" messages={en}>
-          <TransactionDetail accountId="account-1" transactionId="transaction-1" onBack={jest.fn()} />
+          <TransactionDetail
+            accountId="account-1"
+            transactionId="transaction-1"
+            onBack={jest.fn()}
+          />
         </IntlProvider>
       </QueryClientProvider>
     );
@@ -564,7 +574,9 @@ describe('S4 transaction detail', () => {
     } as unknown as ReturnType<typeof useTransaction>);
     await view.rerender(renderScreen());
     expect(screen.queryByText('Migros')).toBeNull();
-    expect(screen.getByText('This transaction no longer exists or is unavailable to you')).toBeTruthy();
+    expect(
+      screen.getByText('This transaction no longer exists or is unavailable to you'),
+    ).toBeTruthy();
   });
 
   it('marks an account archived if the server rejects a category change', async () => {
@@ -609,7 +621,11 @@ describe('S4 transaction detail', () => {
     await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
     await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
     await fireEvent.press(await screen.findByRole('button', { name: 'Review and save again' }));
-    expect(await screen.findByText('This transaction was removed. Its category can no longer be changed.')).toBeTruthy();
+    expect(
+      await screen.findByText(
+        'This transaction was removed. Its category can no longer be changed.',
+      ),
+    ).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: 'Save again' }));
     expect(setCategory).toHaveBeenCalledTimes(1);
   });
@@ -636,7 +652,11 @@ describe('S4 transaction detail', () => {
       const renderScreen = () => (
         <QueryClientProvider client={client}>
           <IntlProvider locale="en" messages={en}>
-            <TransactionDetail accountId="account-1" transactionId="transaction-1" onBack={jest.fn()} />
+            <TransactionDetail
+              accountId="account-1"
+              transactionId="transaction-1"
+              onBack={jest.fn()}
+            />
           </IntlProvider>
         </QueryClientProvider>
       );
@@ -646,9 +666,11 @@ describe('S4 transaction detail', () => {
       expect(screen.getByText('Gross amount')).toBeTruthy();
       await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
       expect(refetch).toHaveBeenCalledTimes(1);
-      jest.mocked(useSecurity).mockReturnValue(
-        success({ displayName: 'Test Security' }) as unknown as ReturnType<typeof useSecurity>,
-      );
+      jest
+        .mocked(useSecurity)
+        .mockReturnValue(
+          success({ displayName: 'Test Security' }) as unknown as ReturnType<typeof useSecurity>,
+        );
       await view.rerender(renderScreen());
       expect(screen.getByText('Test Security')).toBeTruthy();
       expect(screen.getByText('Gross amount')).toBeTruthy();
@@ -660,7 +682,11 @@ describe('S4 transaction detail', () => {
     await render(
       <QueryClientProvider client={client}>
         <IntlProvider locale="de-CH" messages={de}>
-          <TransactionDetail accountId="account-1" transactionId="transaction-1" onBack={jest.fn()} />
+          <TransactionDetail
+            accountId="account-1"
+            transactionId="transaction-1"
+            onBack={jest.fn()}
+          />
         </IntlProvider>
       </QueryClientProvider>,
     );
