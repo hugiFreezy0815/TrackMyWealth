@@ -1,5 +1,5 @@
-import { useMemo, type ReactNode } from 'react';
-import { SectionList, Text, View } from 'react-native';
+import { useMemo, useRef, type ReactNode } from 'react';
+import { SectionList, Text, View, type ViewToken } from 'react-native';
 import { useIntl } from 'react-intl';
 
 import { TypeScale } from '@/constants/theme';
@@ -38,6 +38,26 @@ export function TransactionResults({
 }: TransactionResultsProps) {
   const intl = useIntl();
   const theme = useTheme();
+  const loadMore = useRef(onEndReached);
+  loadMore.current = onEndReached;
+  const lastTriggered = useRef<string | null>(null);
+  const lastTen = useMemo(
+    () => new Set(transactions.slice(-10).map((item) => item.id)),
+    [transactions],
+  );
+  const lastTenRef = useRef(lastTen);
+  lastTenRef.current = lastTen;
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      const trigger = loadMore.current;
+      if (!trigger || !viewableItems.some((token) => token.isViewable && token.item && lastTenRef.current.has((token.item as Transaction).id))) return;
+      // One automatic request per loaded tail; the next page produces a new tail.
+      const tail = [...lastTenRef.current].at(-1);
+      if (!tail || lastTriggered.current === tail) return;
+      lastTriggered.current = tail;
+      trigger();
+    },
+  ).current;
   const sections = useMemo(
     () =>
       groupedTransactions(transactions, byDate).map((group, index) => ({
@@ -75,8 +95,8 @@ export function TransactionResults({
           onCategory={onCategory}
         />
       )}
-      onEndReached={onEndReached}
-      onEndReachedThreshold={0.5}
+      onViewableItemsChanged={onViewableItemsChanged}
+      viewabilityConfig={{ itemVisiblePercentThreshold: 1 }}
       initialNumToRender={12}
       maxToRenderPerBatch={12}
       windowSize={7}
