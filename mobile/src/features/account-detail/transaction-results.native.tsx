@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SectionList, Text, View } from 'react-native';
 import { useIntl } from 'react-intl';
 
@@ -8,8 +8,6 @@ import { useTheme } from '@/hooks/use-theme';
 import { groupHeading, groupedTransactions, type RowContext, type Transaction } from './model';
 import { nextPageTrigger } from './pagination';
 import { TransactionLine } from './transaction-line';
-
-const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 1 };
 
 export type TransactionResultsProps = {
   transactions: Transaction[];
@@ -49,19 +47,19 @@ export function TransactionResults({
     loadMore.current = onEndReached;
     idsRef.current = ids;
   }, [onEndReached, ids]);
-  // SectionList requires a stable callback identity; refs are read only by its events.
-  const onViewableItemsChanged = useCallback(
-    ({ viewableItems }: { viewableItems: { isViewable: boolean; item: unknown }[] }) => {
-      if (!loadMore.current) return;
-      const visibleIds = viewableItems
-        .filter((token) => token.isViewable && token.item)
-        .map((token) => (token.item as Transaction).id);
-      const tail = nextPageTrigger(idsRef.current, visibleIds, lastTriggered.current);
-      if (!tail) return;
-      lastTriggered.current = tail;
-      loadMore.current();
-    },
-    [],
+  const viewabilityConfig = useMemo(() => ({ itemVisiblePercentThreshold: 1 }), []);
+  const [onViewableItemsChanged] = useState(
+    () =>
+      ({ viewableItems }: { viewableItems: { isViewable: boolean; item: unknown }[] }) => {
+        if (!loadMore.current) return;
+        const visibleIds = viewableItems
+          .filter((token) => token.isViewable && token.item)
+          .map((token) => (token.item as Transaction).id);
+        const tail = nextPageTrigger(idsRef.current, visibleIds, lastTriggered.current);
+        if (!tail) return;
+        lastTriggered.current = tail;
+        loadMore.current();
+      },
   );
   const sections = useMemo(
     () =>
@@ -101,7 +99,7 @@ export function TransactionResults({
         />
       )}
       onViewableItemsChanged={onViewableItemsChanged}
-      viewabilityConfig={VIEWABILITY_CONFIG}
+      viewabilityConfig={viewabilityConfig}
       initialNumToRender={12}
       maxToRenderPerBatch={12}
       windowSize={7}
