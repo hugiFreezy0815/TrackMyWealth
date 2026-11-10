@@ -832,7 +832,7 @@ export function TransactionDetail({
                     : 'txn.category.automatic',
               })}
             </Text>
-            {!changeable && categoryEditExplanation ? (
+            {!changeable && categoryEditExplanation && !pendingReview ? (
               <Text accessibilityRole="alert" style={{ color: theme.statusWarning }}>
                 {intl.formatMessage({ id: categoryEditExplanation })}
               </Text>
