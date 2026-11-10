@@ -244,6 +244,8 @@ export function TransactionDetail({
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [categoryConflict, setCategoryConflict] = useState(false);
   const [pendingReview, setPendingReview] = useState(false);
+  // ETag confirmed by the conflict review; never infer it from an old cached row.
+  const [reviewVersion, setReviewVersion] = useState<number | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
   const categoryControl = useRef<ComponentRef<typeof Pressable>>(null);
   const transaction = record.data;
@@ -262,6 +264,7 @@ export function TransactionDetail({
     setPicker(false);
     setSelectedCategory(null);
     setCategoryError(null);
+    setReviewVersion(null);
     focusCategory();
   };
   const categoryIsValid = (id: string) =>
@@ -309,7 +312,8 @@ export function TransactionDetail({
       !transaction ||
       locked ||
       !canChangeCategory(transaction, archived) ||
-      !categoryIsValid(id)
+      !categoryIsValid(id) ||
+      (pendingReview && reviewVersion === null)
     )
       return;
     setError(null);
@@ -317,11 +321,12 @@ export function TransactionDetail({
     try {
       await withVersionRetry(
         (version) => actions.setCategory.mutateAsync({ categoryId: id, version }),
-        transaction.version,
+        pendingReview && reviewVersion !== null ? reviewVersion : transaction.version,
       );
       setPicker(false);
       setSelectedCategory(null);
       setPendingReview(false);
+      setReviewVersion(null);
       setNotice('txn.saved');
       focusCategory();
     } catch (failure) {
@@ -331,6 +336,7 @@ export function TransactionDetail({
         setPicker(false);
         setCategoryConflict(true);
         setPendingReview(false);
+        setReviewVersion(null);
         await conflict.handle(failure, ['accounts', accountId, 'transactions', transactionId]);
         return;
       }
@@ -384,24 +390,30 @@ export function TransactionDetail({
     }
   }
 
-  const reviewConflict = () => {
-    conflict.dismiss();
-    if (!categoryConflict) {
-      void record.refetch();
-      return;
-    }
-    setCategoryConflict(false);
+  /** Do not expose Save again until the server has confirmed the fresh version. */
+  const reloadCategoryReview = () => {
     setReviewLoading(true);
+    setPendingReview(false);
+    setReviewVersion(null);
+    setCategoryError(null);
     void Promise.all([record.refetch(), categories.refetch()])
       .then(([fresh, latestCategories]) => {
-        if (!fresh.data) {
-          setError(fresh.error);
+        if (
+          !fresh.data ||
+          fresh.error ||
+          fresh.isPlaceholderData ||
+          latestCategories.error ||
+          !latestCategories.data
+        ) {
+          setCategoryError(intl.formatMessage({ id: 'txn.category.refreshFailed' }));
+          setPendingReview(true);
           return;
         }
+        setReviewVersion(fresh.data.version);
         const pending = selectedCategory;
         if (
           pending &&
-          !latestCategories.data?.some(
+          !latestCategories.data.some(
             (item) => item.id === pending && item.active && item.code !== 'UNCATEGORIZED',
           )
         ) {
@@ -410,8 +422,24 @@ export function TransactionDetail({
         }
         setPendingReview(true);
       })
-      .catch((failure: unknown) => setError(failure))
-      .finally(() => setReviewLoading(false));
+      .catch(() => {
+        setCategoryError(intl.formatMessage({ id: 'txn.category.refreshFailed' }));
+        setPendingReview(true);
+      })
+      .finally(() => {
+        setReviewLoading(false);
+        focusCategory();
+      });
+  };
+
+  const reviewConflict = () => {
+    conflict.dismiss();
+    if (!categoryConflict) {
+      void record.refetch();
+      return;
+    }
+    setCategoryConflict(false);
+    reloadCategoryReview();
   };
 
   if (!transaction && record.isPending) return <LoadingSkeleton count={6} height={24} />;
@@ -682,10 +710,12 @@ export function TransactionDetail({
                 accessibilityLabel={intl.formatMessage({ id: 'txn.changeCategory' })}
                 disabled={locked}
                 aria-disabled={locked}
+                aria-expanded={picker}
                 onPress={() => {
                   setSelectedCategory(transaction.categoryId);
                   setCategoryError(null);
                   setPendingReview(false);
+                  setReviewVersion(null);
                   setPicker(true);
                 }}
                 style={{ minHeight: 44, justifyContent: 'center' }}
@@ -718,9 +748,21 @@ export function TransactionDetail({
                     {categoryError}
                   </Text>
                 ) : null}
+                {reviewVersion === null ? (
+                  <ActionButton
+                    label={intl.formatMessage({ id: 'txn.picker.retryReview' })}
+                    disabled={reviewLoading}
+                    onPress={reloadCategoryReview}
+                  />
+                ) : null}
                 <ActionButton
                   label={intl.formatMessage({ id: 'txn.picker.saveAgain' })}
-                  disabled={locked || !selectedCategory || !categoryIsValid(selectedCategory)}
+                  disabled={
+                    locked ||
+                    reviewVersion === null ||
+                    !selectedCategory ||
+                    !categoryIsValid(selectedCategory)
+                  }
                   onPress={() => {
                     if (selectedCategory) void saveCategory(selectedCategory);
                   }}
@@ -729,6 +771,7 @@ export function TransactionDetail({
                   label={intl.formatMessage({ id: 'txn.picker.discard' })}
                   onPress={() => {
                     setPendingReview(false);
+                    setReviewVersion(null);
                     setSelectedCategory(null);
                     setCategoryError(null);
                     focusCategory();
@@ -953,6 +996,7 @@ export function TransactionDetail({
           setCategoryError(null);
           setPendingReview(false);
           setCategoryConflict(false);
+          setReviewVersion(null);
           setConfirmRemove(false);
           focusCategory();
         }}
