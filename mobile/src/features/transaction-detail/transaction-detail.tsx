@@ -37,6 +37,7 @@ import {
   Dialog,
   EmptyState,
   ErrorBanner,
+  Figure,
   KeyValueList,
   LoadingSkeleton,
   OfflineBanner,
@@ -265,9 +266,12 @@ export function TransactionDetail({
     }
   }, [transaction?.id, record.isPlaceholderData]);
   const archived = account.data?.status === 'ARCHIVED';
+  // An unknown account status is not proof that mutations are permitted.
+  const accountActive = !account.isError && account.data?.status === 'ACTIVE';
   const changing =
     actions.setCategory.isPending || actions.resetCategory.isPending || actions.remove.isPending;
-  const locked = !online || archived || changing || record.isPlaceholderData || record.isFetching;
+  const locked =
+    !online || !accountActive || changing || record.isPlaceholderData || record.isFetching;
   const date = (value: string) => formatDate(value, intl.locale);
   const german = intl.locale.startsWith('de');
 
@@ -522,7 +526,7 @@ export function TransactionDetail({
       ? {
           key: 'quantity',
           label: intl.formatMessage({ id: 'txn.quantity' }),
-          value: transaction.quantity,
+          value: <Figure value={transaction.quantity} kind="quantity" />,
         }
       : null,
     moneyRow(
@@ -623,6 +627,9 @@ export function TransactionDetail({
         <Text style={{ color: theme.statusWarning }}>
           {intl.formatMessage({ id: 'txn.archived' })}
         </Text>
+      ) : null}
+      {record.isError && record.error ? (
+        <ErrorBanner error={record.error} onRetry={() => void record.refetch()} />
       ) : null}
       {error ? (
         <ErrorBanner
