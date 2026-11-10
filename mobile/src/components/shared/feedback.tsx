@@ -228,6 +228,8 @@ type DialogProps = {
   children: ReactNode;
   /** The close button's text; "Close" by default. */
   closeLabel?: string;
+  /** Prevent dismissing a modal while a form submission is in flight. */
+  closeDisabled?: boolean;
 };
 
 export function Dialog({
@@ -236,18 +238,23 @@ export function Dialog({
   onClose,
   children,
   closeLabel,
+  closeDisabled = false,
   placement = 'center',
 }: DialogProps & { placement?: 'center' | 'bottom' }) {
   const theme = useTheme();
   const intl = useIntl();
   const bottom = placement === 'bottom';
-  useEscapeKey(visible, onClose);
+  const requestClose = () => {
+    if (!closeDisabled) onClose();
+  };
+  useEscapeKey(visible, requestClose);
   return (
     <Modal
+      testID="shared-dialog-modal"
       transparent
       visible={visible}
       animationType={bottom ? 'slide' : 'fade'}
-      onRequestClose={onClose}
+      onRequestClose={requestClose}
     >
       <View
         style={{
@@ -277,8 +284,10 @@ export function Dialog({
           {children}
           <Pressable
             accessibilityRole="button"
-            onPress={onClose}
-            style={{ minHeight: 44, justifyContent: 'center' }}
+            disabled={closeDisabled}
+            aria-disabled={closeDisabled}
+            onPress={requestClose}
+            style={{ minHeight: 44, justifyContent: 'center', opacity: closeDisabled ? 0.5 : 1 }}
           >
             <Text style={{ ...TypeScale.labelMedium, color: theme.brandLink }}>
               {closeLabel ?? intl.formatMessage({ id: 'ui.close' })}
