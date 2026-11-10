@@ -6,6 +6,7 @@ import { TypeScale } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 import { groupHeading, groupedTransactions, type RowContext, type Transaction } from './model';
+import { nextPageTrigger } from './pagination';
 import { TransactionLine } from './transaction-line';
 
 export type TransactionResultsProps = {
@@ -41,22 +42,20 @@ export function TransactionResults({
   const loadMore = useRef(onEndReached);
   loadMore.current = onEndReached;
   const lastTriggered = useRef<string | null>(null);
-  const lastTen = useMemo(
-    () => new Set(transactions.slice(-10).map((item) => item.id)),
-    [transactions],
-  );
-  const lastTenRef = useRef(lastTen);
-  lastTenRef.current = lastTen;
+  const ids = useMemo(() => transactions.map((item) => item.id), [transactions]);
+  const idsRef = useRef(ids);
+  idsRef.current = ids;
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 1 }).current;
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-      const trigger = loadMore.current;
-      if (!trigger || !viewableItems.some((token) => token.isViewable && token.item && lastTenRef.current.has((token.item as Transaction).id))) return;
-      // One automatic request per loaded tail; the next page produces a new tail.
-      const tail = [...lastTenRef.current].slice(-1)[0];
-      if (!tail || lastTriggered.current === tail) return;
+      if (!loadMore.current) return;
+      const visibleIds = viewableItems
+        .filter((token) => token.isViewable && token.item)
+        .map((token) => (token.item as Transaction).id);
+      const tail = nextPageTrigger(idsRef.current, visibleIds, lastTriggered.current);
+      if (!tail) return;
       lastTriggered.current = tail;
-      trigger();
+      loadMore.current();
     },
   ).current;
   const sections = useMemo(
