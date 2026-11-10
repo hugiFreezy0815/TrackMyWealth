@@ -456,6 +456,25 @@ public interface TransactionRepository
       @Param("snapshotIds") Collection<UUID> snapshotIds, @Param(AS_OF) LocalDate asOf);
 
   /**
+   * Dated opening-balance ledger increments for a history series. Exactly the same row
+   * eligibility and currency conversion as {@link #sumAmountBookedAfterSnapshots}, but one
+   * query for the entire chart instead of repeating the ledger scan for each point.
+   */
+  @Query(
+      "select t.account.id, t.bookingDate, "
+          + LEDGER_SUM
+          + " from AccountSnapshot s, Transaction t"
+          + " where s.account.id = t.account.id and s.openingBalance = true"
+          + " and t.account.id in :accountIds"
+          + " and (t.bookingDate > s.snapshotDate"
+          + " or (t.bookingDate = s.snapshotDate and t.reconciliationResultId is not null"
+          + " and t.createdAt > coalesce(s.updatedAt, s.createdAt)))"
+          + " and t.bookingDate <= :asOf"
+          + " group by t.account.id, t.bookingDate")
+  List<Object[]> sumHistoryAfterOpeningByAccountAndDate(
+      @Param(ACCOUNT_IDS) Collection<UUID> accountIds, @Param(AS_OF) LocalDate asOf);
+
+  /**
    * #482: backward-compatible reconciliation for newest snapshots that predate persisted results.
    * The ledger window starts at each account's opening balance and ends at its own newest
    * observation. This is the batched counterpart of sumAmountByAccountIdBookedAfter.

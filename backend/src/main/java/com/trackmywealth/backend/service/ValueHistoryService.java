@@ -135,6 +135,8 @@ public class ValueHistoryService {
         accountHistoryStateRepository.historyFor(allIds);
     Map<UUID, PortfolioPlacement> placements =
         withSections ? accountService.portfolioPlacementsOf(accounts) : Map.of();
+    Map<LocalDate, Map<UUID, AccountValuation>> openingHistory =
+        accountValuationService.historyFromOpeningBalances(accounts, currency, dates);
     List<Point> points = new ArrayList<>(dates.size());
     Set<String> warnings = new TreeSet<>();
     ValueHistorySnapshot first = null;
@@ -162,7 +164,14 @@ public class ValueHistoryService {
               historyStates,
               portfolioId,
               warnings);
-      ValueHistorySnapshot snapshot = snapshot(eligible, currency, date, placements, warnings);
+      ValueHistorySnapshot snapshot =
+          snapshot(
+              eligible,
+              currency,
+              date,
+              placements,
+              warnings,
+              openingHistory.getOrDefault(date, Map.of()));
       points.add(new Point(date, snapshot.value(), snapshot.estimated()));
       complete &= snapshot.complete();
       if (first == null) {
@@ -217,10 +226,19 @@ public class ValueHistoryService {
               });
       complete &= flows.complete();
       warnings.addAll(flows.warnings());
+      BigDecimal memberAmount = membership.amount();
+      BigDecimal internalAmount = flows.capitalMovements();
       BigDecimal capitalMovements =
-          flows.complete() && membership.complete()
-              ? flows.capitalMovements().add(membership.amount())
+          flows.complete()
+                  && membership.complete()
+                  && memberAmount != null
+                  && internalAmount != null
+              ? internalAmount.add(memberAmount)
               : null;
+      if (capitalMovements == null) {
+        complete = false;
+        warnings.add("Portfolio capital movement attribution unavailable.");
+      }
       change =
           change(
               start.value(),
@@ -281,15 +299,18 @@ public class ValueHistoryService {
     Map<UUID, Set<UUID>> idsAtEnd = new HashMap<>();
     for (Account account : eligibleAtStart) {
       AccountHistoryState state = stateOn(account, from, businessDateService.zone(), historyStates);
+      UUID previousPortfolio =
+          state == null ? account.getPortfolio().getId() : state.portfolioId();
       idsAtStart
-          .computeIfAbsent(state.portfolioId(), unused -> new java.util.HashSet<>())
+          .computeIfAbsent(previousPortfolio, unused -> new java.util.HashSet<>())
           .add(account.getId());
     }
     for (Account account : eligibleAtEnd) {
       AccountHistoryState state =
           stateOn(account, today, businessDateService.zone(), historyStates);
+      UUID currentPortfolio = state == null ? account.getPortfolio().getId() : state.portfolioId();
       idsAtEnd
-          .computeIfAbsent(state.portfolioId(), unused -> new java.util.HashSet<>())
+          .computeIfAbsent(currentPortfolio, unused -> new java.util.HashSet<>())
           .add(account.getId());
     }
     var start = accountValuationService.valueAllInCurrencies(eligibleAtStart, currencies, from);
@@ -320,8 +341,21 @@ public class ValueHistoryService {
       String currency,
       LocalDate asOf,
       Map<UUID, PortfolioPlacement> placements,
-      Set<String> warnings) {
-    List<AccountValuation> valuations = accountValuationService.valueAll(accounts, currency, asOf);
+      Set<String> warnings,
+      Map<UUID, AccountValuation> openingValues) {
+    List<AccountValuation> valuations = new ArrayList<>();
+    List<Account> otherAccounts = new ArrayList<>();
+    for (Account account : accounts) {
+      AccountValuation openingValue = openingValues.get(account.getId());
+      if (openingValue == null) {
+        otherAccounts.add(account);
+      } else {
+        valuations.add(openingValue);
+      }
+    }
+    if (!otherAccounts.isEmpty()) {
+      valuations.addAll(accountValuationService.valueAll(otherAccounts, currency, asOf));
+    }
     boolean complete = true;
     boolean estimated = false;
     Map<PortfolioSection, BigDecimal> sections = new EnumMap<>(PortfolioSection.class);
@@ -333,9 +367,10 @@ public class ValueHistoryService {
         continue;
       }
       String basis = valuation.valueBasis();
+      LocalDate sourceDate = valuation.valueSourceDate();
       estimated |=
-          valuation.valueSourceDate() != null
-              && valuation.valueSourceDate().isBefore(asOf)
+          sourceDate != null
+              && sourceDate.isBefore(asOf)
               && (ValueBasisValues.LATEST_SNAPSHOT.equals(basis)
                   || ValueBasisValues.MANUAL_VALUATION.equals(basis)
                   || ValueBasisValues.LEDGER_FROM_STATEMENT_BALANCE.equals(basis));
@@ -508,7 +543,7 @@ public class ValueHistoryService {
   }
 
   static Change change(BigDecimal from, BigDecimal to, BigDecimal contributions) {
-    return change(from, to, contributions, null);
+    return change(from, to, contributions, BigDecimal.ZERO);
   }
 
   static Change change(
@@ -525,11 +560,9 @@ public class ValueHistoryService {
         amount,
         percent,
         contributions,
-        contributions == null
+        contributions == null || capitalMovements == null
             ? null
-            : amount
-                .subtract(contributions)
-                .subtract(capitalMovements == null ? BigDecimal.ZERO : capitalMovements),
+            : amount.subtract(contributions).subtract(capitalMovements),
         capitalMovements);
   }
 }

@@ -43,6 +43,18 @@ class ValueHistoryPeriodTest {
   }
 
   @Test
+  void unknownCapitalMovementsDoNotBecomeMarketPerformance() {
+    var change =
+        ValueHistoryService.change(
+            new BigDecimal("1000"),
+            new BigDecimal("1200"),
+            new BigDecimal("100"),
+            null);
+    assertThat(change.contributions()).isEqualByComparingTo("100");
+    assertThat(change.marketAndFx()).isNull();
+  }
+
+  @Test
   void invalidPeriodUsesStableValidationError() {
     assertThatThrownBy(() -> ValueHistoryPeriod.parse("2Y"))
         .isInstanceOf(ResponseStatusException.class)
