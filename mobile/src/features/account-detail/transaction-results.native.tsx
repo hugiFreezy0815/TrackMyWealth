@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useRef, type ReactNode } from 'react';
 import { SectionList, Text, View } from 'react-native';
 import { useIntl } from 'react-intl';
 
@@ -6,6 +6,7 @@ import { TypeScale } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 import { groupHeading, groupedTransactions, type RowContext, type Transaction } from './model';
+import { nextPageTrigger } from './pagination';
 import { TransactionLine } from './transaction-line';
 
 export type TransactionResultsProps = {
@@ -38,6 +39,25 @@ export function TransactionResults({
 }: TransactionResultsProps) {
   const intl = useIntl();
   const theme = useTheme();
+  const loadMore = useRef(onEndReached);
+  loadMore.current = onEndReached;
+  const lastTriggered = useRef<string | null>(null);
+  const ids = useMemo(() => transactions.map((item) => item.id), [transactions]);
+  const idsRef = useRef(ids);
+  idsRef.current = ids;
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 1 }).current;
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: { isViewable: boolean; item: unknown }[] }) => {
+      if (!loadMore.current) return;
+      const visibleIds = viewableItems
+        .filter((token) => token.isViewable && token.item)
+        .map((token) => (token.item as Transaction).id);
+      const tail = nextPageTrigger(idsRef.current, visibleIds, lastTriggered.current);
+      if (!tail) return;
+      lastTriggered.current = tail;
+      loadMore.current();
+    },
+  ).current;
   const sections = useMemo(
     () =>
       groupedTransactions(transactions, byDate).map((group, index) => ({
@@ -75,8 +95,8 @@ export function TransactionResults({
           onCategory={onCategory}
         />
       )}
-      onEndReached={onEndReached}
-      onEndReachedThreshold={0.5}
+      onViewableItemsChanged={onViewableItemsChanged}
+      viewabilityConfig={viewabilityConfig}
       initialNumToRender={12}
       maxToRenderPerBatch={12}
       windowSize={7}
