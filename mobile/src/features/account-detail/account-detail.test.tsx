@@ -227,7 +227,7 @@ describe('S3 account detail acceptance checks (#494)', () => {
           await screen.findByText('This account no longer exists or is not available to you'),
         ).toBeTruthy();
       } else {
-        expect(screen.getByRole('alert')).toBeTruthy();
+        expect(await screen.findByRole('alert')).toBeTruthy();
       }
     },
   );
@@ -341,7 +341,7 @@ describe('S3 account detail acceptance checks (#494)', () => {
       });
     });
     expect(screen.getByText('Showing 1 of 1')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy());
     failTransactions = false;
     await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull());

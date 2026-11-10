@@ -425,7 +425,7 @@ describe('S2 depot positions (#478)', () => {
     expect(screen.getByText('Estimated cost basis')).toBeTruthy();
     expect(
       screen.getByRole('button', {
-        name: 'Fund 1, 100.00 euros, 1250.5 units, unrealised gain plus 11.2 percent',
+        name: /^Fund 1, 100.00 euros, 1250.5 units, Price: .*unrealised gain plus 11.2 percent$/,
       }),
     ).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: 'Show all 7 positions' }));
@@ -448,7 +448,7 @@ describe('S2 depot positions (#478)', () => {
     expect(screen.queryByText('No cost basis yet')).toBeNull();
     expect(
       screen.getByRole('button', {
-        name: 'Fund 1, Value unknown, 10 units, unrealised gain Value unknown',
+        name: /^Fund 1, Value unknown, 10 units, Price: .*unrealised gain Value unknown$/,
       }),
     ).toBeTruthy();
   });
