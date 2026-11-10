@@ -1,4 +1,4 @@
-import { useRef, useState, useSyncExternalStore, type ComponentRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ComponentRef, type ReactNode } from 'react';
 import { onlineManager } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import {
@@ -248,7 +248,15 @@ export function TransactionDetail({
   const [reviewVersion, setReviewVersion] = useState<number | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
   const categoryControl = useRef<ComponentRef<typeof Pressable>>(null);
+  const detailHeading = useRef<ComponentRef<typeof Text>>(null);
   const transaction = record.data;
+  useEffect(() => {
+    // The desktop side panel is not a route transition: announce the selected detail
+    // once the server record has loaded rather than leaving focus on the old table row.
+    if (Platform.OS === 'web' && transaction && !record.isPlaceholderData) {
+      moveAccessibilityFocus(detailHeading.current);
+    }
+  }, [transaction?.id, record.isPlaceholderData]);
   const archived = account.data?.status === 'ARCHIVED';
   const changing =
     actions.setCategory.isPending || actions.resetCategory.isPending || actions.remove.isPending;
@@ -642,7 +650,9 @@ export function TransactionDetail({
           }}
         />
         <Text
+          ref={detailHeading}
           accessibilityRole="header"
+          tabIndex={-1}
           style={{ ...TypeScale.headingMedium, color: theme.textPrimary }}
         >
           {name === 'VALUATION_ADJUSTMENT'
