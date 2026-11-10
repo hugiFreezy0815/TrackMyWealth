@@ -7,7 +7,6 @@ import {
 } from '@tanstack/react-query';
 
 import type { components } from '@/api/schema';
-
 import { typedApi } from '@/api/typed-api';
 import { ifMatch } from './conflict';
 import { invalidateFinancialData } from './invalidation';

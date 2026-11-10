@@ -292,11 +292,13 @@ describe('S4 transaction detail', () => {
       ...success(categories),
       refetch,
     } as unknown as ReturnType<typeof useCategories>);
-    setCategory.mockRejectedValueOnce(new ApiError('invalid category', 422, {
-      code: 'VALIDATION_FAILED',
-      status: 422,
-      title: 'Validation failed',
-    }));
+    setCategory.mockRejectedValueOnce(
+      new ApiError('invalid category', 422, {
+        code: 'VALIDATION_FAILED',
+        status: 422,
+        title: 'Validation failed',
+      }),
+    );
     await show();
     await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
     await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
@@ -305,5 +307,4 @@ describe('S4 transaction detail', () => {
     expect(screen.getByText("This category can't be used. Pick another one.")).toBeTruthy();
     expect(setCategory).toHaveBeenCalledTimes(1);
   });
-
 });

@@ -690,16 +690,23 @@ export function TransactionDetail({
                 busy={locked}
                 error={categoryError}
                 onClose={closePicker}
-                onSelect={(id) => { setSelectedCategory(id); setCategoryError(null); }}
-                onSave={() => { if (selectedCategory) void saveCategory(selectedCategory); }}
+                onSelect={(id) => {
+                  setSelectedCategory(id);
+                  setCategoryError(null);
+                }}
+                onSave={() => {
+                  if (selectedCategory) void saveCategory(selectedCategory);
+                }}
               />
             ) : null}
             {reviewLoading ? <ActivityIndicator /> : null}
             {pendingReview ? (
               <View style={{ gap: Spacing.two }}>
                 <Text accessibilityRole="alert" style={{ color: theme.textPrimary }}>
-                  {intl.formatMessage({ id: 'txn.picker.pending' }, {
-                    category: selectedCategory
+                  {intl.formatMessage(
+                    { id: 'txn.picker.pending' },
+                    {
+                      category: selectedCategory
                       ? (() => {
                           const item = categories.data?.find(
                             (candidate) => candidate.id === selectedCategory,
@@ -712,8 +719,9 @@ export function TransactionDetail({
                               )
                             : intl.formatMessage({ id: 'txn.category.fallback' });
                         })()
-                      : intl.formatMessage({ id: 'txn.category.fallback' }),
-                  })}
+                        : intl.formatMessage({ id: 'txn.category.fallback' }),
+                    },
+                  )}
                 </Text>
                 {categoryError ? (
                   <Text accessibilityRole="alert" style={{ color: theme.statusLoss }}>
@@ -905,8 +913,13 @@ export function TransactionDetail({
           busy={locked}
           error={categoryError}
           onClose={closePicker}
-          onSelect={(id) => { setSelectedCategory(id); setCategoryError(null); }}
-          onSave={() => { if (selectedCategory) void saveCategory(selectedCategory); }}
+          onSelect={(id) => {
+                  setSelectedCategory(id);
+                  setCategoryError(null);
+                }}
+          onSave={() => {
+                  if (selectedCategory) void saveCategory(selectedCategory);
+                }}
         />
       ) : null}
       <Dialog
