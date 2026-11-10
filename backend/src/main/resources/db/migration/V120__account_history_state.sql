@@ -2,7 +2,8 @@
 -- The current account.archived_at field is deliberately cleared on restore and cannot by itself
 -- reconstruct a previously archived interval.
 CREATE TABLE account_history_state (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_sequence BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
     workspace_id UUID NOT NULL REFERENCES workspace (id),
     account_id UUID NOT NULL REFERENCES account (id) ON DELETE CASCADE,
     portfolio_id UUID NOT NULL REFERENCES portfolio (id),
@@ -12,7 +13,7 @@ CREATE TABLE account_history_state (
 );
 
 CREATE INDEX idx_account_history_state_lookup
-ON account_history_state (workspace_id, account_id, effective_at, id);
+ON account_history_state (workspace_id, account_id, effective_at, event_sequence);
 
 -- Pre-existing account transitions cannot be recovered from account.archived_at or
 -- account.portfolio_id. Backfill the current state as an explicitly unverified baseline.

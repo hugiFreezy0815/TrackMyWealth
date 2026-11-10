@@ -138,6 +138,18 @@ public class ValueHistoryService {
     ValueHistorySnapshot first = null;
     ValueHistorySnapshot last = null;
     boolean complete = true;
+    // Without a declared opening date, activity is evidence of existence but not proof
+    // that values before the first observation were zero. Preserve the chart's missing-data
+    // signal when the selected period extends into that uncertain interval.
+    for (Account account : accounts) {
+      if (account.getOpenedAt() == null) {
+        LocalDate first = firstEvidence.get(account.getId());
+        if (first != null && from.isBefore(first)) {
+          warnings.add(account.getName() + ": inception before first activity is uncertain");
+          complete = false;
+        }
+      }
+    }
     for (LocalDate date : dates) {
       List<Account> eligible =
           onDate(

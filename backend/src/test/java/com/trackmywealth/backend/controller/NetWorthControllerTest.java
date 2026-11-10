@@ -752,7 +752,7 @@ class NetWorthControllerTest {
         PreparedStatement statement =
             connection.prepareStatement(
                 "UPDATE account_history_state SET effective_at = ? WHERE id = ("
-                    + "SELECT id FROM account_history_state WHERE account_id = ? ORDER BY id"
+                    + "SELECT id FROM account_history_state WHERE account_id = ? ORDER BY event_sequence"
                     + " OFFSET ? LIMIT 1)")) {
       statement.setObject(
           1, date.atTime(12, 0).atZone(ZoneId.of("Europe/Zurich")).toOffsetDateTime());

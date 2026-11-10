@@ -31,7 +31,7 @@ public class AccountHistoryStateRepository {
             SELECT account_id, portfolio_id, status, effective_at, verified
             FROM account_history_state
             WHERE account_id IN (:accountIds)
-            ORDER BY account_id, effective_at, id
+            ORDER BY account_id, effective_at, event_sequence
             """,
             new MapSqlParameterSource("accountIds", accountIds),
             (rs, rowNumber) ->
