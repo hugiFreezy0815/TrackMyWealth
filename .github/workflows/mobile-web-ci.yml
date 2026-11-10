@@ -73,6 +73,13 @@ jobs:
       - name: Format check
         run: npx prettier --check .
 
+      # Temporary diagnostic for S4 formatting; removed after applying the exact diff.
+      - name: Print transaction-detail formatting changes
+        if: failure()
+        run: |
+          npx prettier --write src/features/transaction-detail/transaction-detail.tsx src/features/transaction-detail/transaction-detail.test.tsx
+          git --no-pager diff -- src/features/transaction-detail/transaction-detail.tsx src/features/transaction-detail/transaction-detail.test.tsx
+
       - name: Test
         run: npx jest --ci
 
