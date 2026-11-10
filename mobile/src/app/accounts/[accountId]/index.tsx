@@ -22,12 +22,7 @@ export default function AccountDetailRoute() {
       <AccountDetail
         accountId={accountId ?? ''}
         onBack={() => router.replace('/overview')}
-        onTransaction={(transactionId) =>
-          router.push({
-            pathname: '/accounts/[accountId]/transactions/[transactionId]',
-            params: { accountId: accountId ?? '', transactionId },
-          })
-        }
+        // PR #548 implements S4. Until it lands, rows are read-only rather than dead-end links.
         onImport={() =>
           router.push({
             pathname: '/accounts/[accountId]/imports/new',

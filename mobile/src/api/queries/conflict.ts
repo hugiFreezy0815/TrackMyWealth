@@ -22,6 +22,30 @@ export function useConflict() {
   return { conflicted, dismiss: () => setConflicted(false), handle };
 }
 
+/**
+ * A known VERSION_REQUIRED (428) allows one resource reload and one resubmission
+ * with the latest server ETag. An unknown code or another failed retry is surfaced.
+ */
+export async function retryVersionRequired<T>(
+  write: (version: number) => Promise<T>,
+  version: number,
+  reload: () => Promise<{ version: number }>,
+): Promise<T> {
+  try {
+    return await write(ifMatch({ version }));
+  } catch (error) {
+    if (
+      !(error instanceof ApiError) ||
+      error.status !== 428 ||
+      problemReaction(error).sentCode !== 'VERSION_REQUIRED'
+    ) {
+      throw error;
+    }
+    const latest = await reload();
+    return write(ifMatch(latest));
+  }
+}
+
 /** Use the cached resource's server version, never a locally incremented counter. */
 export function ifMatch(resource: { version: number }): number {
   if (!Number.isSafeInteger(resource.version) || resource.version < 0) {

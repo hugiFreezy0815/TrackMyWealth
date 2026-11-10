@@ -36,10 +36,11 @@ export const useNetWorth = (currency?: string, { enabled = true }: QueryGate = {
     queryFn: () => typedApi.get('/api/v1/net-worth', { query: currency ? { currency } : {} }),
     enabled,
   });
-export const useAccounts = (portfolioId?: string) =>
+export const useAccounts = (portfolioId?: string, { enabled = true }: QueryGate = {}) =>
   useQuery({
     queryKey: queryKeys.accounts({ portfolioId }),
     queryFn: () => typedApi.get('/api/v1/accounts', { query: portfolioId ? { portfolioId } : {} }),
+    enabled,
   });
 export const useAccount = (accountId: string) =>
   useQuery({

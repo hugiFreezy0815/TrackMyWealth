@@ -12,13 +12,7 @@ import { Spacing, TypeScale } from '@/constants/theme';
 import { formatDate, formatInstantDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
 
-import {
-  asOfLine,
-  reconciliationLine,
-  valueSource,
-  type AccountListItem,
-  type AccountSummary,
-} from './model';
+import { reconciliationLine, type AccountListItem, type AccountSummary } from './model';
 
 type HeaderProps = {
   summary: AccountSummary;
@@ -87,7 +81,10 @@ export function AccountHeaderCard({
             interactive={false}
           />
           <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
-            {asOfLine(valueSource(summary), value, intl)}
+            {intl.formatMessage(
+              { id: 'account.asOf' },
+              { date: formatDate(value.asOf, intl.locale) },
+            )}
           </Text>
         </Pressable>
       ) : valuePending ? (

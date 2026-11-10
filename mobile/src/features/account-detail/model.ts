@@ -49,27 +49,6 @@ export const ACCOUNT_TYPE_LABELS = {
   CUSTOM_ASSET: 'accountType.CUSTOM_ASSET',
 } as const;
 
-/**
- * Where an account's value comes from. No account endpoint returns the valuation's basis, so the
- * capabilities decide: a manual valuation, a ledger, or else the latest statement (S3 "no ledger").
- */
-export type ValueSource = 'MANUAL_VALUATION' | 'LEDGER' | 'LATEST_SNAPSHOT';
-
-export const valueSource = (
-  summary: Pick<AccountSummary, 'manualValuation' | 'hasTransactions'>,
-): ValueSource =>
-  summary.manualValuation
-    ? 'MANUAL_VALUATION'
-    : summary.hasTransactions
-      ? 'LEDGER'
-      : 'LATEST_SNAPSHOT';
-
-const VALUE_SOURCE_LABELS: Readonly<Record<ValueSource, string>> = {
-  MANUAL_VALUATION: 'valueBasis.MANUAL_VALUATION',
-  LEDGER: 'valueBasis.LEDGER',
-  LATEST_SNAPSHOT: 'valueBasis.LATEST_SNAPSHOT',
-};
-
 /** Row warnings with their own text; every other code reads "Check this transaction". */
 export const TRANSACTION_WARNING_LABELS = {
   BOOKED_BEFORE_OPENING_BALANCE: 'account.txnWarning.BOOKED_BEFORE_OPENING_BALANCE',
@@ -83,11 +62,6 @@ export const transactionTypeLabel = (code: string, intl: Intl): string =>
 
 export const accountTypeLabel = (code: string, intl: Intl): string =>
   intl.formatMessage({ id: labelFor(ACCOUNT_TYPE_LABELS, code, 'accountType.other') });
-
-export const valueSourceLabel = (source: ValueSource, intl: Intl): string =>
-  intl.formatMessage({
-    id: labelFor(VALUE_SOURCE_LABELS, source, VALUE_SOURCE_LABELS.LATEST_SNAPSHOT),
-  });
 
 /** Distinct row warning texts: unknown codes collapse into one generic line. */
 export const transactionWarningTexts = (codes: readonly string[], intl: Intl): string[] =>
@@ -181,20 +155,6 @@ export function accountValuation(
   return (account.status === 'ARCHIVED' ? archived : active)?.find(
     (candidate) => candidate.id === account.id,
   );
-}
-
-/** "Statement of {date}" for a statement or valuation, else "As of {date}". */
-export function asOfLine(
-  source: ValueSource,
-  value: Pick<AccountListItem, 'asOf' | 'valueSourceDate'>,
-  intl: Intl,
-): string {
-  return value.valueSourceDate && source !== 'LEDGER'
-    ? intl.formatMessage(
-        { id: 'account.statementOf' },
-        { date: formatDate(value.valueSourceDate, intl.locale) },
-      )
-    : intl.formatMessage({ id: 'account.asOf' }, { date: formatDate(value.asOf, intl.locale) });
 }
 
 export type ReconciliationLine = {

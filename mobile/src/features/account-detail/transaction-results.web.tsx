@@ -14,7 +14,7 @@ export type TransactionResultsProps = {
   transactions: Transaction[];
   context: RowContext;
   byDate: boolean;
-  onOpen: (id: string) => void;
+  onOpen?: (id: string) => void;
   onCategory: (transaction: Transaction) => void;
   /** Native only: web pages with the "Load more" button (spec S3 "Paging"). */
   onEndReached?: () => void;
@@ -95,12 +95,13 @@ function TransactionTable({ transactions, context, onOpen, onCategory }: Transac
                       background: 'transparent',
                       color: 'inherit',
                       textAlign: 'left',
-                      cursor: 'pointer',
+                      cursor: onOpen ? 'pointer' : 'default',
                       minHeight: 44,
                       font: 'inherit',
                       padding: 0,
                     }}
-                    onClick={() => onOpen(transaction.id)}
+                    disabled={!onOpen}
+                    onClick={onOpen ? () => onOpen(transaction.id) : undefined}
                   >
                     {view.title}
                   </button>
