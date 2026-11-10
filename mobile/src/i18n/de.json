@@ -445,6 +445,8 @@
   "account.estimatedFx": "Geschätzter Wechselkurs",
   "account.context": "{portfolio} · {type} · {currency}",
   "account.statementOf": "Auszug vom {date}",
+  "account.offlineImportDisabled": "Verbinde dich mit dem Internet, um einen Kontoauszug zu importieren.",
+  "portfolio.positions.price": "Kurs",
   "account.valueSourceUnavailable": "Wertquelle nicht verfügbar",
   "account.valueFrom": "Der Wert dieses Kontos stammt aus {basis}",
   "account.valueSourceDate": "Datum der Quelle: {date}",

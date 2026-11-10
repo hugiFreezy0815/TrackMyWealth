@@ -35,26 +35,52 @@ function PositionCell({
 }: {
   position: Position;
   currency: string;
-  onOpen: () => void;
+  onOpen?: () => void;
 }) {
   const theme = useTheme();
   const intl = useIntl();
   const label = usePositionLabel(position, currency);
-  return (
-    <Pressable
-      accessibilityRole="link"
-      accessibilityLabel={label}
-      accessibilityHint={msg(intl, 'portfolio.position.openHint')}
-      onPress={onOpen}
-      style={{ minHeight: 44, justifyContent: 'center', gap: Spacing.one }}
-    >
-      <Text style={{ ...TypeScale.labelMedium, color: theme.brandLink }}>
+  const content = (
+    <>
+      <Text
+        style={{ ...TypeScale.labelMedium, color: onOpen ? theme.brandLink : theme.textPrimary }}
+      >
         {position.displayName}
       </Text>
       {position.isin ? (
         <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>{position.isin}</Text>
       ) : null}
+      {position.price != null && position.priceCurrency ? (
+        <View
+          style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.one }}
+        >
+          <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
+            {msg(intl, 'portfolio.positions.price')}
+          </Text>
+          <Amount
+            value={position.price}
+            currency={position.priceCurrency}
+            style={TypeScale.caption}
+          />
+        </View>
+      ) : null}
+    </>
+  );
+  const style = { minHeight: 44, justifyContent: 'center' as const, gap: Spacing.one };
+  return onOpen ? (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={label}
+      accessibilityHint={msg(intl, 'portfolio.position.openHint')}
+      onPress={onOpen}
+      style={style}
+    >
+      {content}
     </Pressable>
+  ) : (
+    <View accessible accessibilityLabel={label} style={style}>
+      {content}
+    </View>
   );
 }
 

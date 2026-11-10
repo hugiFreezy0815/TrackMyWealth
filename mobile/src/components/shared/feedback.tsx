@@ -44,15 +44,18 @@ export function ActionButton({
   label,
   onPress,
   disabled = false,
+  accessibilityHint,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  accessibilityHint?: string;
 }) {
   const theme = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityHint={accessibilityHint}
       aria-disabled={disabled}
       disabled={disabled}
       onPress={onPress}

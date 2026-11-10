@@ -3,7 +3,7 @@ import { useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
-import { ApiError } from '@/api/client';
+import { ApiError, NetworkError } from '@/api/client';
 import { typedApi } from '@/api/typed-api';
 import { problemReaction } from '@/api/problems';
 import { retryVersionRequired, useConflict } from '@/api/queries/conflict';
@@ -34,6 +34,7 @@ import {
 } from '@/components/shared';
 import { Spacing, TypeScale } from '@/constants/theme';
 import { formatDate } from '@/format/date';
+import { PositionView } from '@/features/portfolio-view/position-view';
 import { showToast } from '@/features/shell/toast';
 import { useOnline } from '@/hooks/use-online';
 import { useTheme } from '@/hooks/use-theme';
@@ -69,6 +70,20 @@ type OpenDialog = 'actions' | 'sort' | 'archive' | 'value' | null;
 const isNotFound = (error: unknown) =>
   error instanceof ApiError &&
   (error.status === 404 || problemReaction(error).sentCode === 'NOT_FOUND');
+
+/** An account error must not reveal a previously cached financial value after access was denied. */
+const isAccessFailure = (error: unknown) =>
+  error instanceof ApiError &&
+  (error.status === 401 ||
+    error.status === 403 ||
+    isNotFound(error) ||
+    problemReaction(error).sentCode === 'UNAUTHENTICATED' ||
+    problemReaction(error).sentCode === 'FORBIDDEN');
+
+/** A stale S1/S2 value is only safe as a fallback while the server is unreachable or failing. */
+const isRecoverableAccountFailure = (error: unknown) =>
+  error instanceof NetworkError ||
+  (error instanceof ApiError && error.status >= 500 && error.status < 600);
 
 /** Pull-to-refresh: every financial query reloads, paged lists from page 0, filter and sort kept. */
 export function useAccountRefresh() {
@@ -226,20 +241,24 @@ export function AccountDetail({ accountId, onBack, onTransaction, onImport }: Ac
     }, queryKeys.account(accountId));
   }
 
+  if (account.isError && isAccessFailure(account.error)) {
+    // This guard takes precedence even when TanStack Query retains a cached account summary.
+    // Never present cached identity, balances, positions or transactions after 401/403/404.
+    return isNotFound(account.error) ? (
+      <EmptyState
+        title={intl.formatMessage({ id: 'account.notFound' })}
+        actionLabel={intl.formatMessage({ id: 'account.back' })}
+        onAction={onBack}
+      />
+    ) : (
+      <ErrorBanner error={account.error} />
+    );
+  }
   if (account.isPending && !summary) return <LoadingSkeleton count={8} height={24} />;
   if (account.isError && !summary) {
-    if (isNotFound(account.error)) {
-      return (
-        <EmptyState
-          title={intl.formatMessage({ id: 'account.notFound' })}
-          actionLabel={intl.formatMessage({ id: 'account.back' })}
-          onAction={onBack}
-        />
-      );
-    }
     // Render only the bounded S1/S2 list item already owned by this signed-in session.
     // No synthetic account capabilities or reconciliation are invented for the fallback.
-    if (cachedValue) {
+    if (cachedValue && isRecoverableAccountFailure(account.error)) {
       return (
         <View testID="account-cached-fallback" style={{ gap: Spacing.three }}>
           <Pressable
@@ -384,22 +403,11 @@ export function AccountDetail({ accountId, onBack, onTransaction, onImport }: Ac
         ) : positions.isError ? (
           <ErrorBanner error={positions.error} onRetry={() => void positions.refetch()} />
         ) : positions.data?.positions.length ? (
-          positions.data.positions.map((position) => (
-            <View
-              key={position.securityId}
-              style={{
-                padding: Spacing.two,
-                borderBottomWidth: 1,
-                borderBottomColor: theme.borderDefault,
-              }}
-            >
-              <Text style={{ color: theme.textPrimary }}>{position.displayName}</Text>
-              {position.isin ? (
-                <Text style={{ color: theme.textSecondary }}>{position.isin}</Text>
-              ) : null}
-              <Amount value={position.valueInAccountCurrency} currency={positions.data.currency} />
-            </View>
-          ))
+          <PositionView
+            positions={positions.data.positions}
+            currency={positions.data.currency}
+            accountName={summary.name}
+          />
         ) : (
           <EmptyState title={intl.formatMessage({ id: 'account.noPositions' })} />
         )
@@ -476,7 +484,8 @@ export function AccountDetail({ accountId, onBack, onTransaction, onImport }: Ac
             <ErrorBanner error={categories.error} onRetry={() => void categories.refetch()} />
           ) : null}
           {transactions.isPending && !transactions.data ? <LoadingSkeleton count={5} /> : null}
-          {transactions.isError && !transactions.data ? (
+          {transactions.isError ? (
+            // Keep previously loaded rows visible, but do not silently hide a failed refresh.
             <ErrorBanner error={transactions.error} onRetry={() => void transactions.refetch()} />
           ) : null}
           {records.length === 0 && transactions.isSuccess ? (
@@ -539,6 +548,7 @@ export function AccountDetail({ accountId, onBack, onTransaction, onImport }: Ac
         online={online}
         onClose={() => setDialog(null)}
         onImport={() => {
+          if (!online || archived) return;
           setDialog(null);
           onImport();
         }}

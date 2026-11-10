@@ -445,6 +445,8 @@
   "account.estimatedFx": "Estimated exchange rate",
   "account.context": "{portfolio} · {type} · {currency}",
   "account.statementOf": "Statement of {date}",
+  "account.offlineImportDisabled": "Connect to the internet to import a statement.",
+  "portfolio.positions.price": "Price",
   "account.valueSourceUnavailable": "Value source not available",
   "account.valueFrom": "The value of this account comes from {basis}",
   "account.valueSourceDate": "Source date: {date}",

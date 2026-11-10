@@ -45,20 +45,30 @@ export function ActionsDialog({
     >
       <ActionButton
         label={intl.formatMessage({ id: 'account.import' })}
-        disabled={archived}
+        disabled={archived || !online}
+        accessibilityHint={
+          archived
+            ? intl.formatMessage({ id: 'account.archivedReason' })
+            : !online
+              ? intl.formatMessage({ id: 'account.offlineImportDisabled' })
+              : undefined
+        }
         onPress={onImport}
       />
-      {archived ? (
+      {archived || !online ? (
         <Text style={{ color: theme.textSecondary }}>
-          {intl.formatMessage({ id: 'account.archivedReason' })}
+          {intl.formatMessage({
+            id: archived ? 'account.archivedReason' : 'account.offlineImportDisabled',
+          })}
         </Text>
-      ) : (
+      ) : null}
+      {!archived ? (
         <ActionButton
           label={intl.formatMessage({ id: 'account.archive' })}
           disabled={!online}
           onPress={onArchive}
         />
-      )}
+      ) : null}
     </Dialog>
   );
 }

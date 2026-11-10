@@ -3,9 +3,10 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { IntlProvider, createIntl, createIntlCache } from 'react-intl';
 import { StyleSheet } from 'react-native';
 
-import { ApiError } from '@/api/client';
+import { ApiError, NetworkError } from '@/api/client';
 import { typedApi } from '@/api/typed-api';
 import { queryKeys } from '@/api/queries/keys';
+import type { Position, PositionsResponse } from '@/features/portfolio-view/model';
 import { amountTexts } from '@/components/shared';
 import { showToast } from '@/features/shell/toast';
 import en from '@/i18n/en.json';
@@ -100,12 +101,13 @@ const txn = (index: number, other: Partial<Transaction> = {}): Transaction =>
   }) as Transaction;
 
 /** An in-memory API behind the mocked typedApi: real hooks, real cache, real invalidation. */
-function fakeServer(account: AccountSummary, rows: Transaction[]) {
+function fakeServer(account: AccountSummary, rows: Transaction[], holdings?: PositionsResponse) {
   const state = { account, rows };
   const counted = (row: Transaction) => row.categoryId === 'uncat' && !row.internalTransfer;
   type Options = { params?: Record<string, string>; query?: Record<string, unknown> };
   const routes: Record<string, (options: Options) => unknown> = {
     '/api/v1/accounts/{accountId}': () => state.account,
+    '/api/v1/accounts/{accountId}/positions': () => holdings,
     '/api/v1/accounts/{accountId}/transactions/{transactionId}': ({ params }) =>
       state.rows.find((row) => row.id === params?.transactionId) ?? null,
     '/api/v1/accounts': () => [listItem],
@@ -179,7 +181,7 @@ async function renderDetail(
       </IntlProvider>
     </QueryClientProvider>,
   );
-  return { onBack };
+  return { onBack, client };
 }
 
 async function changeCategory(currentLabel: string, pick: string) {
@@ -199,7 +201,7 @@ beforeEach(() => {
 
 describe('S3 account detail acceptance checks (#494)', () => {
   it('shows a cached S1 account header with retry when the summary fails offline', async () => {
-    api.get.mockRejectedValue(new Error('offline'));
+    api.get.mockRejectedValue(new NetworkError('offline'));
     await renderDetail({
       cachedAccounts: [{ ...listItem, name: 'Cached Girokonto', archived: false }],
     });
@@ -207,6 +209,54 @@ describe('S3 account detail acceptance checks (#494)', () => {
       /Cached Girokonto/,
     );
     expect(screen.getByTestId('account-cached-fallback')).toHaveTextContent(/4.*210.*55/);
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+  });
+
+  it.each([401, 403, 404])(
+    'does not disclose cached financial data after HTTP %s',
+    async (status) => {
+      api.get.mockRejectedValue(new ApiError('access denied', status));
+      await renderDetail({
+        cachedAccounts: [{ ...listItem, name: 'Private Girokonto', archived: false }],
+      });
+      expect(screen.queryByText('Private Girokonto')).toBeNull();
+      expect(screen.queryByTestId('account-cached-fallback')).toBeNull();
+      expect(screen.queryByText("EUR 4'210.55")).toBeNull();
+      if (status === 404) {
+        expect(
+          await screen.findByText('This account no longer exists or is not available to you'),
+        ).toBeTruthy();
+      } else {
+        expect(screen.getByRole('alert')).toBeTruthy();
+      }
+    },
+  );
+
+  it('hides cached summary and balance if a revalidation is forbidden', async () => {
+    fakeServer(summary(), [txn(0)]);
+    const { client } = await renderDetail();
+    expect(await screen.findByText('Girokonto')).toBeTruthy();
+    const originalGet = api.get.getMockImplementation();
+    api.get.mockImplementation(((path: string, options: unknown) => {
+      if (path === '/api/v1/accounts/{accountId}') {
+        return Promise.reject(new ApiError('forbidden', 403));
+      }
+      return originalGet?.(path as never, options as never);
+    }) as never);
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: queryKeys.account('acc'), exact: true });
+    });
+    await waitFor(() => expect(screen.queryByText('Girokonto')).toBeNull());
+    expect(screen.queryByText("EUR 4'210.55")).toBeNull();
+    expect(screen.queryByText('Showing 1 of 1')).toBeNull();
+  });
+
+  it('uses the cached financial header on a recoverable 503', async () => {
+    api.get.mockRejectedValue(new ApiError('server down', 503));
+    await renderDetail({
+      cachedAccounts: [{ ...listItem, name: 'Cached Girokonto', archived: false }],
+    });
+    expect(await screen.findByText('Cached Girokonto')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
   });
 
@@ -219,6 +269,82 @@ describe('S3 account detail acceptance checks (#494)', () => {
       await screen.findByText('This account no longer exists or is not available to you'),
     ).toBeTruthy();
     expect(screen.queryByText('Cached Girokonto')).toBeNull();
+  });
+
+  it('displays S2 position details for known, estimated, missing and foreign-cost holdings', async () => {
+    const holding = (id: string, overrides: Partial<Position> = {}): Position => ({
+      securityId: id,
+      displayName: `Fund ${id}`,
+      isin: null,
+      quantity: '10.000000',
+      price: '10.00',
+      priceCurrency: 'EUR',
+      value: '100.00',
+      valueInAccountCurrency: '100.00',
+      costBasis: '90.00',
+      costBasisEstimated: false,
+      unrealisedGain: '10.00',
+      unrealisedGainPercent: '11.11',
+      valueStatus: 'CURRENT',
+      ...overrides,
+    });
+    const positions: PositionsResponse = {
+      accountId: 'acc',
+      currency: 'EUR',
+      asOf: '2026-10-20',
+      source: 'HOLDINGS_SNAPSHOT',
+      complete: true,
+      positions: [
+        holding('regular'),
+        holding('estimated', { costBasisEstimated: true, valueStatus: 'ESTIMATED' }),
+        holding('missing', { costBasis: null, unrealisedGain: null, unrealisedGainPercent: null }),
+        holding('foreign', {
+          priceCurrency: 'USD',
+          costBasis: '90.00',
+          unrealisedGain: null,
+          unrealisedGainPercent: null,
+        }),
+      ],
+    };
+    fakeServer(summary({ holdsPositions: true }), [txn(0)], positions);
+    await renderDetail();
+    await fireEvent.press(await screen.findByText('Positions'));
+    expect(await screen.findByText('Fund regular')).toBeTruthy();
+    expect(screen.getAllByText('10 units').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('+11.1%').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Estimated cost basis').length).toBeGreaterThan(0);
+    expect(screen.getByText('No cost basis yet')).toBeTruthy();
+    expect(screen.getByText('Gain not available in USD')).toBeTruthy();
+    expect(screen.getAllByText('Price').length).toBeGreaterThan(0);
+    expect(screen.getByText('Fund foreign')).toBeTruthy();
+  });
+
+  it('retains cached transactions and offers Retry when a refetch fails', async () => {
+    fakeServer(summary(), [txn(0)]);
+    const { client } = await renderDetail();
+    expect(await screen.findByText('Showing 1 of 1')).toBeTruthy();
+    const originalGet = api.get.getMockImplementation();
+    let failTransactions = true;
+    api.get.mockImplementation(((path: string, options: unknown) => {
+      if (path === '/api/v1/accounts/{accountId}/transactions' && failTransactions) {
+        return Promise.reject(new NetworkError('offline'));
+      }
+      return originalGet?.(path as never, options as never);
+    }) as never);
+    await act(async () => {
+      await client.invalidateQueries({
+        queryKey: queryKeys.accountTransactions('acc', {
+          uncategorized: false,
+          sort: 'bookingDate,desc',
+        }),
+        exact: true,
+      });
+    });
+    expect(screen.getByText('Showing 1 of 1')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+    failTransactions = false;
+    await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull());
   });
 
   it('loads 120 transactions as 50, 50, 20 without duplicates, then restarts at page 0', async () => {
