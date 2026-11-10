@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.AccountHistoryState;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.CashFlowContribution;
 import com.trackmywealth.backend.dto.PortfolioPeriodChange;
@@ -16,6 +17,7 @@ import com.trackmywealth.backend.dto.ValueHistoryResponse.SectionChange;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.Portfolio;
 import com.trackmywealth.backend.entity.Workspace;
+import com.trackmywealth.backend.repository.AccountHistoryStateRepository;
 import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.ValueHistoryStartRepository;
 import com.trackmywealth.backend.repository.WorkspaceRepository;
@@ -52,6 +54,7 @@ public class ValueHistoryService {
   private final PortfolioLookupService portfolioLookupService;
   private final WorkspaceRepository workspaceRepository;
   private final AccountRepository accountRepository;
+  private final AccountHistoryStateRepository accountHistoryStateRepository;
   private final AccountValuationService accountValuationService;
   private final AccountService accountService;
   private final BusinessDateService businessDateService;
@@ -63,6 +66,7 @@ public class ValueHistoryService {
       PortfolioLookupService portfolioLookupService,
       WorkspaceRepository workspaceRepository,
       AccountRepository accountRepository,
+      AccountHistoryStateRepository accountHistoryStateRepository,
       AccountValuationService accountValuationService,
       AccountService accountService,
       BusinessDateService businessDateService,
@@ -72,6 +76,7 @@ public class ValueHistoryService {
     this.portfolioLookupService = portfolioLookupService;
     this.workspaceRepository = workspaceRepository;
     this.accountRepository = accountRepository;
+    this.accountHistoryStateRepository = accountHistoryStateRepository;
     this.accountValuationService = accountValuationService;
     this.accountService = accountService;
     this.businessDateService = businessDateService;
@@ -100,10 +105,11 @@ public class ValueHistoryService {
       UUID portfolioId, String periodParam, AuthenticatedUserPrincipal actor) {
     Portfolio portfolio = portfolioLookupService.findPortfolioOrThrow(portfolioId, actor);
     accessControlService.requirePortfolioAccess(actor, portfolio);
+    // Historical membership is not the current portfolio assignment.
     List<Account> accounts =
-        accountRepository.findByWorkspaceId(actor.workspaceId()).stream()
-            .filter(account -> portfolioId.equals(account.getPortfolio().getId()))
-            .toList();
+        accessControlService.accountsWithAccess(
+            accessControlService.requireActingMember(actor),
+            accountRepository.findByWorkspaceId(actor.workspaceId()));
     return history(periodParam, portfolio.getPortfolioCurrency(), accounts, actor, false, portfolioId);
   }
 
@@ -119,8 +125,10 @@ public class ValueHistoryService {
     LocalDate from =
         period.start(today, historyStartRepository.firstActivity(actor.workspaceId(), portfolioId, today));
     List<LocalDate> dates = period.dates(from, today);
-    Map<UUID, LocalDate> firstEvidence =
-        historyStartRepository.firstEvidence(accounts.stream().map(Account::getId).toList());
+    List<UUID> allIds = accounts.stream().map(Account::getId).toList();
+    Map<UUID, LocalDate> firstEvidence = historyStartRepository.firstEvidence(allIds);
+    Map<UUID, List<AccountHistoryState>> historyStates =
+        accountHistoryStateRepository.historyFor(allIds);
     Map<UUID, PortfolioPlacement> placements =
         withSections ? accountService.portfolioPlacementsOf(accounts) : Map.of();
     List<Point> points = new ArrayList<>(dates.size());
@@ -129,7 +137,15 @@ public class ValueHistoryService {
     ValueHistorySnapshot last = null;
     boolean complete = true;
     for (LocalDate date : dates) {
-      List<Account> eligible = onDate(accounts, date, businessDateService.zone(), firstEvidence);
+      List<Account> eligible =
+          onDate(
+              accounts,
+              date,
+              businessDateService.zone(),
+              firstEvidence,
+              historyStates,
+              portfolioId,
+              warnings);
       ValueHistorySnapshot snapshot = snapshot(eligible, currency, date, placements, warnings);
       points.add(new Point(date, snapshot.value(), snapshot.estimated()));
       complete &= snapshot.complete();
@@ -137,6 +153,10 @@ public class ValueHistoryService {
         first = snapshot;
       }
       last = snapshot;
+    }
+    if (warnings.stream().anyMatch(w -> w.contains("historical lifecycle state unavailable")
+        || w.contains("may have been restated"))) {
+      complete = false;
     }
     ValueHistorySnapshot start = Objects.requireNonNull(first);
     ValueHistorySnapshot end = Objects.requireNonNull(last);
@@ -186,17 +206,27 @@ public class ValueHistoryService {
     LocalDate from = today.minusMonths(1);
     Set<String> currencies = new TreeSet<>();
     portfolios.forEach(portfolio -> currencies.add(portfolio.getPortfolioCurrency()));
-    Map<UUID, LocalDate> firstEvidence =
-        historyStartRepository.firstEvidence(accounts.stream().map(Account::getId).toList());
+    List<UUID> ids = accounts.stream().map(Account::getId).toList();
+    Map<UUID, LocalDate> firstEvidence = historyStartRepository.firstEvidence(ids);
+    Map<UUID, List<AccountHistoryState>> historyStates =
+        accountHistoryStateRepository.historyFor(ids);
     List<Account> eligibleAtStart =
-        onDate(accounts, from, businessDateService.zone(), firstEvidence);
+        onDate(
+            accounts, from, businessDateService.zone(), firstEvidence, historyStates, null, null);
     List<Account> eligibleAtEnd =
-        onDate(accounts, today, businessDateService.zone(), firstEvidence);
-    Map<UUID, List<Account>> groups = new HashMap<>();
-    for (Account account : accounts) {
-      groups
-          .computeIfAbsent(account.getPortfolio().getId(), unused -> new ArrayList<>())
-          .add(account);
+        onDate(
+            accounts, today, businessDateService.zone(), firstEvidence, historyStates, null, null);
+    Map<UUID, Set<UUID>> idsAtStart = new HashMap<>();
+    Map<UUID, Set<UUID>> idsAtEnd = new HashMap<>();
+    for (Account account : eligibleAtStart) {
+      AccountHistoryState state = stateOn(account, from, businessDateService.zone(), historyStates);
+      idsAtStart.computeIfAbsent(state.portfolioId(), unused -> new java.util.HashSet<>())
+          .add(account.getId());
+    }
+    for (Account account : eligibleAtEnd) {
+      AccountHistoryState state = stateOn(account, today, businessDateService.zone(), historyStates);
+      idsAtEnd.computeIfAbsent(state.portfolioId(), unused -> new java.util.HashSet<>())
+          .add(account.getId());
     }
     var start = accountValuationService.valueAllInCurrencies(eligibleAtStart, currencies, from);
     var end = accountValuationService.valueAllInCurrencies(eligibleAtEnd, currencies, today);
@@ -204,15 +234,12 @@ public class ValueHistoryService {
     for (Portfolio portfolio : portfolios) {
       UUID portfolioId = portfolio.getId();
       String currency = portfolio.getPortfolioCurrency();
-      List<Account> group = groups.getOrDefault(portfolioId, List.of());
+      Set<UUID> startIds = idsAtStart.getOrDefault(portfolioId, Set.of());
+      Set<UUID> endIds = idsAtEnd.getOrDefault(portfolioId, Set.of());
       List<AccountValuation> atStart =
-          start.in(currency).stream()
-              .filter(v -> group.stream().anyMatch(a -> a.getId().equals(v.accountId())))
-              .toList();
+          start.in(currency).stream().filter(v -> startIds.contains(v.accountId())).toList();
       List<AccountValuation> atEnd =
-          end.in(currency).stream()
-              .filter(v -> group.stream().anyMatch(a -> a.getId().equals(v.accountId())))
-              .toList();
+          end.in(currency).stream().filter(v -> endIds.contains(v.accountId())).toList();
       if (atStart.stream().anyMatch(v -> !v.valueKnown())
           || atEnd.stream().anyMatch(v -> !v.valueKnown())) {
         result.put(portfolioId, new PortfolioPeriodChange("1M", null, null));
@@ -260,7 +287,10 @@ public class ValueHistoryService {
       Collection<Account> accounts,
       LocalDate date,
       ZoneId businessZone,
-      Map<UUID, LocalDate> firstEvidence) {
+      Map<UUID, LocalDate> firstEvidence,
+      Map<UUID, List<AccountHistoryState>> historyStates,
+      @Nullable UUID portfolioId,
+      @Nullable Set<String> warnings) {
     return accounts.stream()
         .filter(
             account -> {
@@ -273,16 +303,47 @@ public class ValueHistoryService {
               if (evidence != null && (inception == null || evidence.isBefore(inception))) {
                 inception = evidence;
               }
-              // No known start date: don't manufacture historic balances. A createdAt date is
-              // available for persisted accounts; this fallback is defensive only.
-              return inception != null && !date.isBefore(inception);
+              if (inception == null || date.isBefore(inception)) {
+                return false;
+              }
+              AccountHistoryState state = stateOn(account, date, businessZone, historyStates);
+              if (state == null) {
+                // For pre-migration data without an event, preserve the current state but
+                // do not pretend this reconstructed history is complete.
+                if (warnings != null) {
+                  warnings.add(account.getName() + ": historical lifecycle state unavailable");
+                }
+                return "ACTIVE".equals(account.getStatus())
+                    && (portfolioId == null
+                        || portfolioId.equals(account.getPortfolio().getId()));
+              }
+              if (!state.verified() && warnings != null) {
+                warnings.add(account.getName() + ": portfolio and archive history before tracking"
+                    + " may have been restated");
+              }
+              return "ACTIVE".equals(state.status())
+                  && (portfolioId == null || portfolioId.equals(state.portfolioId()));
             })
-        .filter(
-            account ->
-                account.getArchivedAt() == null
-                    || date.isBefore(
-                        account.getArchivedAt().atZoneSameInstant(businessZone).toLocalDate()))
         .toList();
+  }
+
+  private static @Nullable AccountHistoryState stateOn(
+      Account account,
+      LocalDate date,
+      ZoneId zone,
+      Map<UUID, List<AccountHistoryState>> historyStates) {
+    List<AccountHistoryState> events = historyStates.getOrDefault(account.getId(), List.of());
+    if (events.isEmpty()) {
+      return null;
+    }
+    AccountHistoryState asOf = events.get(0);
+    for (AccountHistoryState event : events) {
+      if (event.effectiveAt().atZoneSameInstant(zone).toLocalDate().isAfter(date)) {
+        break;
+      }
+      asOf = event;
+    }
+    return asOf;
   }
 
   private static BigDecimal sum(Collection<AccountValuation> valuations) {
