@@ -1,0 +1,15 @@
+# #535: after the one-time code, the account from the deep link opens.
+appId: com.anonymous.trackmywealth
+---
+- tapOn:
+    text: "Authenticator code"
+    index: 1
+- runScript: totp.js
+- inputText: ${output.code}
+- takeScreenshot: ios-02b-mfa-code-typed
+- tapOn: "Verify code"
+- extendedWaitUntil:
+    visible: "Account detail"
+    timeout: 60000
+- assertVisible: "Girokonto"
+- takeScreenshot: ios-03-account-after-mfa
