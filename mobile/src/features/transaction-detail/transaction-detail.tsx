@@ -834,7 +834,7 @@ export function TransactionDetail({
                     : 'txn.category.automatic',
               })}
             </Text>
-            {!changeable && categoryEditExplanation && !pendingReview ? (
+            {!changeable && categoryEditExplanation && !pendingReview && !archived && !transaction.reconciliationAdjustment ? (
               <Text accessibilityRole="alert" style={{ color: theme.statusWarning }}>
                 {intl.formatMessage({ id: categoryEditExplanation })}
               </Text>
@@ -904,7 +904,7 @@ export function TransactionDetail({
                     if (selectedCategory) void saveCategory(selectedCategory);
                   }}
                 />
-                {!changeable && categoryEditExplanation ? (
+                {!changeable && categoryEditExplanation && !archived && !transaction.reconciliationAdjustment ? (
                   <Text accessibilityRole="alert" style={{ color: theme.statusWarning }}>
                     {intl.formatMessage({ id: categoryEditExplanation })}
                   </Text>
