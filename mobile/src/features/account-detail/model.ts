@@ -77,13 +77,14 @@ const VALUE_BASIS_LABELS = {
 
 /** Unknown/new server values never imply that a particular provenance is verified. */
 export function valueBasisExplanation(basis: string | null | undefined, intl: Intl): string {
-  if (!basis || !Object.prototype.hasOwnProperty.call(VALUE_BASIS_LABELS, basis)) {
-    return intl.formatMessage({ id: 'account.valueSourceUnavailable' });
+  if (!basis) return intl.formatMessage({ id: 'account.valueSourceUnavailable' });
+  const messageId = labelFor(VALUE_BASIS_LABELS, basis, 'account.valueSourceUnavailable');
+  if (messageId === 'account.valueSourceUnavailable') {
+    return intl.formatMessage({ id: messageId });
   }
-  const code = basis as keyof typeof VALUE_BASIS_LABELS;
   return intl.formatMessage(
     { id: 'account.valueFrom' },
-    { basis: intl.formatMessage({ id: VALUE_BASIS_LABELS[code] }) },
+    { basis: intl.formatMessage({ id: messageId }) },
   );
 }
 
