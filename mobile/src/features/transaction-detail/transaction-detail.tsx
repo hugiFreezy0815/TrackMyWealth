@@ -427,9 +427,10 @@ export function TransactionDetail({
       <ErrorBanner error={record.error} onRetry={() => void record.refetch()} />
     );
   }
-  const name = transactionTitle(transaction) === transaction.transactionType
-    ? transactionTypeLabel(transaction.transactionType, intl)
-    : transactionTitle(transaction);
+  const name =
+    transactionTitle(transaction) === transaction.transactionType
+      ? transactionTypeLabel(transaction.transactionType, intl)
+      : transactionTitle(transaction);
   const allCategories = historicalCategories.data ?? categories.data ?? [];
   const category = allCategories.find((item) => item.id === transaction.categoryId);
   const parent = allCategories.find((item) => item.id === category?.parentId);

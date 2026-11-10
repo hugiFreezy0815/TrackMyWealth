@@ -67,7 +67,8 @@ describe('useConflict', () => {
 
 describe('retryVersionRequired', () => {
   it('reloads once and resends a known HTTP 428 with the new server version', async () => {
-    const write = jest.fn()
+    const write = jest
+      .fn()
       .mockRejectedValueOnce(problem(428, 'VERSION_REQUIRED'))
       .mockResolvedValue('ok');
     const reload = jest.fn().mockResolvedValue({ version: 3 });

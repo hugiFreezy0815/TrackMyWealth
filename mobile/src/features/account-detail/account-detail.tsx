@@ -359,10 +359,7 @@ export function AccountDetail({
           title={intl.formatMessage({ id: 'account.valueSourceUnavailable' })}
           description={
             value
-              ? intl.formatMessage(
-                  { id: 'account.asOf' },
-                  { date: formatDate(value.asOf, intl.locale) },
-                )
+              ? intl.formatMessage({ id: 'account.asOf' }, { date: formatDate(value.asOf, intl.locale) })
               : undefined
           }
         />

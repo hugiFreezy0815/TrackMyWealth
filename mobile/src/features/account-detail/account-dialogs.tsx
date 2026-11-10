@@ -200,10 +200,7 @@ export function ValueExplanationSheet({
   const status = valueStatusTexts(value.valueStatus, value.valueSourceDate, intl);
   const lines = [
     intl.formatMessage({ id: 'account.valueSourceUnavailable' }),
-    intl.formatMessage(
-      { id: 'account.asOf' },
-      { date: formatDate(value.asOf, intl.locale) },
-    ),
+    intl.formatMessage({ id: 'account.asOf' }, { date: formatDate(value.asOf, intl.locale) }),
     value.valueSourceDate
       ? intl.formatMessage(
           { id: 'account.valueSourceDate' },
