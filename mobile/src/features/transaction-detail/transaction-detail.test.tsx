@@ -224,7 +224,7 @@ describe('S4 transaction detail', () => {
     } as unknown as ReturnType<typeof useTransaction>);
     await show();
     expect(screen.getByText('Migros')).toBeTruthy();
-    const retry = screen.getByRole('button', { name: /Retry/i });
+    const retry = screen.getByRole('button', { name: 'Try again' });
     await fireEvent.press(retry);
     expect(refetch).toHaveBeenCalledTimes(1);
   });
@@ -235,9 +235,13 @@ describe('S4 transaction detail', () => {
       isPending: status === 'loading',
     } as unknown as ReturnType<typeof useAccount>);
     await show();
-    const category = screen.getByRole('button', { name: 'Change category' });
-    expect(category.props.disabled ?? category.props.accessibilityState?.disabled).toBe(true);
-    await fireEvent.press(category);
+    if (status === 'archived') {
+      expect(screen.queryByRole('button', { name: 'Change category' })).toBeNull();
+    } else {
+      const category = screen.getByRole('button', { name: 'Change category' });
+      expect(category.props.disabled ?? category.props.accessibilityState?.disabled).toBe(true);
+      await fireEvent.press(category);
+    }
     expect(setCategory).not.toHaveBeenCalled();
   });
 
