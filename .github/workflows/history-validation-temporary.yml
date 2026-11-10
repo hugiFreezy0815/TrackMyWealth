@@ -1,4 +1,5 @@
 name: History temporary validation
+# Re-run the historical performance acceptance fixture for review finding REV-006.
 on:
   push:
     branches: [feat/477-value-history]
