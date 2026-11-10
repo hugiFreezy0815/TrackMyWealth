@@ -650,5 +650,10 @@
   "portfolio.type.suggested": "{type} (suggested)",
   "portfolio.details.name": "Name",
   "portfolio.details.institution": "Institution",
-  "portfolio.explain.converted": "The ≈ value is converted to {currency} by the server."
+  "portfolio.explain.converted": "The ≈ value is converted to {currency} by the server.",
+  "valueBasis.LEDGER_EMPTY": "an empty ledger (assumed zero)",
+  "valueBasis.LEDGER_FROM_OPENING_BALANCE": "an opening balance adjusted by transactions",
+  "valueBasis.LEDGER_FROM_STATEMENT_BALANCE": "a statement balance adjusted by transactions",
+  "valueBasis.ORIGINAL_PRINCIPAL": "the original principal (estimated outstanding amount)",
+  "valueBasis.ORIGINAL_PRINCIPAL_LESS_REPAYMENTS": "the original principal less recorded repayments (estimated outstanding amount)"
 }
