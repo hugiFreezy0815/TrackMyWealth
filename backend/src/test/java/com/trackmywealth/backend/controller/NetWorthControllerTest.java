@@ -21,6 +21,7 @@ import com.trackmywealth.backend.testsupport.AccountRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -392,6 +393,62 @@ class NetWorthControllerTest {
   }
 
   @Test
+  void foreignWorkspacePortfolioHistoryReturnsNotFound() throws Exception {
+    String token = bootstrapAdministrator();
+    UUID foreignWorkspace = UUID.randomUUID();
+    UUID foreignPortfolio;
+    try (Connection connection = dataSource.getConnection()) {
+      connection.setAutoCommit(false);
+      try (PreparedStatement context =
+              connection.prepareStatement("SELECT set_config('app.current_workspace_id', ?, true)");
+          PreparedStatement insert =
+              connection.prepareStatement("INSERT INTO workspace (id, name) VALUES (?, ?)")) {
+        context.setString(1, foreignWorkspace.toString());
+        context.execute();
+        insert.setObject(1, foreignWorkspace);
+        insert.setString(2, "Foreign history workspace");
+        insert.executeUpdate();
+      }
+      try (PreparedStatement select =
+          connection.prepareStatement(
+              "SELECT id FROM portfolio WHERE workspace_id = ? AND is_personal_assets_default = true")) {
+        select.setObject(1, foreignWorkspace);
+        try (ResultSet rows = select.executeQuery()) {
+          assertThat(rows.next()).isTrue();
+          foreignPortfolio = rows.getObject(1, UUID.class);
+        }
+      }
+      connection.commit();
+    }
+
+    client(token)
+        .get()
+        .uri("/api/v1/portfolios/" + foreignPortfolio + "/history?period=1M")
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+  }
+
+  @Test
+  void historyUsesDifferentFxRatesOnDifferentDates() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse portfolio = createPortfolio(token, "EUR Bank", "EUR");
+    UUID cash =
+        createAccount(token, AccountRequests.account("EUR savings", "CASH", "EUR")
+            .portfolioId(portfolio.id()).build()).id();
+    seedOpeningBalance(cash, "1000");
+    seedFxRateOn("EUR", "CHF", today().minusDays(2), "1.00");
+    seedFxRateOn("EUR", "CHF", today(), "1.20");
+
+    ValueHistoryResponse history = history(token, "1W");
+    assertThat(history.points().stream()
+        .filter(point -> point.date().equals(today().minusDays(2)))
+        .findFirst().orElseThrow().value()).isEqualByComparingTo("1000");
+    assertThat(history.points().get(history.points().size() - 1).value())
+        .isEqualByComparingTo("1200");
+  }
+
+  @Test
   void invalidHistoryPeriodIsRejectedWithValidationFailed() {
     String token = bootstrapAdministrator();
 
@@ -542,10 +599,14 @@ class NetWorthControllerTest {
   }
 
   private void seedFxRate(String base, String quote, String rate) {
+    seedFxRateOn(base, quote, today(), rate);
+  }
+
+  private void seedFxRateOn(String base, String quote, LocalDate date, String rate) {
     FxRate fxRate = new FxRate();
     fxRate.setBaseCurrency(base);
     fxRate.setQuoteCurrency(quote);
-    fxRate.setRateDate(today());
+    fxRate.setRateDate(date);
     fxRate.setRate(new BigDecimal(rate));
     fxRate.setSource("ECB"); // app.fx.default-source
     fxRateRepository.save(fxRate);
