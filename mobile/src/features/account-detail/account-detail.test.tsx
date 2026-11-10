@@ -297,7 +297,7 @@ describe('S3 account detail acceptance checks (#494)', () => {
       new ApiError('changed', 412, { status: 412, title: 'Conflict', code: 'VERSION_CONFLICT' }),
     );
     await changeCategory('Food', 'Food › Groceries');
-    await fireEvent.press(await screen.findByText('Review'));
+    await fireEvent.press(await screen.findByText('Review and save again'));
     await waitFor(() =>
       expect(api.get).toHaveBeenCalledWith(
         '/api/v1/accounts/{accountId}/transactions/{transactionId}',
