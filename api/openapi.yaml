@@ -17959,8 +17959,8 @@ components:
       - nature
       - portfolioId
       - portfolioName
-      - valueKnown
       - valueBasis
+      - valueKnown
       - valueSourceDate
       - valueStatus
       - version
