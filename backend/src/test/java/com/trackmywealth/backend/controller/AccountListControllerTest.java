@@ -229,7 +229,7 @@ class AccountListControllerTest {
         client(token)
             .put()
             .uri("/api/v1/accounts/" + old.id() + "/savings-pocket")
-            .header("If-Match", """ + old.version() + """)
+            .header("If-Match", "\"" + old.version() + "\"")
             .contentType(MediaType.APPLICATION_JSON)
             .body(new LinkSavingsPocketRequest(active))
             .exchange()
