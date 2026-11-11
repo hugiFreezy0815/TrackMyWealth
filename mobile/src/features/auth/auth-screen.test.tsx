@@ -1,3 +1,4 @@
+import { TextInput } from 'react-native';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { NetworkError } from '@/api/client';
@@ -38,6 +39,49 @@ describe('AuthScreen', () => {
     expect(jest.mocked(saveServerUrl).mock.invocationCallOrder[0]).toBeLessThan(
       jest.mocked(signIn).mock.invocationCallOrder[0],
     );
+  });
+
+  it('moves focus from Email to Password when Return is pressed', async () => {
+    const focus = jest.spyOn(TextInput.prototype, 'focus');
+    try {
+      await render(withIntl(<AuthScreen mfaRequired={false} />));
+      const email = screen.getByLabelText('Email');
+
+      expect(email.props.returnKeyType).toBe('next');
+      expect(email.props.submitBehavior).toBe('submit');
+      await fireEvent(email, 'submitEditing');
+
+      expect(focus).toHaveBeenCalledTimes(1);
+      expect(focus.mock.contexts[0]).toMatchObject({
+        props: { accessibilityLabel: 'Password' },
+      });
+      expect(signIn).not.toHaveBeenCalled();
+    } finally {
+      focus.mockRestore();
+    }
+  });
+
+  it('submits from Password on Return and ignores another Return while busy', async () => {
+    let finishSignIn: (() => void) | undefined;
+    jest.mocked(signIn).mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishSignIn = resolve;
+      }),
+    );
+    await render(withIntl(<AuthScreen mfaRequired={false} />));
+
+    await fireEvent.changeText(screen.getByLabelText('Email'), 'demo@example.com');
+    const password = screen.getByLabelText('Password');
+    await fireEvent.changeText(password, 'secret');
+    await fireEvent(password, 'submitEditing');
+    await waitFor(() => expect(signIn).toHaveBeenCalledWith('demo@example.com', 'secret'));
+
+    await fireEvent(password, 'submitEditing');
+
+    expect(signIn).toHaveBeenCalledTimes(1);
+    expect(saveServerUrl).toHaveBeenCalledTimes(1);
+    finishSignIn?.();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sign in' })).not.toBeBusy());
   });
 
   it('labels every field visibly, not only for screen readers', async () => {

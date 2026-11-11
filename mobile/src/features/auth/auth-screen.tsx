@@ -1,13 +1,17 @@
-import { useState } from 'react';
+import { type ComponentRef, type Ref, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   TextInput,
   type TextInputProps,
   View,
 } from 'react-native';
 import { useIntl, type IntlShape } from 'react-intl';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getApiBaseUrl, NetworkError } from '@/api/client';
 import { InvalidServerUrlError, saveServerUrl } from '@/api/server-url';
@@ -21,6 +25,8 @@ const SERVER_PLACEHOLDER = 'https://wealth.example.com';
 export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
   const intl = useIntl();
   const theme = useTheme();
+  const passwordInput = useRef<ComponentRef<typeof TextInput>>(null);
+  const submitting = useRef(false);
   const [server, setServer] = useState(getApiBaseUrl);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -29,6 +35,8 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
   const [error, setError] = useState<string | null>(null);
 
   async function submit() {
+    if (submitting.current) return;
+    submitting.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -44,6 +52,7 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
     } catch (failure) {
       setError(errorMessage(failure, intl));
     } finally {
+      submitting.current = false;
       setCode('');
       setBusy(false);
     }
@@ -57,83 +66,98 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
 
   const submitLabel = intl.formatMessage({ id: mfaRequired ? 'auth.verifyCode' : 'auth.signIn' });
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
-        <ThemedText type="smallBold" themeColor="primary" style={styles.brand}>
-          {intl.formatMessage({ id: 'app.name' })}
-        </ThemedText>
-        <ThemedText type="subtitle" accessibilityRole="header">
-          {intl.formatMessage({ id: mfaRequired ? 'auth.verifySignIn' : 'auth.signIn' })}
-        </ThemedText>
-        {!mfaRequired ? (
-          <>
-            <LabeledField
-              label={intl.formatMessage({ id: 'auth.server' })}
-              placeholder={SERVER_PLACEHOLDER}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-              value={server}
-              onChangeText={setServer}
-            />
-            <LabeledField
-              label={intl.formatMessage({ id: 'auth.email' })}
-              autoCapitalize="none"
-              autoComplete="email"
-              keyboardType="email-address"
-              value={email}
-              onChangeText={setEmail}
-            />
-            <LabeledField
-              label={intl.formatMessage({ id: 'auth.password' })}
-              secureTextEntry
-              autoComplete="password"
-              value={password}
-              onChangeText={setPassword}
-            />
-          </>
-        ) : (
-          <LabeledField
-            label={intl.formatMessage({ id: 'auth.authenticatorCode' })}
-            keyboardType="number-pad"
-            autoComplete="one-time-code"
-            maxLength={6}
-            value={code}
-            onChangeText={setCode}
-          />
-        )}
-        {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
-        <Pressable
-          accessibilityRole="button"
-          // The spinner replaces the text while busy; the button keeps its name for screen readers.
-          accessibilityLabel={submitLabel}
-          aria-busy={busy}
-          aria-disabled={busy}
-          style={[styles.submit, { backgroundColor: theme.primary }, busy && styles.disabled]}
-          onPress={() => void submit()}
-          disabled={busy}
-        >
-          {busy ? (
-            <ActivityIndicator color={theme.onPrimary} />
-          ) : (
-            <ThemedText themeColor="onPrimary" style={styles.submitText}>
-              {submitLabel}
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
+            <ThemedText type="smallBold" themeColor="primary" style={styles.brand}>
+              {intl.formatMessage({ id: 'app.name' })}
             </ThemedText>
-          )}
-        </Pressable>
-        {mfaRequired && (
-          <Pressable
-            accessibilityRole="button"
-            aria-disabled={busy}
-            style={styles.back}
-            onPress={startOver}
-            disabled={busy}
-          >
-            <ThemedText type="smallBold">{intl.formatMessage({ id: 'auth.startOver' })}</ThemedText>
-          </Pressable>
-        )}
-      </View>
-    </View>
+            <ThemedText type="subtitle" accessibilityRole="header">
+              {intl.formatMessage({ id: mfaRequired ? 'auth.verifySignIn' : 'auth.signIn' })}
+            </ThemedText>
+            {!mfaRequired ? (
+              <>
+                <LabeledField
+                  label={intl.formatMessage({ id: 'auth.server' })}
+                  placeholder={SERVER_PLACEHOLDER}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                  value={server}
+                  onChangeText={setServer}
+                />
+                <LabeledField
+                  label={intl.formatMessage({ id: 'auth.email' })}
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  keyboardType="email-address"
+                  returnKeyType="next"
+                  submitBehavior="submit"
+                  onSubmitEditing={() => passwordInput.current?.focus()}
+                  value={email}
+                  onChangeText={setEmail}
+                />
+                <LabeledField
+                  label={intl.formatMessage({ id: 'auth.password' })}
+                  ref={passwordInput}
+                  secureTextEntry
+                  returnKeyType="go"
+                  onSubmitEditing={() => void submit()}
+                  autoComplete="password"
+                  value={password}
+                  onChangeText={setPassword}
+                />
+              </>
+            ) : (
+              <LabeledField
+                label={intl.formatMessage({ id: 'auth.authenticatorCode' })}
+                keyboardType="number-pad"
+                autoComplete="one-time-code"
+                maxLength={6}
+                value={code}
+                onChangeText={setCode}
+              />
+            )}
+            {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
+            <Pressable
+              accessibilityRole="button"
+              // The spinner replaces the text while busy; the button keeps its name for screen readers.
+              accessibilityLabel={submitLabel}
+              aria-busy={busy}
+              aria-disabled={busy}
+              style={[styles.submit, { backgroundColor: theme.primary }, busy && styles.disabled]}
+              onPress={() => void submit()}
+              disabled={busy}
+            >
+              {busy ? (
+                <ActivityIndicator color={theme.onPrimary} />
+              ) : (
+                <ThemedText themeColor="onPrimary" style={styles.submitText}>
+                  {submitLabel}
+                </ThemedText>
+              )}
+            </Pressable>
+            {mfaRequired && (
+              <Pressable
+                accessibilityRole="button"
+                aria-disabled={busy}
+                style={styles.back}
+                onPress={startOver}
+                disabled={busy}
+              >
+                <ThemedText type="smallBold">
+                  {intl.formatMessage({ id: 'auth.startOver' })}
+                </ThemedText>
+              </Pressable>
+            )}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
@@ -153,7 +177,11 @@ function errorMessage(failure: unknown, intl: IntlShape): string {
 }
 
 /** A visible label above the input; the same text is its accessible name. */
-function LabeledField({ label, ...input }: TextInputProps & { label: string }) {
+function LabeledField({
+  label,
+  ref,
+  ...input
+}: TextInputProps & { label: string; ref?: Ref<ComponentRef<typeof TextInput>> }) {
   const theme = useTheme();
   return (
     <View style={styles.labeled}>
@@ -161,6 +189,7 @@ function LabeledField({ label, ...input }: TextInputProps & { label: string }) {
         {label}
       </ThemedText>
       <TextInput
+        ref={ref}
         accessibilityLabel={label}
         placeholderTextColor={theme.textSecondary}
         style={[styles.field, { color: theme.text, borderColor: theme.textSecondary }]}
@@ -171,7 +200,8 @@ function LabeledField({ label, ...input }: TextInputProps & { label: string }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  container: { flex: 1 },
+  content: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   card: { width: '100%', maxWidth: 440, borderRadius: 20, padding: 28, gap: 18 },
   brand: { letterSpacing: 0.3 },
   labeled: { gap: 8 },
