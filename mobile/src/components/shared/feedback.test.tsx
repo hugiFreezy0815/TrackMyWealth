@@ -65,8 +65,8 @@ describe('ErrorBanner', () => {
       'de-CH',
       /^Dieser Eintrag existiert nicht mehr oder ist für dich nicht verfügbar\.$/,
     ],
-    // A known code without its own message: the message of its reaction (FIX_INPUT).
-    [problem(400, 'INVALID_SORT'), 'en', /Some entries are not valid\. Check them/],
+    [problem(400, 'INVALID_SORT'), 'en', /^This list cannot be sorted that way\.$/],
+    [problem(400, 'INVALID_SORT'), 'de-DE', /^Diese Liste kann nicht so sortiert werden\.$/],
     // An unknown code: the reaction of its status (403 → SHOW).
     [problem(403, 'UNKNOWN_CODE'), 'de-DE', /^Das ist gerade nicht möglich\.$/],
     [problem(500, 'UNKNOWN_CODE', 'corr-1'), 'en', /^Something went wrong\.$/],

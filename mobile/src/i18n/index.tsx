@@ -15,7 +15,10 @@ export function resolveLocale(
   language?: string | null,
   deviceLocale: string = DEVICE_LOCALE,
 ): AppLocale {
-  const locale = (language || deviceLocale || 'en').replace('_', '-').toLowerCase();
+  const preference = language?.replace('_', '-').toLowerCase();
+  const device = deviceLocale.replace('_', '-').toLowerCase();
+  // The API stores plain "de". Retain the device's German region for market-specific copy.
+  const locale = preference === 'de' && device.startsWith('de-') ? device : preference || device;
   if (locale.startsWith('de-ch')) return 'de-CH';
   if (locale.startsWith('de-de')) return 'de-DE';
   if (locale.startsWith('de')) return 'de';

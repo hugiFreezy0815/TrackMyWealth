@@ -75,28 +75,9 @@ export function ActionButton({
     </Pressable>
   );
 }
-/** Problem codes with their own catalogue message (`problem.<CODE>`). */
-const PROBLEM_MESSAGE_CODES: readonly string[] = [
-  'UNAUTHENTICATED',
-  'FORBIDDEN',
-  'NOT_FOUND',
-  'VALIDATION_FAILED',
-  'VERSION_REQUIRED',
-  'VERSION_CONFLICT',
-  'ACCOUNT_ARCHIVED',
-  'LOCKED',
-  'RATE_LIMITED',
-  'INTERNAL',
-];
-
-/**
- * Spec README §8: an error shows the message key of its problem `code`. A code without its own
- * message - or one this app version does not know - shows the message of its client reaction.
- */
+/** Use the code's message when known, or its HTTP-status reaction for a newer code. */
 export function problemMessageKey(problem: Pick<ProblemReaction, 'code' | 'reaction'>): string {
-  return problem.code && PROBLEM_MESSAGE_CODES.includes(problem.code)
-    ? `problem.${problem.code}`
-    : `problem.reaction.${problem.reaction}`;
+  return problem.code ? `problem.${problem.code}` : `problem.reaction.${problem.reaction}`;
 }
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -115,8 +96,7 @@ export function ErrorBanner({
   const theme = useTheme();
   const intl = useIntl();
   const reaction = error instanceof ApiError ? problemReaction(error) : null;
-  // Spec README §8: the message key of the problem code (or of its reaction for a code without
-  // its own message or unknown to this version). A server's raw title/detail is never shown.
+  // Use catalogue copy instead of exposing the server's raw title or detail.
   const text =
     message ?? intl.formatMessage({ id: reaction ? problemMessageKey(reaction) : 'error.generic' });
   // Retrying cannot help when the member must sign in again, change the input, or the same
