@@ -24,7 +24,7 @@ import { formatDate } from '@/format/date';
 import { useOnline } from '@/hooks/use-online';
 import { useTheme } from '@/hooks/use-theme';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
-import { HistoryPanel } from '@/features/value-history/history-panel';
+import { HistoryPanel, historyForDisplay } from '@/features/value-history/history-panel';
 import { useHistoryPeriod } from '@/features/value-history/period';
 import { CashFlowCard } from './cash-flow-card';
 import { CurrencyScope } from './currency-scope';
@@ -104,6 +104,8 @@ export function OverviewScreen({
     !firstRun &&
     Boolean(currency && netWorth.data && (netWorth.data.accounts.length || !portfolios.isPending));
   const history = useNetWorthHistory(currency, period, showHistory);
+  const displayedHistory = historyForDisplay(history, period, online);
+  const historyInScope = displayedHistory?.currency === currency ? displayedHistory : undefined;
   const results = [
     workspace,
     portfolios,
@@ -137,7 +139,15 @@ export function OverviewScreen({
             intl={intl}
             compact={compact}
           >
-            {showHistory ? <HistoryPanel query={history} period={period} hidden={hidden} /> : null}
+            {showHistory ? (
+              <HistoryPanel
+                query={history}
+                data={historyInScope}
+                online={online}
+                period={period}
+                hidden={hidden}
+              />
+            ) : null}
           </NetWorthCard>
           {noAccounts ? <InfoText>{msg(intl, 'overview.noAccounts')}</InfoText> : null}
           <AssetsLiabilitiesCard
@@ -150,11 +160,7 @@ export function OverviewScreen({
             data={netWorth.data}
             hidden={hidden}
             intl={intl}
-            changes={
-              history.data?.period === period && history.data.currency === currency
-                ? history.data.sections
-                : undefined
-            }
+            changes={historyInScope?.sections}
           />
         </>
       ) : null}
@@ -169,7 +175,7 @@ export function OverviewScreen({
       {portfolios.data ? (
         <PortfoliosCard
           items={portfolioItems}
-          period={period}
+          period={historyInScope?.period ?? period}
           hidden={hidden}
           intl={intl}
           onPortfolio={onPortfolio}

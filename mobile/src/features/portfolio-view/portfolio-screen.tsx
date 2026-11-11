@@ -35,7 +35,7 @@ import { PortfolioAccountRow } from './account-row';
 import { accountRows, sectionMessageKey, type PortfolioSection } from './model';
 import { DataSourceCard, PortfolioDetails } from './portfolio-details';
 import { PortfolioExplanation, type Explained } from './portfolio-explanation';
-import { HistoryPanel } from '@/features/value-history/history-panel';
+import { HistoryPanel, historyForDisplay } from '@/features/value-history/history-panel';
 import { useHistoryPeriod } from '@/features/value-history/period';
 import { PortfolioHeader, headerData } from './portfolio-header';
 
@@ -166,7 +166,15 @@ export function PortfolioScreen({
   const main = (
     <View style={{ gap: Spacing.three, flex: 1, minWidth: 0 }}>
       <PortfolioHeader data={data} view={view} onExplain={() => setExplained('total')}>
-        {view ? <HistoryPanel query={history} period={period} hidden={hidden} /> : null}
+        {view ? (
+          <HistoryPanel
+            query={history}
+            data={historyForDisplay(history, period, online)}
+            online={online}
+            period={period}
+            hidden={hidden}
+          />
+        ) : null}
       </PortfolioHeader>
       {view?.sections.length === 0 ? (
         <EmptyState

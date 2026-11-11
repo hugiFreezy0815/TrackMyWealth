@@ -1,5 +1,5 @@
-import { onlineManager } from '@tanstack/react-query';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react-native';
+import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 
 import { ApiError } from '@/api/client';
@@ -9,6 +9,9 @@ import {
   usePortfolios,
   usePortfolioView,
 } from '@/api/queries/resources';
+import { typedApi } from '@/api/typed-api';
+import type { components } from '@/api/schema';
+import { selectHistoryPeriod } from '@/features/value-history/period';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { renderWithIntl } from '@/i18n/test-utils';
 import type {
@@ -213,7 +216,7 @@ function setData(
   } as unknown as ReturnType<typeof usePortfolioView>);
 }
 
-async function mount(locale: 'en' | 'de' = 'en') {
+async function mount(locale: 'en' | 'de' = 'en', client = new QueryClient()) {
   const handlers = {
     onAccount: jest.fn(),
     onPortfolio: jest.fn(),
@@ -223,12 +226,14 @@ async function mount(locale: 'en' | 'de' = 'en') {
     onMissing: jest.fn(),
   };
   const result = await renderWithIntl(
-    <PortfolioScreen
-      portfolioId="p-1"
-      overviewName="All portfolios"
-      onAddPortfolio={jest.fn()}
-      {...handlers}
-    />,
+    <QueryClientProvider client={client}>
+      <PortfolioScreen
+        portfolioId="p-1"
+        overviewName="All portfolios"
+        onAddPortfolio={jest.fn()}
+        {...handlers}
+      />
+    </QueryClientProvider>,
     locale,
   );
   return { ...result, ...handlers };
@@ -256,6 +261,7 @@ const color = (node: { props: { style?: unknown } }) =>
 
 beforeEach(() => {
   jest.clearAllMocks();
+  selectHistoryPeriod('1M');
   jest.mocked(useAmountsHidden).mockReturnValue(false);
   mockWindow.width = 390;
   setPositions([]);
@@ -291,8 +297,11 @@ describe('S2 Portfolio View acceptance (#493)', () => {
           marketAndFx: null,
         },
         sections: [],
-        complete: true,
-        warnings: [],
+        complete: false,
+        warnings: [
+          'Currency conversion unavailable for portfolio capital flows.',
+          'Private account 65432.10: value unknown',
+        ],
       },
       isPending: false,
       isError: false,
@@ -305,6 +314,63 @@ describe('S2 Portfolio View acceptance (#493)', () => {
       screen.getByRole('image', { name: 'Value history. Amounts and dates are hidden.' }),
     ).toBeTruthy();
     expect(screen.queryByText(/9\.24%|1.?122\.33|998.?877\.66|8 Nov 2026/)).toBeNull();
+    expect(screen.getByText('Some historical exchange rates are unavailable.')).toBeTruthy();
+    expect(
+      screen.getByText('A historical value is unavailable for at least one account.'),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Private account|65432[.]10|Market & FX/)).toBeNull();
+  });
+
+  it('keeps the portfolio chart offline and updates it when the requested period loads', async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } },
+    });
+    const actual =
+      jest.requireActual<typeof import('@/api/queries/resources')>('@/api/queries/resources');
+    jest.mocked(usePortfolioHistory).mockImplementation(actual.usePortfolioHistory);
+    setData(view([]));
+    const change = {
+      amount: '11.25',
+      percent: null,
+      contributions: null,
+      capitalMovements: null,
+      marketAndFx: null,
+    };
+    const monthly: components['schemas']['ValueHistoryResponse'] = {
+      period: '1M',
+      currency: 'EUR',
+      from: '2026-10-08',
+      to: '2026-11-08',
+      points: [{ date: '2026-11-08', value: '1100', estimated: false }],
+      change,
+      sections: [],
+      complete: true,
+      warnings: [],
+    };
+    const get = jest
+      .spyOn(typedApi, 'get')
+      .mockResolvedValueOnce(monthly)
+      .mockResolvedValueOnce({ ...monthly, period: '1Y', change: { ...change, amount: '62.21' } });
+    try {
+      await mount('en', client);
+      await screen.findByRole('image', { name: /plus 11[.]25/ });
+      await act(() => onlineManager.setOnline(false));
+      await fireEvent.press(screen.getByRole('radio', { name: '1Y, Past year' }));
+      expect(screen.getByText('The 1Y period is unavailable offline. Showing 1M.')).toBeTruthy();
+      expect(screen.getByRole('image', { name: /plus 11[.]25/ })).toBeTruthy();
+      expect(get).toHaveBeenCalledTimes(1);
+
+      await act(() => onlineManager.setOnline(true));
+      await screen.findByRole('image', { name: /plus 62[.]21/ });
+      expect(screen.queryByText(/period is unavailable offline/)).toBeNull();
+      expect(get).toHaveBeenLastCalledWith(
+        '/api/v1/portfolios/{portfolioId}/history',
+        expect.objectContaining({ params: { portfolioId: 'p-1' }, query: { period: '1Y' } }),
+      );
+    } finally {
+      await act(() => onlineManager.setOnline(true));
+      get.mockRestore();
+    }
   });
 
   it('shows exactly the sections the server sent, in its order', async () => {

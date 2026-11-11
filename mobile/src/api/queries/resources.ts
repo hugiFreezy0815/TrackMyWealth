@@ -48,16 +48,20 @@ export const useNetWorthHistory = (
   period: string,
   enabled: boolean,
 ) =>
-  useQuery({
+  useQuery<components['schemas']['ValueHistoryResponse']>({
     queryKey: queryKeys.netWorthHistory(currency, period),
+    // A period change may reuse the previous series offline, within the same currency only.
+    placeholderData: (previous, query) => (query?.queryKey[1] === currency ? previous : undefined),
     queryFn: ({ signal }) =>
       typedApi.get('/api/v1/net-worth/history', { query: { currency, period }, signal }),
     enabled: enabled && !!currency,
   });
 
 export const usePortfolioHistory = (portfolioId: string, period: string, enabled: boolean) =>
-  useQuery({
+  useQuery<components['schemas']['ValueHistoryResponse']>({
     queryKey: queryKeys.portfolioHistory(portfolioId, period),
+    placeholderData: (previous, query) =>
+      query?.queryKey[1] === portfolioId ? previous : undefined,
     queryFn: ({ signal }) =>
       typedApi.get('/api/v1/portfolios/{portfolioId}/history', {
         params: { portfolioId },

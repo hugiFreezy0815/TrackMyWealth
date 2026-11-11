@@ -6,6 +6,7 @@ import { figureTexts } from '@/components/shared/figure';
 import { Spacing } from '@/constants/theme';
 import { InfoText, msg } from '@/features/overview/overview-text';
 import { periods, selectHistoryPeriod, type HistoryPeriod } from './period';
+import { historyWarningMessageIds } from './warnings';
 import { ValueChart, type ValueHistory } from './value-chart';
 
 const attribution = [
@@ -14,23 +15,40 @@ const attribution = [
   ['marketAndFx', 'history.marketAndFx'],
 ] as const;
 
+export function historyForDisplay(
+  query: { data?: ValueHistory; isPlaceholderData: boolean },
+  period: HistoryPeriod,
+  online: boolean,
+) {
+  const data = query.data;
+  if (data?.period === period) return data;
+  if (!online && query.isPlaceholderData && periods.some((option) => option === data?.period)) {
+    return data;
+  }
+}
+
 export function HistoryPanel({
   query,
+  data,
+  online,
   period,
   hidden,
 }: {
   query: {
-    data?: ValueHistory;
     isPending: boolean;
+    isPlaceholderData: boolean;
     isError: boolean;
     error: unknown;
     refetch: () => unknown;
   };
+  data?: ValueHistory;
+  online: boolean;
   period: HistoryPeriod;
   hidden: boolean;
 }) {
   const intl = useIntl();
-  const data = query.data?.period === period ? query.data : undefined;
+  const unavailableOffline = !online && data?.period !== period;
+  const warnings = data ? historyWarningMessageIds(data.warnings) : [];
   const percentage =
     data?.change.percent != null && !hidden
       ? figureTexts(intl, { value: data.change.percent, kind: 'percent', signRole: 'change' })
@@ -56,7 +74,23 @@ export function HistoryPanel({
           if (option) selectHistoryPeriod(option);
         }}
       />
-      {query.isPending ? <LoadingSkeleton count={1} height={120} /> : null}
+      {unavailableOffline ? (
+        <View role="status" accessibilityLiveRegion="polite">
+          <InfoText>
+            {data
+              ? msg(intl, 'history.offlineShowing', {
+                  requested: msg(intl, `history.period.${period}`),
+                  shown: msg(intl, `history.period.${data.period}`),
+                })
+              : msg(intl, 'history.offlineUnavailable', {
+                  requested: msg(intl, `history.period.${period}`),
+                })}
+          </InfoText>
+        </View>
+      ) : null}
+      {online && (query.isPending || query.isPlaceholderData) ? (
+        <LoadingSkeleton count={1} height={120} />
+      ) : null}
       {query.isError ? (
         <ErrorBanner error={query.error} onRetry={() => void query.refetch()} />
       ) : null}
@@ -64,7 +98,7 @@ export function HistoryPanel({
         <>
           {data.points.length > 0 ? (
             <>
-              <InfoText>{msg(intl, `history.range.${period}`)}</InfoText>
+              <InfoText>{msg(intl, `history.range.${data.period}`)}</InfoText>
               <ChangeChip
                 amount={data.change.amount}
                 currency={data.currency}
@@ -93,7 +127,14 @@ export function HistoryPanel({
           ) : null}
           <ValueChart data={data} hidden={hidden} />
           {!data.complete || data.warnings.length > 0 ? (
-            <InfoText warning>{msg(intl, 'history.incomplete')}</InfoText>
+            <View role="status" accessibilityLiveRegion="polite" style={{ gap: Spacing.one }}>
+              <InfoText warning>{msg(intl, 'history.incomplete')}</InfoText>
+              {warnings.map((id) => (
+                <InfoText key={id} warning>
+                  {msg(intl, id)}
+                </InfoText>
+              ))}
+            </View>
           ) : null}
         </>
       ) : null}

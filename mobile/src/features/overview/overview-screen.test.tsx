@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { IntlProvider } from 'react-intl';
 import { StyleSheet } from 'react-native';
 
@@ -11,6 +12,7 @@ import {
   usePortfolios,
   useWorkspace,
 } from '@/api/queries/resources';
+import { typedApi } from '@/api/typed-api';
 import type { components } from '@/api/schema';
 import { Colors } from '@/constants/theme';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
@@ -186,11 +188,14 @@ function setFixtures() {
 async function renderOverview(
   locale: 'en' | 'de' = 'en',
   props: Partial<OverviewScreenProps> = {},
+  queryClient = new QueryClient(),
 ) {
   return render(
-    <IntlProvider locale={locale} messages={locale === 'de' ? de : en}>
-      <OverviewScreen onAddPortfolio={jest.fn()} onReviewAccount={jest.fn()} {...props} />
-    </IntlProvider>,
+    <QueryClientProvider client={queryClient}>
+      <IntlProvider locale={locale} messages={locale === 'de' ? de : en}>
+        <OverviewScreen onAddPortfolio={jest.fn()} onReviewAccount={jest.fn()} {...props} />
+      </IntlProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -265,7 +270,11 @@ describe('Overview S1 (#489)', () => {
       change,
       sections: [{ section: 'CASH_AND_SAVINGS', change: { ...change, amount: '17.12' } }],
       complete: false,
-      warnings: ['Synthetic warning'],
+      warnings: [
+        'Currency conversion unavailable for contributions.',
+        'Private account 65432.10: value unknown',
+        'Transactions are pending review; contribution attribution is incomplete.',
+      ],
     };
     jest
       .mocked(useNetWorthHistory)
@@ -284,11 +293,75 @@ describe('Overview S1 (#489)', () => {
     expect(screen.getByText('Net saving')).toBeTruthy();
     expect(screen.queryByText('Market & FX')).toBeNull();
     expect(screen.getByText(/parts of the change are incomplete/)).toBeTruthy();
+    expect(screen.getByText('Some historical exchange rates are unavailable.')).toBeTruthy();
+    expect(
+      screen.getByText('A historical value is unavailable for at least one account.'),
+    ).toBeTruthy();
+    expect(screen.getByText(/Some transactions still need review/)).toBeTruthy();
+    expect(screen.queryByText(/Private account|65432[.]10/)).toBeNull();
 
     await fireEvent.press(screen.getByRole('radio', { name: '1W, Past week' }));
     expect(useNetWorthHistory).toHaveBeenLastCalledWith('CHF', '1W', true);
     expect(screen.queryByText('+0.5%')).toBeNull();
     expect(screen.queryByLabelText('plus 17.12 Swiss francs')).toBeNull();
+  });
+
+  it('keeps the monthly chart and section changes offline until the yearly history loads', async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } },
+    });
+    const actual =
+      jest.requireActual<typeof import('@/api/queries/resources')>('@/api/queries/resources');
+    jest.mocked(useNetWorthHistory).mockImplementation(actual.useNetWorthHistory);
+    const change = {
+      amount: '10.25',
+      percent: null,
+      contributions: null,
+      capitalMovements: null,
+      marketAndFx: null,
+    };
+    const monthly: components['schemas']['ValueHistoryResponse'] = {
+      period: '1M',
+      currency: 'CHF',
+      from: '2026-10-08',
+      to: '2026-11-08',
+      points: [{ date: '2026-11-08', value: '1200', estimated: false }],
+      change,
+      sections: [{ section: 'CASH_AND_SAVINGS', change: { ...change, amount: '13.40' } }],
+      complete: true,
+      warnings: [],
+    };
+    const get = jest
+      .spyOn(typedApi, 'get')
+      .mockResolvedValueOnce(monthly)
+      .mockResolvedValueOnce({
+        ...monthly,
+        period: '1Y',
+        change: { ...change, amount: '52.21' },
+        sections: [],
+      });
+    try {
+      await renderOverview('en', {}, client);
+      await screen.findByRole('image', { name: /plus 10[.]25/ });
+      await act(() => onlineManager.setOnline(false));
+      await fireEvent.press(screen.getByRole('radio', { name: '1Y, Past year' }));
+      expect(screen.getByText('The 1Y period is unavailable offline. Showing 1M.')).toBeTruthy();
+      expect(screen.getByRole('image', { name: /plus 10[.]25/ })).toBeTruthy();
+      expect(screen.getByLabelText('plus 13.40 Swiss francs')).toBeTruthy();
+      expect(get).toHaveBeenCalledTimes(1);
+
+      await act(() => onlineManager.setOnline(true));
+      await screen.findByRole('image', { name: /plus 52[.]21/ });
+      expect(screen.queryByText(/period is unavailable offline/)).toBeNull();
+      expect(screen.queryByLabelText('plus 13.40 Swiss francs')).toBeNull();
+      expect(get).toHaveBeenLastCalledWith(
+        '/api/v1/net-worth/history',
+        expect.objectContaining({ query: { currency: 'CHF', period: '1Y' } }),
+      );
+    } finally {
+      await act(() => onlineManager.setOnline(true));
+      get.mockRestore();
+    }
   });
 
   it('falls back to the German tab label without exposing technical terminology', async () => {
