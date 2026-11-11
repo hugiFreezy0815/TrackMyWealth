@@ -3,7 +3,12 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react-nativ
 import { StyleSheet } from 'react-native';
 
 import { ApiError } from '@/api/client';
-import { useAccountPositions, usePortfolios, usePortfolioView } from '@/api/queries/resources';
+import {
+  useAccountPositions,
+  usePortfolioHistory,
+  usePortfolios,
+  usePortfolioView,
+} from '@/api/queries/resources';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { renderWithIntl } from '@/i18n/test-utils';
 import type {
@@ -25,6 +30,7 @@ jest.mock('@/features/privacy/amount-visibility', () => ({
 jest.mock('@/api/queries/resources', () => ({
   usePortfolios: jest.fn(),
   usePortfolioView: jest.fn(),
+  usePortfolioHistory: jest.fn(),
   useAccountPositions: jest.fn(),
 }));
 const mockWindow = { width: 390, height: 844, scale: 2, fontScale: 1 };
@@ -253,6 +259,11 @@ beforeEach(() => {
   jest.mocked(useAmountsHidden).mockReturnValue(false);
   mockWindow.width = 390;
   setPositions([]);
+  jest
+    .mocked(usePortfolioHistory)
+    .mockReturnValue({ isRefetching: false, refetch: jest.fn() } as unknown as ReturnType<
+      typeof usePortfolioHistory
+    >);
   // labelFor warns once per unknown enum value in development.
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
@@ -262,6 +273,40 @@ afterEach(() => {
 });
 
 describe('S2 Portfolio View acceptance (#493)', () => {
+  it('loads the portfolio history and masks its chart labels and period changes', async () => {
+    setData(view([]));
+    jest.mocked(useAmountsHidden).mockReturnValue(true);
+    jest.mocked(usePortfolioHistory).mockReturnValue({
+      data: {
+        period: '1M',
+        currency: 'EUR',
+        from: '2026-10-08',
+        to: '2026-11-08',
+        points: [{ date: '2026-11-08', value: '998877.66', estimated: false }],
+        change: {
+          amount: '1122.33',
+          percent: '9.24',
+          contributions: null,
+          capitalMovements: null,
+          marketAndFx: null,
+        },
+        sections: [],
+        complete: true,
+        warnings: [],
+      },
+      isPending: false,
+      isError: false,
+      isRefetching: false,
+      refetch: jest.fn(),
+    } as unknown as ReturnType<typeof usePortfolioHistory>);
+    await mount();
+    expect(usePortfolioHistory).toHaveBeenLastCalledWith(listItem.id, '1M', true);
+    expect(
+      screen.getByRole('image', { name: 'Value history. Amounts and dates are hidden.' }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/9\.24%|1.?122\.33|998.?877\.66|8 Nov 2026/)).toBeNull();
+  });
+
   it('shows exactly the sections the server sent, in its order', async () => {
     setData(
       view([

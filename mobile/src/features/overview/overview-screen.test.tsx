@@ -7,6 +7,7 @@ import {
   useAccounts,
   useCashFlow,
   useNetWorth,
+  useNetWorthHistory,
   usePortfolios,
   useWorkspace,
 } from '@/api/queries/resources';
@@ -14,6 +15,7 @@ import type { components } from '@/api/schema';
 import { Colors } from '@/constants/theme';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import en from '@/i18n/en.json';
+import { selectHistoryPeriod } from '@/features/value-history/period';
 import de from '@/i18n/de.json';
 import { OverviewScreen, type OverviewScreenProps } from './overview-screen';
 
@@ -32,6 +34,7 @@ jest.mock('@/api/queries/resources', () => ({
   useWorkspace: jest.fn(),
   usePortfolios: jest.fn(),
   useNetWorth: jest.fn(),
+  useNetWorthHistory: jest.fn(),
   useAccounts: jest.fn(),
   useCashFlow: jest.fn(),
 }));
@@ -162,6 +165,9 @@ function failure(error: Error) {
 }
 function setFixtures() {
   jest
+    .mocked(useNetWorthHistory)
+    .mockReturnValue(success(undefined) as unknown as ReturnType<typeof useNetWorthHistory>);
+  jest
     .mocked(useWorkspace)
     .mockReturnValue(success(workspace) as unknown as ReturnType<typeof useWorkspace>);
   jest
@@ -225,6 +231,7 @@ describe('Overview S1 (#489)', () => {
     jest.clearAllMocks();
     mockWindow.width = 390;
     setFixtures();
+    selectHistoryPeriod('1M');
     jest.mocked(useAmountsHidden).mockReturnValue(false);
   });
 
@@ -236,6 +243,52 @@ describe('Overview S1 (#489)', () => {
     expect(screen.getByText('Cash & savings')).toBeTruthy();
     expect(screen.getByText(/≈CHF/)).toBeTruthy();
     expect(screen.getAllByText('Euro Bank')[0]).toBeTruthy();
+  });
+
+  it('renders server changes for the active period and drops them while switching', async () => {
+    const change = {
+      amount: '42.75',
+      percent: '3.2',
+      contributions: '1.50',
+      capitalMovements: null,
+      marketAndFx: null,
+    };
+    const history: components['schemas']['ValueHistoryResponse'] = {
+      period: '1M',
+      currency: 'CHF',
+      from: '2026-10-08',
+      to: '2026-11-08',
+      points: [
+        { date: '2026-10-08', value: '1000', estimated: true },
+        { date: '2026-11-08', value: '1200', estimated: false },
+      ],
+      change,
+      sections: [{ section: 'CASH_AND_SAVINGS', change: { ...change, amount: '17.12' } }],
+      complete: false,
+      warnings: ['Synthetic warning'],
+    };
+    jest
+      .mocked(useNetWorthHistory)
+      .mockImplementation(
+        (_currency, period) =>
+          success(period === '1M' ? history : undefined) as unknown as ReturnType<
+            typeof useNetWorthHistory
+          >,
+      );
+    await renderOverview();
+    expect(useNetWorthHistory).toHaveBeenLastCalledWith('CHF', '1M', true);
+    expect(screen.getByRole('image', { name: /8 Oct 2026.*plus 42.75.*estimated/i })).toBeTruthy();
+    expect(screen.getByText('+3.2%')).toBeTruthy();
+    expect(screen.getByText('+0.5%')).toBeTruthy();
+    expect(screen.getByLabelText('plus 17.12 Swiss francs')).toBeTruthy();
+    expect(screen.getByText('Net saving')).toBeTruthy();
+    expect(screen.queryByText('Market & FX')).toBeNull();
+    expect(screen.getByText(/parts of the change are incomplete/)).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole('radio', { name: '1W, Past week' }));
+    expect(useNetWorthHistory).toHaveBeenLastCalledWith('CHF', '1W', true);
+    expect(screen.queryByText('+0.5%')).toBeNull();
+    expect(screen.queryByLabelText('plus 17.12 Swiss francs')).toBeNull();
   });
 
   it('falls back to the German tab label without exposing technical terminology', async () => {

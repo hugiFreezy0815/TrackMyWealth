@@ -8,6 +8,7 @@ import { amountTexts } from '@/components/shared/amount';
 import { valueStatusTexts } from '@/components/shared/value-status';
 import { Radii, Spacing, TypeScale } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import type { ValueHistory } from '@/features/value-history/value-chart';
 import type { NetWorth } from './overview-model';
 import { InfoText, msg } from './overview-text';
 
@@ -51,10 +52,12 @@ export function SectionTiles({
   data,
   hidden,
   intl,
+  changes,
 }: {
   data: NetWorth;
   hidden: boolean;
   intl: IntlShape;
+  changes?: ValueHistory['sections'];
 }) {
   const theme = useTheme();
   const [width, setWidth] = useState(0);
@@ -72,6 +75,7 @@ export function SectionTiles({
           intl,
           labelFor(SECTION_LABELS, section.section, 'overview.unknownSection'),
         );
+        const change = changes?.find((item) => item.section === section.section)?.change;
         const valueKnown = section.valueStatus !== 'UNKNOWN';
         const texts = amountTexts(intl, {
           value: section.subtotal,
@@ -116,6 +120,15 @@ export function SectionTiles({
                 }}
               />
             </View>
+            {change ? (
+              <Amount
+                value={change.amount}
+                currency={data.currency}
+                masked={hidden}
+                signRole="change"
+                style={TypeScale.bodyMedium}
+              />
+            ) : null}
             <ValueStatusBadge status={section.valueStatus} />
             {!section.complete ? (
               <InfoText warning>{msg(intl, 'total.incomplete')}</InfoText>

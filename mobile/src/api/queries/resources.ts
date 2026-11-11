@@ -43,6 +43,30 @@ export const useNetWorth = (currency?: string, { enabled = true }: QueryGate = {
     queryFn: () => typedApi.get('/api/v1/net-worth', { query: currency ? { currency } : {} }),
     enabled,
   });
+export const useNetWorthHistory = (
+  currency: string | undefined,
+  period: string,
+  enabled: boolean,
+) =>
+  useQuery({
+    queryKey: queryKeys.netWorthHistory(currency, period),
+    queryFn: ({ signal }) =>
+      typedApi.get('/api/v1/net-worth/history', { query: { currency, period }, signal }),
+    enabled: enabled && !!currency,
+  });
+
+export const usePortfolioHistory = (portfolioId: string, period: string, enabled: boolean) =>
+  useQuery({
+    queryKey: queryKeys.portfolioHistory(portfolioId, period),
+    queryFn: ({ signal }) =>
+      typedApi.get('/api/v1/portfolios/{portfolioId}/history', {
+        params: { portfolioId },
+        query: { period },
+        signal,
+      }),
+    enabled: enabled && !!portfolioId,
+  });
+
 export const useAccounts = (portfolioId?: string, { enabled = true }: QueryGate = {}) =>
   useQuery({
     queryKey: queryKeys.accounts({ portfolioId }),

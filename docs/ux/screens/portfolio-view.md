@@ -31,8 +31,8 @@ Overview
 │ Institution DKB · Germany · portfolio currency EUR │
 │ EUR 76'856.45                      [Estimated]     │
 │ ≈ CHF 71'953.01   ⓘ 1 EUR = 0.9362 CHF · 20 Oct    │
-│ (↗ +EUR 1'412.60 · +1.9%) past month               │  ← HISTORY API (#477; frontend integration pending)
-│ [ value chart ]   (1M)(YTD)(1Y)(Max)               │  ← HISTORY API (#477; frontend integration pending)
+│ (↗ +EUR 1'412.60 · +1.9%) past month               │  ← HISTORY API (#477)
+│ [ value chart ]   (1M)(YTD)(1Y)(Max)               │  ← HISTORY API (#477)
 └────────────────────────────────────────────────────┘
 ┌ [▣] Cash & savings                  EUR 19'210.55 ┐
 │ Girokonto                              4'210.55  > │
@@ -71,7 +71,7 @@ Overview
 1. `GET /api/v1/portfolios/{portfolioId}/view` → `PortfolioViewResponse`: the complete header, rows and import footer, including #482.
 2. For each account in a `DEPOT` section: `GET /api/v1/accounts/{accountId}/positions`
    (**delivered by #478**: latest holdings snapshot, server-valued positions).
-3. `GET /api/v1/portfolios/{portfolioId}/history?period=1M` (backend endpoint delivered by #477; chart integration pending).
+3. `GET /api/v1/portfolios/{portfolioId}/history?period=1M` (delivered by #477).
 
 The header uses the tab's `PortfolioListItemResponse` (already loaded by S1) until (1) arrives.
 That way the name, logo and total never flash empty.
@@ -88,7 +88,7 @@ That way the name, logo and total never flash empty.
 | 6 | Status | `ValueStatusBadge`; `total.incomplete` | | `valueStatus`, `complete`, `warnings[]` |
 | 7 | Converted total | `amount.approx` "≈ {amount}" | | `totalInWorkspaceCurrency`, `workspaceCurrency`; only if the currencies differ |
 | 8 | FX hint `[advanced]` | `fx.rate` "1 {from} = {rate} {to} · {date}" | ⓘ opens explanation | `conversionRate`, `conversionRateDate` (#482). `{date}` is `conversionRateDate`, the valuation date. When `conversionRateCarriedForward` is true, mark the hint like a carried-forward value (PR-011); when `conversionRateStale` is true, use the stale marking. The rate is the one accounts in the portfolio currency are converted with; an account in a third currency is converted with its own rate |
-| 9 | Change chip, chart, period switch | as S1 #8–#11 | | **HISTORY API (#477; frontend integration pending)** (portfolio scope) |
+| 9 | Change chip, chart, period switch | as S1 #8–#11 | | **HISTORY API (#477)** (portfolio scope) |
 
 ## Sections
 
@@ -203,4 +203,4 @@ across portfolios and account inception/lifecycle or reassignment, and
 For unresolved transfers or loan repayments and missing FX/valuation data, attribution may
 be null and the view must show incomplete-data warnings rather than a fabricated market return.
 Historical state recorded before the new lifecycle tracking can be restated and is explicitly
-flagged as uncertain. The backend API is available; the chart/period-switch UI remains pending.
+flagged as uncertain. The chart and change use the period shared with Overview.

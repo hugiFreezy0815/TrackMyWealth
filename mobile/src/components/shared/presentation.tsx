@@ -60,10 +60,12 @@ export function ChangeChip({
   amount,
   currency,
   percentage,
+  percentageLabel,
 }: {
   amount: DecimalString;
   currency: string;
   percentage?: string | null;
+  percentageLabel?: string;
 }) {
   const theme = useTheme();
   const intl = useIntl();
@@ -118,7 +120,9 @@ export function ChangeChip({
         style={{ ...TypeScale.numberMedium, fontWeight: '600', color }}
       />
       {percentage && !hidden ? (
-        <Text style={{ ...TypeScale.numberMedium, color }}>{percentage}</Text>
+        <Text accessibilityLabel={percentageLabel} style={{ ...TypeScale.numberMedium, color }}>
+          {percentage}
+        </Text>
       ) : null}
     </View>
   );
@@ -353,7 +357,7 @@ export function PortfolioTabs({
   );
 }
 
-export type ChipOption = { value: string; label: string };
+export type ChipOption = { value: string; label: string; accessibilityLabel?: string };
 export function ChipGroup({
   options,
   selected,
@@ -393,7 +397,7 @@ export function ChipGroup({
             accessibilityRole={multi ? 'checkbox' : 'radio'}
             aria-checked={active}
             aria-disabled={disabled}
-            accessibilityLabel={option.label}
+            accessibilityLabel={option.accessibilityLabel ?? option.label}
             accessibilityHint={describedBy?.text}
             disabled={disabled}
             onPress={() => onSelect(option.value)}
