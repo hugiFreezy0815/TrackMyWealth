@@ -22,6 +22,23 @@ const target = createdAccount({ id: 'target', name: 'New savings' });
 const alternate = createdAccount({ id: 'alternate', name: 'Other savings' });
 const api = jest.mocked(typedApi);
 
+function row(account: typeof source) {
+  return {
+    ...account,
+    currency: account.nativeCurrency,
+    archived: account.status === 'ARCHIVED',
+    portfolioName: 'Demo',
+    balance: null,
+    workspaceCurrency: 'EUR',
+    balanceInWorkspaceCurrency: null,
+    valueKnown: false,
+    valueStatus: 'UNKNOWN' as const,
+    valueBasis: null,
+    asOf: '2026-11-11',
+    valueSourceDate: null,
+  };
+}
+
 function Fixture() {
   const account = useAccount(source.id);
   return <LinkPocket account={account.data} disabled={false} showCurrent />;
@@ -30,27 +47,36 @@ function Fixture() {
 async function setup(initial = source, extra: (typeof source)[] = [], ui = <Fixture />) {
   let current = initial;
   const accounts = [old, target, alternate, ...extra];
+  let directoryFailure: Error | undefined;
   api.get.mockImplementation((async (
     path: string,
     options?: {
       params?: { accountId: string };
       query?: { archived?: boolean };
     },
-  ) =>
-    path.endsWith('{accountId}')
-      ? [current, ...accounts].find(({ id }) => id === options?.params?.accountId)
-      : [current, ...accounts].filter(({ status }) =>
-          options?.query?.archived ? status === 'ARCHIVED' : status === 'ACTIVE',
-        )) as unknown as typeof typedApi.get);
+  ) => {
+    if (path.endsWith('{accountId}')) {
+      return [current, ...accounts].find(({ id }) => id === options?.params?.accountId);
+    }
+    if (directoryFailure) throw directoryFailure;
+    return [current, ...accounts]
+      .filter(({ status }) =>
+        options?.query?.archived ? status === 'ARCHIVED' : status === 'ACTIVE',
+      )
+      .map(row);
+  }) as unknown as typeof typedApi.get);
   const client = new QueryClient({
     defaultOptions: {
-      queries: { retry: false, gcTime: Infinity },
+      queries: { retry: false, gcTime: Infinity, staleTime: 30_000 },
       mutations: { gcTime: Infinity },
     },
   });
   await render(withIntl(<QueryClientProvider client={client}>{ui}</QueryClientProvider>));
   return {
     client,
+    failDirectory: (error?: Error) => {
+      directoryFailure = error;
+    },
     update: (account: typeof source) => {
       current = account;
     },
@@ -62,18 +88,21 @@ beforeEach(() => jest.resetAllMocks());
 test('filters archived, foreign currency, ineligible and already linked accounts', () => {
   const inUse = createdAccount({ id: 'in-use' });
   expect(
-    pocketChoices(source, [
+    pocketChoices(
       source,
-      old,
-      target,
-      inUse,
-      createdAccount({ id: 'owner', status: 'ARCHIVED', savingsPocketAccountId: inUse.id }),
-      createdAccount({ id: 'card', hasStatementCycle: true }),
-      createdAccount({ id: 'loan', hasAmortisation: true }),
-      createdAccount({ id: 'foreign', nativeCurrency: 'CHF' }),
-      createdAccount({ id: 'no-ledger', hasTransactions: false }),
-    ]),
-  ).toEqual([target]);
+      [
+        source,
+        old,
+        target,
+        inUse,
+        createdAccount({ id: 'owner', status: 'ARCHIVED', savingsPocketAccountId: inUse.id }),
+        createdAccount({ id: 'card', hasStatementCycle: true }),
+        createdAccount({ id: 'loan', hasAmortisation: true }),
+        createdAccount({ id: 'foreign', nativeCurrency: 'CHF' }),
+        createdAccount({ id: 'no-ledger', hasTransactions: false }),
+      ].map(row),
+    ),
+  ).toEqual([row(target)]);
 });
 
 test('replaces an archived pocket, displays the new pocket and retains the returned version', async () => {
@@ -132,8 +161,8 @@ test('hides the action for another account’s pocket', async () => {
   ]);
   await waitFor(() => {
     expect(api.get).toHaveBeenCalledWith(
-      '/api/v1/accounts/{accountId}',
-      expect.objectContaining({ params: { accountId: 'owner' } }),
+      '/api/v1/accounts',
+      expect.objectContaining({ query: { archived: true } }),
     );
   });
   expect(screen.queryByRole('button', { name: 'Link savings pocket' })).toBeNull();
@@ -158,4 +187,31 @@ test.each([
   } else {
     expect(screen.queryByRole('button', { name: 'Link savings pocket' })).toBeNull();
   }
+});
+
+test('uses two list reads without per-account lookups when opening the picker', async () => {
+  await setup();
+  await screen.findByText('Savings pocket: Old savings');
+  await fireEvent.press(await screen.findByRole('button', { name: 'Link savings pocket' }));
+  await screen.findByRole('button', { name: 'Link New savings' });
+  expect(api.get.mock.calls.map(([path]) => path).sort()).toEqual([
+    '/api/v1/accounts',
+    '/api/v1/accounts',
+    '/api/v1/accounts/{accountId}',
+    '/api/v1/accounts/{accountId}',
+  ]);
+});
+
+test('keeps the current pocket visible when the directory fails and allows retry', async () => {
+  const { client, failDirectory } = await setup();
+  await screen.findByRole('button', { name: 'Link savings pocket' });
+  failDirectory(new Error('Directory unavailable'));
+  await client.invalidateQueries({
+    queryKey: [...queryKeys.accounts(), 'savings-pocket-directory'],
+  });
+  const retry = await screen.findByRole('button', { name: 'Try again' });
+  expect(screen.getByText('Savings pocket: Old savings')).toBeOnTheScreen();
+  failDirectory();
+  await fireEvent.press(retry);
+  await screen.findByRole('button', { name: 'Link savings pocket' });
 });

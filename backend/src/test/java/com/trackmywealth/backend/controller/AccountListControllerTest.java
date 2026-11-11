@@ -9,6 +9,7 @@ import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
+import com.trackmywealth.backend.dto.LinkSavingsPocketRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
@@ -224,7 +225,20 @@ class AccountListControllerTest {
     String token = bootstrapAdministrator();
     UUID active = createAccount(token, cash("Active", "CHF", null)).id();
     AccountSummaryResponse old = createAccount(token, cash("Old", "CHF", null));
-    archive(token, old.id(), old.version());
+    AccountSummaryResponse linked =
+        client(token)
+            .put()
+            .uri("/api/v1/accounts/" + old.id() + "/savings-pocket")
+            .header("If-Match", """ + old.version() + """)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(new LinkSavingsPocketRequest(active))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(AccountSummaryResponse.class)
+            .returnResult()
+            .getResponseBody();
+    archive(token, old.id(), linked.version());
 
     assertThat(list(token, "")).extracting(AccountListItemResponse::id).containsExactly(active);
     assertThat(list(token, "?archived=false"))
@@ -233,6 +247,7 @@ class AccountListControllerTest {
     List<AccountListItemResponse> archived = list(token, "?archived=true");
     assertThat(archived).extracting(AccountListItemResponse::id).containsExactly(old.id());
     assertThat(archived.get(0).archived()).isTrue();
+    assertThat(archived.get(0).savingsPocketAccountId()).isEqualTo(active);
   }
 
   @Test

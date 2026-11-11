@@ -13,13 +13,15 @@ import { ActionButton, Dialog, ErrorBanner, LoadingSkeleton } from '@/components
 import { useTheme } from '@/hooks/use-theme';
 
 type Account = components['schemas']['AccountSummaryResponse'];
+type AccountRow = components['schemas']['AccountListItemResponse'];
+type TransferFlags = Pick<Account, 'hasTransactions' | 'hasStatementCycle' | 'hasAmortisation'>;
 const directoryKey = [...queryKeys.accounts(), 'savings-pocket-directory'] as const;
 
-function canHoldTransfers(account: Account) {
+function canHoldTransfers(account: TransferFlags) {
   return account.hasTransactions && !account.hasStatementCycle && !account.hasAmortisation;
 }
 
-export function pocketChoices(source: Account, accounts: readonly Account[]) {
+export function pocketChoices(source: Account, accounts: readonly AccountRow[]) {
   const occupied = new Set(
     accounts.filter((account) => account.id !== source.id).map((a) => a.savingsPocketAccountId),
   );
@@ -27,10 +29,10 @@ export function pocketChoices(source: Account, accounts: readonly Account[]) {
     (candidate) =>
       candidate.id !== source.id &&
       candidate.id !== source.savingsPocketAccountId &&
-      candidate.status === 'ACTIVE' &&
-      candidate.nativeCurrency === source.nativeCurrency &&
+      !candidate.archived &&
+      candidate.currency === source.nativeCurrency &&
       canHoldTransfers(candidate) &&
-      !candidate.savingsPocketAccountId &&
+      candidate.savingsPocketAccountId === null &&
       !occupied.has(candidate.id),
   );
 }
@@ -40,21 +42,7 @@ async function readDirectory(signal: AbortSignal) {
     typedApi.get('/api/v1/accounts', { signal }),
     typedApi.get('/api/v1/accounts', { query: { archived: true }, signal }),
   ]);
-  // List rows lack pocket links. Read summaries in bounded batches, including archived owners.
-  const ids = [...new Set([...active, ...archived].map(({ id }) => id))];
-  const summaries: Account[] = [];
-  for (let index = 0; index < ids.length; index += 6) {
-    summaries.push(
-      ...(await Promise.all(
-        ids
-          .slice(index, index + 6)
-          .map((accountId) =>
-            typedApi.get('/api/v1/accounts/{accountId}', { params: { accountId }, signal }),
-          ),
-      )),
-    );
-  }
-  return summaries;
+  return [...active, ...archived];
 }
 
 export function LinkPocket({
@@ -84,8 +72,18 @@ export function LinkPocket({
     enabled: eligible && !disabled,
     staleTime: 30_000,
   });
+  const pocketId = showCurrent ? account?.savingsPocketAccountId : undefined;
+  const currentPocket = useQuery({
+    queryKey: queryKeys.account(pocketId ?? ''),
+    queryFn: ({ signal }) =>
+      typedApi.get('/api/v1/accounts/{accountId}', {
+        params: { accountId: pocketId ?? '' },
+        signal,
+      }),
+    enabled: !!pocketId,
+  });
   const write = useMutation({
-    mutationFn: ({ source, target }: { source: Account; target: Account }) =>
+    mutationFn: ({ source, target }: { source: Account; target: AccountRow }) =>
       typedApi.put('/api/v1/accounts/{accountId}/savings-pocket', {
         params: { accountId: source.id },
         version: ifMatch(source),
@@ -98,24 +96,20 @@ export function LinkPocket({
   const close = () => {
     if (locked.current) return;
     setOpen(false);
-    setError(undefined);
+    if (!reloadFailed) setError(undefined);
     setChanged(false);
-    setReloadFailed(false);
   };
   const refresh = async () => {
     setReloading(true);
     try {
-      await Promise.all([
-        client.fetchQuery({
-          queryKey: queryKeys.account(account.id),
-          queryFn: ({ signal }) =>
-            typedApi.get('/api/v1/accounts/{accountId}', {
-              params: { accountId: account.id },
-              signal,
-            }),
-        }),
-        directory.refetch({ throwOnError: true }),
-      ]);
+      const accountKey = queryKeys.account(account.id);
+      await client.cancelQueries({ queryKey: accountKey, exact: true });
+      // Bypass the fresh cache, and keep the last account visible if the GET fails.
+      const latest = await typedApi.get('/api/v1/accounts/{accountId}', {
+        params: { accountId: account.id },
+      });
+      client.setQueryData(accountKey, latest);
+      await directory.refetch({ throwOnError: true });
       setError(undefined);
       setChanged(true);
       setReloadFailed(false);
@@ -126,7 +120,7 @@ export function LinkPocket({
       setReloading(false);
     }
   };
-  const choose = async (target: Account) => {
+  const choose = async (target: AccountRow) => {
     if (locked.current || disabled || reloading || reloadFailed) return;
     locked.current = true;
     setError(undefined);
@@ -138,8 +132,12 @@ export function LinkPocket({
         client.cancelQueries({ queryKey: directoryKey, exact: true }),
       ]);
       client.setQueryData(queryKeys.account(account.id), updated);
-      client.setQueryData<Account[]>(directoryKey, (previous) =>
-        previous?.map((item) => (item.id === account.id ? updated : item)),
+      client.setQueryData<AccountRow[]>(directoryKey, (previous) =>
+        previous?.map((item) =>
+          item.id === account.id
+            ? { ...item, savingsPocketAccountId: updated.savingsPocketAccountId }
+            : item,
+        ),
       );
       setOpen(false);
       setChanged(false);
@@ -157,14 +155,9 @@ export function LinkPocket({
     }
   };
 
-  if (directory.isError && !open) {
-    return <ErrorBanner error={directory.error} onRetry={() => void directory.refetch()} />;
-  }
-  if (!directory.data) return !disabled ? <LoadingSkeleton count={1} /> : null;
-  const isPocket = directory.data.some((item) => item.savingsPocketAccountId === account.id);
-  if (isPocket && !open) return null;
-  const current = directory.data.find((item) => item.id === account.savingsPocketAccountId);
-  const choices = pocketChoices(account, directory.data);
+  const isPocket = directory.data?.some((item) => item.savingsPocketAccountId === account.id);
+  const current = currentPocket.data;
+  const choices = directory.data ? pocketChoices(account, directory.data) : [];
 
   return (
     <>
@@ -173,14 +166,15 @@ export function LinkPocket({
           {t('savingsPocket.current', { name: current.name })}
         </Text>
       ) : null}
-      {!isPocket ? (
+      {directory.isError && !open ? (
+        <ErrorBanner error={directory.error} onRetry={() => void directory.refetch()} />
+      ) : null}
+      {directory.isLoading && !open ? <LoadingSkeleton count={1} /> : null}
+      {directory.data && !directory.isError && !isPocket ? (
         <ActionButton
           label={t('savingsPocket.link')}
           disabled={disabled}
-          onPress={() => {
-            setOpen(true);
-            void directory.refetch();
-          }}
+          onPress={() => setOpen(true)}
         />
       ) : null}
       <Dialog
@@ -198,8 +192,8 @@ export function LinkPocket({
         {error ? (
           <ErrorBanner error={error} onRetry={reloadFailed ? () => void refresh() : undefined} />
         ) : null}
-        {directory.isError ? (
-          <ErrorBanner error={directory.error} onRetry={() => void refresh()} />
+        {directory.isError && !reloadFailed ? (
+          <ErrorBanner error={directory.error} onRetry={() => void directory.refetch()} />
         ) : null}
         {directory.isFetching || reloading ? (
           <LoadingSkeleton count={2} />
