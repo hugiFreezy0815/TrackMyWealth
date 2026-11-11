@@ -81,14 +81,19 @@ beforeEach(() => {
 });
 
 describe('deep link while signed out (US-01-13 AC2)', () => {
-  it('asks to sign in first and opens the linked account afterwards, also through MFA', async () => {
+  it.each([
+    { flow: 'with MFA', requiresMfa: true },
+    { flow: 'without MFA', requiresMfa: false },
+  ])('opens a returning member’s linked account after sign-in $flow', async ({ requiresMfa }) => {
     const view = await renderRouter(routes, { initialUrl: accountPath });
 
     expect(await screen.findByRole('header')).toHaveTextContent('Sign in');
     expect(screen.queryByText(accountText)).toBeNull();
 
-    await serverSays({ mfaRequired: true });
-    expect(screen.getByRole('header')).toHaveTextContent('Verify sign-in');
+    if (requiresMfa) {
+      await serverSays({ mfaRequired: true });
+      expect(screen.getByRole('header')).toHaveTextContent('Verify sign-in');
+    }
 
     // Token acceptance precedes the response from /users/me.
     await serverSays({ signedIn: true, mfaRequired: false });
