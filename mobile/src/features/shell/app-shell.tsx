@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Slot, usePathname, useRouter } from 'expo-router';
+import { Navigator, Slot, usePathname, useRouter } from 'expo-router';
 import { Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIntl } from 'react-intl';
@@ -94,13 +94,16 @@ export function AppShell({ identity }: { identity: Identity | null }) {
         <View style={styles.main}>
           <OfflineBanner />
           <View style={styles.content}>
-            {identity && !isAdministrator(identity) ? (
-              <OverviewSetupGate userId={identity.userId}>
+            {/* The gate can hide the route, but the navigator must retain its deep-link state. */}
+            <Navigator activityDefaultThreshold={1}>
+              {identity && !isAdministrator(identity) ? (
+                <OverviewSetupGate userId={identity.userId}>
+                  <Slot />
+                </OverviewSetupGate>
+              ) : (
                 <Slot />
-              </OverviewSetupGate>
-            ) : (
-              <Slot />
-            )}
+              )}
+            </Navigator>
             <ToastHost />
           </View>
           {!desktop && menu}
