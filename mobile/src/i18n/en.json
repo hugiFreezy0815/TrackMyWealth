@@ -655,5 +655,14 @@
   "valueBasis.LEDGER_FROM_OPENING_BALANCE": "an opening balance adjusted by transactions",
   "valueBasis.LEDGER_FROM_STATEMENT_BALANCE": "a statement balance adjusted by transactions",
   "valueBasis.ORIGINAL_PRINCIPAL": "the original principal (estimated outstanding amount)",
-  "valueBasis.ORIGINAL_PRINCIPAL_LESS_REPAYMENTS": "the original principal less recorded repayments (estimated outstanding amount)"
+  "valueBasis.ORIGINAL_PRINCIPAL_LESS_REPAYMENTS": "the original principal less recorded repayments (estimated outstanding amount)",
+  "savingsPocket.current": "Savings pocket: {name}",
+  "savingsPocket.link": "Link savings pocket",
+  "savingsPocket.futureOnly": "The link applies to future imports. Previously imported moves stay in pending review.",
+  "savingsPocket.reloaded": "The account changed. Check the available accounts and choose again.",
+  "savingsPocket.choose": "Link {name}",
+  "savingsPocket.empty": "No eligible savings accounts.",
+  "problem.SAVINGS_POCKET_NOT_APPLICABLE": "This account cannot have a savings pocket.",
+  "problem.SAVINGS_POCKET_UNSUITABLE": "This account cannot be used as a savings pocket. Choose another account.",
+  "problem.SAVINGS_POCKET_IN_USE": "This account is already linked as a savings pocket. Choose another account."
 }

@@ -1,6 +1,8 @@
 import { useIntl } from 'react-intl';
 import { Switch, Text, View } from 'react-native';
 
+import type { components } from '@/api/schema';
+import { LinkPocket } from '@/features/savings-pocket/link-pocket';
 import { Amount, amountTexts } from '@/components/shared';
 import { Spacing, TypeScale } from '@/constants/theme';
 import { formatDate } from '@/format/date';
@@ -12,13 +14,14 @@ import { transactionTypeLabel, useText } from './statement-text';
 
 type Props = {
   row: ImportRow;
+  account?: components['schemas']['AccountSummaryResponse'];
   /** Switches are off while a write runs or the device is offline. */
   disabled: boolean;
   onSwitch: (row: ImportRow, included: boolean) => void;
 };
 
 /** One `ImportRowResponse` of the review (S7 step 2, "Row"). */
-export function StatementRow({ row, disabled, onSwitch }: Props) {
+export function StatementRow({ row, disabled, onSwitch, account }: Props) {
   const intl = useIntl();
   const t = useText();
   const theme = useTheme();
@@ -69,6 +72,9 @@ export function StatementRow({ row, disabled, onSwitch }: Props) {
           {warning.message}
         </Text>
       ))}
+      {row.warnings.some(({ code }) => code === 'IMPORT_ROW_SAVINGS_POCKET_UNAVAILABLE') ? (
+        <LinkPocket account={account} disabled={disabled} />
+      ) : null}
       {row.error ? (
         <Text style={{ color: theme.statusLoss }}>
           {'⛔ '}

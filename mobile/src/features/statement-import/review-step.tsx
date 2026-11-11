@@ -181,6 +181,7 @@ function Rows({
           row={row}
           disabled={!flow.online || flow.busy}
           onSwitch={flow.switchRow}
+          account={flow.account.isError ? undefined : flow.account.data}
         />
       ))}
       {rows.hasNextPage ? (

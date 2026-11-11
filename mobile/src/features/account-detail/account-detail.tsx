@@ -34,6 +34,7 @@ import {
 } from '@/components/shared';
 import { Spacing, TypeScale } from '@/constants/theme';
 import { formatDate } from '@/format/date';
+import { LinkPocket } from '@/features/savings-pocket/link-pocket';
 import { PositionView } from '@/features/portfolio-view/position-view';
 import { showToast } from '@/features/shell/toast';
 import { useOnline } from '@/hooks/use-online';
@@ -393,6 +394,7 @@ export function AccountDetail({
         onRetryValue={refresh}
         onExplainValue={() => setDialog('value')}
       />
+      <LinkPocket account={summary} disabled={!online || archiveWrite.isPending} showCurrent />
       {value && (activeAccounts.isError || archivedAccounts.isError) ? (
         <ErrorBanner error={activeAccounts.error ?? archivedAccounts.error} onRetry={refresh} />
       ) : null}
