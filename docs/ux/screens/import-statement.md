@@ -46,7 +46,7 @@ Cancel anywhere after upload ─▶ discard
 | Detected format | When `status = PARSED`: one line "Read as {templateName}" (or "CAMT bank statement"), with "Change" | – |
 | Choose format | When `status = UPLOADED` and `templateCandidates` is not empty: a radio list of the candidates (`template.name`, `match` as a hint), best first; then **Read file** | `POST …/imports/{batchId}/parse` `{ templateId }` + `If-Match: "{version}"` |
 | No template fits | `UPLOADED` with no candidates: "We can't read this file yet. Which bank is it from?" with a link to report it (FR-NAV-11, later) and Discard | `POST …/discard` |
-| Info line | `import.nothingSavedYet` "Nothing is saved until you confirm on the review step." / "Nichts wird gespeichert, bevor du im nächsten Schritt bestätigst." | |
+| Info line | `statement.nothingSaved` "Nothing is saved until you confirm on the review step." / "Nichts wird gespeichert, bevor du im nächsten Schritt bestätigst." | |
 
 Upload errors are shown on the file card with the catalogue message for `code` (all `SHOW`):
 
@@ -119,8 +119,7 @@ each with the newest version.
 **Errors list:** "Download error rows" → `GET …/imports/{batchId}/errors.csv`. Phone: the share
 sheet; web: a file download. Shown when `errors > 0`.
 
-**Primary button:** `import.commit` "{included, plural, one {Import # transaction} other {Import # transactions}}"
-from `counts.included`. Disabled when `included = 0` or the account still needs confirming.
+**Primary button:** `statement.commit` "{count, plural, one {Import # transaction} other {Import # transactions}}". The caller passes `counts.included` as `count`. Disabled when `included = 0` or the account still needs confirming.
 Under it: "Imported as one batch. You can roll it back any time."
 
 Commit: `POST …/imports/{batchId}/commit` + `If-Match`. Errors:

@@ -6,6 +6,9 @@ import { DEVICE_LOCALE } from './device-intl';
 import { messagesFor, resolveLocale } from './index';
 import de from './de.json';
 import en from './en.json';
+import fr from './fixtures/fr.json';
+import italian from './fixtures/it.json';
+import { createLocaleCatalogues } from './locale-catalogues';
 
 describe('locales and ICU messages', () => {
   it('chooses the member language over the device locale', () => {
@@ -51,5 +54,30 @@ describe('locales and ICU messages', () => {
     expect(messagesFor('de-CH')['accountType.CASH']).toBe('Privatkonto');
     expect(messagesFor('de-DE')['ui.close']).toBe('Schließen');
     expect(messagesFor('de-CH')['ui.close']).toBe('Schliessen');
+  });
+
+  it.each([
+    ['fr-CH', 'fr', '2 opérations'],
+    ['it-CH', 'it', '2 movimenti'],
+  ])(
+    'uses the %s catalogue fallback when its base catalogue is added',
+    (device, base, expected) => {
+      const localeCatalogues = createLocaleCatalogues({ en, de, fr, it: italian });
+      const locale = localeCatalogues.resolveLocale(undefined, device);
+      expect(locale).toBe(base);
+      expect(localeCatalogues.resolveLocale(base, device)).toBe(base);
+      expect(localeCatalogues.resolveLocale('en', device)).toBe('en');
+      const messages = localeCatalogues.messagesFor(locale);
+      const intl = createIntl({ locale, messages }, createIntlCache());
+      expect(intl.formatMessage({ id: 'import.rows' }, { count: 2 })).toBe(expected);
+      expect(messages['nav.overview']).toBe(en['nav.overview']);
+    },
+  );
+
+  it('layers regional translations over the base catalogue', () => {
+    const regional = { 'nav.overview': 'Vue suisse' };
+    const localeCatalogues = createLocaleCatalogues({ en, fr, 'fr-CH': regional });
+    expect(localeCatalogues.resolveLocale('fr', 'fr-CH')).toBe('fr-CH');
+    expect(localeCatalogues.messagesFor('fr-CH')).toMatchObject({ ...fr, ...regional });
   });
 });

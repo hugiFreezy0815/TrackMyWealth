@@ -3,37 +3,22 @@ import { Platform } from 'react-native';
 import { IntlProvider } from 'react-intl';
 
 import { DEVICE_LOCALE } from './device-intl';
-import en from './en.json';
-import de from './de.json';
-import deCH from './de-CH.json';
-import deDE from './de-DE.json';
+import { catalogues } from './catalogue-context';
+import { createLocaleCatalogues } from './locale-catalogues';
 
-export type AppLocale = 'en' | 'de' | 'de-CH' | 'de-DE';
+export type AppLocale = string;
 
-/** The member's chosen language (`/users/me` → `language`) wins over the device locale. */
+const localeCatalogues = createLocaleCatalogues(catalogues);
+
+/** The member's chosen language (`/users/me` → `language`) wins over the device language. */
 export function resolveLocale(
   language?: string | null,
   deviceLocale: string = DEVICE_LOCALE,
 ): AppLocale {
-  const preference = language?.replace('_', '-').toLowerCase();
-  const device = deviceLocale.replace('_', '-').toLowerCase();
-  // The API stores plain "de". Retain the device's German region for market-specific copy.
-  const locale = preference === 'de' && device.startsWith('de-') ? device : preference || device;
-  if (locale.startsWith('de-ch')) return 'de-CH';
-  if (locale.startsWith('de-de')) return 'de-DE';
-  if (locale.startsWith('de')) return 'de';
-  return 'en';
+  return localeCatalogues.resolveLocale(language, deviceLocale);
 }
 
-/** The catalogue of a locale: English as the base, then German, then the regional overrides. */
-export function messagesFor(locale: AppLocale): Record<string, string> {
-  return {
-    ...en,
-    ...(locale.startsWith('de') ? de : {}),
-    ...(locale === 'de-CH' ? deCH : {}),
-    ...(locale === 'de-DE' ? deDE : {}),
-  };
-}
+export const { messagesFor } = localeCatalogues;
 
 export function AppIntlProvider({
   language,
