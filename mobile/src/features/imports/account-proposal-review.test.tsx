@@ -28,7 +28,8 @@ describe('AccountProposalReview', () => {
     expect(screen.getByText(/Synthetic Bank Basel/)).toBeTruthy();
     expect(screen.queryByText(/catalogue/)).toBeNull();
     expect(screen.getByText('123456******1234', { exact: false })).toBeTruthy();
-    expect(screen.getByRole('radio', { name: 'CREDIT_CARD', selected: true })).toBeTruthy();
+    expect(screen.getByRole('radio', { name: 'CREDIT_CARD' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'CASH' })).not.toBeChecked();
   });
 
   it('creates nothing until the member confirms, then hands over the confirmed draft', async () => {
@@ -48,6 +49,8 @@ describe('AccountProposalReview', () => {
 
     await fireEvent.changeText(screen.getByLabelText('Account name'), 'Kreditkarte');
     await fireEvent.press(screen.getByRole('radio', { name: 'CASH' }));
+    expect(screen.getByRole('radio', { name: 'CASH' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'CREDIT_CARD' })).not.toBeChecked();
     await fireEvent.press(screen.getByText('Confirm new account details'));
 
     expect(onConfirm).toHaveBeenCalledWith({
@@ -96,7 +99,7 @@ describe('AccountProposalReview', () => {
       expect(screen.getByText('Suggested account type: Other')).toBeTruthy();
       expect(screen.getByText('Portfolio: Synthetic Bank Basel')).toBeTruthy();
       expect(screen.getByText('Account identifier: 123456******1234')).toBeTruthy();
-      expect(screen.queryByRole('radio', { selected: true })).toBeNull();
+      expect(screen.queryByRole('radio', { checked: true })).toBeNull();
 
       await fireEvent.changeText(screen.getByLabelText('Account name'), 'Art account');
       await fireEvent.press(screen.getByText('Confirm new account details'));

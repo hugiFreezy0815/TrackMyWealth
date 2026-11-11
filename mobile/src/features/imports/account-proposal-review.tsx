@@ -85,7 +85,7 @@ export function AccountProposalReview({ proposal, portfolio, onConfirm, onCancel
           <Pressable
             key={type}
             accessibilityRole="radio"
-            accessibilityState={{ selected: type === accountType }}
+            aria-checked={type === accountType}
             onPress={() => setAccountType(type)}
             style={[styles.type, type === accountType && styles.selected]}
           >

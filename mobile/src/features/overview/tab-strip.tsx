@@ -48,7 +48,6 @@ export function TabStrip({
         key={key}
         accessibilityRole="tab"
         accessibilityLabel={text}
-        accessibilityState={{ selected }}
         aria-selected={selected}
         onPress={onPress}
         style={style}
@@ -68,7 +67,6 @@ export function TabStrip({
         key={key}
         accessible
         accessibilityRole="tab"
-        accessibilityState={{ selected }}
         aria-selected={selected}
         accessibilityLabel={text}
         style={style}
@@ -98,7 +96,6 @@ export function TabStrip({
       )}
       <Pressable
         accessibilityRole="tab"
-        accessibilityState={{ selected: false, disabled: offline }}
         aria-selected={false}
         aria-disabled={offline}
         disabled={offline}

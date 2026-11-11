@@ -4,6 +4,7 @@
 import { act, renderRouter, screen } from 'expo-router/testing-library';
 
 import RootLayout from '@/app/_layout';
+import { loadServerUrl } from '@/api/server-url';
 import type { Identity } from '@/features/auth/session';
 import { UnavailableScreen } from '@/features/shell/screen';
 
@@ -78,6 +79,22 @@ describe('deep link while signed out (US-01-13 AC2)', () => {
 
     expect(await screen.findByText('This screen is not available yet')).toBeTruthy();
     expect(view.getPathname()).toBe('/accounts/acc-1');
+  });
+
+  it('announces the busy progress bar while restoring the session', async () => {
+    let finishRestoring = () => {};
+    jest.mocked(loadServerUrl).mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishRestoring = resolve;
+      }),
+    );
+    await renderRouter(routes, { initialUrl: '/overview' });
+
+    expect(screen.getByRole('progressbar', { name: 'Restoring session…' })).toBeBusy();
+
+    await act(async () => finishRestoring());
+    expect(await screen.findByRole('header')).toHaveTextContent('Sign in');
+    expect(screen.queryByRole('progressbar')).toBeNull();
   });
 
   it('never renders a signed-in screen before the session is confirmed', async () => {
