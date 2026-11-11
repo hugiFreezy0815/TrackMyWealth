@@ -44,6 +44,8 @@ class ValueHistoryPerformanceTest {
 
   private static final int ACCOUNTS = 20;
   private static final int TRANSACTIONS_PER_ACCOUNT = 2500;
+  private static final int WARMUP_REQUESTS = 20;
+  private static final int MEASURED_REQUESTS = 25;
   private static final double MAX_P95_MS = 800.0;
 
   @Container
@@ -111,14 +113,14 @@ class ValueHistoryPerformanceTest {
     LocalDate today = LocalDate.now(ZoneId.of("Europe/Zurich"));
     seedFiftyThousandTransactions(accountIds, today);
 
-    // Warm the JIT and database caches before recording a reproducible p95.
-    for (int i = 0; i < 4; i++) {
+    // Use a fixed warm-up so JVM compilation and database startup do not dominate steady-state p95.
+    for (int i = 0; i < WARMUP_REQUESTS; i++) {
       history(client);
     }
     SessionFactory sessionFactory = entityManagerFactory.unwrap(SessionFactory.class);
     sessionFactory.getStatistics().clear();
     List<Double> samples = new ArrayList<>();
-    for (int i = 0; i < 25; i++) {
+    for (int i = 0; i < MEASURED_REQUESTS; i++) {
       long start = System.nanoTime();
       ValueHistoryResponse response = history(client);
       double millis = (System.nanoTime() - start) / 1_000_000.0;
@@ -126,6 +128,7 @@ class ValueHistoryPerformanceTest {
       assertThat(response.points()).hasSizeBetween(52, 54);
       assertThat(response.points().get(response.points().size() - 1).date()).isEqualTo(today);
     }
+    System.out.println("HISTORY_PERF measured requests in order (ms): " + samples);
     Collections.sort(samples);
     double p50 = samples.get((int) Math.ceil(0.50 * samples.size()) - 1);
     double p95 = samples.get((int) Math.ceil(0.95 * samples.size()) - 1);
