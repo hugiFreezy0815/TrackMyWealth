@@ -1,0 +1,9 @@
+# #535: the app-switcher snapshot of a signed-in session shows no amount.
+# Start: signed in, on a screen with amounts. run-ios.sh then reads the snapshot iOS stored.
+appId: com.anonymous.trackmywealth
+---
+- assertVisible: "Girokonto"
+- takeScreenshot: ios-04-signed-in-with-amounts
+# Home: iOS takes the app-switcher snapshot now.
+- pressKey: Home
+- waitForAnimationToEnd

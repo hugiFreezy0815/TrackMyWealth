@@ -1,0 +1,9 @@
+# #535: a fresh, signed-out install.
+appId: com.anonymous.trackmywealth
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "Sign in"
+    timeout: 60000
