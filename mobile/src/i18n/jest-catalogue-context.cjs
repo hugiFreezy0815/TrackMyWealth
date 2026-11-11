@@ -1,3 +1,4 @@
+/* global __dirname:readonly */
 const { readdirSync, readFileSync } = require('node:fs');
 const { join } = require('node:path');
 
