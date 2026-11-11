@@ -92,7 +92,7 @@ marked as voided.
 | 12 | Notes | `txn.notes` | multi-line | `notes`; "–" if `null` |
 | 13 | Trade fields (BUY/SELL/DIVIDEND) | `txn.security`, `txn.quantity`, `txn.unitPrice`, `txn.fee`, `txn.tradeDate`, `txn.settlementDate`, `txn.gross`, `txn.taxWithheld`, `txn.net` | | `securityId` (name via `GET /api/v1/securities/{id}`), `quantity`, `unitPrice`, `feeAmount`, `tradeDate`, `settlementDate`, `grossAmount`, `taxWithheldAmount`, `netAmount`; each row hidden when `null` |
 | 14 | Bank code `[advanced]` | `txn.bankCode` "Bank code" / "Bankcode" | monospace | **delivered by #479** `bankTransactionCode` |
-| 15 | Source detail `[advanced]` | `txn.sourceDetail` "{format} · import from {date}" | link to import history (M19, not in sprint 7: plain text) | **delivered by #479** `importBatch` (`id`, `fileFormat`, `uploadedAt`). Figma's "import #14" becomes a date, because batches have no sequence number |
+| 15 | Source detail `[advanced]` | Label `txn.sourceDetail`, value `txn.sourceDetail.value` (`format`, `date`) | link to import history (M19, not in sprint 7: plain text) | **delivered by #479** `importBatch` (`id`, `fileFormat`, `uploadedAt`). Pass `fileFormat` as `format` and `uploadedAt` formatted for the active locale as `date`. Figma's "import #14" becomes a date, because batches have no sequence number |
 | 16 | MCC `[advanced]` | `txn.mcc` "Merchant category" | | `mcc` |
 | 17 | Bank reference `[advanced]` | `txn.externalId` "Bank reference" | | `externalId` |
 | 18 | Warnings | | ⚠ list | `warnings[]`, as in S3 |

@@ -568,6 +568,7 @@
   "txn.advanced": "Details",
   "txn.bankCode": "Bank code",
   "txn.sourceDetail": "Import source",
+  "txn.sourceDetail.value": "{format} · import from {date}",
   "txn.mcc": "Merchant category code",
   "txn.externalId": "Bank reference",
   "txn.converted": "Converted amount",

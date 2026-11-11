@@ -568,6 +568,7 @@
   "txn.advanced": "Details",
   "txn.bankCode": "Bankcode",
   "txn.sourceDetail": "Importquelle",
+  "txn.sourceDetail.value": "{format} · Import vom {date}",
   "txn.mcc": "Händlerkategoriecode",
   "txn.externalId": "Bankreferenz",
   "txn.converted": "Umrechnungsbetrag",
