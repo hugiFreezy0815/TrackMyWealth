@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { ScrollView, Text, useWindowDimensions } from 'react-native';
@@ -16,6 +16,11 @@ type Account = components['schemas']['AccountSummaryResponse'];
 type AccountRow = components['schemas']['AccountListItemResponse'];
 type TransferFlags = Pick<Account, 'hasTransactions' | 'hasStatementCycle' | 'hasAmortisation'>;
 const directoryKey = [...queryKeys.accounts(), 'savings-pocket-directory'] as const;
+/** A list read this recently (e.g. when the actions menu opened) is reused by the picker. */
+const DIRECTORY_FRESH_MS = 5_000;
+
+/** Where the picker opens: the account detail menu, or an import row's pocket warning. */
+type PocketContext = 'account' | 'import';
 
 function canHoldTransfers(account: TransferFlags) {
   return account.hasTransactions && !account.hasStatementCycle && !account.hasAmortisation;
@@ -37,6 +42,17 @@ export function pocketChoices(source: Account, accounts: readonly AccountRow[]) 
   );
 }
 
+/** The linked pocket when it can take the account's moves (the server's `usablePocket`). */
+function usablePocket(source: Account, accounts: readonly AccountRow[]) {
+  const pocket = accounts.find(({ id }) => id === source.savingsPocketAccountId);
+  return pocket &&
+    !pocket.archived &&
+    pocket.currency === source.nativeCurrency &&
+    canHoldTransfers(pocket)
+    ? pocket
+    : undefined;
+}
+
 async function readDirectory(signal: AbortSignal) {
   const [active, archived] = await Promise.all([
     typedApi.get('/api/v1/accounts', { signal }),
@@ -45,14 +61,21 @@ async function readDirectory(signal: AbortSignal) {
   return [...active, ...archived];
 }
 
-export function LinkPocket({
+/**
+ * #466: links another account as `account`'s savings pocket. The workspace's account lists (the
+ * "directory") are read only while `load` is set or the picker is open, so the account detail
+ * reads them when its menu opens, not on every visit.
+ */
+export function useSavingsPocketLink({
   account,
   disabled,
-  showCurrent = false,
+  context,
+  load,
 }: {
   account?: Account;
   disabled: boolean;
-  showCurrent?: boolean;
+  context: PocketContext;
+  load: boolean;
 }) {
   const intl = useIntl();
   const theme = useTheme();
@@ -69,10 +92,10 @@ export function LinkPocket({
   const directory = useQuery({
     queryKey: directoryKey,
     queryFn: ({ signal }) => readDirectory(signal),
-    enabled: eligible && !disabled,
+    enabled: eligible && !disabled && (load || open),
     staleTime: 30_000,
   });
-  const pocketId = showCurrent ? account?.savingsPocketAccountId : undefined;
+  const pocketId = account?.savingsPocketAccountId ?? null;
   const currentPocket = useQuery({
     queryKey: queryKeys.account(pocketId ?? ''),
     queryFn: ({ signal }) =>
@@ -80,7 +103,7 @@ export function LinkPocket({
         params: { accountId: pocketId ?? '' },
         signal,
       }),
-    enabled: !!pocketId,
+    enabled: context === 'account' && eligible && !!pocketId,
   });
   const write = useMutation({
     mutationFn: ({ source, target }: { source: Account; target: AccountRow }) =>
@@ -91,22 +114,20 @@ export function LinkPocket({
       }),
   });
 
-  if (!account || !eligible) return null;
-
   const close = () => {
     if (locked.current) return;
     setOpen(false);
     if (!reloadFailed) setError(undefined);
     setChanged(false);
   };
-  const refresh = async () => {
+  const refresh = async (source: Account) => {
     setReloading(true);
     try {
-      const accountKey = queryKeys.account(account.id);
+      const accountKey = queryKeys.account(source.id);
       await client.cancelQueries({ queryKey: accountKey, exact: true });
       // Bypass the fresh cache, and keep the last account visible if the GET fails.
       const latest = await typedApi.get('/api/v1/accounts/{accountId}', {
-        params: { accountId: account.id },
+        params: { accountId: source.id },
       });
       client.setQueryData(accountKey, latest);
       await directory.refetch({ throwOnError: true });
@@ -120,21 +141,21 @@ export function LinkPocket({
       setReloading(false);
     }
   };
-  const choose = async (target: AccountRow) => {
+  const choose = async (source: Account, target: AccountRow) => {
     if (locked.current || disabled || reloading || reloadFailed) return;
     locked.current = true;
     setError(undefined);
     try {
-      const updated = await write.mutateAsync({ source: account, target });
+      const updated = await write.mutateAsync({ source, target });
       // The API builds its strong ETag from this same version.
       await Promise.all([
-        client.cancelQueries({ queryKey: queryKeys.account(account.id), exact: true }),
+        client.cancelQueries({ queryKey: queryKeys.account(source.id), exact: true }),
         client.cancelQueries({ queryKey: directoryKey, exact: true }),
       ]);
-      client.setQueryData(queryKeys.account(account.id), updated);
+      client.setQueryData(queryKeys.account(source.id), updated);
       client.setQueryData<AccountRow[]>(directoryKey, (previous) =>
         previous?.map((item) =>
-          item.id === account.id
+          item.id === source.id
             ? { ...item, savingsPocketAccountId: updated.savingsPocketAccountId }
             : item,
         ),
@@ -143,7 +164,7 @@ export function LinkPocket({
       setChanged(false);
     } catch (failure) {
       if (failure instanceof ApiError && failure.status === 412) {
-        await refresh();
+        await refresh(source);
       } else {
         setError(failure);
         if (failure instanceof ApiError && problemReaction(failure).reaction === 'FIX_INPUT') {
@@ -155,42 +176,63 @@ export function LinkPocket({
     }
   };
 
-  const isPocket = directory.data?.some((item) => item.savingsPocketAccountId === account.id);
+  const isPocket =
+    !!account && directory.data?.some((i) => i.savingsPocketAccountId === account.id);
+  const choices = account && directory.data ? pocketChoices(account, directory.data) : [];
+  const usable = account && directory.data ? usablePocket(account, directory.data) : undefined;
+  // Offered when there is something to choose, or a pocket to replace (the empty list then says
+  // why); never on another account's pocket, which the server refuses.
+  const offered =
+    eligible &&
+    !!directory.data &&
+    !directory.isError &&
+    !isPocket &&
+    (!!choices.length || !!pocketId);
+  const label = t(pocketId ? 'savingsPocket.change' : 'savingsPocket.link');
   const current = currentPocket.data;
-  const choices = directory.data ? pocketChoices(account, directory.data) : [];
 
-  return (
-    <>
-      {showCurrent && current ? (
-        <Text style={{ color: theme.textSecondary }}>
-          {t('savingsPocket.current', { name: current.name })}
-        </Text>
-      ) : null}
-      {directory.isError && !open ? (
-        <ErrorBanner error={directory.error} onRetry={() => void directory.refetch()} />
-      ) : null}
-      {directory.isLoading && !open ? <LoadingSkeleton count={1} /> : null}
-      {directory.data && !directory.isError && !isPocket ? (
-        <ActionButton
-          label={t('savingsPocket.link')}
-          disabled={disabled}
-          onPress={() => setOpen(true)}
-        />
-      ) : null}
+  /** The action, or its loading/error state while the directory is read. */
+  const trigger = (onPress?: () => void): ReactNode => {
+    if (!eligible) return null;
+    if (directory.isError && !open) {
+      return <ErrorBanner error={directory.error} onRetry={() => void directory.refetch()} />;
+    }
+    if (directory.isLoading && !open) return <LoadingSkeleton count={1} />;
+    return offered ? (
+      <ActionButton
+        label={label}
+        disabled={disabled}
+        onPress={() => {
+          onPress?.();
+          // Accounts added or linked elsewhere since the list was read show up as choices.
+          if (Date.now() - directory.dataUpdatedAt > DIRECTORY_FRESH_MS) void directory.refetch();
+          setOpen(true);
+        }}
+      />
+    ) : null;
+  };
+
+  const dialog =
+    account && eligible ? (
       <Dialog
         visible={open}
-        title={t('savingsPocket.link')}
+        title={label}
         onClose={close}
         closeDisabled={write.isPending || reloading}
       >
-        <Text style={{ color: theme.textSecondary }}>{t('savingsPocket.futureOnly')}</Text>
+        <Text style={{ color: theme.textSecondary }}>
+          {t(context === 'import' ? 'savingsPocket.thisImport' : 'savingsPocket.futureOnly')}
+        </Text>
         {changed ? (
           <Text accessibilityRole="alert" style={{ color: theme.textPrimary }}>
             {t('savingsPocket.reloaded')}
           </Text>
         ) : null}
         {error ? (
-          <ErrorBanner error={error} onRetry={reloadFailed ? () => void refresh() : undefined} />
+          <ErrorBanner
+            error={error}
+            onRetry={reloadFailed ? () => void refresh(account) : undefined}
+          />
         ) : null}
         {directory.isError && !reloadFailed ? (
           <ErrorBanner error={directory.error} onRetry={() => void directory.refetch()} />
@@ -205,7 +247,7 @@ export function LinkPocket({
                   key={candidate.id}
                   label={t('savingsPocket.choose', { name: candidate.name })}
                   disabled={disabled || write.isPending}
-                  onPress={() => void choose(candidate)}
+                  onPress={() => void choose(account, candidate)}
                 />
               ))}
             </ScrollView>
@@ -214,6 +256,46 @@ export function LinkPocket({
           )
         ) : null}
       </Dialog>
+    ) : null;
+
+  /** "Savings pocket: …" for the account detail, marked when the pocket is archived. */
+  const currentLine =
+    eligible && current ? (
+      <Text style={{ color: theme.textSecondary }}>
+        {t(
+          current.status === 'ARCHIVED' ? 'savingsPocket.currentArchived' : 'savingsPocket.current',
+          {
+            name: current.name,
+          },
+        )}
+      </Text>
+    ) : null;
+
+  return { eligible, trigger, dialog, currentLine, usablePocketName: usable?.name };
+}
+
+/**
+ * The recovery on an import row warning `IMPORT_ROW_SAVINGS_POCKET_UNAVAILABLE`. Once a usable
+ * pocket is linked it says that this import books the move there: the commit picks the pocket
+ * when it runs, while the row's warning stays what the preview found.
+ */
+export function LinkPocket({ account, disabled }: { account?: Account; disabled: boolean }) {
+  const intl = useIntl();
+  const theme = useTheme();
+  const pocket = useSavingsPocketLink({ account, disabled, context: 'import', load: true });
+  return (
+    <>
+      {pocket.usablePocketName ? (
+        <Text accessibilityRole="alert" style={{ color: theme.statusGain }}>
+          {'✓ '}
+          {intl.formatMessage(
+            { id: 'savingsPocket.thisImportBooks' },
+            { name: pocket.usablePocketName },
+          )}
+        </Text>
+      ) : null}
+      {pocket.trigger()}
+      {pocket.dialog}
     </>
   );
 }

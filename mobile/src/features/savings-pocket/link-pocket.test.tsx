@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { Pressable } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
@@ -8,7 +10,7 @@ import { createdAccount, problem } from '@/features/add-flow/test-fixtures';
 import { syntheticRow } from '@/features/statement-import/fake-import-server';
 import { StatementRow } from '@/features/statement-import/statement-row';
 import { withIntl } from '@/i18n/test-utils';
-import { LinkPocket, pocketChoices } from './link-pocket';
+import { pocketChoices, useSavingsPocketLink } from './link-pocket';
 
 jest.mock('@/global.css', () => ({}));
 
@@ -39,10 +41,32 @@ function row(account: typeof source) {
   };
 }
 
-function Fixture() {
+// The account detail: the current pocket line, and the action inside its actions menu.
+function Fixture({ menuOpen = true }: { menuOpen?: boolean }) {
   const account = useAccount(source.id);
-  return <LinkPocket account={account.data} disabled={false} showCurrent />;
+  const [menu, setMenu] = useState(menuOpen);
+  const pocket = useSavingsPocketLink({
+    account: account.data,
+    disabled: false,
+    context: 'account',
+    load: menu,
+  });
+  return (
+    <>
+      {pocket.currentLine}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Actions"
+        onPress={() => setMenu(true)}
+      />
+      {menu ? pocket.trigger() : null}
+      {pocket.dialog}
+    </>
+  );
 }
+
+const CHANGE = 'Change savings pocket';
+const LINK = 'Link savings pocket';
 
 async function setup(initial = source, extra: (typeof source)[] = [], ui = <Fixture />) {
   let current = initial;
@@ -80,6 +104,9 @@ async function setup(initial = source, extra: (typeof source)[] = [], ui = <Fixt
     update: (account: typeof source) => {
       current = account;
     },
+    add: (account: typeof source) => {
+      accounts.push(account);
+    },
   };
 }
 
@@ -109,8 +136,8 @@ test('replaces an archived pocket, displays the new pocket and retains the retur
   const { client } = await setup();
   const updated = { ...source, savingsPocketAccountId: target.id, version: 4 };
   api.put.mockResolvedValue(updated);
-  await screen.findByText('Savings pocket: Old savings');
-  await fireEvent.press(await screen.findByRole('button', { name: 'Link savings pocket' }));
+  await screen.findByText('Savings pocket: Old savings (archived)');
+  await fireEvent.press(await screen.findByRole('button', { name: CHANGE }));
   expect(screen.getByText(/Previously imported moves stay in pending review/)).toBeOnTheScreen();
   await fireEvent.press(await screen.findByRole('button', { name: 'Link New savings' }));
   await screen.findByText('Savings pocket: New savings');
@@ -129,7 +156,7 @@ test.each([
 ])('shows the localized problem for %s %s', async (status, code, message) => {
   await setup();
   api.put.mockRejectedValueOnce(problem(status, code));
-  await fireEvent.press(await screen.findByRole('button', { name: 'Link savings pocket' }));
+  await fireEvent.press(await screen.findByRole('button', { name: CHANGE }));
   await fireEvent.press(await screen.findByRole('button', { name: 'Link New savings' }));
   expect(await screen.findByText(message)).toBeOnTheScreen();
   await screen.findByRole('button', { name: 'Link Other savings' });
@@ -138,7 +165,7 @@ test.each([
 
 test('reloads a stale version and waits for a fresh selection', async () => {
   const { update } = await setup();
-  await fireEvent.press(await screen.findByRole('button', { name: 'Link savings pocket' }));
+  await fireEvent.press(await screen.findByRole('button', { name: CHANGE }));
   const choice = await screen.findByRole('button', { name: 'Link New savings' });
   update({ ...source, version: 8 });
   api.put.mockRejectedValueOnce(problem(412, 'VERSION_CONFLICT'));
@@ -165,7 +192,8 @@ test('hides the action for another account’s pocket', async () => {
       expect.objectContaining({ query: { archived: true } }),
     );
   });
-  expect(screen.queryByRole('button', { name: 'Link savings pocket' })).toBeNull();
+  expect(screen.queryByRole('button', { name: LINK })).toBeNull();
+  expect(screen.queryByRole('button', { name: CHANGE })).toBeNull();
 });
 
 test.each([
@@ -182,17 +210,18 @@ test.each([
   );
   expect(screen.getByText(/Import warning/)).toBeOnTheScreen();
   if (canLink) {
-    await fireEvent.press(await screen.findByRole('button', { name: 'Link savings pocket' }));
+    await fireEvent.press(await screen.findByRole('button', { name: CHANGE }));
+    expect(screen.getByText(/also applies to this import/)).toBeOnTheScreen();
     expect(await screen.findByRole('button', { name: 'Link New savings' })).toBeOnTheScreen();
   } else {
-    expect(screen.queryByRole('button', { name: 'Link savings pocket' })).toBeNull();
+    expect(screen.queryByRole('button', { name: CHANGE })).toBeNull();
   }
 });
 
 test('uses two list reads without per-account lookups when opening the picker', async () => {
   await setup();
-  await screen.findByText('Savings pocket: Old savings');
-  await fireEvent.press(await screen.findByRole('button', { name: 'Link savings pocket' }));
+  await screen.findByText('Savings pocket: Old savings (archived)');
+  await fireEvent.press(await screen.findByRole('button', { name: CHANGE }));
   await screen.findByRole('button', { name: 'Link New savings' });
   expect(api.get.mock.calls.map(([path]) => path).sort()).toEqual([
     '/api/v1/accounts',
@@ -204,14 +233,80 @@ test('uses two list reads without per-account lookups when opening the picker', 
 
 test('keeps the current pocket visible when the directory fails and allows retry', async () => {
   const { client, failDirectory } = await setup();
-  await screen.findByRole('button', { name: 'Link savings pocket' });
+  await screen.findByRole('button', { name: CHANGE });
   failDirectory(new Error('Directory unavailable'));
   await client.invalidateQueries({
     queryKey: [...queryKeys.accounts(), 'savings-pocket-directory'],
   });
   const retry = await screen.findByRole('button', { name: 'Try again' });
-  expect(screen.getByText('Savings pocket: Old savings')).toBeOnTheScreen();
+  expect(screen.getByText('Savings pocket: Old savings (archived)')).toBeOnTheScreen();
   failDirectory();
   await fireEvent.press(retry);
-  await screen.findByRole('button', { name: 'Link savings pocket' });
+  await screen.findByRole('button', { name: CHANGE });
+});
+
+test('confirms on the import row that this import books the move on the new pocket', async () => {
+  const row = syntheticRow(1, 'NEW', {
+    warnings: [{ code: 'IMPORT_ROW_SAVINGS_POCKET_UNAVAILABLE', args: {}, message: 'Unavailable' }],
+  });
+  function ImportFixture() {
+    const account = useAccount(source.id);
+    return <StatementRow row={row} disabled={false} onSwitch={jest.fn()} account={account.data} />;
+  }
+  await setup(source, [], <ImportFixture />);
+  api.put.mockResolvedValue({ ...source, savingsPocketAccountId: target.id, version: 4 });
+  await fireEvent.press(await screen.findByRole('button', { name: CHANGE }));
+  expect(screen.queryByText(/This import books the move/)).toBeNull();
+  await fireEvent.press(await screen.findByRole('button', { name: 'Link New savings' }));
+  expect(await screen.findByText(/This import books the move on New savings\./)).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: CHANGE })).toBeOnTheScreen();
+});
+
+test('reads the account lists only when the actions menu opens', async () => {
+  await setup(source, [], <Fixture menuOpen={false} />);
+  await screen.findByText('Savings pocket: Old savings (archived)');
+  expect(api.get.mock.calls.map(([path]) => path)).not.toContain('/api/v1/accounts');
+  await fireEvent.press(screen.getByRole('button', { name: 'Actions' }));
+  await screen.findByRole('button', { name: CHANGE });
+  expect(api.get.mock.calls.filter(([path]) => path === '/api/v1/accounts')).toHaveLength(2);
+});
+
+test.each([
+  ['a card', { hasStatementCycle: true }],
+  ['a loan', { hasAmortisation: true }],
+  ['an account without transactions', { hasTransactions: false }],
+])('offers nothing and reads no lists for %s', async (_, flags) => {
+  await setup({ ...source, ...flags });
+  await waitFor(() =>
+    expect(api.get).toHaveBeenCalledWith('/api/v1/accounts/{accountId}', expect.anything()),
+  );
+  await waitFor(() => expect(screen.queryByText(/Savings pocket/)).toBeNull());
+  expect(screen.queryByRole('button', { name: CHANGE })).toBeNull();
+  expect(api.get.mock.calls.map(([path]) => path)).not.toContain('/api/v1/accounts');
+});
+
+test('offers nothing when there is no pocket to replace and no account to choose', async () => {
+  await setup({ ...source, nativeCurrency: 'CHF', savingsPocketAccountId: null });
+  await waitFor(() => {
+    expect(api.get).toHaveBeenCalledWith(
+      '/api/v1/accounts',
+      expect.objectContaining({ query: { archived: true } }),
+    );
+  });
+  await waitFor(() => expect(screen.queryByText(/Loading/)).toBeNull());
+  expect(screen.queryByRole('button', { name: LINK })).toBeNull();
+});
+
+test('reads the lists again when the picker opens on an older list', async () => {
+  const { add } = await setup();
+  const action = await screen.findByRole('button', { name: CHANGE });
+  add(createdAccount({ id: 'later', name: 'Added later' }));
+  const now = Date.now();
+  const clock = jest.spyOn(Date, 'now').mockReturnValue(now + 10_000);
+  try {
+    await fireEvent.press(action);
+    expect(await screen.findByRole('button', { name: 'Link Added later' })).toBeOnTheScreen();
+  } finally {
+    clock.mockRestore();
+  }
 });

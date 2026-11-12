@@ -2,9 +2,9 @@ import { useIntl } from 'react-intl';
 import { Switch, Text, View } from 'react-native';
 
 import type { components } from '@/api/schema';
-import { LinkPocket } from '@/features/savings-pocket/link-pocket';
 import { Amount, amountTexts } from '@/components/shared';
 import { Spacing, TypeScale } from '@/constants/theme';
+import { LinkPocket } from '@/features/savings-pocket/link-pocket';
 import { formatDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';

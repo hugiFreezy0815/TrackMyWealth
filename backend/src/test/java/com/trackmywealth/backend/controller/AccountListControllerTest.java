@@ -425,6 +425,39 @@ class AccountListControllerTest {
 
   // --- Filters and errors ----------------------------------------------------------------------
 
+  // #466: the app's savings pocket picker filters on these without reading each account.
+  @Test
+  void eachRowCarriesTheFlagsTheSavingsPocketPickerFiltersOn() {
+    String token = bootstrapAdministrator();
+    UUID cash = createAccount(token, cash("Cash", "CHF", null)).id();
+    UUID card =
+        createAccount(token, AccountRequests.account("Visa", "CREDIT_CARD", "CHF").build()).id();
+    UUID loan =
+        createAccount(
+                token,
+                AccountRequests.account("Kredit", "LOAN", "CHF")
+                    .originalPrincipal(new BigDecimal("10000"))
+                    .build())
+            .id();
+
+    Map<UUID, AccountListItemResponse> byId = byId(list(token, ""));
+
+    assertThat(byId.get(cash))
+        .extracting(
+            AccountListItemResponse::hasStatementCycle,
+            AccountListItemResponse::hasAmortisation,
+            AccountListItemResponse::savingsPocketAccountId)
+        .containsExactly(false, false, null);
+    assertThat(byId.get(card))
+        .extracting(
+            AccountListItemResponse::hasStatementCycle, AccountListItemResponse::hasAmortisation)
+        .containsExactly(true, false);
+    assertThat(byId.get(loan))
+        .extracting(
+            AccountListItemResponse::hasStatementCycle, AccountListItemResponse::hasAmortisation)
+        .containsExactly(false, true);
+  }
+
   @Test
   void theAccountTypeFilterNarrowsTheListAndAnUnknownTypeIsABadRequest() {
     String token = bootstrapAdministrator();
