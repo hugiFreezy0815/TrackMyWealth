@@ -29,7 +29,14 @@ The automated [demo seed in #385](https://github.com/hugiFreezy0815/TrackMyWealt
 5. On first run, name the overview **Frontend demo** and select CHF. Choose **Add portfolio**, then **Not in the list? Create your own**. Create **Demo Bank** with country Switzerland, type Bank and currency CHF. Add a CHF current account named **Demo Current**, leave the optional identifier blank and record an opening balance of **100.00 CHF** dated today.
 6. On Overview, open the **Demo Bank** tab. Verify that **Demo Current** appears and opens Account detail. Turn off **Hide amounts** with the eye control to check the balance.
 
-The API client renews an expired access token through `POST /api/v1/auth/refresh` and retries the original request once. To check the refresh on a local run, leave the app open until the access token expires (15 minutes by default), then pull to refresh Account detail. Confirm that the request completes and the app stays signed in. Native restores a saved session when the app restarts. A full web reload requires sign-in again. Use **Sign out** in the app and confirm you return to sign-in. See [session handling](../../mobile/src/features/auth/session.ts) and [API client behavior](../../mobile/README.md#api-client).
+The API client renews an expired access token through `POST /api/v1/auth/refresh` and retries the original request once. To verify this, leave the signed-in app open until the access token expires (15 minutes by default), then trigger a request using the control for your platform:
+
+- **Web:** Keep the same page open. On the main Overview tab, select **Refresh**. A full browser reload clears the web session.
+- **iOS and Android:** Open Account detail before the token expires, then pull to refresh after it expires.
+
+In the network trace, confirm that the original request receives a 401, `POST /api/v1/auth/refresh` succeeds, and the original request succeeds on retry. Verify that the app stays signed in. Keep tokens and authorization headers out of any recorded evidence.
+
+Native restores a saved session when the app restarts. Use **Sign out** to confirm you return to sign-in. See [session handling](../../mobile/src/features/auth/session.ts) and [API client behavior](../../mobile/README.md#api-client).
 
 ## Make a typed account request
 
@@ -74,3 +81,7 @@ All paths below are relative to `/api/v1`. Paths labeled as backend-only belong 
 - Routes live in [src/app](../../mobile/src/app), screen implementations in [src/features](../../mobile/src/features), shared UI in [src/components](../../mobile/src/components), design tokens in [theme.ts](../../mobile/src/constants/theme.ts), and EN/DE messages in [src/i18n](../../mobile/src/i18n).
 - From `mobile/`, run `npm run api:types:check`, `npx tsc --noEmit`, `npx expo lint`, `npx prettier --check .`, and `npx jest --ci`. Start Expo once before type-checking so it generates the ignored `expo-env.d.ts`.
 - [Mobile Web CI](../../.github/workflows/mobile-web-ci.yml) also checks Expo dependencies and exports the web app. [Mobile Native CI](../../.github/workflows/mobile-native-ci.yml) builds and launches the app on a simulator and emulator. See the screen spec for what to verify on web and native.
+
+## Record the onboarding dry run
+
+Before closing [#386](https://github.com/hugiFreezy0815/TrackMyWealth/issues/386), have a frontend developer unfamiliar with the backend follow this guide from a clean checkout. Record the platform, whether provisioning was manual or used #385, and the outcomes for sign-in, MFA, token refresh and the typed request returning **Demo Current**. Fix or file any gaps found during the run.
