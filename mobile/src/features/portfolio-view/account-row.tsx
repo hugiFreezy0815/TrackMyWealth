@@ -87,7 +87,7 @@ export function PortfolioAccountRow({
   /** A mortgage indented under its property (only when that property is in the section). */
   nested: boolean;
   portfolioCurrency: string;
-  onAccount: (accountId: string) => void;
+  onAccount: (accountId: string, tab?: 'positions') => void;
 }) {
   const intl = useIntl();
   const theme = useTheme();
