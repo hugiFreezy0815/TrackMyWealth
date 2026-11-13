@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useIntl } from 'react-intl';
 import { Platform, Pressable, ScrollView, Text, useWindowDimensions } from 'react-native';
 
@@ -33,6 +34,7 @@ export function ActionsDialog({
   onClose,
   onImport,
   onArchive,
+  pocketAction,
 }: {
   visible: boolean;
   archived: boolean;
@@ -40,6 +42,8 @@ export function ActionsDialog({
   onClose: () => void;
   onImport: () => void;
   onArchive: () => void;
+  /** #466 "Link savings pocket", when the account can have one. */
+  pocketAction?: ReactNode;
 }) {
   const intl = useIntl();
   const theme = useTheme();
@@ -68,6 +72,7 @@ export function ActionsDialog({
           })}
         </Text>
       ) : null}
+      {pocketAction}
       {!archived ? (
         <ActionButton
           label={intl.formatMessage({ id: 'account.archive' })}

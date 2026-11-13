@@ -589,6 +589,25 @@ describe('S3 account detail acceptance checks (#494)', () => {
     );
   });
 
+  it('offers the savings pocket in the actions menu and reads the account lists only then (#466)', async () => {
+    fakeServer(summary({ savingsPocketAccountId: 'pocket' }), [txn(0)]);
+    await renderDetail();
+    await screen.findByText(/^Savings pocket: /);
+    const directoryReads = () =>
+      api.get.mock.calls.filter(
+        ([path, options]) =>
+          path === '/api/v1/accounts' &&
+          !(options as { query?: { portfolioId?: string } } | undefined)?.query?.portfolioId,
+      );
+    expect(directoryReads()).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: 'Change savings pocket' })).toBeNull();
+
+    await fireEvent.press(screen.getByLabelText('Account actions'));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Change savings pocket' }));
+    expect(await screen.findByText(/applies to every import you complete/)).toBeOnTheScreen();
+    expect(directoryReads()).toHaveLength(2);
+  });
+
   it('goes back with a toast when the account is gone during an action', async () => {
     fakeServer(summary(), [txn(0)]);
     api.post.mockRejectedValue(new ApiError('gone', 404));

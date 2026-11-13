@@ -9,6 +9,7 @@ import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
+import com.trackmywealth.backend.dto.LinkSavingsPocketRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
@@ -224,7 +225,20 @@ class AccountListControllerTest {
     String token = bootstrapAdministrator();
     UUID active = createAccount(token, cash("Active", "CHF", null)).id();
     AccountSummaryResponse old = createAccount(token, cash("Old", "CHF", null));
-    archive(token, old.id(), old.version());
+    AccountSummaryResponse linked =
+        client(token)
+            .put()
+            .uri("/api/v1/accounts/" + old.id() + "/savings-pocket")
+            .header("If-Match", "\"" + old.version() + "\"")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(new LinkSavingsPocketRequest(active))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(AccountSummaryResponse.class)
+            .returnResult()
+            .getResponseBody();
+    archive(token, old.id(), linked.version());
 
     assertThat(list(token, "")).extracting(AccountListItemResponse::id).containsExactly(active);
     assertThat(list(token, "?archived=false"))
@@ -233,6 +247,7 @@ class AccountListControllerTest {
     List<AccountListItemResponse> archived = list(token, "?archived=true");
     assertThat(archived).extracting(AccountListItemResponse::id).containsExactly(old.id());
     assertThat(archived.get(0).archived()).isTrue();
+    assertThat(archived.get(0).savingsPocketAccountId()).isEqualTo(active);
   }
 
   @Test
@@ -409,6 +424,39 @@ class AccountListControllerTest {
   }
 
   // --- Filters and errors ----------------------------------------------------------------------
+
+  // #466: the app's savings pocket picker filters on these without reading each account.
+  @Test
+  void eachRowCarriesTheFlagsTheSavingsPocketPickerFiltersOn() {
+    String token = bootstrapAdministrator();
+    UUID cash = createAccount(token, cash("Cash", "CHF", null)).id();
+    UUID card =
+        createAccount(token, AccountRequests.account("Visa", "CREDIT_CARD", "CHF").build()).id();
+    UUID loan =
+        createAccount(
+                token,
+                AccountRequests.account("Kredit", "LOAN", "CHF")
+                    .originalPrincipal(new BigDecimal("10000"))
+                    .build())
+            .id();
+
+    Map<UUID, AccountListItemResponse> byId = byId(list(token, ""));
+
+    assertThat(byId.get(cash))
+        .extracting(
+            AccountListItemResponse::hasStatementCycle,
+            AccountListItemResponse::hasAmortisation,
+            AccountListItemResponse::savingsPocketAccountId)
+        .containsExactly(false, false, null);
+    assertThat(byId.get(card))
+        .extracting(
+            AccountListItemResponse::hasStatementCycle, AccountListItemResponse::hasAmortisation)
+        .containsExactly(true, false);
+    assertThat(byId.get(loan))
+        .extracting(
+            AccountListItemResponse::hasStatementCycle, AccountListItemResponse::hasAmortisation)
+        .containsExactly(false, true);
+  }
 
   @Test
   void theAccountTypeFilterNarrowsTheListAndAnUnknownTypeIsABadRequest() {
