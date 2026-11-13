@@ -1,7 +1,9 @@
 import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { IntlProvider } from 'react-intl';
-import { Text } from 'react-native';
+import { Pressable, Text } from 'react-native';
+
+import { ApiError } from '@/api/client';
 
 import { usePortfolios, useWorkspace } from '@/api/queries/resources';
 import { typedApi } from '@/api/typed-api';
@@ -25,7 +27,7 @@ jest.mock('./device-step', () => ({
 const workspace = { id: 'w-1', name: null, currency: 'CHF', version: 1 };
 const memberPortfolio = { personalAssetsDefault: true, activeAccountCount: 0 };
 
-async function mounted() {
+async function mounted(children: React.ReactNode = <Text>Financial overview</Text>) {
   const client = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: Infinity },
@@ -35,9 +37,7 @@ async function mounted() {
   return render(
     <QueryClientProvider client={client}>
       <IntlProvider locale="en" messages={en}>
-        <OverviewSetupGate userId="member-1">
-          <Text>Financial overview</Text>
-        </OverviewSetupGate>
+        <OverviewSetupGate userId="member-1">{children}</OverviewSetupGate>
       </IntlProvider>
     </QueryClientProvider>,
   );
@@ -125,5 +125,60 @@ describe('first-run overview name gate', () => {
     onlineManager.setOnline(false);
     await mounted();
     expect(screen.getByText('Financial overview')).toBeTruthy();
+  });
+});
+
+describe('first-run gate when the workspace or portfolios request fails', () => {
+  const invalidSort = () =>
+    new ApiError('Bad request', 400, { status: 400, title: 'Bad request', code: 'INVALID_SORT' });
+  const calls = (path: string) => jest.mocked(typedApi.get).mock.calls.filter(([p]) => p === path);
+  let workspaceFails = true;
+
+  /** Like the real overview: it reads the same queries and offers a retry. */
+  function Overview() {
+    const workspaceQuery = useWorkspace();
+    const portfoliosQuery = usePortfolios();
+    if (!workspaceQuery.isError && !portfoliosQuery.isError) return <Text>Financial overview</Text>;
+    return (
+      <Pressable accessibilityRole="button" onPress={() => void workspaceQuery.refetch()}>
+        <Text>Retry</Text>
+      </Pressable>
+    );
+  }
+
+  beforeEach(() => {
+    workspaceFails = true;
+    const actual =
+      jest.requireActual<typeof import('@/api/queries/resources')>('@/api/queries/resources');
+    jest.mocked(useWorkspace).mockImplementation(actual.useWorkspace);
+    jest.mocked(usePortfolios).mockImplementation(actual.usePortfolios);
+    jest.mocked(typedApi.get).mockImplementation((async (path: string) => {
+      if (path === '/api/v1/portfolios') throw invalidSort();
+      if (workspaceFails) throw invalidSort();
+      return workspace;
+    }) as never);
+  });
+
+  it('shows the screen with its error once instead of fetching again and again', async () => {
+    await mounted(<Overview />);
+    expect(await screen.findByRole('button', { name: 'Retry' })).toBeTruthy();
+    await act(() => new Promise((resolve) => setTimeout(resolve, 300)));
+    // The first request, and one more when the screen subscribes to the failed query.
+    expect(calls('/api/v1/workspace').length).toBeLessThanOrEqual(2);
+    expect(calls('/api/v1/portfolios').length).toBeLessThanOrEqual(2);
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+  });
+
+  it('decides as before once a retry succeeds', async () => {
+    jest.mocked(typedApi.get).mockImplementation((async (path: string) => {
+      if (path === '/api/v1/portfolios') return [memberPortfolio];
+      if (workspaceFails) throw invalidSort();
+      return workspace;
+    }) as never);
+    await mounted(<Overview />);
+    const retry = await screen.findByRole('button', { name: 'Retry' });
+    workspaceFails = false;
+    await fireEvent.press(retry);
+    expect(await screen.findByText('Name your overview')).toBeTruthy();
   });
 });

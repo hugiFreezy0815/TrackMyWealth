@@ -19,6 +19,15 @@ export function ContentLoading() {
   );
 }
 
+/**
+ * True while a query whose latest result is an error fetches again (#567). A query without data
+ * turns `pending` when it refetches; showing the skeleton then would unmount the screen, whose
+ * remount refetches the failed query again - an endless request loop.
+ */
+function refetchingAfterError(query: { errorUpdatedAt: number; dataUpdatedAt: number }): boolean {
+  return query.errorUpdatedAt > query.dataUpdatedAt;
+}
+
 /** First-run step after sign-in/MFA, before financial routes are shown to a new member. */
 export function OverviewSetupGate({ userId, children }: { userId: string; children: ReactNode }) {
   const workspace = useWorkspace();
@@ -43,7 +52,15 @@ export function OverviewSetupGate({ userId, children }: { userId: string; childr
 
   // Do not block an existing member when offline or an API is unavailable.
   // The ordinary screen owns its own per-card error and offline states.
-  if (!online || workspace.isError || portfolios.isError) return <>{children}</>;
+  if (
+    !online ||
+    workspace.isError ||
+    portfolios.isError ||
+    refetchingAfterError(workspace) ||
+    refetchingAfterError(portfolios)
+  ) {
+    return <>{children}</>;
+  }
   if (workspace.isPending || portfolios.isPending || !key || record?.key !== key) {
     return <ContentLoading />;
   }
