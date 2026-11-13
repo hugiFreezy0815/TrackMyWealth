@@ -11,6 +11,7 @@ import jakarta.persistence.EntityManagerFactory;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -44,6 +45,8 @@ class ValueHistoryPerformanceTest {
 
   private static final int ACCOUNTS = 20;
   private static final int TRANSACTIONS_PER_ACCOUNT = 2500;
+  private static final int WARMUP_REQUESTS = 20;
+  private static final int MEASURED_REQUESTS = 25;
   private static final double MAX_P95_MS = 800.0;
 
   @Container
@@ -67,7 +70,7 @@ class ValueHistoryPerformanceTest {
   @Autowired EntityManagerFactory entityManagerFactory;
 
   @Test
-  void oneYearHistoryP95IsUnderEightHundredMilliseconds() throws Exception {
+  void oneYearHistoryP95IsWithinBudget() throws Exception {
     RestTestClient anonymous =
         RestTestClient.bindToServer().baseUrl("http://localhost:%d".formatted(port)).build();
     String token =
@@ -111,14 +114,14 @@ class ValueHistoryPerformanceTest {
     LocalDate today = LocalDate.now(ZoneId.of("Europe/Zurich"));
     seedFiftyThousandTransactions(accountIds, today);
 
-    // Warm the JIT and database caches before recording a reproducible p95.
-    for (int i = 0; i < 4; i++) {
+    // Warm the JIT and connection pool; the planner statistics were refreshed by the seeding step.
+    for (int i = 0; i < WARMUP_REQUESTS; i++) {
       history(client);
     }
     SessionFactory sessionFactory = entityManagerFactory.unwrap(SessionFactory.class);
     sessionFactory.getStatistics().clear();
     List<Double> samples = new ArrayList<>();
-    for (int i = 0; i < 25; i++) {
+    for (int i = 0; i < MEASURED_REQUESTS; i++) {
       long start = System.nanoTime();
       ValueHistoryResponse response = history(client);
       double millis = (System.nanoTime() - start) / 1_000_000.0;
@@ -126,6 +129,7 @@ class ValueHistoryPerformanceTest {
       assertThat(response.points()).hasSizeBetween(52, 54);
       assertThat(response.points().get(response.points().size() - 1).date()).isEqualTo(today);
     }
+    System.out.println("HISTORY_PERF measured requests in order (ms): " + samples);
     Collections.sort(samples);
     double p50 = samples.get((int) Math.ceil(0.50 * samples.size()) - 1);
     double p95 = samples.get((int) Math.ceil(0.95 * samples.size()) - 1);
@@ -159,6 +163,27 @@ class ValueHistoryPerformanceTest {
         .getResponseBody();
   }
 
+  /**
+   * Refreshes planner statistics after the bulk insert, as autoanalyze would in a running system.
+   * Without it the benchmark measures plans for empty tables, and autoanalyze can start during the
+   * measured requests on a slow runner: one replanning spike, then a different plan.
+   */
+  private void analyzeSeededTables() throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        Statement statement = connection.createStatement()) {
+      statement.execute("ANALYZE transaction, account_snapshot");
+      // reltuples stays -1 until a table is analyzed; ANALYZE without ownership only warns.
+      try (ResultSet estimate =
+          statement.executeQuery(
+              "SELECT reltuples FROM pg_class WHERE oid = 'transaction'::regclass")) {
+        assertThat(estimate.next()).isTrue();
+        double rows = estimate.getDouble(1);
+        System.out.printf("HISTORY_PERF STATS transaction reltuples=%.0f%n", rows);
+        assertThat(rows).as("planner statistics for the seeded rows").isPositive();
+      }
+    }
+  }
+
   private void seedFiftyThousandTransactions(List<UUID> accountIds, LocalDate today)
       throws Exception {
     try (Connection connection = dataSource.getConnection()) {
@@ -179,14 +204,16 @@ class ValueHistoryPerformanceTest {
                     + " booking_date, amount, currency) "
                     + "SELECT a.workspace_id, a.id, 'INCOME', CAST(? AS date) - (n % 365),"
                     + " 1.00, a.native_currency FROM account a"
-                    + " CROSS JOIN generate_series(1, 2500) AS n WHERE a.id = ?")) {
+                    + " CROSS JOIN generate_series(1, ?) AS n WHERE a.id = ?")) {
           transactions.setObject(1, today);
-          transactions.setObject(2, accountId);
+          transactions.setInt(2, TRANSACTIONS_PER_ACCOUNT);
+          transactions.setObject(3, accountId);
           assertThat(transactions.executeUpdate()).isEqualTo(TRANSACTIONS_PER_ACCOUNT);
         }
       }
       connection.commit();
     }
+    analyzeSeededTables();
     try (Connection connection = dataSource.getConnection();
         PreparedStatement plan =
             connection.prepareStatement(
