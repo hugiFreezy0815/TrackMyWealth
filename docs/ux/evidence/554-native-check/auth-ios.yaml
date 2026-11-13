@@ -1,0 +1,57 @@
+# PR #558 / #554: sign-in and MFA with the keyboard open (iOS Simulator, Maestro).
+# Needs mock-api.mjs on 127.0.0.1:8099 and a release build with EXPO_PUBLIC_API_URL=http://localhost:8099.
+# Run: maestro --device <udid> test -e PREFIX=<name> auth-ios.yaml
+appId: com.anonymous.trackmywealth
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: 'Sign in'
+    timeout: 30000
+# Server focused: the keyboard is open; the rest of the form must be reachable without closing it
+- tapOn:
+    text: 'Server'
+    index: 1
+- takeScreenshot: ${PREFIX}-1-server-focused
+- scroll
+- takeScreenshot: ${PREFIX}-2-server-focused-scrolled
+# Return in Server moves to Email: the typed text lands in Email
+- pressKey: Enter
+- inputText: 'demo@example.com'
+- takeScreenshot: ${PREFIX}-3-email-after-return
+# Return in Email moves to Password (iOS hides secure fields and their keyboard in screenshots)
+- pressKey: Enter
+- inputText: 'secret-password'
+# Return in Password submits; mock-api.mjs logs the body (password length only) and answers with MFA
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: 'Not Now'
+    timeout: 10000
+    optional: true
+- tapOn:
+    text: 'Not Now'
+    optional: true
+- extendedWaitUntil:
+    visible: 'Verify sign-in'
+    timeout: 15000
+- extendedWaitUntil:
+    visible: 'Not Now'
+    timeout: 6000
+    optional: true
+- tapOn:
+    text: 'Not Now'
+    optional: true
+- tapOn:
+    text: 'Authenticator code'
+    index: 1
+- inputText: '123'
+- takeScreenshot: ${PREFIX}-4-mfa-numberpad
+# Maestro counts elements under the keyboard as visible, so scroll explicitly before tapping
+- scroll
+- takeScreenshot: ${PREFIX}-5-mfa-scrolled
+- tapOn: 'Start over'
+- extendedWaitUntil:
+    visible: 'Server'
+    timeout: 5000
+# The sign-in step starts at the top again (brand line not cut off)
+- takeScreenshot: ${PREFIX}-6-after-start-over

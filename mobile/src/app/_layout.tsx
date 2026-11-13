@@ -55,7 +55,7 @@ export default function TabLayout() {
           {restoring ? (
             <RestoringSession />
           ) : session.signedIn ? (
-            <AppShell identity={session.identity} />
+            <AppShell identity={session.identity} verifyingIdentity={session.verifyingIdentity} />
           ) : (
             <AuthScreen mfaRequired={session.mfaRequired} />
           )}

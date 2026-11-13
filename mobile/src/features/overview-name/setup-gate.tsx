@@ -10,6 +10,15 @@ import { completeOverviewStep, hasCompletedOverviewStep, setupStepKey } from './
 import { isFirstOverviewSetup } from './model';
 import { OverviewNameEditor } from './overview-name-editor';
 
+/** What the signed-in content area shows while it cannot decide yet what to show. */
+export function ContentLoading() {
+  return (
+    <View style={{ padding: Spacing.four }}>
+      <LoadingSkeleton count={3} height={36} />
+    </View>
+  );
+}
+
 /** First-run step after sign-in/MFA, before financial routes are shown to a new member. */
 export function OverviewSetupGate({ userId, children }: { userId: string; children: ReactNode }) {
   const workspace = useWorkspace();
@@ -36,11 +45,7 @@ export function OverviewSetupGate({ userId, children }: { userId: string; childr
   // The ordinary screen owns its own per-card error and offline states.
   if (!online || workspace.isError || portfolios.isError) return <>{children}</>;
   if (workspace.isPending || portfolios.isPending || !key || record?.key !== key) {
-    return (
-      <View style={{ padding: Spacing.four }}>
-        <LoadingSkeleton count={3} height={36} />
-      </View>
-    );
+    return <ContentLoading />;
   }
 
   if (!isFirstOverviewSetup(portfolios.data ?? [], record.complete)) return <>{children}</>;

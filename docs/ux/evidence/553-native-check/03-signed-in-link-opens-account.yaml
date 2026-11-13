@@ -1,0 +1,11 @@
+# #553: signed in, the same link opens the account directly.
+appId: com.anonymous.trackmywealth
+---
+- tapOn:
+    text: "Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "Account detail"
+    timeout: 30000
+- assertVisible: "Girokonto"
+- takeScreenshot: ios-04-signed-in-link
