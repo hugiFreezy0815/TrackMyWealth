@@ -88,13 +88,13 @@ October cash flow                              Details
 All amounts use `Amount`. *Cur* = the currency chosen in the scope bar; it defaults to the
 workspace currency (`GET /api/v1/workspace` → `currency`).
 
-| # | Element | Label key (EN / DE draft) | Format | Source: endpoint → field |
+| # | Element | Label key (EN / DE) | Format | Source: endpoint → field |
 |---|---|---|---|---|
 | 1 | Greeting | `overview.greeting.{morning,afternoon,evening}` "Good evening" / "Guten Abend" | by device time | none: the user's name is not in `/users/me` (only `userId, role, language`), so **no name** in sprint 7 |
-| 2 | Title | `overview.title` "Overview" / "Übersicht" | | |
-| 3 | Scope bar | `scope.allAccounts` "All accounts · {currency}" | | *Cur*; account scoping is not offered by `/net-worth`, so the menu offers **only the currency** in sprint 7 (workspace currency first, then CHF, EUR, USD, GBP) |
+| 2 | Title | `nav.overview` "Overview" / "Übersicht" | | |
+| 3 | Scope bar | `overview.scope` "All accounts · {currency}" | | *Cur*; account scoping is not offered by `/net-worth`, so the menu offers **only the currency** in sprint 7 (workspace currency first, then CHF, EUR, USD, GBP) |
 | 4 | As-of chip | `overview.asOf` "As of {date}" / "Stand {date}" | short date | `GET /api/v1/net-worth?currency=Cur` → `asOf` |
-| 5 | Data status banner | `overview.dataStatus.unreconciled` "{count, plural, one {# account differs} other {# accounts differ}} from its statement" + "Review" | | `GET /api/v1/accounts` → count of items with `valueStatus = UNRECONCILED` (a count of rows, not a money figure). Hidden when 0 |
+| 5 | Data status banner | `overview.dataStatus.unreconciled` (`count`) + `overview.warning.review` | | `GET /api/v1/accounts` → count of items with `valueStatus = UNRECONCILED` (a count of rows, not a money figure). Hidden when 0 |
 | 6 | Net worth | `overview.netWorth` "Net worth" / "Nettovermögen" | `Amount`, large | `/net-worth` → `netWorth`, `currency` |
 | 7 | Net worth status | `ValueStatusBadge` | | `/net-worth` → `approximate` ⇒ Estimated; `complete=false` ⇒ "Not all values are included"; `warnings[]` listed in the explanation sheet |
 | 8 | Change chip + period label | `overview.change.pastMonth` "past month" / "letzter Monat" | `ChangeChip`: sign, amount, % | `GET /api/v1/net-worth/history?period=1M&currency=Cur` → `change.amount`, `change.percent` for the selected period. Hidden until then |
@@ -104,20 +104,22 @@ workspace currency (`GET /api/v1/workspace` → `currency`).
 | 12 | Assets | `overview.assets` "Assets" / "Vermögen" | `Amount` | `/net-worth` → `totalAssets` |
 | 13 | Liabilities | `overview.liabilities` "Liabilities" / "Verbindlichkeiten" | `Amount`, loss colour, shown as sent (no sign added) | `/net-worth` → `totalLiabilities`: the server sends the **magnitude** of what is owed (positive; PO 2026-11-09, `AccountValuation`/DM-12). The label "Liabilities" carries the meaning, so the app adds no minus. Only an overpaid liability makes it negative, and then the server's minus shows |
 | 14 | Assets/liabilities bar | decorative (`aria-hidden`), the amounts above carry the meaning | bar split in the ratio of the two amounts | 12, 13. Visual proportion only; no figure is shown from it |
-| 15 | "Includes …" line | `overview.liabilities.includes` "Includes {first} and {second}" / "…and {count} more" | names + `Amount` in the account's `currency`, shown as sent (magnitudes, like #13) | `/net-worth` → `accounts[]` with `nature = LIABILITY` and `valueKnown`, the two largest by absolute `value` first. Hidden when there are no liabilities |
-| 16 | Section tiles | `section.*`, **the same keys as the Portfolio View** (Cash & savings, Pillar 3a, Pension, Depot, Crypto, Credit card, Property & mortgage, Other) | `Amount` + change for the selected period | **Delivered (#481)** → `/net-worth` `sections[]` (`section`, `subtotal`, `valueStatus`, `complete`) in server order; change from **HISTORY API (#477; frontend integration pending)** `sections[].change`. The section subtotal is available with #481; the change line remains hidden until #477. Only sections the server sends are shown. Phone: 2 columns (M03, PO 2026-11-09); web: 4 per row when each tile gets at least 160 px, else 2. The figure stays on one line: when it would not fit at 16 px it steps down in size (to 11 px at least), it never wraps or truncates |
+| 15 | "Includes …" line | `overview.liabilities.includesOne` (`first`), `overview.liabilities.includes` (`first`, `second`), or `overview.liabilities.includesMore` (`first`, `second`, `count`) | names + `Amount` in the account's `currency`, shown as sent (magnitudes, like #13) | `/net-worth` → `accounts[]` with `nature = LIABILITY` and `valueKnown`, the two largest by absolute `value` first. Hidden when there are no liabilities |
+| 16 | Section tiles | `overview.sections.*` (same section terminology as the Portfolio View) (Cash & savings, Pillar 3a, Pension, Depot, Crypto, Credit card, Property & mortgage, Other) | `Amount` + change for the selected period | **Delivered (#481)** → `/net-worth` `sections[]` (`section`, `subtotal`, `valueStatus`, `complete`) in server order; change from **HISTORY API (#477; frontend integration pending)** `sections[].change`. The section subtotal is available with #481; the change line remains hidden until #477. Only sections the server sends are shown. Phone: 2 columns (M03, PO 2026-11-09); web: 4 per row when each tile gets at least 160 px, else 2. The figure stays on one line: when it would not fit at 16 px it steps down in size (to 11 px at least), it never wraps or truncates |
 | 17 | Portfolios header | `overview.portfolios` "Portfolios" + "See all" | | "See all" → Portfolios tab (#376). Hidden if that tab isn't built in sprint 7 |
 | 18 | Portfolio row: logo, name | | | `GET /api/v1/portfolios` → `logoUrl`, `name` |
-| 19 | Portfolio row: subtitle | `portfolio.row.subtitle` "{count, plural, one {# account} other {# accounts}} · {currency}" | | `activeAccountCount`, `portfolioCurrency`; personal-assets default: `portfolio.row.personalAssets` "Property, vehicles and more" |
+| 19 | Portfolio row: subtitle | `overview.portfolio.subtitle` "{count, plural, one {# account} other {# accounts}} · {currency}" | | `activeAccountCount`, `portfolioCurrency`; personal-assets default: `overview.portfolio.personalAssets` "Property, vehicles and more" |
 | 20 | Portfolio row: total | | `Amount` in portfolio currency | `total`, `portfolioCurrency` |
-| 21 | Portfolio row: converted total | `amount.approx` "≈ {amount}" | `Amount`, secondary | `totalInWorkspaceCurrency`, `workspaceCurrency`; **only** when `portfolioCurrency ≠ workspaceCurrency` |
+| 21 | Portfolio row: converted total | `Amount` with `approximate` (spoken key `amount.a11y` with `approx`, `sign`, `amount`, `currency`) | `Amount`, secondary | `totalInWorkspaceCurrency`, `workspaceCurrency`; **only** when `portfolioCurrency ≠ workspaceCurrency` |
 | 22 | Portfolio row: status / change | `ValueStatusBadge` if not `CURRENT`, else change % | | `valueStatus`, `complete`; change from **HISTORY API (#477; frontend integration pending)** (`portfolios[].change.percent`) |
 | 23 | Cash-flow card title | `overview.cashFlow.title` "{month} cash flow" / "Cashflow {month}" | month name | current month |
-| 24 | Income / Spending / Saved | `cashFlow.income/spending/saving` | `Amount` | `GET /api/v1/cash-flow?month=YYYY-MM&currency=Cur` → the entry of `income[]`, `spending[]`, `saving[]` whose `currency` = *Cur*; `valueKnown=false` ⇒ "–" |
-| 25 | Pending review | `cashFlow.pendingReview` "{amount} still to review" | | `pendingReview[]` entry for *Cur*; hidden when zero or missing |
+| 24 | Income / Spending / Saved | `overview.cashFlow.income`, `overview.cashFlow.spending`, `overview.cashFlow.saving` | `Amount` | `GET /api/v1/cash-flow?month=YYYY-MM&currency=Cur` → the entry of `income[]`, `spending[]`, `saving[]` whose `currency` = *Cur*; `valueKnown=false` ⇒ "–" |
+| 25 | Pending review | `overview.cashFlow.pendingReview` "{amount} still to review" | | `pendingReview[]` entry for *Cur*; hidden when zero or missing |
 | 26 | Cash flow incomplete | `total.incomplete` | | `complete=false` |
-| 27 | Details link | `overview.cashFlow.details` "Details" | | → Cash flow tab (M10). Hidden if not built in sprint 7 |
-| 28 | Eye icon (hide amounts) | `overview.hideAmounts` "Hide amounts" / "Beträge ausblenden" | toggle | device setting (FR-CLI-005) |
+| 27 | Details link | "Details" (design only) | | → Cash flow tab (M10). Hidden if not built in sprint 7 |
+| 28 | Eye icon (hide amounts) | `privacy.hideAmounts` and `privacy.showAmounts` | toggle | device setting (FR-CLI-005) |
+
+Rows 8–11 describe the pending #477 frontend integration. Their keys are design proposals.
 
 ## Requests and loading order
 

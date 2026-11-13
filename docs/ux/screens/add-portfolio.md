@@ -65,7 +65,7 @@ preview sit in one row above "Cancel" and "Create portfolio".
 
 | Field | Label key (EN / DE draft) | Rule | Request field |
 |---|---|---|---|
-| Search | `addPortfolio.search` "Search banks, brokers, 3a providers" / "Banken, Broker, 3a-Anbieter suchen" | free text | `query` |
+| Search | `addPortfolio.search.label` and `addPortfolio.search.placeholder` | free text | `query` |
 | Catalogue row | name, logo (`InstitutionLogo`), "{type} · {formats}" | tap selects. The selected row shows ✓ and opens the bottom sheet | |
 | New-tab preview | `addPortfolio.newTab` "New tab:" | shows the logo and the typed name exactly as the tab will look | |
 | Portfolio name | `addPortfolio.name` "Portfolio name" / "Name des Portfolios" | Prefilled with the catalogue name. **Required** without a catalogue entry. At most 100 characters. The member may rename it ("DKB Gemeinschaftskonto") | `name` |

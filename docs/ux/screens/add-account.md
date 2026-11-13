@@ -1,5 +1,7 @@
 # S6 Add account (and its starting value)
 
+The shipped step titles use `addAccount.title` and `addAccount.start.title`.
+
 **Figma:** M17 Add account (90:2658) · M16 Enter statement balance (90:2596) for the
 starting-value step. Web: the same form in a dialog (no W frame; it uses the W11 dialog
 layout).

@@ -3,5 +3,12 @@
   "ui.close": "Schliessen",
   "toast.dismiss": "Tippe, um die Meldung zu schliessen.",
   "addPortfolio.name.optional": "Optional. Ohne Namen heisst der Tab {name}.",
-  "addAccount.type.warning": "Du kannst den Kontotyp später nicht ändern. Schliesse das Konto und erstelle ein neues, falls nötig."
+  "addAccount.type.warning": "Du kannst den Kontotyp später nicht ändern. Schliesse das Konto und erstelle ein neues, falls nötig.",
+  "problem.IMPORT_FILE_TOO_LARGE": "Die Datei überschreitet die Grössenbeschränkung.",
+  "setup.overviewName.question": "Wie soll dein erster Tab heissen?",
+  "statement.file.max": "Maximale Dateigrösse: 5 MB",
+  "statement.file.tooLarge": "Diese Datei ist grösser als 5 MB. Wähle eine kleinere Datei.",
+  "statement.updateRequired": "Aktualisiere die App, um diesen Import abzuschliessen.",
+  "statement.error.IMPORT_FILE_TOO_LARGE": "Die Datei überschreitet die Grössenbeschränkung.",
+  "transactionType.CORPORATE_ACTION": "Kapitalmassnahme"
 }

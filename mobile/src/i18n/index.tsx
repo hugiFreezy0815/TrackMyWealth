@@ -3,34 +3,29 @@ import { Platform } from 'react-native';
 import { IntlProvider } from 'react-intl';
 
 import { DEVICE_LOCALE } from './device-intl';
-import en from './en.json';
-import de from './de.json';
-import deCH from './de-CH.json';
-import deDE from './de-DE.json';
+import { catalogues } from './catalogue-context';
+import { createLocaleCatalogues } from './locale-catalogues';
 
-export type AppLocale = 'en' | 'de' | 'de-CH' | 'de-DE';
+/**
+ * A locale tag such as `de-CH`. Catalogues are discovered at build time (`<locale>.json`), so this
+ * cannot be a fixed union; `appLocales` lists the ones this build ships.
+ */
+export type AppLocale = string;
 
-/** The member's chosen language (`/users/me` → `language`) wins over the device locale. */
+const localeCatalogues = createLocaleCatalogues(catalogues);
+
+/** Every locale this build has a catalogue for, e.g. `['de', 'de-CH', 'de-DE', 'en']`. */
+export const appLocales: readonly AppLocale[] = Object.keys(catalogues).sort();
+
+/** The member's chosen language (`/users/me` → `language`) wins over the device language. */
 export function resolveLocale(
   language?: string | null,
   deviceLocale: string = DEVICE_LOCALE,
 ): AppLocale {
-  const locale = (language || deviceLocale || 'en').replace('_', '-').toLowerCase();
-  if (locale.startsWith('de-ch')) return 'de-CH';
-  if (locale.startsWith('de-de')) return 'de-DE';
-  if (locale.startsWith('de')) return 'de';
-  return 'en';
+  return localeCatalogues.resolveLocale(language, deviceLocale);
 }
 
-/** The catalogue of a locale: English as the base, then German, then the regional overrides. */
-export function messagesFor(locale: AppLocale): Record<string, string> {
-  return {
-    ...en,
-    ...(locale.startsWith('de') ? de : {}),
-    ...(locale === 'de-CH' ? deCH : {}),
-    ...(locale === 'de-DE' ? deDE : {}),
-  };
-}
+export const { messagesFor } = localeCatalogues;
 
 export function AppIntlProvider({
   language,

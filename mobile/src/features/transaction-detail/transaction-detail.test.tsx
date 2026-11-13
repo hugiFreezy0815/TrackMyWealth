@@ -169,12 +169,12 @@ function useMockConflict() {
   };
 }
 
-async function show() {
+async function show(locale: 'en' | 'de' = 'en') {
   const onBack = jest.fn();
   const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } });
   await render(
     <QueryClientProvider client={client}>
-      <IntlProvider locale="en" messages={en}>
+      <IntlProvider locale={locale} messages={locale === 'de' ? de : en}>
         <TransactionDetail accountId="account-1" transactionId="transaction-1" onBack={onBack} />
       </IntlProvider>
     </QueryClientProvider>,
@@ -465,6 +465,26 @@ describe('S4 transaction detail', () => {
     await show();
     expect(screen.queryByRole('button', { name: 'Delete transaction' })).toBeNull();
     expect(screen.getByText('Change this through reconciliation.')).toBeTruthy();
+  });
+
+  it.each([
+    ['en', 'Import source', 'CSV · import from 8 Nov 2026, 10:00'],
+    ['de', 'Importquelle', 'CSV · Import vom 08.11.2026, 10:00'],
+  ] as const)('localizes the import source details in %s', async (locale, label, value) => {
+    fixtures({
+      ...base,
+      importBatch: {
+        id: 'batch-1',
+        fileFormat: 'CSV',
+        uploadedAt: new Date(2026, 10, 8, 10).toISOString(),
+      },
+    });
+    await show(locale);
+
+    expect(screen.queryByText(label)).toBeNull();
+    await fireEvent.press(screen.getByRole('button', { name: /Details/ }));
+    expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.getByText(value)).toBeTruthy();
   });
 
   it('renders dividend trade values without a category picker', async () => {
