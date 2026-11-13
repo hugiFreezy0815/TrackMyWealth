@@ -18113,6 +18113,15 @@ components:
           type: boolean
         hasTransactions:
           type: boolean
+        hasStatementCycle:
+          type: boolean
+        hasAmortisation:
+          type: boolean
+        savingsPocketAccountId:
+          type:
+          - string
+          - "null"
+          format: uuid
         balance:
           type:
           - string
@@ -18162,12 +18171,15 @@ components:
       - balance
       - balanceInWorkspaceCurrency
       - currency
+      - hasAmortisation
+      - hasStatementCycle
       - hasTransactions
       - id
       - name
       - nature
       - portfolioId
       - portfolioName
+      - savingsPocketAccountId
       - valueBasis
       - valueKnown
       - valueSourceDate

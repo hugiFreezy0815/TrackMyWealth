@@ -20,6 +20,8 @@ const listeners = new Set<Listener>();
 let access: string | null = null;
 let refresh: string | null = null;
 let identity: Identity | null = null;
+// True while GET /users/me for freshly accepted tokens is in flight.
+let verifyingIdentity = false;
 let challenge: string | null = null;
 let pendingRefresh: Promise<string | null> | null = null;
 let generation = 0;
@@ -36,9 +38,11 @@ export function subscribeSession(listener: Listener): () => void {
 /**
  * Signed in while a refresh token is held, even without a current access token: started offline,
  * the app keeps the session and the first request renews it once the server is reachable.
+ * `verifyingIdentity` is true while the server is still being asked who the new tokens belong to;
+ * when it cannot answer, the session goes on without an identity.
  */
 export function sessionSnapshot() {
-  return { signedIn: !!refresh, identity, mfaRequired: !!challenge };
+  return { signedIn: !!refresh, identity, mfaRequired: !!challenge, verifyingIdentity };
 }
 
 /** Only for showing or hiding admin screens; the server enforces the role on every admin call. */
@@ -76,6 +80,7 @@ async function accept(tokens: Tokens): Promise<void> {
   refresh = tokens.refreshToken;
   access = tokens.accessToken;
   setAccessToken(access);
+  verifyingIdentity = true;
   changed();
   let verified: Identity;
   try {
@@ -89,10 +94,15 @@ async function accept(tokens: Tokens): Promise<void> {
     }
     // Unreachable: the session still exists, and without a verified identity no admin controls
     // are shown. The next rotation verifies it again.
+    if (current === generation) {
+      verifyingIdentity = false;
+      changed();
+    }
     return;
   }
   if (current === generation) {
     identity = verified;
+    verifyingIdentity = false;
     changed();
   }
 }
@@ -175,6 +185,7 @@ async function clearSession(): Promise<void> {
   access = null;
   challenge = null;
   identity = null;
+  verifyingIdentity = false;
   setAccessToken(null);
   // Drop the member's financial data: stop requests in flight, then empty the cache.
   void queryClient.cancelQueries();

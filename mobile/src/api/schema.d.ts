@@ -1737,6 +1737,10 @@ export interface components {
       currency: string;
       archived: boolean;
       hasTransactions: boolean;
+      hasStatementCycle: boolean;
+      hasAmortisation: boolean;
+      /** Format: uuid */
+      savingsPocketAccountId: string | null;
       /**
        * Format: decimal
        * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.

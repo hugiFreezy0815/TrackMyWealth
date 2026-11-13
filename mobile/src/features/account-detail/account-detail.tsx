@@ -35,6 +35,7 @@ import {
 import { Spacing, TypeScale } from '@/constants/theme';
 import { formatDate } from '@/format/date';
 import { PositionView } from '@/features/portfolio-view/position-view';
+import { useSavingsPocketLink } from '@/features/savings-pocket/link-pocket';
 import { showToast } from '@/features/shell/toast';
 import { useOnline } from '@/hooks/use-online';
 import { useTheme } from '@/hooks/use-theme';
@@ -153,6 +154,13 @@ export function AccountDetail({
   const positions = useAccountPositions(accountId, !!summary?.holdsPositions);
   const categoryWrite = useChangeTransactionCategory(accountId);
   const archiveWrite = useAccountArchiveAction(accountId);
+  // #466: offered in the actions menu; the account lists it needs are read when the menu opens.
+  const pocket = useSavingsPocketLink({
+    account: summary,
+    disabled: !online || archiveWrite.isPending,
+    context: 'account',
+    load: dialog === 'actions',
+  });
   const records = uniqueTransactions(transactions.data?.pages ?? []);
   const total = transactions.data?.pages[0]?.page.totalElements ?? 0;
   const countValue = count.data ?? 0;
@@ -393,6 +401,7 @@ export function AccountDetail({
         onRetryValue={refresh}
         onExplainValue={() => setDialog('value')}
       />
+      {pocket.currentLine}
       {value && (activeAccounts.isError || archivedAccounts.isError) ? (
         <ErrorBanner error={activeAccounts.error ?? archivedAccounts.error} onRetry={refresh} />
       ) : null}
@@ -610,7 +619,9 @@ export function AccountDetail({
           onImport();
         }}
         onArchive={() => setDialog('archive')}
+        pocketAction={pocket.trigger(() => setDialog(null))}
       />
+      {pocket.dialog}
       <SortDialog
         visible={dialog === 'sort'}
         sort={sort}
