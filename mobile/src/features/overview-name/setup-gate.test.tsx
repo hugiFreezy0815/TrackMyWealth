@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { IntlProvider } from 'react-intl';
 import { Pressable, Text } from 'react-native';
 
@@ -138,11 +138,19 @@ describe('first-run gate when the workspace or portfolios request fails', () => 
   function Overview() {
     const workspaceQuery = useWorkspace();
     const portfoliosQuery = usePortfolios();
-    if (!workspaceQuery.isError && !portfoliosQuery.isError) return <Text>Financial overview</Text>;
+    const failedQuery = workspaceQuery.isError ? workspaceQuery : portfoliosQuery;
     return (
-      <Pressable accessibilityRole="button" onPress={() => void workspaceQuery.refetch()}>
-        <Text>Retry</Text>
-      </Pressable>
+      <>
+        <Text>Financial overview</Text>
+        {failedQuery.isError ? (
+          <>
+            <Text>{workspaceQuery.isError ? 'Workspace failed' : 'Portfolios failed'}</Text>
+            <Pressable accessibilityRole="button" onPress={() => void failedQuery.refetch()}>
+              <Text>Retry</Text>
+            </Pressable>
+          </>
+        ) : null}
+      </>
     );
   }
 
@@ -180,5 +188,40 @@ describe('first-run gate when the workspace or portfolios request fails', () => 
     workspaceFails = false;
     await fireEvent.press(retry);
     expect(await screen.findByText('Name your overview')).toBeTruthy();
+  });
+
+  it('keeps the overview mounted during a portfolios-only refetch and recovers on Retry', async () => {
+    const portfoliosPath = '/api/v1/portfolios';
+    let portfoliosFail = true;
+    let finishAutomaticRefetch = () => {};
+    const automaticRefetch = new Promise<void>((resolve) => {
+      finishAutomaticRefetch = resolve;
+    });
+    jest.mocked(typedApi.get).mockImplementation((async (path: string) => {
+      if (path === '/api/v1/workspace') return workspace;
+      if (path !== portfoliosPath) throw new Error(`Unexpected GET ${path}`);
+      if (!portfoliosFail) return [memberPortfolio];
+      if (calls(portfoliosPath).length === 2) await automaticRefetch;
+      throw invalidSort();
+    }) as never);
+
+    await mounted(<Overview />);
+    await waitFor(() => {
+      expect(calls(portfoliosPath)).toHaveLength(2);
+      expect(screen.getByText('Financial overview')).toBeTruthy();
+      expect(screen.queryByText('Portfolios failed')).toBeNull();
+    });
+
+    await act(async () => finishAutomaticRefetch());
+    expect(await screen.findByText('Portfolios failed')).toBeTruthy();
+    expect(screen.getByText('Financial overview')).toBeTruthy();
+    const retry = screen.getByRole('button', { name: 'Retry' });
+    expect(calls(portfoliosPath).length).toBeLessThanOrEqual(2);
+    expect(screen.queryByText('Name your overview')).toBeNull();
+
+    portfoliosFail = false;
+    await fireEvent.press(retry);
+    expect(await screen.findByText('Name your overview')).toBeTruthy();
+    expect(calls(portfoliosPath)).toHaveLength(3);
   });
 });
