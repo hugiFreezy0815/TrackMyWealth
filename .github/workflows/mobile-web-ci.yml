@@ -81,3 +81,20 @@ jobs:
       # is what the deploy pipeline for the web app would run before publishing `dist/`.
       - name: Build web export
         run: npx expo export -p web
+
+      - name: Install nginx for the deployment smoke test
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nginx
+
+      - name: Check deployed web headers
+        run: |
+          prefix=$(mktemp -d)
+          cp deploy/nginx/nginx.conf "$prefix/"
+          cp /etc/nginx/mime.types "$prefix/"
+          ln -s "$PWD/dist" "$prefix/html"
+          python3 deploy/nginx/write-csp.py dist "$prefix/content-security-policy.conf" \
+            --api-origin http://localhost:8080
+          nginx -p "$prefix/" -c "$prefix/nginx.conf"
+          trap 'nginx -p "$prefix/" -c "$prefix/nginx.conf" -s quit' EXIT
+          bash deploy/nginx/check-headers.sh http://127.0.0.1:8082 dist

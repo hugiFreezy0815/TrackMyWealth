@@ -5,7 +5,13 @@ import { installBackForwardGuard, replaceDocument } from './web-document';
 const ORIGINAL_OS = Platform.OS;
 const location = { replace: jest.fn(), reload: jest.fn() };
 const listeners = new Map<string, (event: { persisted: boolean }) => void>();
+const storage = new Map<string, string>();
 const windowStub = {
+  localStorage: {
+    getItem: jest.fn((key: string) => storage.get(key) ?? null),
+    setItem: jest.fn((key: string, value: string) => storage.set(key, value)),
+  },
+  crypto: { randomUUID: () => 'sign-out-marker' },
   location,
   addEventListener: jest.fn((type: string, listener: (event: { persisted: boolean }) => void) =>
     listeners.set(type, listener),
@@ -22,6 +28,7 @@ afterEach(() => {
   Platform.OS = ORIGINAL_OS;
   if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
   listeners.clear();
+  storage.clear();
   jest.clearAllMocks();
 });
 
@@ -30,6 +37,10 @@ describe('sign-out on web', () => {
     Platform.OS = 'web';
     replaceDocument('/overview');
     expect(location.replace).toHaveBeenCalledWith('/overview');
+    expect(windowStub.localStorage.setItem).toHaveBeenCalledWith(
+      'trackmywealth.sign-out',
+      'sign-out-marker',
+    );
   });
 
   it('leaves native apps alone', () => {
@@ -56,6 +67,28 @@ describe('back-forward cache guard', () => {
     listeners.get('pageshow')?.({ persisted: true });
 
     expect(location.reload).not.toHaveBeenCalled();
+  });
+
+  it('reloads a restored signed-in document that predates a sign-out', () => {
+    Platform.OS = 'web';
+    installBackForwardGuard(() => true);
+    replaceDocument('/overview');
+
+    listeners.get('pageshow')?.({ persisted: true });
+
+    expect(location.reload).toHaveBeenCalled();
+  });
+
+  it('reloads a restored signed-in document when storage is unavailable', () => {
+    Platform.OS = 'web';
+    windowStub.localStorage.getItem.mockImplementationOnce(() => {
+      throw new Error('storage unavailable');
+    });
+    installBackForwardGuard(() => true);
+
+    listeners.get('pageshow')?.({ persisted: true });
+
+    expect(location.reload).toHaveBeenCalled();
   });
 
   it('ignores a normal page load and can be removed', () => {

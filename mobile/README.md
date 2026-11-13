@@ -81,10 +81,35 @@ app-store release cycle:
 npx expo export -p web    # -> dist/ (static HTML/JS/CSS)
 ```
 
-`dist/` can be deployed to any static host (Vercel, Netlify, Cloudflare Pages, an S3 bucket, ...).
-`.github/workflows/mobile-web-ci.yml` builds this export on every push/PR touching `mobile/**` as
-a build-verification smoke test; wire your host's own deploy step into that workflow (or a
-separate one) once you've picked one.
+The reference deployment uses nginx to serve the export and apply the security headers.
+On a host with nginx and Python 3 installed, run the following from `mobile/`:
+
+```bash
+prefix="$(pwd)/web-host"
+mkdir -p "$prefix"
+cp deploy/nginx/nginx.conf /etc/nginx/mime.types "$prefix/"
+ln -s "$(pwd)/dist" "$prefix/html"
+python3 deploy/nginx/write-csp.py dist "$prefix/content-security-policy.conf" \
+  --api-origin https://api.example.com
+nginx -p "$prefix/" -c "$prefix/nginx.conf"
+bash deploy/nginx/check-headers.sh http://127.0.0.1:8082 dist
+```
+
+Put the listener behind an HTTPS reverse proxy and redirect public HTTP requests to HTTPS.
+Preserve the upstream headers and keep the web and API origins separate. HSTS applies to the app
+hostname and its subdomains. Set `EXPO_PUBLIC_API_URL` when exporting to set the default server shown
+at sign-in. Repeat `--api-origin` for each server members may enter and use the origin without any
+path. Loopback HTTP origins are supported for local testing. Regenerate the policy with every
+export and deploy the export and its policy together. Reload nginx after updating the policy.
+
+HTML and errors use `Cache-Control: no-store`. Fingerprinted Expo JS and CSS use immutable
+caching. All responses carry the CSP, `Referrer-Policy: no-referrer`,
+`Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+and a `Permissions-Policy` that disables camera, microphone, geolocation and payment. If you use
+another host, apply the same headers and dynamic-route rewrites there. Mobile Web CI serves each
+export through the reference config and checks the HTTP responses. The CSP hashes the Expo
+hydration script and static style attributes. It allows inline style elements for Expo's
+runtime-generated styles, including its mobile viewport adjustments.
 
 **The backend must allow the web app's origin via CORS**, since a browser enforces same-origin
 restrictions that a native app is not subject to - see `backend/src/main/java/.../config/
@@ -159,8 +184,8 @@ broken screen.
 - **Sign-out** moves to /overview, ends the session and, on web, loads a fresh document, so
   nothing of the session stays in memory. A signed-out page that the browser restores from its
   back-forward cache is reloaded. A page cannot erase browser history: earlier URLs (IDs only)
-  stay, and opening one asks for sign-in. The web host should also serve the HTML with
-  `Cache-Control: no-store`.
+  stay, and opening one asks for sign-in. Restored documents check a device-local sign-out marker
+  before reusing the in-memory session.
 - **Copy** comes from `src/i18n/*.json` via react-intl. ESLint fails literal UI strings in
   `src/app` and `src/features` (legacy reference-data and imports migrate with their tickets).
 
