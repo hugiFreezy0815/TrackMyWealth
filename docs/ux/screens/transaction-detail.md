@@ -85,35 +85,36 @@ marked as voided.
 | 5 | Lifecycle badge | "Voided on {date}: {voidReason}" / "Reversal" / "Corrected" / "Restored" / "Statement adjustment" | warning/neutral | `voidedAt`, `voidReason`, `replacesTransactionId`, `correctsTransactionId`, `restoresTransactionId`, `reconciliationAdjustment` |
 | 6 | Estimated rate badge | `txn.fxEstimated` "Estimated rate" | | `fxRateEstimated` |
 | 7 | Account | `txn.account` "Account" / "Konto" | "{portfolio} · {account}" | **delivered by #479** `portfolioName`; `accountName` |
-| 8 | Category | `txn.category` "Category" / "Kategorie" | "{parent} › {name}" + "(by you)" / "(automatic)" | `categoryId` → `/categories`; `categoryAssignedBy = USER` ⇒ "by you" (`txn.category.byMember`), any other value ⇒ "automatic" (`txn.category.automatic`). Row hidden when `categoryId = null` (type not categorised). `internalTransfer` ⇒ "Internal transfer: not counted as income or spending", no picker |
+| 8 | Category | `txn.category` "Category" / "Kategorie" | "{parent} › {name}" + "(by you)" / "(automatic)" | `categoryId` → `/categories`; `categoryAssignedBy = USER` ⇒ "by you" (`txn.category.member`), any other value ⇒ "automatic" (`txn.category.automatic`). Row hidden when `categoryId = null` (type not categorised). `internalTransfer` ⇒ "Internal transfer: not counted as income or spending", no picker |
 | 9 | Booking date | `txn.bookingDate` | long date | `bookingDate` |
 | 10 | Counterparty | `txn.counterparty` "Counterparty" / "Gegenpartei" | | `counterpartyName`; hidden if `null` |
 | 11 | Transfer to/from | `txn.transferAccount` "Other account" | link to S3 | **delivered by #479** `counterpartyAccountName`; `counterpartyAccountId`. Hidden if `null` |
 | 12 | Notes | `txn.notes` | multi-line | `notes`; "–" if `null` |
 | 13 | Trade fields (BUY/SELL/DIVIDEND) | `txn.security`, `txn.quantity`, `txn.unitPrice`, `txn.fee`, `txn.tradeDate`, `txn.settlementDate`, `txn.gross`, `txn.taxWithheld`, `txn.net` | | `securityId` (name via `GET /api/v1/securities/{id}`), `quantity`, `unitPrice`, `feeAmount`, `tradeDate`, `settlementDate`, `grossAmount`, `taxWithheldAmount`, `netAmount`; each row hidden when `null` |
 | 14 | Bank code `[advanced]` | `txn.bankCode` "Bank code" / "Bankcode" | monospace | **delivered by #479** `bankTransactionCode` |
-| 15 | Source detail `[advanced]` | `txn.sourceDetail` "{format} · import from {date}" | link to import history (M19, not in sprint 7: plain text) | **delivered by #479** `importBatch` (`id`, `fileFormat`, `uploadedAt`). Figma's "import #14" becomes a date, because batches have no sequence number |
+| 15 | Source detail `[advanced]` | Label `txn.sourceDetail`, value `txn.sourceDetail.value` (`format`, `date`) | link to import history (M19, not in sprint 7: plain text) | **delivered by #479** `importBatch` (`id`, `fileFormat`, `uploadedAt`). Pass `fileFormat` as `format` and `uploadedAt` formatted for the active locale as `date`. Figma's "import #14" becomes a date, because batches have no sequence number |
 | 16 | MCC `[advanced]` | `txn.mcc` "Merchant category" | | `mcc` |
 | 17 | Bank reference `[advanced]` | `txn.externalId` "Bank reference" | | `externalId` |
 | 18 | Warnings | | ⚠ list | `warnings[]`, as in S3 |
 | 19 | Change history | `txn.history.title` "Change history" / "Änderungsverlauf" | `HistoryTimeline`, newest first | **delivered by #480** `entries[]`: `occurredAt`, `kind`, `actorDisplayName`, `from`, `to`. Rendering per `kind` below |
 | 20 | Info box | `txn.correctionInfo` | info style | static text; shown only when the transaction can be corrected (`removal != null`) |
 
-Change history rendering (`kind`, the wording is a draft for #379):
+Change history rendering uses the catalogue keys and ICU arguments below.
 
-| `kind` | Text |
+| `kind` | Catalogue key and arguments |
 |---|---|
-| `IMPORTED` | "Imported from {fileFormat} statement of {date}" |
-| `CREATED` | "Entered by {actor}" |
-| `CATEGORY_ASSIGNED` | "Category set automatically: {to}" (rule, source code or type) |
-| `CATEGORY_CHANGED` | "Category: {from} → {to} · {actor}" |
-| `CATEGORY_RESET` | "Category given back to automatic: {to} · {actor}" |
-| `CORRECTED` | "Corrected by {actor}: {fields}" + link to the replaced row |
-| `VOIDED` / `DELETED` | "Voided by {actor}: {reason}" / "Deleted by {actor}" |
-| `RESTORED` | "Restored by {actor}" |
-| unknown | "Changed · {actor}" |
+| `IMPORTED` | `txn.history.imported` (`format`, `date`) or `txn.history.imported.unknown` |
+| `CREATED` | `txn.history.created` (`actor`) |
+| `CATEGORY_ASSIGNED` | `txn.history.assigned` (`to`) |
+| `CATEGORY_CHANGED` | `txn.history.changed` (`from`, `to`, `actor`) |
+| `CATEGORY_RESET` | `txn.history.reset` (`to`, `actor`) |
+| `CORRECTED` | `txn.history.corrected` (`actor`) with `txn.history.openCorrected` when a previous row is available |
+| `VOIDED` | `txn.history.voided` (`actor`, `reason`) or `txn.history.voided.noReason` (`actor`) |
+| `DELETED` | `txn.history.deleted` (`actor`) |
+| `RESTORED` | `txn.history.restored` (`actor`) |
+| unknown | `txn.history.other` (`actor`) |
 
-`actorDisplayName` is `null` for system actions, in which case the line has no actor.
+`actorDisplayName` is `null` for system actions. The corresponding `.system` messages omit `actor`; a void without a reason uses `txn.history.voided.system.noReason`.
 
 ## Actions
 

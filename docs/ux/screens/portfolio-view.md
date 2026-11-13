@@ -86,8 +86,8 @@ That way the name, logo and total never flash empty.
 | 4 | Subtitle | `portfolio.subtitle` "Institution {institution} · {country} · portfolio currency {currency}"; without an institution: "Portfolio currency {currency}" | | institution and country from the `/portfolios` list item (`institutionType`, `country`, catalogue name); `portfolioCurrency`. `institutionName` is available on the view and list item; without it show only "Portfolio currency {currency}" |
 | 5 | Total | | `Amount`, large; may be **negative** | `total`, `portfolioCurrency` |
 | 6 | Status | `ValueStatusBadge`; `total.incomplete` | | `valueStatus`, `complete`, `warnings[]` |
-| 7 | Converted total | `amount.approx` "≈ {amount}" | | `totalInWorkspaceCurrency`, `workspaceCurrency`; only if the currencies differ |
-| 8 | FX hint `[advanced]` | `fx.rate` "1 {from} = {rate} {to} · {date}" | ⓘ opens explanation | `conversionRate`, `conversionRateDate` (#482). `{date}` is `conversionRateDate`, the valuation date. When `conversionRateCarriedForward` is true, mark the hint like a carried-forward value (PR-011); when `conversionRateStale` is true, use the stale marking. The rate is the one accounts in the portfolio currency are converted with; an account in a third currency is converted with its own rate |
+| 7 | Converted total | `Amount` with `approximate` (spoken key `amount.a11y` with `approx`, `sign`, `amount`, `currency`) | | `totalInWorkspaceCurrency`, `workspaceCurrency`; only if the currencies differ |
+| 8 | FX hint `[advanced]` | `portfolio.fx.rateFrom` (`from`), the rate figure, then `portfolio.fx.rateTo` (`to`, `date`) | ⓘ opens explanation | `conversionRate`, `conversionRateDate` (#482). `{date}` is `conversionRateDate`, the valuation date. When `conversionRateCarriedForward` is true, mark the hint like a carried-forward value (PR-011); when `conversionRateStale` is true, use the stale marking. The rate is the one accounts in the portfolio currency are converted with; an account in a third currency is converted with its own rate |
 | 9 | Change chip, chart, period switch | as S1 #8–#11 | | **HISTORY API (#477)** (portfolio scope) |
 
 ## Sections
@@ -115,7 +115,7 @@ Every row comes from `sections[].accounts[]` (`AccountRow`) and opens [Account d
 | Pillar 3a, Pension | `name` | type label · "as of {valueSourceDate}" | value | `totalReturn` as `ChangeChip` "Total return {percent}" **only when not null**. The server sends `null` until performance is calculated (EPIC 15/16, PO decision on #390), so in sprint 7 the chip never shows. The code path is built and tested with a non-null fixture |
 | Depot | `name` | "{positionsCount, plural, one {# position} other {# positions}} · as of {positionsAsOf}" | value | `totalReturn` chip; then up to **5 positions** (delivered by #478, sorted by account-currency value desc as sent) as `PositionRow`; "Show all {n} positions" opens S3 for the depot. Sub-tabs Allocation/Performance: **not shown** (EPIC 16/17) |
 | Crypto | as Depot | | | as Depot |
-| Cards | `name` | type label · "statement {date}" (`statementDate`, delivered #482) | `balance` (negative) | Due chip `card.dueIn` "{days, plural, one {Due in # day} other {Due in # days}}" from `dueDate`. Day count = calendar days from today to `dueDate`. This is date arithmetic, not a money figure. Overdue: "Due {date}" in the warning colour |
+| Cards | `name` | type label · "statement {date}" (`statementDate`, delivered #482) | `balance` (negative) | Due chip `portfolio.card.due` "{count, plural, one {Due in # day} other {Due in # days}}" from `dueDate`. Day count = calendar days from today to `dueDate`. This is date arithmetic, not a money figure. Overdue: `portfolio.card.overdue` "Overdue since {date}" in the warning colour |
 | Property & mortgage | `name` | "Manual value · {valueSourceDate}" for a manually valued asset; type label for the mortgage | value | A mortgage with `linkedPropertyAccountId` is indented under its property |
 | Other | `name` | type label | value | |
 
@@ -148,7 +148,7 @@ No last import: "No import yet" + the button.
 
 | State | Rule |
 |---|---|
-| Empty portfolio (no accounts, `sections` empty) | `EmptyState`: "No accounts in {name} yet" / "Add an account or import a statement." with "Add account" → [S6](add-account.md) and "Import statement" → [S7](import-statement.md). The total shows 0.00 as sent. |
+| Empty portfolio (no accounts, `sections` empty) | `EmptyState` with `portfolio.empty.title` (`name`) and `portfolio.empty.body` with "Add account" → [S6](add-account.md) and "Import statement" → [S7](import-statement.md). The total shows 0.00 as sent. |
 | Negative total | Shown as sent, with minus and loss colour (e.g. a "Home" portfolio with a mortgage larger than the property value). Never clamped to 0, never hidden (FR-NAV-15). |
 | Personal assets default (`personalAssetsDefault=true`) | Same layout. Shows no institution or import footer. Type badge "Personal assets". |
 | Estimated / stale / unreconciled / unknown | Badges per row, per section and on the total, each with the status the server sends for that level. |

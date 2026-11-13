@@ -79,7 +79,8 @@
     "preset": "jest-expo",
     "testTimeout": 15000,
     "moduleNameMapper": {
-      "^@/assets/(.*)$": "<rootDir>/assets/$1"
+      "^@/assets/(.*)$": "<rootDir>/assets/$1",
+      "^\\./catalogue-context$": "<rootDir>/src/i18n/jest-catalogue-context.cjs"
     },
     "transformIgnorePatterns": [
       "/node_modules/(?!(.pnpm|react-native|@react-native|@react-native-community|expo|@expo|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|standard-navigation|@formatjs))",

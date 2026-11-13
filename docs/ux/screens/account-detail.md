@@ -165,7 +165,7 @@ Errors on these actions:
 
 | State | Rule |
 |---|---|
-| No transactions yet (`hasTransactions=true`, empty page 0, no filter) | `EmptyState` "No transactions yet" / "Import a statement to see its transactions." with "Import statement" → [S7](import-statement.md) for this account. (Adding a transaction by hand is not in sprint 7.) |
+| No transactions yet (`hasTransactions=true`, empty page 0, no filter) | `EmptyState` with `account.noTransactions`, `account.importHint` and the `account.import` action → [S7](import-statement.md) for this account. (Adding a transaction by hand is not in sprint 7.) |
 | Filter returns nothing | "No uncategorised transactions" with a "Show all" button. |
 | Account without a ledger (`hasTransactions=false`, e.g. a manually valued property) | No list and no filters. The text reads "The value of this account comes from {valueBasis}" (manual valuation, loan statement…), with the value's date. |
 | Archived (`status = ARCHIVED`) | Archived banner. Changing actions are disabled with the reason "Restore the account to change it". The list stays readable. |

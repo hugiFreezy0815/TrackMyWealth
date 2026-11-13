@@ -1,0 +1,3 @@
+{
+  "import.rows": "{count, plural, one {# opération} other {# opérations}}"
+}

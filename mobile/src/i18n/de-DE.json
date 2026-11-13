@@ -1,1 +1,5 @@
-{}
+{
+  "addAccount.type.CASH": "Girokonto",
+  "accountType.CASH": "Girokonto",
+  "portfolio.account.cash": "Girokonto"
+}
