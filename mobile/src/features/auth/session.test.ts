@@ -104,6 +104,43 @@ describe('secure auth session', () => {
     expect(sessionSnapshot()).toMatchObject({ signedIn: true, identity: MEMBER });
   });
 
+  // #553: the shell shows a placeholder while it does not know whether the first-run step applies.
+  it('marks the identity as being verified while /users/me is in flight', async () => {
+    let answer: (reply: Reply) => void = () => {};
+    const fetchMock = serve((url) => {
+      if (url.endsWith('/users/me')) return new Promise<Reply>((resolve) => (answer = resolve));
+      return plainLogin(url) ?? { status: 404 };
+    });
+
+    const signingIn = signIn('demo@example.com', 'test');
+    await waitForCall(fetchMock, '/users/me');
+    expect(sessionSnapshot()).toMatchObject({
+      signedIn: true,
+      identity: null,
+      verifyingIdentity: true,
+    });
+
+    answer({ status: 200, body: MEMBER });
+    await signingIn;
+    expect(sessionSnapshot()).toMatchObject({ identity: MEMBER, verifyingIdentity: false });
+  });
+
+  it('stops verifying, still signed in, when /users/me cannot be reached', async () => {
+    serve((url) =>
+      url.endsWith('/users/me')
+        ? new TypeError('Network request failed')
+        : (plainLogin(url) ?? { status: 404 }),
+    );
+
+    await signIn('demo@example.com', 'test');
+
+    expect(sessionSnapshot()).toMatchObject({
+      signedIn: true,
+      identity: null,
+      verifyingIdentity: false,
+    });
+  });
+
   it('knows an administrator only from the identity the server verified', async () => {
     serve((url) =>
       url.endsWith('/users/me')

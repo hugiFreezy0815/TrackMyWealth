@@ -1,12 +1,12 @@
 import { useEffect } from 'react';
-import { Slot, usePathname, useRouter } from 'expo-router';
+import { Navigator, Slot, usePathname, useRouter } from 'expo-router';
 import { Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIntl } from 'react-intl';
 
 import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/hooks/use-theme';
-import { OverviewSetupGate } from '@/features/overview-name/setup-gate';
+import { ContentLoading, OverviewSetupGate } from '@/features/overview-name/setup-gate';
 import { type Identity, isAdministrator } from '@/features/auth/session';
 import { restoreAmountVisibility } from '@/features/privacy/amount-visibility';
 import { useAppSwitcherProtection } from '@/features/privacy/screen-protection';
@@ -18,8 +18,18 @@ import { isCurrentRoute, layoutFor, navigationFor } from './navigation';
 /** W01: the 248 px desktop sidebar. */
 export const SIDEBAR_WIDTH = 248;
 
-/** The signed-in frame: navigation per layout, global banners and screen protection. */
-export function AppShell({ identity }: { identity: Identity | null }) {
+/**
+ * The signed-in frame: navigation per layout, global banners and screen protection.
+ * `verifyingIdentity`: the server has not yet said who signed in, so it is not known whether the
+ * first-run step must come before the route.
+ */
+export function AppShell({
+  identity,
+  verifyingIdentity = false,
+}: {
+  identity: Identity | null;
+  verifyingIdentity?: boolean;
+}) {
   const { width } = useWindowDimensions();
   const layout = layoutFor(width);
   const desktop = layout === 'desktop';
@@ -94,13 +104,25 @@ export function AppShell({ identity }: { identity: Identity | null }) {
         <View style={styles.main}>
           <OfflineBanner />
           <View style={styles.content}>
-            {identity && !isAdministrator(identity) ? (
-              <OverviewSetupGate userId={identity.userId}>
+            {/*
+              The navigator owns the route (also a deep link opened before sign-in), so the
+              placeholder and the gate can hide it without losing it (#553). Same router and
+              threshold as a plain layout <Slot />. Navigator is marked @hidden in expo-router 58:
+              deep-link.test.tsx fails if an upgrade changes how it keeps the route.
+              Without an identity after verification (server unreachable), the route shows
+              ungated rather than locking the member out.
+            */}
+            <Navigator activityDefaultThreshold={1}>
+              {identity && !isAdministrator(identity) ? (
+                <OverviewSetupGate userId={identity.userId}>
+                  <Slot />
+                </OverviewSetupGate>
+              ) : !identity && verifyingIdentity ? (
+                <ContentLoading />
+              ) : (
                 <Slot />
-              </OverviewSetupGate>
-            ) : (
-              <Slot />
-            )}
+              )}
+            </Navigator>
             <ToastHost />
           </View>
           {!desktop && menu}
