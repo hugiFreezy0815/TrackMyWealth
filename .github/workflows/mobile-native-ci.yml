@@ -100,12 +100,25 @@ jobs:
       - name: Generate native project
         run: npx expo prebuild --platform ios
 
+      # Ad-hoc signing lets SecureStore write the refresh token to the simulator keychain
+      # during sign-in and requires no Apple developer certificate.
       - name: Build release app for the simulator
         run: >
           xcodebuild -workspace ios/TrackMyWealth.xcworkspace -scheme TrackMyWealth
           -configuration Release -sdk iphonesimulator
           -destination 'generic/platform=iOS Simulator' -derivedDataPath ios/build
-          CODE_SIGNING_ALLOWED=NO build
+          CODE_SIGN_IDENTITY=- build
+
+      - name: Verify simulator app signature
+        run: |
+          app="ios/build/Build/Products/Release-iphonesimulator/TrackMyWealth.app"
+          codesign --verify --verbose "$app"
+          signature=$(codesign -dv "$app" 2>&1)
+          printf '%s\n' "$signature"
+          if ! grep -Fxq 'Signature=adhoc' <<<"$signature"; then
+            echo "::error::Expected the iOS simulator app to have an ad-hoc signature"
+            exit 1
+          fi
 
       - name: Smoke test on simulator
         run: bash scripts/native-smoke.sh ios

@@ -685,5 +685,18 @@
   "valueBasis.LEDGER_FROM_OPENING_BALANCE": "einem Anfangssaldo mit nachfolgenden Buchungen",
   "valueBasis.LEDGER_FROM_STATEMENT_BALANCE": "einem Kontoauszugssaldo mit nachfolgenden Buchungen",
   "valueBasis.ORIGINAL_PRINCIPAL": "dem ursprünglichen Darlehensbetrag (geschätzter Restbetrag)",
-  "valueBasis.ORIGINAL_PRINCIPAL_LESS_REPAYMENTS": "dem ursprünglichen Darlehensbetrag abzüglich erfasster Tilgungen (geschätzter Restbetrag)"
+  "valueBasis.ORIGINAL_PRINCIPAL_LESS_REPAYMENTS": "dem ursprünglichen Darlehensbetrag abzüglich erfasster Tilgungen (geschätzter Restbetrag)",
+  "savingsPocket.current": "Sparkonto: {name}",
+  "savingsPocket.link": "Sparkonto verknüpfen",
+  "savingsPocket.futureOnly": "Die Verknüpfung gilt für jeden Import, den du ab jetzt abschließt. Bereits importierte Umbuchungen bleiben zur Prüfung offen.",
+  "savingsPocket.reloaded": "Das Konto wurde geändert. Prüfe die verfügbaren Konten und wähle erneut.",
+  "savingsPocket.choose": "{name} verknüpfen",
+  "savingsPocket.empty": "Es gibt keine geeigneten Sparkonten.",
+  "problem.SAVINGS_POCKET_NOT_APPLICABLE": "Dieses Konto kann kein Sparkonto haben.",
+  "problem.SAVINGS_POCKET_UNSUITABLE": "Dieses Konto eignet sich nicht als Sparkonto. Wähle ein anderes Konto.",
+  "problem.SAVINGS_POCKET_IN_USE": "Dieses Konto ist bereits als Sparkonto verknüpft. Wähle ein anderes Konto.",
+  "savingsPocket.change": "Sparkonto ändern",
+  "savingsPocket.currentArchived": "Sparkonto: {name} (archiviert)",
+  "savingsPocket.thisImport": "Die Verknüpfung gilt auch für diesen Import: Wenn du ihn importierst, werden seine Umbuchungen auf das gewählte Konto gebucht. Bereits importierte Umbuchungen bleiben zur Prüfung offen.",
+  "savingsPocket.thisImportBooks": "Dieser Import bucht die Umbuchung auf {name}."
 }
