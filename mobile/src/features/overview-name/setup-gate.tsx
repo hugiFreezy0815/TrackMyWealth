@@ -20,11 +20,11 @@ export function ContentLoading() {
 }
 
 /**
- * True while a query whose latest result is an error fetches again (#567). A query without data
- * turns `pending` when it refetches; showing the skeleton then would unmount the screen, whose
- * remount refetches the failed query again - an endless request loop.
+ * True when the latest result of a query is an error, also while that query fetches again (#567).
+ * A failed query without data turns `pending` when it refetches; showing the skeleton then would
+ * unmount the screen, whose remount refetches the failed query again - an endless request loop.
  */
-function refetchingAfterError(query: { errorUpdatedAt: number; dataUpdatedAt: number }): boolean {
+function latestResultIsError(query: { errorUpdatedAt: number; dataUpdatedAt: number }): boolean {
   return query.errorUpdatedAt > query.dataUpdatedAt;
 }
 
@@ -52,12 +52,13 @@ export function OverviewSetupGate({ userId, children }: { userId: string; childr
 
   // Do not block an existing member when offline or an API is unavailable.
   // The ordinary screen owns its own per-card error and offline states.
+  // `isError` repeats part of latestResultIsError, but TypeScript needs it to narrow `data` below.
   if (
     !online ||
     workspace.isError ||
     portfolios.isError ||
-    refetchingAfterError(workspace) ||
-    refetchingAfterError(portfolios)
+    latestResultIsError(workspace) ||
+    latestResultIsError(portfolios)
   ) {
     return <>{children}</>;
   }

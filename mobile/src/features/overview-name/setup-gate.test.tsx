@@ -1,12 +1,13 @@
 import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { IntlProvider } from 'react-intl';
-import { Pressable, Text } from 'react-native';
+import { Text } from 'react-native';
 
 import { ApiError } from '@/api/client';
-
 import { usePortfolios, useWorkspace } from '@/api/queries/resources';
+import type { components } from '@/api/schema';
 import { typedApi } from '@/api/typed-api';
+import { OverviewScreen } from '@/features/overview/overview-screen';
 import en from '@/i18n/en.json';
 
 import { completeOverviewStep, hasCompletedOverviewStep } from './device-step';
@@ -14,9 +15,15 @@ import { OverviewSetupGate } from './setup-gate';
 
 jest.mock('@/global.css', () => ({}));
 jest.mock('@/api/queries/resources', () => ({
+  ...jest.requireActual('@/api/queries/resources'),
   useWorkspace: jest.fn(),
   usePortfolios: jest.fn(),
 }));
+jest.mock('@/features/privacy/amount-visibility', () => ({
+  useAmountsHidden: jest.fn(() => false),
+}));
+jest.mock('expo-image', () => ({ Image: 'Image' }));
+jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 jest.mock('@/api/typed-api', () => ({ typedApi: { get: jest.fn(), put: jest.fn() } }));
 jest.mock('./device-step', () => ({
   setupStepKey: (user: string, overview: string) => user + '/' + overview,
@@ -128,100 +135,158 @@ describe('first-run overview name gate', () => {
   });
 });
 
-describe('first-run gate when the workspace or portfolios request fails', () => {
-  const invalidSort = () =>
-    new ApiError('Bad request', 400, { status: 400, title: 'Bad request', code: 'INVALID_SORT' });
+describe('first-run gate when the workspace or portfolios request fails (#567)', () => {
+  const WORKSPACE = '/api/v1/workspace';
+  const PORTFOLIOS = '/api/v1/portfolios';
+  const unavailable = () =>
+    new ApiError('Service unavailable', 503, { status: 503, title: 'Service unavailable' });
   const calls = (path: string) => jest.mocked(typedApi.get).mock.calls.filter(([p]) => p === path);
-  let workspaceFails = true;
+  const retryButtons = () => screen.queryAllByRole('button', { name: 'Try again' });
+  /** Lets React Query run its refetches and notifications, as a loop would within this time. */
+  const settle = () => act(() => jest.advanceTimersByTimeAsync(5_000));
+  /** A full list item, because the real overview renders the portfolio rows. */
+  const portfolio = (
+    overrides: Partial<components['schemas']['PortfolioListItemResponse']>,
+  ): components['schemas']['PortfolioListItemResponse'] => ({
+    id: 'portfolio-1',
+    version: 1,
+    name: 'Personal assets',
+    catalogueInstitutionId: null,
+    institutionType: 'OTHER',
+    country: null,
+    logoUrl: null,
+    portfolioType: 'PERSONAL_ASSETS',
+    portfolioTypeOverridden: false,
+    personalAssetsDefault: true,
+    activeAccountCount: 0,
+    portfolioCurrency: 'CHF',
+    total: '0.00',
+    workspaceCurrency: 'CHF',
+    totalInWorkspaceCurrency: '0.00',
+    complete: true,
+    valueStatus: 'CURRENT',
+    asOf: '2026-11-08',
+    institutionName: null,
+    change: null,
+    ...overrides,
+  });
+  type Respond = () => Promise<unknown>;
+  let respond: Record<string, Respond>;
 
-  /** Like the real overview: it reads the same queries and offers a retry. */
-  function Overview() {
-    const workspaceQuery = useWorkspace();
-    const portfoliosQuery = usePortfolios();
-    const failedQuery = workspaceQuery.isError ? workspaceQuery : portfoliosQuery;
-    return (
-      <>
-        <Text>Financial overview</Text>
-        {failedQuery.isError ? (
-          <>
-            <Text>{workspaceQuery.isError ? 'Workspace failed' : 'Portfolios failed'}</Text>
-            <Pressable accessibilityRole="button" onPress={() => void failedQuery.refetch()}>
-              <Text>Retry</Text>
-            </Pressable>
-          </>
-        ) : null}
-      </>
-    );
-  }
+  /** The real overview reads the same two queries, and its banners offer the retry. */
+  const overview = (
+    <OverviewScreen
+      onAddPortfolio={jest.fn()}
+      onReviewAccount={jest.fn()}
+      onPortfolio={jest.fn()}
+    />
+  );
 
   beforeEach(() => {
-    workspaceFails = true;
+    jest.useFakeTimers();
     const actual =
       jest.requireActual<typeof import('@/api/queries/resources')>('@/api/queries/resources');
     jest.mocked(useWorkspace).mockImplementation(actual.useWorkspace);
     jest.mocked(usePortfolios).mockImplementation(actual.usePortfolios);
-    jest.mocked(typedApi.get).mockImplementation((async (path: string) => {
-      if (path === '/api/v1/portfolios') throw invalidSort();
-      if (workspaceFails) throw invalidSort();
-      return workspace;
-    }) as never);
+    respond = {
+      [WORKSPACE]: async () => workspace,
+      [PORTFOLIOS]: async () => [portfolio({})],
+    };
+    // The overview's other figures never answer, so every banner belongs to a gate query.
+    jest
+      .mocked(typedApi.get)
+      .mockImplementation(((path: string) => respond[path]?.() ?? new Promise(() => {})) as never);
   });
 
-  it('shows the screen with its error once instead of fetching again and again', async () => {
-    await mounted(<Overview />);
-    expect(await screen.findByRole('button', { name: 'Retry' })).toBeTruthy();
-    await act(() => new Promise((resolve) => setTimeout(resolve, 300)));
-    // The first request, and one more when the screen subscribes to the failed query.
-    expect(calls('/api/v1/workspace').length).toBeLessThanOrEqual(2);
-    expect(calls('/api/v1/portfolios').length).toBeLessThanOrEqual(2);
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
-  it('decides as before once a retry succeeds', async () => {
-    jest.mocked(typedApi.get).mockImplementation((async (path: string) => {
-      if (path === '/api/v1/portfolios') return [memberPortfolio];
-      if (workspaceFails) throw invalidSort();
+  it('shows the overview with both errors once instead of fetching again and again', async () => {
+    respond[WORKSPACE] = async () => Promise.reject(unavailable());
+    respond[PORTFOLIOS] = async () => Promise.reject(unavailable());
+    await mounted(overview);
+    expect(await screen.findAllByRole('button', { name: 'Try again' })).toHaveLength(2);
+    await settle();
+    // The first request, and one more when the overview subscribes to the failed query.
+    expect(calls(WORKSPACE)).toHaveLength(2);
+    expect(calls(PORTFOLIOS)).toHaveLength(2);
+    expect(retryButtons()).toHaveLength(2);
+  });
+
+  it('shows the first-run step to a new member once a workspace retry succeeds', async () => {
+    let workspaceFails = true;
+    respond[WORKSPACE] = async () => {
+      if (workspaceFails) throw unavailable();
       return workspace;
-    }) as never);
-    await mounted(<Overview />);
-    const retry = await screen.findByRole('button', { name: 'Retry' });
+    };
+    await mounted(overview);
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    await settle();
+    expect(calls(WORKSPACE)).toHaveLength(2);
+
     workspaceFails = false;
     await fireEvent.press(retry);
     expect(await screen.findByText('Name your overview')).toBeTruthy();
+    expect(calls(WORKSPACE)).toHaveLength(3);
+  });
+
+  it('keeps an existing member on the overview once a workspace retry succeeds', async () => {
+    let workspaceFails = true;
+    respond[WORKSPACE] = async () => {
+      if (workspaceFails) throw unavailable();
+      return workspace;
+    };
+    respond[PORTFOLIOS] = async () => [
+      portfolio({ name: 'Euro Bank', personalAssetsDefault: false, activeAccountCount: 1 }),
+    ];
+    await mounted(overview);
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    await settle();
+
+    workspaceFails = false;
+    await fireEvent.press(retry);
+    await settle();
+    // The retry, and at most one more when the overview mounts again after the gate's decision
+    // (this test client has no staleTime). After that the count stays put.
+    const afterRetry = calls(WORKSPACE).length;
+    expect(afterRetry).toBeLessThanOrEqual(4);
+    await settle();
+    expect(calls(WORKSPACE)).toHaveLength(afterRetry);
+    expect(retryButtons()).toHaveLength(0);
+    expect(screen.getByTestId('overview-screen')).toBeTruthy();
+    expect(screen.queryByText('Name your overview')).toBeNull();
   });
 
   it('keeps the overview mounted during a portfolios-only refetch and recovers on Retry', async () => {
-    const portfoliosPath = '/api/v1/portfolios';
     let portfoliosFail = true;
     let finishAutomaticRefetch = () => {};
     const automaticRefetch = new Promise<void>((resolve) => {
       finishAutomaticRefetch = resolve;
     });
-    jest.mocked(typedApi.get).mockImplementation((async (path: string) => {
-      if (path === '/api/v1/workspace') return workspace;
-      if (path !== portfoliosPath) throw new Error(`Unexpected GET ${path}`);
-      if (!portfoliosFail) return [memberPortfolio];
-      if (calls(portfoliosPath).length === 2) await automaticRefetch;
-      throw invalidSort();
-    }) as never);
+    respond[PORTFOLIOS] = async () => {
+      if (!portfoliosFail) return [portfolio({})];
+      if (calls(PORTFOLIOS).length === 2) await automaticRefetch;
+      throw unavailable();
+    };
 
-    await mounted(<Overview />);
-    await waitFor(() => {
-      expect(calls(portfoliosPath)).toHaveLength(2);
-      expect(screen.getByText('Financial overview')).toBeTruthy();
-      expect(screen.queryByText('Portfolios failed')).toBeNull();
-    });
+    await mounted(overview);
+    await settle();
+    // The overview's own refetch is still running: the overview stays, without a banner yet.
+    expect(calls(PORTFOLIOS)).toHaveLength(2);
+    expect(screen.getByTestId('overview-screen')).toBeTruthy();
+    expect(retryButtons()).toHaveLength(0);
 
     await act(async () => finishAutomaticRefetch());
-    expect(await screen.findByText('Portfolios failed')).toBeTruthy();
-    expect(screen.getByText('Financial overview')).toBeTruthy();
-    const retry = screen.getByRole('button', { name: 'Retry' });
-    expect(calls(portfoliosPath).length).toBeLessThanOrEqual(2);
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    await settle();
+    expect(calls(PORTFOLIOS)).toHaveLength(2);
+    expect(screen.getByTestId('overview-screen')).toBeTruthy();
     expect(screen.queryByText('Name your overview')).toBeNull();
 
     portfoliosFail = false;
     await fireEvent.press(retry);
     expect(await screen.findByText('Name your overview')).toBeTruthy();
-    expect(calls(portfoliosPath)).toHaveLength(3);
+    expect(calls(PORTFOLIOS)).toHaveLength(3);
   });
 });
