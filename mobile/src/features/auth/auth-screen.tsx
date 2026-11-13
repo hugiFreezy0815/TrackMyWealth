@@ -2,7 +2,6 @@ import { type ComponentRef, type Ref, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -25,6 +24,7 @@ const SERVER_PLACEHOLDER = 'https://wealth.example.com';
 export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
   const intl = useIntl();
   const theme = useTheme();
+  const emailInput = useRef<ComponentRef<typeof TextInput>>(null);
   const passwordInput = useRef<ComponentRef<typeof TextInput>>(null);
   const submitting = useRef(false);
   const [server, setServer] = useState(getApiBaseUrl);
@@ -66,17 +66,22 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
 
   const submitLabel = intl.formatMessage({ id: mfaRequired ? 'auth.verifyCode' : 'auth.signIn' });
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <SafeAreaView role="main" style={[styles.container, { backgroundColor: theme.background }]}>
+      {/* Android draws edge-to-edge (RN 0.88, target SDK 35+), so the window no longer resizes for
+          the keyboard; padding works on both platforms because it measures the real overlap. */}
+      <KeyboardAvoidingView style={styles.container} behavior="padding">
+        <ScrollView
+          // A new step starts at the top instead of keeping the previous step's scroll offset.
+          key={mfaRequired ? 'mfa' : 'sign-in'}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
             <ThemedText type="smallBold" themeColor="primary" style={styles.brand}>
               {intl.formatMessage({ id: 'app.name' })}
             </ThemedText>
-            <ThemedText type="subtitle" accessibilityRole="header">
+            {/* Level 1: on web an explicit heading role would otherwise default to level 2. */}
+            <ThemedText type="subtitle" accessibilityRole="header" aria-level={1}>
               {intl.formatMessage({ id: mfaRequired ? 'auth.verifySignIn' : 'auth.signIn' })}
             </ThemedText>
             {!mfaRequired ? (
@@ -87,11 +92,15 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
                   autoCapitalize="none"
                   autoCorrect={false}
                   keyboardType="url"
+                  returnKeyType="next"
+                  submitBehavior="submit"
+                  onSubmitEditing={() => emailInput.current?.focus()}
                   value={server}
                   onChangeText={setServer}
                 />
                 <LabeledField
                   label={intl.formatMessage({ id: 'auth.email' })}
+                  ref={emailInput}
                   autoCapitalize="none"
                   autoComplete="email"
                   keyboardType="email-address"
@@ -107,7 +116,8 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
                   secureTextEntry
                   returnKeyType="go"
                   onSubmitEditing={() => void submit()}
-                  autoComplete="password"
+                  // Valid HTML on web; maps to the same native autofill hint as "password".
+                  autoComplete="current-password"
                   value={password}
                   onChangeText={setPassword}
                 />
@@ -118,6 +128,9 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
                 keyboardType="number-pad"
                 autoComplete="one-time-code"
                 maxLength={6}
+                // The iOS number pad has no Return key; Android's Done key and web Enter submit.
+                returnKeyType="done"
+                onSubmitEditing={() => void submit()}
                 value={code}
                 onChangeText={setCode}
               />

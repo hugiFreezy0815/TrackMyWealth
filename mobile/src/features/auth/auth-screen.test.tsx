@@ -41,24 +41,47 @@ describe('AuthScreen', () => {
     );
   });
 
-  it('moves focus from Email to Password when Return is pressed', async () => {
+  it.each([
+    ['Server', 'Email'],
+    ['Email', 'Password'],
+  ])('moves focus from %s to %s when Return is pressed', async (from, to) => {
+    // The React Native Jest preset defines focus() on the TextInput mock's prototype.
     const focus = jest.spyOn(TextInput.prototype, 'focus');
     try {
       await render(withIntl(<AuthScreen mfaRequired={false} />));
-      const email = screen.getByLabelText('Email');
+      const field = screen.getByLabelText(from);
 
-      expect(email.props.returnKeyType).toBe('next');
-      expect(email.props.submitBehavior).toBe('submit');
-      await fireEvent(email, 'submitEditing');
+      expect(field.props.returnKeyType).toBe('next');
+      // Keeps the keyboard open while focus moves on.
+      expect(field.props.submitBehavior).toBe('submit');
+      await fireEvent(field, 'submitEditing');
 
       expect(focus).toHaveBeenCalledTimes(1);
-      expect(focus.mock.contexts[0]).toMatchObject({
-        props: { accessibilityLabel: 'Password' },
-      });
+      expect(focus.mock.contexts[0]).toMatchObject({ props: { accessibilityLabel: to } });
       expect(signIn).not.toHaveBeenCalled();
     } finally {
       focus.mockRestore();
     }
+  });
+
+  it('submits the authenticator code on Return', async () => {
+    await render(withIntl(<AuthScreen mfaRequired />));
+
+    const code = screen.getByLabelText('Authenticator code');
+    await fireEvent.changeText(code, '123456');
+    await fireEvent(code, 'submitEditing');
+
+    await waitFor(() => expect(verifyMfa).toHaveBeenCalledWith('123456'));
+    expect(verifyMfa).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives web a main landmark, a level-one heading and a valid password autocomplete', async () => {
+    await render(withIntl(<AuthScreen mfaRequired={false} />));
+
+    expect(screen.getByRole('header').props['aria-level']).toBe(1);
+    expect(screen.getByLabelText('Password').props.autoComplete).toBe('current-password');
+    const landmarks = JSON.stringify(screen.toJSON()).match(/"role":"main"/g);
+    expect(landmarks).toHaveLength(1);
   });
 
   it('submits from Password on Return and ignores another Return while busy', async () => {
