@@ -14596,17 +14596,12 @@ paths:
       parameters:
       - name: period
         in: query
-        description: The history window; 400 VALIDATION_FAILED for any other value.
+        description: "The history window: 1W, 1M, YTD, 1Y or MAX; any other value\
+          \ is a 400 VALIDATION_FAILED."
         required: false
         schema:
           type: string
           default: 1M
-          enum:
-          - 1W
-          - 1M
-          - YTD
-          - 1Y
-          - MAX
       - name: currency
         in: query
         required: false
@@ -15200,17 +15195,12 @@ paths:
           format: uuid
       - name: period
         in: query
-        description: The history window; 400 VALIDATION_FAILED for any other value.
+        description: "The history window: 1W, 1M, YTD, 1Y or MAX; any other value\
+          \ is a 400 VALIDATION_FAILED."
         required: false
         schema:
           type: string
           default: 1M
-          enum:
-          - 1W
-          - 1M
-          - YTD
-          - 1Y
-          - MAX
       - name: X-Correlation-Id
         in: header
         description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\

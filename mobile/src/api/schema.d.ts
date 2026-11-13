@@ -16013,8 +16013,8 @@ export interface operations {
   getNetWorthHistory: {
     parameters: {
       query?: {
-        /** @description The history window; 400 VALIDATION_FAILED for any other value. */
-        period?: '1W' | '1M' | 'YTD' | '1Y' | 'MAX';
+        /** @description The history window: 1W, 1M, YTD, 1Y or MAX; any other value is a 400 VALIDATION_FAILED. */
+        period?: string;
         currency?: string;
       };
       header?: {
@@ -16515,8 +16515,8 @@ export interface operations {
   getPortfolioHistory: {
     parameters: {
       query?: {
-        /** @description The history window; 400 VALIDATION_FAILED for any other value. */
-        period?: '1W' | '1M' | 'YTD' | '1Y' | 'MAX';
+        /** @description The history window: 1W, 1M, YTD, 1Y or MAX; any other value is a 400 VALIDATION_FAILED. */
+        period?: string;
       };
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
