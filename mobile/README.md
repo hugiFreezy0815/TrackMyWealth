@@ -54,6 +54,9 @@ device is still advisable before a production rollout. Use `npm ci` for reproduc
 
 ## Running locally
 
+For a clean checkout, follow the [frontend onboarding guide](../docs/frontend/README.md) to
+set up a synthetic demo account and make your first typed API call.
+
 The backend and PostgreSQL must be running first - see the root README.
 
 ```bash
