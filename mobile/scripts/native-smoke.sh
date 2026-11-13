@@ -114,8 +114,13 @@ case "$platform" in
     trap - EXIT
     ;;
   ios)
+    # Prefer a numbered iPhone ("iPhone 17"): the iOS 27 runtime also lists "iPhone Duo", whose
+    # two displays make `simctl io screenshot` fail with "Cannot choose between 2 displays".
+    # Older runtimes have no such device; any iPhone remains the fallback.
     device=$(xcrun simctl list devices available -j |
-      python3 -c 'import json,sys; print(next(d["udid"] for r,ds in json.load(sys.stdin)["devices"].items() if "iOS" in r for d in ds if d["name"].startswith("iPhone")))')
+      python3 -c 'import json,re,sys
+phones = [d for r, ds in json.load(sys.stdin)["devices"].items() if "iOS" in r for d in ds if d["name"].startswith("iPhone")]
+print(next((d for d in phones if re.match(r"iPhone \d", d["name"])), phones[0])["udid"])')
     xcrun simctl boot "$device"
     xcrun simctl bootstatus "$device"
     xcrun simctl install "$device" ios/build/Build/Products/Release-iphonesimulator/TrackMyWealth.app
