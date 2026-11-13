@@ -92,7 +92,7 @@ ln -s "$(pwd)/dist" "$prefix/html"
 python3 deploy/nginx/write-csp.py dist "$prefix/content-security-policy.conf" \
   --api-origin https://api.example.com
 nginx -p "$prefix/" -c "$prefix/nginx.conf"
-bash deploy/nginx/check-headers.sh http://127.0.0.1:8082 dist
+bash deploy/nginx/check-headers.sh http://127.0.0.1:8082 dist https://api.example.com
 ```
 
 Put the listener behind an HTTPS reverse proxy and redirect public HTTP requests to HTTPS.
@@ -181,11 +181,10 @@ broken screen.
   `DETECT_SCREEN_CAPTURE` must stay: on Android 14+ the module registers a screen-capture
   callback at start-up and crashes the app without it (install-time, no prompt, no data access). Web cannot protect browser
   thumbnails; Hide amounts is the protection there.
-- **Sign-out** moves to /overview, ends the session and, on web, loads a fresh document, so
-  nothing of the session stays in memory. A signed-out page that the browser restores from its
-  back-forward cache is reloaded. A page cannot erase browser history: earlier URLs (IDs only)
-  stay, and opening one asks for sign-in. Restored documents check a device-local sign-out marker
-  before reusing the in-memory session.
+- **Sign-out** moves to /overview, ends the session and, on web, loads a fresh document to
+  discard in-memory state. Browser history can retain earlier URLs (IDs only). A document restored
+  from the back-forward cache always reloads, so a full-page Back or Forward can also require
+  sign-in while a session is active.
 - **Copy** comes from `src/i18n/*.json` via react-intl. ESLint fails literal UI strings in
   `src/app` and `src/features` (legacy reference-data and imports migrate with their tickets).
 

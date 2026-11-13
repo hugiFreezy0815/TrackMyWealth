@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-base_url=${1:?Usage: check-headers.sh BASE_URL EXPORT_DIR}
-export_dir=${2:?Usage: check-headers.sh BASE_URL EXPORT_DIR}
+base_url=${1:?Usage: check-headers.sh BASE_URL EXPORT_DIR [API_ORIGIN ...]}
+export_dir=${2:?Usage: check-headers.sh BASE_URL EXPORT_DIR [API_ORIGIN ...]}
+shift 2
+expected_sources=$(printf '%s\n' "'self'" "$@" | LC_ALL=C sort -u)
 headers=$(mktemp)
 trap 'rm -f "$headers"' EXIT
 
@@ -15,8 +17,8 @@ require_header() {
 }
 
 check_response() {
-    local path=$1 expected_status=$2 cache_control=$3 content_type=$4 status policy
-    status=$(curl -sS --max-time 10 -D - -o /dev/null "$base_url$path" |
+    local path=$1 expected_status=$2 cache_control=$3 content_type=$4 status policy actual_sources
+    status=$(curl -gsS --max-time 10 -D - -o /dev/null "$base_url$path" |
         tr -d '\r' | tee "$headers" | awk 'NR == 1 { print $2 }')
     if [[ $status != "$expected_status" ]]; then
         printf '%s\n' "$path returned $status, expected $expected_status" >&2
@@ -40,9 +42,25 @@ check_response() {
             exit 1
         fi
     done
+    actual_sources=$(awk -F';' '{
+        for (i = 1; i <= NF; i++) {
+            count = split($i, tokens, /[[:space:]]+/)
+            for (j = 1; j <= count && tokens[j] == ""; j++) {}
+            if (tokens[j] == "connect-src") {
+                for (j++; j <= count; j++) {
+                    if (tokens[j] != "") print tokens[j]
+                }
+            }
+        }
+    }' <<< "$policy" | LC_ALL=C sort)
+    if [[ $actual_sources != "$expected_sources" ]]; then
+        printf '%s\n' "Unexpected connect-src on $path" "Expected:" "$expected_sources" \
+            "Received:" "$actual_sources" >&2
+        exit 1
+    fi
     # Expo's runtime styles need the exception on style elements only.
     policy=${policy//"style-src-elem 'self' 'unsafe-inline'"/}
-    if [[ $policy != *"script-src 'self' 'sha256-"* || $policy != *"connect-src 'self'"* ||
+    if [[ $policy != *"script-src 'self' 'sha256-"* ||
         $policy == *"'unsafe-inline'"* || $policy == *"'unsafe-eval'"* ]]; then
         printf '%s\n' "Unexpected Content-Security-Policy on $path: $policy" >&2
         exit 1

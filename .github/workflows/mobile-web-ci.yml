@@ -97,4 +97,10 @@ jobs:
             --api-origin http://localhost:8080
           nginx -p "$prefix/" -c "$prefix/nginx.conf"
           trap 'nginx -p "$prefix/" -c "$prefix/nginx.conf" -s quit' EXIT
-          bash deploy/nginx/check-headers.sh http://127.0.0.1:8082 dist
+          bash deploy/nginx/check-headers.sh http://127.0.0.1:8082 dist http://localhost:8080
+          if bash deploy/nginx/check-headers.sh http://127.0.0.1:8082 dist \
+            http://localhost:8080 https://missing-api.example.invalid > "$prefix/negative.log" 2>&1; then
+            echo 'The smoke check accepted a policy with a missing API origin' >&2
+            exit 1
+          fi
+          grep -F 'Unexpected connect-src on /' "$prefix/negative.log"
