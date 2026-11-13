@@ -147,7 +147,7 @@ public class ValueHistoryService {
     Map<LocalDate, Map<UUID, AccountValuation>> openingHistory =
         accountValuationService.historyFromOpeningBalances(accounts, currency, dates);
     List<Point> points = new ArrayList<>(dates.size());
-    Set<HistoryWarning> warnings = new TreeSet<>();
+    Set<HistoryWarning> warnings = new TreeSet<>(HistoryWarning.ORDER);
     ValueHistorySnapshot first = null;
     ValueHistorySnapshot last = null;
     boolean complete = true;
@@ -414,7 +414,7 @@ public class ValueHistoryService {
       Map<UUID, LocalDate> firstEvidence,
       Map<UUID, List<AccountHistoryState>> historyStates) {
     BigDecimal total = BigDecimal.ZERO;
-    Set<HistoryWarning> warnings = new TreeSet<>();
+    Set<HistoryWarning> warnings = new TreeSet<>(HistoryWarning.ORDER);
     boolean complete = true;
     ZoneId zone = businessDateService.zone();
     for (Account account : accounts) {
