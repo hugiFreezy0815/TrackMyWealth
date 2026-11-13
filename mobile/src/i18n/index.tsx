@@ -6,9 +6,16 @@ import { DEVICE_LOCALE } from './device-intl';
 import { catalogues } from './catalogue-context';
 import { createLocaleCatalogues } from './locale-catalogues';
 
+/**
+ * A locale tag such as `de-CH`. Catalogues are discovered at build time (`<locale>.json`), so this
+ * cannot be a fixed union; `appLocales` lists the ones this build ships.
+ */
 export type AppLocale = string;
 
 const localeCatalogues = createLocaleCatalogues(catalogues);
+
+/** Every locale this build has a catalogue for, e.g. `['de', 'de-CH', 'de-DE', 'en']`. */
+export const appLocales: readonly AppLocale[] = Object.keys(catalogues).sort();
 
 /** The member's chosen language (`/users/me` → `language`) wins over the device language. */
 export function resolveLocale(
