@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import com.trackmywealth.backend.dto.AccountHistoryState;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.CashFlowContribution;
+import com.trackmywealth.backend.dto.HistoryWarning;
 import com.trackmywealth.backend.dto.PortfolioCapitalFlows;
 import com.trackmywealth.backend.dto.PortfolioPeriodChange;
 import com.trackmywealth.backend.dto.PortfolioPlacement;
@@ -15,6 +16,7 @@ import com.trackmywealth.backend.dto.ValueHistoryResponse.Change;
 import com.trackmywealth.backend.dto.ValueHistoryResponse.Point;
 import com.trackmywealth.backend.dto.ValueHistoryResponse.SectionChange;
 import com.trackmywealth.backend.dto.ValueHistorySnapshot;
+import com.trackmywealth.backend.dto.ValueHistoryWarningValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.Portfolio;
 import com.trackmywealth.backend.entity.Workspace;
@@ -145,7 +147,7 @@ public class ValueHistoryService {
     Map<LocalDate, Map<UUID, AccountValuation>> openingHistory =
         accountValuationService.historyFromOpeningBalances(accounts, currency, dates);
     List<Point> points = new ArrayList<>(dates.size());
-    Set<String> warnings = new TreeSet<>();
+    Set<HistoryWarning> warnings = new TreeSet<>();
     ValueHistorySnapshot first = null;
     ValueHistorySnapshot last = null;
     boolean complete = true;
@@ -160,7 +162,10 @@ public class ValueHistoryService {
             && (portfolioId == null
                 || affectsPortfolioBeforeEvidence(
                     account, portfolioId, from, evidence, historyStates, zone))) {
-          warnings.add(account.getName() + ": inception before first activity is uncertain");
+          warnings.add(
+              new HistoryWarning(
+                  ValueHistoryWarningValues.INCEPTION_UNCERTAIN,
+                  account.getName() + ": inception before first activity is uncertain"));
           complete = false;
         }
       }
@@ -191,10 +196,7 @@ public class ValueHistoryService {
       last = snapshot;
     }
     if (warnings.stream()
-        .anyMatch(
-            w ->
-                w.contains("historical lifecycle state unavailable")
-                    || w.contains("may have been restated"))) {
+        .anyMatch(w -> ValueHistoryWarningValues.LIFECYCLE_UNVERIFIED.equals(w.code()))) {
       complete = false;
     }
     ValueHistorySnapshot start = Objects.requireNonNull(first);
@@ -248,7 +250,10 @@ public class ValueHistoryService {
               : null;
       if (capitalMovements == null) {
         complete = false;
-        warnings.add("Portfolio capital movement attribution unavailable.");
+        warnings.add(
+            new HistoryWarning(
+                ValueHistoryWarningValues.CAPITAL_MOVEMENTS_UNAVAILABLE,
+                "Portfolio capital movement attribution unavailable."));
       }
       change =
           change(
@@ -280,7 +285,8 @@ public class ValueHistoryService {
         change,
         sections,
         complete,
-        List.copyOf(warnings));
+        warnings.stream().map(HistoryWarning::message).distinct().sorted().toList(),
+        warnings.stream().map(HistoryWarning::code).distinct().sorted().toList());
   }
 
   /**
@@ -351,7 +357,7 @@ public class ValueHistoryService {
       String currency,
       LocalDate asOf,
       Map<UUID, PortfolioPlacement> placements,
-      Set<String> warnings,
+      Set<HistoryWarning> warnings,
       Map<UUID, AccountValuation> openingValues) {
     List<AccountValuation> valuations = new ArrayList<>();
     List<Account> otherAccounts = new ArrayList<>();
@@ -370,10 +376,12 @@ public class ValueHistoryService {
     boolean estimated = false;
     Map<PortfolioSection, BigDecimal> sections = new EnumMap<>(PortfolioSection.class);
     for (AccountValuation valuation : valuations) {
-      warnings.addAll(valuation.warnings());
+      valuation.warnings().forEach(code -> warnings.add(HistoryWarning.dataQuality(code)));
       if (!valuation.valueKnown()) {
         complete = false;
-        warnings.add(valuation.name() + ": value unknown");
+        warnings.add(
+            new HistoryWarning(
+                ValueHistoryWarningValues.VALUE_UNKNOWN, valuation.name() + ": value unknown"));
         continue;
       }
       String basis = valuation.valueBasis();
@@ -406,7 +414,7 @@ public class ValueHistoryService {
       Map<UUID, LocalDate> firstEvidence,
       Map<UUID, List<AccountHistoryState>> historyStates) {
     BigDecimal total = BigDecimal.ZERO;
-    Set<String> warnings = new TreeSet<>();
+    Set<HistoryWarning> warnings = new TreeSet<>();
     boolean complete = true;
     ZoneId zone = businessDateService.zone();
     for (Account account : accounts) {
@@ -422,12 +430,15 @@ public class ValueHistoryService {
                     && (portfolioId == null || portfolioId.equals(atInception.portfolioId()));
         if (included) {
           AccountValuation initial = accountValuationService.valueIn(account, currency, inception);
-          warnings.addAll(initial.warnings());
+          initial.warnings().forEach(code -> warnings.add(HistoryWarning.dataQuality(code)));
           if (initial.valueKnown()) {
             total = total.add(SignedAmounts.of(initial));
           } else {
             complete = false;
-            warnings.add(account.getName() + ": opening value unavailable");
+            warnings.add(
+                new HistoryWarning(
+                    ValueHistoryWarningValues.VALUE_UNKNOWN,
+                    account.getName() + ": opening value unavailable"));
           }
         }
       }
@@ -448,10 +459,13 @@ public class ValueHistoryService {
           continue;
         }
         AccountValuation value = accountValuationService.valueIn(account, currency, day);
-        warnings.addAll(value.warnings());
+        value.warnings().forEach(code -> warnings.add(HistoryWarning.dataQuality(code)));
         if (!value.valueKnown()) {
           complete = false;
-          warnings.add(account.getName() + ": value unknown at portfolio/lifecycle change");
+          warnings.add(
+              new HistoryWarning(
+                  ValueHistoryWarningValues.VALUE_UNKNOWN,
+                  account.getName() + ": value unknown at portfolio/lifecycle change"));
           continue;
         }
         BigDecimal signed = SignedAmounts.of(value);
@@ -557,7 +571,7 @@ public class ValueHistoryService {
       Map<UUID, LocalDate> firstEvidence,
       Map<UUID, List<AccountHistoryState>> historyStates,
       @Nullable UUID portfolioId,
-      @Nullable Set<String> warnings) {
+      @Nullable Set<HistoryWarning> warnings) {
     return accounts.stream()
         .filter(
             account -> {
@@ -571,7 +585,10 @@ public class ValueHistoryService {
                 // For pre-migration data without an event, preserve the current state but
                 // do not pretend this reconstructed history is complete.
                 if (warnings != null) {
-                  warnings.add(account.getName() + ": historical lifecycle state unavailable");
+                  warnings.add(
+                      new HistoryWarning(
+                          ValueHistoryWarningValues.LIFECYCLE_UNVERIFIED,
+                          account.getName() + ": historical lifecycle state unavailable"));
                 }
                 return ACTIVE_STATUS.equals(account.getStatus())
                     && (portfolioId == null || portfolioId.equals(account.getPortfolio().getId()));
@@ -583,9 +600,11 @@ public class ValueHistoryService {
                       state.effectiveAt().atZoneSameInstant(businessZone).toLocalDate())
                   && warnings != null) {
                 warnings.add(
-                    account.getName()
-                        + ": portfolio and archive history before tracking"
-                        + " may have been restated");
+                    new HistoryWarning(
+                        ValueHistoryWarningValues.LIFECYCLE_UNVERIFIED,
+                        account.getName()
+                            + ": portfolio and archive history before tracking"
+                            + " may have been restated"));
               }
               return ACTIVE_STATUS.equals(state.status())
                   && (portfolioId == null || portfolioId.equals(state.portfolioId()));

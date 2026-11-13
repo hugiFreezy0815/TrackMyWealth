@@ -8,6 +8,8 @@ import com.trackmywealth.backend.service.NetWorthService;
 import com.trackmywealth.backend.service.ValueHistoryService;
 import com.trackmywealth.backend.web.ProblemCodes;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,7 +37,14 @@ public class NetWorthController {
   @ProblemCodes({ProblemCode.NOT_FOUND})
   @GetMapping("/history")
   public ValueHistoryResponse getHistory(
-      @RequestParam(defaultValue = "1M") String period,
+      @Parameter(
+              description = "The history window; 400 VALIDATION_FAILED for any other value.",
+              schema =
+                  @Schema(
+                      allowableValues = {"1W", "1M", "YTD", "1Y", "MAX"},
+                      defaultValue = "1M"))
+          @RequestParam(defaultValue = "1M")
+          String period,
       @RequestParam(required = false) String currency,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return historyService.netWorthHistory(period, currency, actor);
