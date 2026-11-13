@@ -97,8 +97,8 @@ workspace currency (`GET /api/v1/workspace` → `currency`).
 | 5 | Data status banner | `overview.dataStatus.unreconciled` "{count, plural, one {# account differs} other {# accounts differ}} from its statement" + "Review" | | `GET /api/v1/accounts` → count of items with `valueStatus = UNRECONCILED` (a count of rows, not a money figure). Hidden when 0 |
 | 6 | Net worth | `overview.netWorth` "Net worth" / "Nettovermögen" | `Amount`, large | `/net-worth` → `netWorth`, `currency` |
 | 7 | Net worth status | `ValueStatusBadge` | | `/net-worth` → `approximate` ⇒ Estimated; `complete=false` ⇒ "Not all values are included"; `warnings[]` listed in the explanation sheet |
-| 8 | Change chip + period label | `history.range.*` | `ChangeChip`: sign, amount, % | `GET /api/v1/net-worth/history?period=1M&currency=Cur` → `change.amount`, `change.percent` for the selected period |
-| 9 | Change split | `history.saving`, `history.capitalMovements`, `history.marketAndFx` | | `GET /api/v1/net-worth/history?period=1M&currency=Cur` → `change.contributions`, `change.marketAndFx`, `change.capitalMovements` |
+| 8 | Change chip + period label | `history.chipRange.*` "past month" right of the chip; `history.changeUncertain` below it when flagged | `ChangeChip`: sign, amount, %. Neutral and without % when `warningCodes` has `VALUE_UNKNOWN`, `INCEPTION_UNCERTAIN` or `LIFECYCLE_UNVERIFIED` (the change itself may be off, not only its split) | `GET /api/v1/net-worth/history?period=1M&currency=Cur` → `change.amount`, `change.percent` for the selected period |
+| 9 | Change split | `history.saving`, `history.capitalMovements`, `history.marketAndFx` | one wrapping line, parts separated by "·"; a null part is left out | `GET /api/v1/net-worth/history?period=1M&currency=Cur` → `change.contributions`, `change.marketAndFx`, `change.capitalMovements` |
 | 10 | Value chart | text alternative `history.chartSummary` with dates, values and change | line chart, estimated stretches dashed | `GET /api/v1/net-worth/history?period=1M&currency=Cur` → `points[]` (`date`, `value`, `estimated`) |
 | 11 | Period switch | `history.period.*` | segmented control; default 1M; the choice is remembered on the device | `GET /api/v1/net-worth/history` → `period` parameter |
 | 12 | Assets | `overview.assets` "Assets" / "Vermögen" | `Amount` | `/net-worth` → `totalAssets` |
@@ -212,7 +212,7 @@ sends `{ "name": null }`.
 | Bell, Search, Import/Add buttons (W01) | Hidden | Not in sprint 7 |
 | Chart, change chip, portfolio % | Chart and change use history. Portfolio rows show the list API’s 1M percentage when 1M is selected | The list API supplies only 1M (#477) |
 | Tiles "Investments", "Pension (3a)", "Real estate" (gross CHF 850'000) | Portfolio View section names: "Depot", "Pillar 3a", "Property & mortgage" (net of the mortgage) | One section vocabulary across the overview and the portfolio tabs (#481); the gross property value stays visible in Assets |
-| Tile change "this month" | Change for the selected chart period | One period control for the whole card set (#477) |
+| Tile change "this month" | Change for the selected chart period, followed by its period (`history.chipRange.*`) in gain/loss colour (neutral when hidden or flagged uncertain) | One period control for the whole card set (#477) |
 
 ## Acceptance checks for the UI story
 
@@ -232,7 +232,10 @@ sends `{ "name": null }`.
 ## Historical value API status (#477)
 
 The backend implements `GET /api/v1/net-worth/history?period={1W|1M|YTD|1Y|MAX}&currency=Cur`,
-with server-sampled dated values, `points[]`, `change`, `sections[]`, `complete` and `warnings[]`.
+with server-sampled dated values, `points[]`, `change`, `sections[]`, `complete`, `warnings[]` and
+`warningCodes[]`. The app shows text only for `warningCodes[]` (stable codes, no account names);
+`warnings[]` holds the account-specific sentences for support and is never displayed. In the card
+the order follows M03: change chip, split, chart, then the period switch as the last row.
 The current-day point is included. Overview and Portfolio View share the period saved on this
 device. The Overview portfolio list supplies monthly changes only, so the row percentage is
 shown for 1M when the server sends it and the portfolio status is current.
@@ -243,7 +246,7 @@ shown for 1M when the server sends it and the portfolio status is current.
 contributions and capital movements. These fields are nullable when attribution is incomplete.
 Pending-review transfers, unresolved settlements or loan repayments, missing historical FX rates,
 unknown valuations, and migrated accounts without reconstructable earlier lifecycle events must
-be explained through `complete=false` and `warnings[]`; never display a missing attribution
+be explained through `complete=false` and `warningCodes[]`; never display a missing attribution
 as zero or label it a market gain.
 
 For historical values, an account is included according to its effective state at each

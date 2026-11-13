@@ -273,10 +273,16 @@ describe('Overview S1 (#489)', () => {
       change,
       sections: [{ section: 'CASH_AND_SAVINGS', change: { ...change, amount: '17.12' } }],
       complete: false,
+      // The sentences name accounts and are never shown; the app reads the codes.
       warnings: [
         'Currency conversion unavailable for contributions.',
-        'Private account 65432.10: value unknown',
+        'Private account 65432.10: opening value unavailable',
         'Transactions are pending review; contribution attribution is incomplete.',
+      ],
+      warningCodes: [
+        'ATTRIBUTION_FX_UNAVAILABLE',
+        'ATTRIBUTION_PENDING_REVIEW',
+        'FUTURE_CODE' as never,
       ],
     };
     jest
@@ -293,15 +299,16 @@ describe('Overview S1 (#489)', () => {
     expect(screen.getByText('+3.2%')).toBeTruthy();
     expect(screen.getByText('+0.5%')).toBeTruthy();
     expect(screen.getByLabelText('plus 17.12 Swiss francs')).toBeTruthy();
+    // The chip and the section tile both name the period of their change (M03).
+    expect(screen.getAllByText('past month')).toHaveLength(2);
     expect(screen.getByText('Net saving')).toBeTruthy();
     expect(screen.queryByText('Market & FX')).toBeNull();
     expect(screen.getByText(/parts of the change are incomplete/)).toBeTruthy();
     expect(screen.getByText('Some historical exchange rates are unavailable.')).toBeTruthy();
-    expect(
-      screen.getByText('A historical value is unavailable for at least one account.'),
-    ).toBeTruthy();
     expect(screen.getByText(/Some transactions still need review/)).toBeTruthy();
-    expect(screen.queryByText(/Private account|65432[.]10/)).toBeNull();
+    expect(screen.getByText('Some history details need a check.')).toBeTruthy();
+    expect(screen.queryByText(/Private account|65432[.]10|value unavailable/)).toBeNull();
+    expect(screen.queryByText(/This change may be off/)).toBeNull();
 
     await fireEvent.press(screen.getByRole('radio', { name: '1W, Past week' }));
     expect(useNetWorthHistory).toHaveBeenLastCalledWith('CHF', '1W', true);
@@ -333,6 +340,7 @@ describe('Overview S1 (#489)', () => {
       sections: [{ section: 'CASH_AND_SAVINGS', change: { ...change, amount: '13.40' } }],
       complete: true,
       warnings: [],
+      warningCodes: [],
     };
     const get = jest
       .spyOn(typedApi, 'get')

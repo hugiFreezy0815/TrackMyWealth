@@ -201,6 +201,7 @@ across portfolios and account inception/lifecycle or reassignment, and
 `complete`, `warnings[]` and `points[].estimated`.
 
 For unresolved transfers or loan repayments and missing FX/valuation data, attribution may
-be null and the view must show incomplete-data warnings rather than a fabricated market return.
+be null and the view must show incomplete-data warnings (from `warningCodes[]`) rather than a
+fabricated market return.
 Historical state recorded before the new lifecycle tracking can be restated and is explicitly
 flagged as uncertain. The chart and change use the period shared with Overview.

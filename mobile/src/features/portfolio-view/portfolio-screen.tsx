@@ -142,7 +142,8 @@ export function PortfolioScreen({
   const [explained, setExplained] = useState<Explained | null>(null);
   const period = useHistoryPeriod();
   const hidden = useAmountsHidden();
-  const history = usePortfolioHistory(portfolioId, period, !!view);
+  // Fetched in parallel with the view; the panel renders once the view is there.
+  const history = usePortfolioHistory(portfolioId, period, true);
   const results = [viewQuery, portfolios, ...(view ? [history] : [])];
   const refreshing = results.some((result) => result.isRefetching);
   const refresh = () => {

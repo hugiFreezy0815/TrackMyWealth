@@ -43,9 +43,11 @@ export const useNetWorth = (currency?: string, { enabled = true }: QueryGate = {
     queryFn: () => typedApi.get('/api/v1/net-worth', { query: currency ? { currency } : {} }),
     enabled,
   });
+type HistoryPeriod = components['schemas']['ValueHistoryResponse']['period'];
+
 export const useNetWorthHistory = (
   currency: string | undefined,
-  period: string,
+  period: HistoryPeriod,
   enabled: boolean,
 ) =>
   useQuery<components['schemas']['ValueHistoryResponse']>({
@@ -57,7 +59,7 @@ export const useNetWorthHistory = (
     enabled: enabled && !!currency,
   });
 
-export const usePortfolioHistory = (portfolioId: string, period: string, enabled: boolean) =>
+export const usePortfolioHistory = (portfolioId: string, period: HistoryPeriod, enabled: boolean) =>
   useQuery<components['schemas']['ValueHistoryResponse']>({
     queryKey: queryKeys.portfolioHistory(portfolioId, period),
     placeholderData: (previous, query) =>

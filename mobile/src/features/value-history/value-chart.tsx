@@ -94,7 +94,8 @@ export function ValueChart({ data, hidden }: { data: ValueHistory; hidden: boole
               const start = coordinates[index];
               return (
                 <Line
-                  key={end.point.date}
+                  // The index keeps keys unique even if the server repeats a date.
+                  key={`${index}-${end.point.date}`}
                   x1={start.x}
                   y1={start.y}
                   x2={end.x}

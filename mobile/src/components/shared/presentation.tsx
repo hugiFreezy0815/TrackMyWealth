@@ -61,11 +61,14 @@ export function ChangeChip({
   currency,
   percentage,
   percentageLabel,
+  uncertain = false,
 }: {
   amount: DecimalString;
   currency: string;
   percentage?: string | null;
   percentageLabel?: string;
+  /** The server flags the change as possibly distorted: neutral colours, no percentage. */
+  uncertain?: boolean;
 }) {
   const theme = useTheme();
   const intl = useIntl();
@@ -79,16 +82,13 @@ export function ChangeChip({
     masked: hidden,
   });
   const direction = display.startsWith('−') ? 'down' : display.startsWith('+') ? 'up' : 'flat';
+  const tone = uncertain ? 'flat' : direction;
   const color =
-    direction === 'down'
-      ? theme.statusLoss
-      : direction === 'up'
-        ? theme.statusGain
-        : theme.textSecondary;
+    tone === 'down' ? theme.statusLoss : tone === 'up' ? theme.statusGain : theme.textSecondary;
   const backgroundColor =
-    direction === 'down'
+    tone === 'down'
       ? theme.statusLossSubtle
-      : direction === 'up'
+      : tone === 'up'
         ? theme.statusGainSubtle
         : theme.bgSubtle;
   return (
@@ -119,7 +119,7 @@ export function ChangeChip({
         signRole="change"
         style={{ ...TypeScale.numberMedium, fontWeight: '600', color }}
       />
-      {percentage && !hidden ? (
+      {percentage && !hidden && !uncertain ? (
         <Text accessibilityLabel={percentageLabel} style={{ ...TypeScale.numberMedium, color }}>
           {percentage}
         </Text>

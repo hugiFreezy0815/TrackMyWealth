@@ -302,6 +302,7 @@ describe('S2 Portfolio View acceptance (#493)', () => {
           'Currency conversion unavailable for portfolio capital flows.',
           'Private account 65432.10: value unknown',
         ],
+        warningCodes: ['ATTRIBUTION_FX_UNAVAILABLE', 'VALUE_UNKNOWN'],
       },
       isPending: false,
       isError: false,
@@ -346,6 +347,7 @@ describe('S2 Portfolio View acceptance (#493)', () => {
       sections: [],
       complete: true,
       warnings: [],
+      warningCodes: [],
     };
     const get = jest
       .spyOn(typedApi, 'get')

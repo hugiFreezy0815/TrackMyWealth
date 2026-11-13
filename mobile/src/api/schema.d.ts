@@ -3932,7 +3932,8 @@ export interface components {
     };
     ValueHistoryResponse: {
       currency: string;
-      period: string;
+      /** @enum {string} */
+      period: '1W' | '1M' | 'YTD' | '1Y' | 'MAX';
       /** Format: date */
       from: string;
       /** Format: date */
@@ -3942,6 +3943,17 @@ export interface components {
       sections: components['schemas']['SectionChange'][];
       complete: boolean;
       warnings: string[];
+      warningCodes: (
+        | 'VALUE_UNKNOWN'
+        | 'INCEPTION_UNCERTAIN'
+        | 'LIFECYCLE_UNVERIFIED'
+        | 'ATTRIBUTION_PENDING_REVIEW'
+        | 'ATTRIBUTION_FX_UNAVAILABLE'
+        | 'CAPITAL_MOVEMENTS_UNAVAILABLE'
+        | 'TRANSACTIONS_BEFORE_OPENING_BALANCE'
+        | 'BOOKED_BEFORE_OPENING_BALANCE'
+        | 'OPEN_RECONCILIATION_DIFFERENCE'
+      )[];
     };
     WorkspaceMemberListItemResponse: {
       /** Format: uuid */
@@ -16001,7 +16013,8 @@ export interface operations {
   getNetWorthHistory: {
     parameters: {
       query?: {
-        period?: string;
+        /** @description The history window; 400 VALIDATION_FAILED for any other value. */
+        period?: '1W' | '1M' | 'YTD' | '1Y' | 'MAX';
         currency?: string;
       };
       header?: {
@@ -16502,7 +16515,8 @@ export interface operations {
   getPortfolioHistory: {
     parameters: {
       query?: {
-        period?: string;
+        /** @description The history window; 400 VALIDATION_FAILED for any other value. */
+        period?: '1W' | '1M' | 'YTD' | '1Y' | 'MAX';
       };
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */

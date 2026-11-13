@@ -26,6 +26,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { HistoryPanel, historyForDisplay } from '@/features/value-history/history-panel';
 import { useHistoryPeriod } from '@/features/value-history/period';
+import { changeIsUncertain } from '@/features/value-history/warnings';
 import { CashFlowCard } from './cash-flow-card';
 import { CurrencyScope } from './currency-scope';
 import { DataStatusBanner } from './data-status-banner';
@@ -161,6 +162,8 @@ export function OverviewScreen({
             hidden={hidden}
             intl={intl}
             changes={historyInScope?.sections}
+            changePeriod={historyInScope?.period}
+            changeUncertain={changeIsUncertain(historyInScope?.warningCodes ?? [])}
           />
         </>
       ) : null}
