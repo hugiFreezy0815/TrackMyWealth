@@ -1,0 +1,59 @@
+# #554 / PR #564: sign-in and MFA with the keyboard open (Android emulator, Maestro).
+# Needs mock-api.mjs on 127.0.0.1:8099, `adb reverse tcp:8099 tcp:8099` and a release build with
+# EXPO_PUBLIC_API_URL=http://localhost:8099.
+# Run: maestro --device <serial> test -e PREFIX=<name> auth-android.yaml
+appId: com.anonymous.trackmywealth
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: 'Sign in'
+    timeout: 60000
+# Server focused: the field and the rest of the form must stay reachable with the keyboard open
+- tapOn:
+    text: 'Server'
+    index: 1
+- waitForAnimationToEnd
+- takeScreenshot: ${PREFIX}-1-server-focused
+- scroll
+- takeScreenshot: ${PREFIX}-2-server-focused-scrolled
+# Return in Server moves to Email: the typed text lands in Email
+- pressKey: Enter
+- inputText: 'demo@example.com'
+- waitForAnimationToEnd
+- takeScreenshot: ${PREFIX}-3-email-after-return
+# Return in Email moves to Password (Android shows secure fields in screenshots)
+- pressKey: Enter
+- inputText: 'secret-password'
+- waitForAnimationToEnd
+- takeScreenshot: ${PREFIX}-4-password-focused
+# Return in Password submits; mock-api.mjs logs the body (password length only) and answers with MFA
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: 'Verify sign-in'
+    timeout: 15000
+# Android autofill may offer to save the password
+- tapOn:
+    text: '(?i)not now|never|no thanks'
+    optional: true
+- tapOn:
+    text: 'Authenticator code'
+    index: 1
+- inputText: '123'
+- waitForAnimationToEnd
+- takeScreenshot: ${PREFIX}-5-mfa-keyboard
+- scroll
+- takeScreenshot: ${PREFIX}-6-mfa-scrolled
+# Done in the authenticator code submits it (the mock answers 401, the app shows an error)
+- inputText: '456'
+- pressKey: Enter
+- waitForAnimationToEnd
+- takeScreenshot: ${PREFIX}-7-mfa-after-done
+- scroll
+- tapOn: 'Start over'
+- extendedWaitUntil:
+    visible: 'Server'
+    timeout: 5000
+- waitForAnimationToEnd
+# The sign-in step starts at the top again (brand line not cut off)
+- takeScreenshot: ${PREFIX}-8-after-start-over
