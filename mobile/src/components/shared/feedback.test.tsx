@@ -1,9 +1,10 @@
 import { fireEvent, screen } from '@testing-library/react-native';
 
-import type { AppLocale } from '@/i18n';
+import { messagesFor, type AppLocale } from '@/i18n';
 import { renderWithIntl } from '@/i18n/test-utils';
 
 import { ApiError } from '@/api/client';
+import { importErrorMessageKey } from '@/features/statement-import/model';
 import {
   BottomSheet,
   ConflictDialog,
@@ -65,8 +66,8 @@ describe('ErrorBanner', () => {
       'de-CH',
       /^Dieser Eintrag existiert nicht mehr oder ist für dich nicht verfügbar\.$/,
     ],
-    // A known code without its own message: the message of its reaction (FIX_INPUT).
-    [problem(400, 'INVALID_SORT'), 'en', /Some entries are not valid\. Check them/],
+    [problem(400, 'INVALID_SORT'), 'en', /^This list cannot be sorted that way\.$/],
+    [problem(400, 'INVALID_SORT'), 'de-DE', /^Diese Liste kann nicht so sortiert werden\.$/],
     // An unknown code: the reaction of its status (403 → SHOW).
     [problem(403, 'UNKNOWN_CODE'), 'de-DE', /^Das ist gerade nicht möglich\.$/],
     [problem(500, 'UNKNOWN_CODE', 'corr-1'), 'en', /^Something went wrong\.$/],
@@ -75,6 +76,44 @@ describe('ErrorBanner', () => {
     expect(screen.getByText(message)).toBeTruthy();
     expect(screen.queryByText(/raw server title/)).toBeNull();
   });
+
+  it.each([
+    [
+      'HOLDING',
+      'en',
+      'This statement contains a balance or positions that differ from what was recorded for the same date.',
+    ],
+    [
+      'BALANCE',
+      'en',
+      'This statement contains a balance or positions that differ from what was recorded for the same date.',
+    ],
+    [
+      'HOLDING',
+      'de',
+      'Der Saldo oder die Positionen dieses Auszugs weichen von den erfassten Daten für dasselbe Datum ab.',
+    ],
+    [
+      'BALANCE',
+      'de',
+      'Der Saldo oder die Positionen dieses Auszugs weichen von den erfassten Daten für dasselbe Datum ab.',
+    ],
+  ])(
+    'shows localized copy for a %s-only snapshot conflict in %s',
+    async (part, locale, expected) => {
+      const error = new ApiError('raw server title', 409, {
+        status: 409,
+        title: 'raw server title',
+        code: 'IMPORT_SNAPSHOT_CONFLICT',
+        conflicts: [{ part, existingValue: '1.00', statementValue: '2.00' }],
+      });
+      await renderWithIntl(<ErrorBanner error={error} />, locale);
+      expect(screen.getByText(expected)).toBeTruthy();
+      const override = importErrorMessageKey(error);
+      expect(override).toBe('statement.error.IMPORT_SNAPSHOT_CONFLICT');
+      expect(messagesFor(locale)[override ?? '']).toBe(expected);
+    },
+  );
 
   it('prefers an explicit, user-safe message', async () => {
     await renderWithIntl(<ErrorBanner error={problem(409, 'VERSION_CONFLICT')} message="Custom" />);
