@@ -1,3 +1,5 @@
+import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
+import { Platform } from 'react-native';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 
 import { showToast } from '@/features/shell/toast';
@@ -15,6 +17,9 @@ import {
   useSaveIdentifier,
 } from './use-create';
 
+jest.mock('@react-native-community/datetimepicker', () => ({
+  DateTimePickerAndroid: { open: jest.fn() },
+}));
 jest.mock('@/global.css', () => ({}));
 jest.mock('expo-image', () => ({ Image: 'Image' }));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
@@ -87,6 +92,29 @@ beforeEach(() => {
 });
 
 describe('Add account S6 (#491): step 1', () => {
+  it('sends the optional opening date independently of the starting value', async () => {
+    const originalOS = Platform.OS;
+    Platform.OS = 'android';
+    try {
+      await mount();
+      await fireEvent.press(screen.getByRole('button', { name: /^Opened on/ }));
+      const picker = jest.mocked(DateTimePickerAndroid.open).mock.calls[0][0];
+      await act(() =>
+        picker.onChange?.(
+          { type: 'set', nativeEvent: { timestamp: 0, utcOffset: 0 } },
+          new Date(2025, 0, 1),
+        ),
+      );
+      await fireEvent.press(addButton());
+      expect(create.mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ openedAt: '2025-01-01' }),
+      );
+      expect(opening.mutateAsync).not.toHaveBeenCalled();
+    } finally {
+      Platform.OS = originalOS;
+    }
+  });
+
   it('sends CH pillar 3a in the portfolio currency for a CH portfolio', async () => {
     await mount({ ...portfolio, country: 'CH', portfolioCurrency: 'CHF' });
     await fireEvent.press(screen.getByRole('radio', { name: 'Pillar 3a / pension' }));

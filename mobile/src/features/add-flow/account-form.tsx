@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 import { Pressable, ScrollView, Text } from 'react-native';
 
-import { ActionButton, ErrorBanner } from '@/components/shared';
+import { ActionButton, ErrorBanner, localDateToIso } from '@/components/shared';
 import { Spacing, TypeScale } from '@/constants/theme';
 import { showToast } from '@/features/shell/toast';
 import { useOnline } from '@/hooks/use-online';
@@ -66,7 +66,9 @@ export function AccountForm({
   // Guards the non-idempotent POST: a second tap can arrive before `isPending` re-renders.
   const busy = useRef(false);
   const inFlight = create.isPending || saveIdentifier.isPending;
-  const canCreate = online && !inFlight && created === null && accountDraftComplete(draft);
+  const openingDateValid = draft.openedAt === null || draft.openedAt <= localDateToIso(new Date());
+  const canCreate =
+    online && !inFlight && created === null && openingDateValid && accountDraftComplete(draft);
   const identifierKey = identifierErrorKey(saveIdentifier.error, draft.identifierKind);
 
   const patch = (next: Partial<AccountDraft>) => setDraft((current) => ({ ...current, ...next }));
@@ -157,7 +159,10 @@ export function AccountForm({
             portfolioCurrency={portfolio.portfolioCurrency}
             disabled={inFlight || created !== null}
             errors={validationErrors(create.error)}
-            onChange={patch}
+            onChange={(changes) => {
+              patch(changes);
+              if (create.isError && 'openedAt' in changes) create.reset();
+            }}
             onChooseType={(type) => {
               setDraft((current) => withAccountType(current, type, typeName));
               create.reset();

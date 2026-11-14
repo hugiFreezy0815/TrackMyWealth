@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.dto;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -32,6 +33,9 @@ public record AccountSummaryResponse(
     @Nullable UUID savingsPocketAccountId,
     String status,
     @Nullable OffsetDateTime archivedAt,
+    @Nullable LocalDate openedAt,
+    @Nullable LocalDate closedAt,
+    @Nullable String jurisdiction,
     int version,
     List<String> warnings,
     ReconciliationStatusResponse reconciliation) {

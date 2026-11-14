@@ -22,6 +22,7 @@ export type AccountDraft = {
   /** Once edited, choosing another type no longer replaces the name with the type's default. */
   nameEdited: boolean;
   currency: string;
+  openedAt: string | null;
   identifier: string;
   identifierKind: IdentifierKind;
   pensionScheme: PensionScheme | null;
@@ -48,6 +49,7 @@ export function initialAccountDraft(
     name: typeName('CASH'),
     nameEdited: false,
     currency: portfolio.portfolioCurrency,
+    openedAt: null,
     identifier: '',
     identifierKind: identifierKind('CASH'),
     pensionScheme: defaultPensionScheme(portfolio.country),
@@ -110,6 +112,7 @@ export function accountRequest(portfolioId: string, draft: AccountDraft): Accoun
     name: draft.name.trim(),
     accountType: type,
     nativeCurrency: draft.currency,
+    ...(draft.openedAt ? { openedAt: draft.openedAt } : {}),
     ...(type === 'SAVINGS' ? { countsAsSaving: draft.countsAsSaving } : {}),
     ...(type === 'PENSION' && draft.pensionScheme ? { pensionScheme: draft.pensionScheme } : {}),
     ...(type === 'CUSTOM_ASSET' ? { customAssetType: draft.customAssetType } : {}),

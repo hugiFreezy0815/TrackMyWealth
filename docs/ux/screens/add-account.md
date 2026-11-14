@@ -35,10 +35,15 @@ LIABILITIES
 ( Credit card )( Mortgage )( Loan )
 Account name      [ Tagesgeld          ]
 Account currency  [ EUR · Euro       ⌄ ]
+Opened on (optional) [ Select date ]
 IBAN (optional)   [ DE89 3704 0044 0532 0130 00 ]
 ⚠ The account type can't be changed later. To change it, close this account and add a new one.
             [ Add account ]
 ```
+
+The optional opening date goes in `POST /api/v1/accounts` as `openedAt`. Future dates are
+invalid. Explain that an earlier booking takes precedence for value history. The opening date
+is independent of the starting balance date.
 
 ### Type chips → request
 

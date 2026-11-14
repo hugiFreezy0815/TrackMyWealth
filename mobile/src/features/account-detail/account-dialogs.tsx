@@ -34,6 +34,7 @@ export function ActionsDialog({
   onClose,
   onImport,
   onArchive,
+  onEditOpeningDate,
   pocketAction,
 }: {
   visible: boolean;
@@ -42,6 +43,7 @@ export function ActionsDialog({
   onClose: () => void;
   onImport: () => void;
   onArchive: () => void;
+  onEditOpeningDate?: () => void;
   /** #466 "Link savings pocket", when the account can have one. */
   pocketAction?: ReactNode;
 }) {
@@ -73,6 +75,13 @@ export function ActionsDialog({
         </Text>
       ) : null}
       {pocketAction}
+      {onEditOpeningDate ? (
+        <ActionButton
+          label={intl.formatMessage({ id: 'account.openedAt.edit' })}
+          disabled={!online}
+          onPress={onEditOpeningDate}
+        />
+      ) : null}
       {!archived ? (
         <ActionButton
           label={intl.formatMessage({ id: 'account.archive' })}

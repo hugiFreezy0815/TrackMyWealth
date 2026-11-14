@@ -470,6 +470,68 @@ class AccountControllerTest {
   }
 
   @Test
+  void openingDateRoundTripsAndCanBeCleared() {
+    String token = bootstrapAdministrator();
+    LocalDate openedAt = LocalDate.of(2020, 1, 1);
+    AccountSummaryResponse created =
+        createAccount(
+            token, AccountRequests.account("Checking", "CASH", "CHF").openedAt(openedAt).build());
+    assertThat(created.openedAt()).isEqualTo(openedAt);
+    assertThat(getAccount(token, created.id()).openedAt()).isEqualTo(openedAt);
+
+    updateAccount(
+            token,
+            created.id(),
+            new UpdateAccountRequest(
+                "Checking", "CASH", "CHF", "CH", null, LocalDate.of(2025, 1, 1)),
+            created.version())
+        .expectStatus()
+        .isOk();
+    AccountSummaryResponse updated = getAccount(token, created.id());
+    assertThat(updated.openedAt()).isNull();
+    assertThat(updated.jurisdiction()).isEqualTo("CH");
+    assertThat(updated.closedAt()).isEqualTo(LocalDate.of(2025, 1, 1));
+  }
+
+  @Test
+  void rejectsFutureOpeningDatesOnCreateAndUpdateWithLocalizedFieldErrors() {
+    String token = bootstrapAdministrator();
+    LocalDate future = LocalDate.now().plusYears(1);
+    var request = AccountRequests.account("Checking", "CASH", "CHF");
+    client(token)
+        .post()
+        .uri("/api/v1/accounts")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(request.openedAt(future).build())
+        .exchange()
+        .expectStatus()
+        .isBadRequest()
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VALIDATION_FAILED")
+        .jsonPath("$.errors[0].field")
+        .isEqualTo("openedAt")
+        .jsonPath("$.errors[0].message")
+        .isEqualTo("must be a date in the past or in the present");
+
+    AccountSummaryResponse created =
+        createAccount(token, AccountRequests.account("Checking", "CASH", "CHF").build());
+    updateAccount(
+            token,
+            created.id(),
+            new UpdateAccountRequest("Checking", "CASH", "CHF", null, future, null),
+            created.version())
+        .expectStatus()
+        .isBadRequest()
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VALIDATION_FAILED")
+        .jsonPath("$.errors[0].field")
+        .isEqualTo("openedAt");
+    assertThat(getAccount(token, created.id()).openedAt()).isNull();
+  }
+
+  @Test
   void changingAccountTypeIsRejectedWithAStructuredConflict() {
     // AC #1 / DoD: the DB's trg_account_type_immutable (V4) rejection must surface as a clean
     // 409, referencing FR-ACC-005, never a raw 500.
