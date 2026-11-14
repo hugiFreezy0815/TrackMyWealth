@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 
 import { ApiError } from '@/api/client';
-import { usePortfolioView, usePortfolios } from '@/api/queries/resources';
+import { usePortfolioHistory, usePortfolioView, usePortfolios } from '@/api/queries/resources';
 import {
   ActionButton,
   Amount,
@@ -35,6 +35,8 @@ import { PortfolioAccountRow } from './account-row';
 import { accountRows, sectionMessageKey, type PortfolioSection } from './model';
 import { DataSourceCard, PortfolioDetails } from './portfolio-details';
 import { PortfolioExplanation, type Explained } from './portfolio-explanation';
+import { HistoryPanel, historyForDisplay } from '@/features/value-history/history-panel';
+import { useHistoryPeriod } from '@/features/value-history/period';
 import { PortfolioHeader, headerData } from './portfolio-header';
 
 /** S2 web layout: two columns from 1024 px (README breakpoints), the right one 320 px wide. */
@@ -138,9 +140,14 @@ export function PortfolioScreen({
   const fallback = portfolios.data?.find((item) => item.id === portfolioId);
   const data = headerData(view, fallback, msg(intl, 'portfolio.unknownName'));
   const [explained, setExplained] = useState<Explained | null>(null);
-  const refreshing = viewQuery.isRefetching || portfolios.isRefetching;
+  const period = useHistoryPeriod();
+  const hidden = useAmountsHidden();
+  // Fetched in parallel with the view; the panel renders once the view is there.
+  const history = usePortfolioHistory(portfolioId, period, true);
+  const results = [viewQuery, portfolios, ...(view ? [history] : [])];
+  const refreshing = results.some((result) => result.isRefetching);
   const refresh = () => {
-    void Promise.all([viewQuery.refetch(), portfolios.refetch()]);
+    void Promise.allSettled(results.map((result) => result.refetch()));
   };
 
   // Don't redirect while data is loading/offline. 404 alone means the portfolio was removed.
@@ -159,7 +166,17 @@ export function PortfolioScreen({
     ) : null;
   const main = (
     <View style={{ gap: Spacing.three, flex: 1, minWidth: 0 }}>
-      <PortfolioHeader data={data} view={view} onExplain={() => setExplained('total')} />
+      <PortfolioHeader data={data} view={view} onExplain={() => setExplained('total')}>
+        {view ? (
+          <HistoryPanel
+            query={history}
+            data={historyForDisplay(history, period, online)}
+            online={online}
+            period={period}
+            hidden={hidden}
+          />
+        ) : null}
+      </PortfolioHeader>
       {view?.sections.length === 0 ? (
         <EmptyState
           title={msg(intl, 'portfolio.empty.title', { name: data.name })}

@@ -1,0 +1,14 @@
+# Web image build context (deploy/nginx/Dockerfile): source and lockfile only.
+node_modules
+dist
+web-build
+.expo
+ios
+android
+web-host
+docs
+**/*.test.ts
+**/*.test.tsx
+**/__pycache__
+.env
+.env*.local

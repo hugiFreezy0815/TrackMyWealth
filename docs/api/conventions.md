@@ -1,44 +1,216 @@
 # API conventions
 
-This page documents the **paging contract** implemented in
-[US-29-03 (#373)](https://github.com/hugiFreezy0815/TrackMyWealth/issues/373).
-The other conventions (resource naming, errors, concurrency, decimals, dates, uploads and
-authentication) belong to [US-29-01 (#371)](https://github.com/hugiFreezy0815/TrackMyWealth/issues/371),
-which will extend this page. Until then, the committed [OpenAPI contract](../../api/openapi.yaml),
-the [error codes](error-codes.md) and the
-[development standards](../architecture/development-standards.md) are the reference for those
-topics. The paging design itself is recorded in
-[ADR 0006](../architecture/adr/0006-api-contract-conventions.md). Do not infer rules for other
-endpoints from this section.
+Use the committed [OpenAPI 3.1 contract](../../api/openapi.yaml) for operation-specific
+paths, parameters, schemas, headers and statuses.
+[ADR 0006](../architecture/adr/0006-api-contract-conventions.md) records the design decisions
+and deviations from the
+[Zalando RESTful API Guidelines](https://opensource.zalando.com/restful-api-guidelines/).
+New endpoints that need a deviation require an ADR amendment.
+
+## Resources and requests
+
+- Use `/api/v1`, plural lower-case nouns for collections, and kebab-case for multiword
+  segments. Address an item by its ID and nest resources scoped to a parent, for example
+  `/api/v1/accounts/{accountId}/transactions/{transactionId}`. Singletons such as
+  `/api/v1/workspace` use a singular name. Use the documented action path when a domain
+  transition has its own operation, such as `POST /api/v1/accounts/{accountId}/archive`.
+  One published path ends in a file name: the CSV download
+  `GET /api/v1/accounts/{accountId}/imports/{batchId}/errors.csv`. Do not add another.
+- Use GET to read, POST to create or perform a documented action, PUT to replace or set the
+  addressed state, and DELETE to remove it, following
+  [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110).
+- A create answers 201 with the new resource in the body. Only two creates also send `Location`
+  today: the statement upload and creating an import template. Read the `id` from the body for
+  the others until [#459](https://github.com/hugiFreezy0815/TrackMyWealth/issues/459)
+  adds the header to every 201.
+- Use lower camel case for JSON properties and query parameter names. Treat IDs as opaque.
+  Response properties are present and may be null where the schema allows it. Handle new
+  response enum values with a neutral fallback.
+- Use stable, explicit OpenAPI operation IDs. Regenerate the mobile types with `npm run api:types`
+  from `mobile/` after changing the committed contract.
+
+## Authentication and visibility
+
+Use HTTPS for deployed servers. Send the access token in `Authorization: Bearer <access-token>`
+on protected requests. `POST /api/v1/auth/login` returns tokens directly or sets
+`mfaRequired: true`. In that case, send the returned `mfaChallengeToken` as `challengeToken`
+along with the six-digit `code` to `POST /api/v1/auth/mfa/verify`.
+
+Keep tokens out of URLs, diagnostics and logs.
+
+### Renewing the session
+
+An expired access token has no code of its own: the request answers the generic
+`401 UNAUTHENTICATED`. Renew the session with `POST /api/v1/auth/refresh` and the current
+`refreshToken`. The answer carries a new access token and a new refresh token; replace both.
+
+Follow these rules, as the app's transport (`mobile/src/api/client.ts`) does:
+
+- On a 401, send one refresh. Requests that fail at the same time share it.
+- After a successful refresh, replay each affected request once with the new access token. A
+  request whose token another request has already replaced is replayed with the newer token
+  without a refresh of its own.
+- Never renew for a request to `/api/v1/auth/*`, the refresh request included.
+
+React to the refresh answer as follows:
+
+| Refresh answers | Meaning | Reaction |
+| --- | --- | --- |
+| 200 | New tokens | Replace both tokens and replay the waiting requests. |
+| `401 UNAUTHENTICATED` | The refresh token is expired, reused or revoked. | Clear the session and sign in again. |
+| `400 VALIDATION_FAILED` | The refresh token is malformed. | Clear the session and sign in again. |
+| `429 RATE_LIMITED`, a 5xx, a timeout or no connection | The server could not answer now. | Keep the session. Wait before the next refresh, for `Retry-After` seconds when the header is sent. |
+
+The app does not yet wait in the last case. It keeps the session and fails the waiting requests
+with their original 401, but the next request that gets a 401 starts another refresh, also
+inside the `Retry-After` time, and the screen shows the "session has ended" message although
+the session is kept. [#578](https://github.com/hugiFreezy0815/TrackMyWealth/issues/578) tracks both.
+
+Workspace-scoped lists derive their workspace from the authenticated session. Members see all
+records in that workspace that match the operation's filters. Personal endpoints, such as
+`/api/v1/sessions`, use the caller's own scope. Foreign IDs in filters behave like unknown IDs.
+A direct lookup for an inaccessible workspace resource returns the same 404 as a missing one.
+
+## Decimal values, dates and currencies
+
+Send an exact decimal as a plain JSON string, for example `"amount": "1234.56"`. Use a dot
+as the decimal separator, without grouping or an exponent. The OpenAPI field is a
+`string` with `format: decimal`, mapped to `DecimalString` in mobile (#176).
+Some requests accept JSON numbers for compatibility. Preserve the string across round trips
+to avoid floating-point rounding. Apply localized formatting at display time.
+
+Send ISO 4217 currency codes such as `CHF` and `EUR`. Use `YYYY-MM-DD` for calendar dates
+such as `bookingDate` and keep them as dates when displaying them. Use
+[RFC 3339](https://www.rfc-editor.org/rfc/rfc3339) timestamps with an explicit offset,
+for example `2026-11-13T09:30:00Z`, for instants. Convert instants to the chosen display
+time zone only at the presentation boundary.
+
+## Updating with If-Match
+
+Read the resource's strong `ETag` and send it verbatim in `If-Match` on the documented
+read-modify-write operation. When editing from a list item that supplies `version`, form the
+tag by surrounding the version with double quotes. Follow
+[RFC 9110](https://www.rfc-editor.org/rfc/rfc9110),
+[RFC 6585](https://www.rfc-editor.org/rfc/rfc6585) and
+[ADR 0004](../architecture/adr/0004-http-optimistic-concurrency.md).
+
+This example renames a top-level workspace category. Omit `parentId` for a top-level category.
+
+```http
+PUT /api/v1/categories/{id}
+Authorization: Bearer <access-token>
+Content-Type: application/json
+If-Match: "7"
+
+{"nameEn":"Groceries","nameDe":"Lebensmittel"}
+```
+
+The server also accepts an explicit JSON null for `parentId`. The published
+`UpdateCategoryRequest` schema currently accepts only an omitted property or a UUID string.
+[#577](https://github.com/hugiFreezy0815/TrackMyWealth/issues/577) aligns the schema
+(ADR 0006, "Category request schema").
+
+Missing preconditions return `428 VERSION_REQUIRED`. Stale tags return `412 VERSION_CONFLICT`.
+A malformed tag returns `400 VALIDATION_FAILED`. On a conflict, reload the resource, let the
+member review the new state, and retry with the new tag only after confirming the change. Use
+the new response ETag for subsequent edits. An optimistic-lock race on an operation without a
+precondition can return `409 VERSION_CONFLICT`.
+
+## Problems, retries and support IDs
+
+Read errors as [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json`.
+Use the stable `code` to choose the client reaction and localized message, and fall back to
+the HTTP status for unknown codes. `title` and `status` are required alongside `code`.
+A validation failure can include `errors` with a `field` and `message` per rejected input.
+`detail` is diagnostic prose. See the [error code catalogue](error-codes.md) for reactions
+and `tmw.error.*` message keys.
+
+```json
+{
+  "title": "Precondition Failed",
+  "status": 412,
+  "code": "VERSION_CONFLICT",
+  "correlationId": "mobile-7f3a9c21"
+}
+```
+
+The server returns `X-Correlation-Id` on responses and normally copies it to the problem body's
+`correlationId`. Quote the assigned ID when reporting an error. You may supply an opaque ID
+matching `[A-Za-z0-9._-]{8,64}`; the server generates a UUID when it is absent or invalid.
+
+Three kinds of response can carry `Retry-After`; honor it when present:
+
+- `429 RATE_LIMITED` ([RFC 6585](https://www.rfc-editor.org/rfc/rfc6585)), on any operation;
+- a retryable 503 such as `IMPORT_PDF_BUSY`;
+- `423 LOCKED` on sign-in (`POST /api/v1/auth/login`, `POST /api/v1/auth/mfa/verify`) and on
+  the MFA settings operations under `/api/v1/users/me/mfa/`, while the user account is locked
+  after failed sign-ins.
+
+TrackMyWealth emits delay seconds. RFC 9110 also permits an HTTP date. Use the code's
+documented reaction when no header is present.
+
+A timeout on a creating POST can leave a resource committed even though the response was lost.
+Check the resulting state before resubmitting. ADR 0006 records the future `Idempotency-Key`
+contract; [#574](https://github.com/hugiFreezy0815/TrackMyWealth/issues/574) implements it.
+
+## Uploads
+
+Five operations take a file as `multipart/form-data`, each in a part named `file`:
+
+| Operation | Other inputs |
+| --- | --- |
+| `POST /api/v1/accounts/{accountId}/imports` (statement upload) | Query: `templateId`, `snapshotDate` |
+| `POST /api/v1/import-templates/detect` | None |
+| `POST /api/v1/import-templates/test` | Part `template`; query: `accountId` |
+| `POST /api/v1/import-templates/{id}/test` | Query: `accountId` |
+| `POST /api/v1/import-templates/{templateId}/account-proposal` | None |
+
+Let the HTTP client set the content type with its generated multipart boundary. The default
+servlet limits are 5 MB per file and 6 MB for the entire request (`IMPORT_MAX_FILE_SIZE` and
+`IMPORT_MAX_REQUEST_SIZE`). An oversized request returns `413 IMPORT_FILE_TOO_LARGE`.
+Format-specific limits can also reject a file that fits the byte limit. See the import codes in
+the [error catalogue](error-codes.md).
 
 ## Paging
 
 ### Which collections are paged?
 
-Large collections expose `page`, `size` and `sort` query parameters and return the same
-`PageResponse<T>` envelope; the thirteen paged operations are listed under [Sorting](#sorting). The
-committed OpenAPI contract identifies which operation is paged and defines its response schema.
+Paged collections expose `page` and `size`, with `sort` where supported, and return the same
+`PageResponse<T>` envelope; the thirteen paged operations are listed under [Sorting](#sorting).
+The committed OpenAPI contract identifies which operation is paged and defines its response
+schema.
 
-Every other collection returns an ordinary JSON array and ignores `page`, `size` and `sort`.
-These are **bounded lists**: always complete, with an upper bound from their domain rather than a server cap.
+A collection stays a plain array only when the domain bounds its total size. Document that
+bound and return the complete result. A collection that can grow without a domain bound is
+paged. This follows the Zalando guidelines and [Google AIP-158](https://google.aip.dev/158).
 
-| Bounded list | What bounds it |
-| --- | --- |
-| `GET /api/v1/accounts` | The workspace's accounts: tens, not thousands |
-| `GET /api/v1/portfolios` | The workspace's active portfolios: a handful |
-| `GET /api/v1/categories` | The workspace's category tree, at most 3 levels deep |
-| `GET /api/v1/categorization-rules` | The workspace's own rules, maintained by hand |
-| `GET /api/v1/import-templates` | Shipped templates plus the workspace's own, current versions only |
-| `GET /api/v1/workspace-members` | Members of the workspace: 1 in the MVP |
-| `GET /api/v1/sessions` | The caller's own active sessions |
-| `POST /api/v1/import-templates/detect` | At most one candidate per available template |
+The rule covers operations whose response body is the collection. An array inside a single
+resource or report, such as an account's `positions` or the `accounts` of the net-worth report,
+is not assessed here.
 
-**Rule:** a collection stays a plain array only when the domain bounds it. Any collection that
-grows over time is paged, and a plain array is never cut at a server cap, because a client cannot
-tell a cut list from a complete one. This follows Google AIP-158 (list methods are paged from
-the start, since adding paging later breaks clients) and the Zalando guidelines.
+The following operations currently return arrays and do not offer paging parameters.
 
-#### Pagination of formerly unbounded lists (#473)
+| Operation | Current scope or limit | Follow-up |
+| --- | --- | --- |
+| `GET /api/v1/accounts` | Workspace accounts. No published hard count bound. | [#570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570) |
+| `GET /api/v1/portfolios` | Workspace portfolios. No published hard count bound. | [#570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570) |
+| `GET /api/v1/categories` | Workspace categories. Depth is capped at three; breadth has no published count bound. | [#570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570) |
+| `GET /api/v1/categorization-rules` | Workspace rules. No published hard count bound. | [#570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570) |
+| `GET /api/v1/import-templates` | Shipped and workspace templates. No published hard count bound. | [#570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570) |
+| `GET /api/v1/workspace-members` | Returns the complete list up to 200 rows. An over-limit workspace gets 422. | [#570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570) |
+| `GET /api/v1/sessions` | The caller's own active sessions. No published hard count bound. | [#570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570) |
+| `POST /api/v1/import-templates/detect` | At most one candidate per available template, with no published bound on the number of templates. | [#570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570) |
+
+These are current exceptions: each returns the complete result today, but no count bound is
+enforced or published. The Sprint 6 plan treated accounts, portfolios and categories as small
+bounded lists; [#570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570)
+decides for each of the eight operations between paging and an enforced, documented bound
+([ADR 0006](../architecture/adr/0006-api-contract-conventions.md#collection-paging)). Any
+migration of their response shapes must follow the breaking-change policy.
+[#473](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473) migrated the
+historical collections below.
+
+### Pagination of formerly unbounded lists (#473)
 
 Six historical collections now return `PageResponse<T>` instead of arrays. The settlement-match
 queue is no longer cut at 200; filter by `status` (default `PROPOSED`), optionally `kind`
@@ -97,6 +269,15 @@ For example:
 ```http
 GET /api/v1/accounts/{accountId}/transactions?page=1&size=50&sort=bookingDate,desc
 ```
+
+### Filtering
+
+Use the filter names and multiplicity in the operation's schema. Filter names normally match
+response fields, with suffixes for ranges. For example, `bookingDateFrom` and `bookingDateTo`
+limit booking dates. Repeat an array-valued filter for any-of matching within that field, such as
+`?categoryId=<first-id>&categoryId=<second-id>` on `GET /api/v1/transactions`. Distinct filters
+narrow the results together. Operation-specific filters such as `q` and `uncategorized` have
+their own documented behavior.
 
 ### Sorting
 

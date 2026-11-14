@@ -588,7 +588,7 @@ describe('S7 step 2: review (#492)', () => {
     };
 
     await fireEvent(
-      screen.getByRole('switch', { name: 'Import Synthetic shop 2, EUR -12.50' }),
+      await screen.findByRole('switch', { name: 'Import Synthetic shop 2, EUR -12.50' }),
       'valueChange',
       true,
     );

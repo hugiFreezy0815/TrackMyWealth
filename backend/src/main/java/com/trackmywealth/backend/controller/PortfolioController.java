@@ -19,6 +19,7 @@ import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -61,8 +62,10 @@ public class PortfolioController {
   }
 
   /**
-   * US-04-05 (#381): every active portfolio of the workspace with its totals, in tab order. A
-   * bounded list, deliberately not paged: a workspace holds a handful of portfolios.
+   * US-04-05 (#381): every active portfolio of the workspace with its totals, in tab order. Not
+   * paged: a workspace is expected to hold a handful of portfolios. Nothing enforces that bound
+   * yet, so the list is a known exception in docs/api/conventions.md until #570 decides between
+   * paging and an enforced bound.
    */
   @ProblemCodes({ProblemCode.VALIDATION_FAILED, ProblemCode.NOT_FOUND})
   @Operation(
@@ -135,7 +138,14 @@ public class PortfolioController {
   @GetMapping("/{portfolioId}/history")
   public ValueHistoryResponse getHistory(
       @PathVariable UUID portfolioId,
-      @RequestParam(defaultValue = "1M") String period,
+      // Documented, not schema-restricted: turning the existing string into an enum is a breaking
+      // contract change under ADR 0006. The response's period field carries the enum.
+      @Parameter(
+              description =
+                  "The history window: 1W, 1M, YTD, 1Y or MAX; any other value is a 400"
+                      + " VALIDATION_FAILED.")
+          @RequestParam(defaultValue = "1M")
+          String period,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return historyService.portfolioHistory(portfolioId, period, actor);
   }

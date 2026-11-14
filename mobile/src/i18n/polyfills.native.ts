@@ -8,20 +8,32 @@ import { applyDeviceTimeZone } from './time-zone';
 import '@formatjs/intl-pluralrules/polyfill.js';
 import '@formatjs/intl-pluralrules/locale-data/en.js';
 import '@formatjs/intl-pluralrules/locale-data/de.js';
+import '@formatjs/intl-pluralrules/locale-data/fr.js';
+import '@formatjs/intl-pluralrules/locale-data/it.js';
 // Forced: the exact-decimal formatting of amounts must not depend on the engine's own build.
 import '@formatjs/intl-numberformat/polyfill-force.js';
 import '@formatjs/intl-numberformat/locale-data/en.js';
 import '@formatjs/intl-numberformat/locale-data/de.js';
 import '@formatjs/intl-numberformat/locale-data/de-CH.js';
+import '@formatjs/intl-numberformat/locale-data/fr.js';
+import '@formatjs/intl-numberformat/locale-data/fr-CH.js';
+import '@formatjs/intl-numberformat/locale-data/it.js';
+import '@formatjs/intl-numberformat/locale-data/it-CH.js';
 // Hermes has no DisplayNames: the ISO currency and country pickers (#491) name every code.
 import '@formatjs/intl-displaynames/polyfill.js';
 import '@formatjs/intl-displaynames/locale-data/en.js';
 import '@formatjs/intl-displaynames/locale-data/de.js';
+import '@formatjs/intl-displaynames/locale-data/fr.js';
+import '@formatjs/intl-displaynames/locale-data/it.js';
 // Only where the engine lacks formatRange/dateStyle; then with time zone data and the device zone.
 import '@formatjs/intl-datetimeformat/polyfill.js';
 import '@formatjs/intl-datetimeformat/locale-data/en.js';
 import '@formatjs/intl-datetimeformat/locale-data/de.js';
 import '@formatjs/intl-datetimeformat/locale-data/de-CH.js';
+import '@formatjs/intl-datetimeformat/locale-data/fr.js';
+import '@formatjs/intl-datetimeformat/locale-data/fr-CH.js';
+import '@formatjs/intl-datetimeformat/locale-data/it.js';
+import '@formatjs/intl-datetimeformat/locale-data/it-CH.js';
 import '@formatjs/intl-datetimeformat/add-golden-tz.js';
 
 type PolyfilledDateTimeFormat = { __setDefaultTimeZone?: (timeZone: string) => void };

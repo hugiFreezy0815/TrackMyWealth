@@ -61,8 +61,10 @@ public class AccountController {
   }
 
   /**
-   * US-05-06 (#380): every account of the workspace with its current value, oldest first. A bounded
-   * list, deliberately not paged: a workspace holds tens of accounts, not thousands.
+   * US-05-06 (#380): every account of the workspace with its current value, oldest first. Not
+   * paged: a workspace is expected to hold tens of accounts, not thousands. Nothing enforces that
+   * bound yet, so the list is a known exception in docs/api/conventions.md until #570 decides
+   * between paging and an enforced bound.
    */
   @ProblemCodes({ProblemCode.NOT_FOUND})
   @Operation(

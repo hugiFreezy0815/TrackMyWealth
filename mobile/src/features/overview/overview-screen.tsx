@@ -14,6 +14,7 @@ import {
   useAccounts,
   useCashFlow,
   useNetWorth,
+  useNetWorthHistory,
   usePortfolios,
   useWorkspace,
 } from '@/api/queries/resources';
@@ -23,6 +24,9 @@ import { formatDate } from '@/format/date';
 import { useOnline } from '@/hooks/use-online';
 import { useTheme } from '@/hooks/use-theme';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
+import { HistoryPanel, historyForDisplay } from '@/features/value-history/history-panel';
+import { useHistoryPeriod } from '@/features/value-history/period';
+import { changeIsUncertain } from '@/features/value-history/warnings';
 import { CashFlowCard } from './cash-flow-card';
 import { CurrencyScope } from './currency-scope';
 import { DataStatusBanner } from './data-status-banner';
@@ -88,11 +92,6 @@ export function OverviewScreen({
   const netWorth = useNetWorth(currency, { enabled: currency !== undefined });
   const accounts = useAccounts();
   const cashFlow = useCashFlow(month, currency, { enabled: currency !== undefined });
-  const results = [workspace, portfolios, netWorth, accounts, cashFlow];
-  const refreshing = results.some((result) => result.isRefetching);
-  const refresh = () => {
-    void Promise.allSettled(results.map((result) => result.refetch()));
-  };
   const portfolioItems = portfolios.data ?? [];
   const unreconciled = unreconciledAccounts(accounts.data ?? []);
   const firstRun = Boolean(
@@ -101,6 +100,25 @@ export function OverviewScreen({
     netWorth.data &&
     isFirstRunEmpty(portfolioItems, netWorth.data),
   );
+  const period = useHistoryPeriod();
+  const showHistory =
+    !firstRun &&
+    Boolean(currency && netWorth.data && (netWorth.data.accounts.length || !portfolios.isPending));
+  const history = useNetWorthHistory(currency, period, showHistory);
+  const displayedHistory = historyForDisplay(history, period, online);
+  const historyInScope = displayedHistory?.currency === currency ? displayedHistory : undefined;
+  const results = [
+    workspace,
+    portfolios,
+    netWorth,
+    accounts,
+    cashFlow,
+    ...(showHistory ? [history] : []),
+  ];
+  const refreshing = results.some((result) => result.isRefetching);
+  const refresh = () => {
+    void Promise.allSettled(results.map((result) => result.refetch()));
+  };
   const noAccounts =
     portfolioItems.length > 0 &&
     portfolioItems.every((portfolio) => portfolio.activeAccountCount === 0);
@@ -121,7 +139,17 @@ export function OverviewScreen({
             explain={setExplanation}
             intl={intl}
             compact={compact}
-          />
+          >
+            {showHistory ? (
+              <HistoryPanel
+                query={history}
+                data={historyInScope}
+                online={online}
+                period={period}
+                hidden={hidden}
+              />
+            ) : null}
+          </NetWorthCard>
           {noAccounts ? <InfoText>{msg(intl, 'overview.noAccounts')}</InfoText> : null}
           <AssetsLiabilitiesCard
             data={netWorth.data}
@@ -129,7 +157,14 @@ export function OverviewScreen({
             explain={setExplanation}
             intl={intl}
           />
-          <SectionTiles data={netWorth.data} hidden={hidden} intl={intl} />
+          <SectionTiles
+            data={netWorth.data}
+            hidden={hidden}
+            intl={intl}
+            changes={historyInScope?.sections}
+            changePeriod={historyInScope?.period}
+            changeUncertain={changeIsUncertain(historyInScope?.warningCodes ?? [])}
+          />
         </>
       ) : null}
     </View>
@@ -143,6 +178,7 @@ export function OverviewScreen({
       {portfolios.data ? (
         <PortfoliosCard
           items={portfolioItems}
+          period={historyInScope?.period ?? period}
           hidden={hidden}
           intl={intl}
           onPortfolio={onPortfolio}

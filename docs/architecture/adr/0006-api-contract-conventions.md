@@ -1,13 +1,159 @@
 # ADR 0006: API contract, paging and client generation
 
 ## Status
-Accepted in part. This version holds the response-field decision (US-29-07, #451), the
-response-header decision (US-29-09, #455), both product owner decisions of 2026-11-04, and the
-enum-value decision (US-29-08, #452).
-US-29-01 (#371) adds the other conventions of the sprint 6 plan (`docs/backlog/SPRINT-6.md`,
-decisions 1-8): naming, collections, paging, errors, concurrency.
+Accepted. This ADR records the eight decisions in the
+[Sprint 6 plan](../../backlog/SPRINT-6.md#architecture-decisions-po-confirmed-2026-10-20-unless-marked)
+and the product decisions from #371. Client instructions and current endpoint exceptions live in
+[API conventions](../../api/conventions.md). Policies that require follow-up implementation are
+identified below, each with its issue.
 
-## Context
+## Contract decisions
+
+| # | Decision and reason | Rejected alternative |
+| --- | --- | --- |
+| 1 | Generate and commit OpenAPI 3.1 from Spring controllers. CI checks drift so clients can review and generate against the same contract without running the server. | Runtime-only OpenAPI or a separately maintained spec that can drift from the controllers. |
+| 2 | Evolve `/api/v1` additively. CI diffs against `main` with oasdiff. A deliberate breaking change requires the `api-breaking` label and a PR note. The initial paging-envelope migration (#373) was an explicitly approved exception. | Unreviewed in-place breaks, which can strand separately released clients. |
+| 3 | Use an owned `PageResponse<T>` with zero-based offset paging, total counts, field-based filters and a stable unique sort tie-breaker. This supports numbered pages on the expected workspace data volumes and keeps the wire shape independent of Spring. After known changes to the result set, restart at page 0. Return arrays only for complete, domain-bounded lists. | Serializing Spring Data's `Page`, adopting cursors, or silently truncating an array. |
+| 4 | Give every operation an explicit unique `operationId` and tag resource areas. The contract checks keep generated names stable and group related operations. | springdoc's scan-order suffixes for duplicate Java method names. |
+| 5 | Generate TypeScript types from the committed contract using `openapi-typescript`. Keep the app's transport so refresh, timeout and conditional-write behavior stay centralized. Map `format: decimal` to `DecimalString`. | Hand-copying DTOs or replacing the transport with generated request code. |
+| 6 | Derive collection scope from the session and enforce it server-side with workspace access checks and row-level security. Under #389, members have workspace-wide access subject to the operation's filters. Foreign IDs filter like unknown IDs. | Trusting a client-supplied workspace selector or giving foreign IDs distinct errors. |
+| 7 | Seed synthetic demo data through the normal HTTP API (#385). This exercises the public contract and keeps real statement exports out of the demo. Demo credentials exist only after explicit seeding. | Direct SQL fixtures, real import samples, or a demo login in the default configuration. |
+| 8 | Review read response shapes against the approved screen specifications (FR-API-010). Each screen should need one request or a small fixed number of requests and use server-calculated figures. | Freezing the shape before UX review or asking the app to assemble per-row results and compute totals. |
+
+## Standards baseline and deviations
+
+Use the [Zalando RESTful API Guidelines](https://opensource.zalando.com/restful-api-guidelines/)
+as the REST design baseline. The contract uses [OpenAPI 3.1](https://spec.openapis.org/oas/v3.1.0),
+[RFC 9110](https://www.rfc-editor.org/rfc/rfc9110) for HTTP semantics and conditional requests,
+[RFC 6585](https://www.rfc-editor.org/rfc/rfc6585) for 428 and 429,
+[RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) for problem details,
+[RFC 3339](https://www.rfc-editor.org/rfc/rfc3339) for timestamps and
+[ISO 4217](https://www.iso.org/iso-4217-currency-codes.html) for currency codes.
+
+| Area | TrackMyWealth decision and reason | Baseline alternative |
+| --- | --- | --- |
+| Versioning | Keep the existing major version in `/api/v1`. Changing the path breaks existing clients and self-hosted setups. | Media-type version negotiation. |
+| Base path | Keep the `/api` prefix. The backend serves `/api-docs` and its operational endpoints from the same host, and one prefix lets a reverse proxy route the API. Changing it breaks existing clients. | No `/api` base path. |
+| Path segments | Keep the one published path that ends in a file name, `.../imports/{batchId}/errors.csv`. Renaming it breaks existing clients. No other path has a file extension, and none is added. | Kebab-case segments only, with the format chosen by content negotiation. |
+| Property and filter names | Keep lower camel case for the published JSON and query vocabulary. Matching filter and response names makes the contract easier to use and preserves wire compatibility. | Snake case. |
+| Action URLs | Keep documented commands such as archive, restore and import commit, which have their own preconditions and domain effects. | Model each transition as a separate noun resource. |
+| Paging | Use numbered offsets and the `content` and `page` envelope with totals and deterministic sorting. This supports the UI's numbered pages and keeps the existing client contract. | Cursors and linked navigation in a response with an `items` collection. |
+| Paging and sort parameters | Use `page`, `size` and a repeatable `sort=<field>,<asc\|desc>` (PO decision 2026-10-20, #373). The names fit numbered pages, and one `sort` parameter per field keeps each value a closed enum in the contract. | `offset` and `limit`, and one `sort` parameter with `+` and `-` prefixes such as `sort=+id`. |
+| Money | Preserve operation-specific amount and currency fields and use exact decimal strings (#176), including where an operation already specifies the currency for all its amounts. | Zalando's common money object with a numeric amount and currency together. |
+| Problem details | Add stable `code` and `correlationId` fields and document the corresponding `tmw.error.*` keys. Clients need a stable discriminator and localized copy. These extension members are compatible with RFC 9457. | Using only the problem type and standard fields as the client contract. |
+| Request tracing header | Keep the published `X-Correlation-Id` as the id a member quotes to support, and add W3C `traceparent` for propagation ([Distributed tracing](#distributed-tracing)). A third, vendor-specific header would add nothing. | Zalando's `X-Flow-ID`. |
+| Throttling | Use `429` and `Retry-After` seconds. The existing limiter exposes the retry delay and does not advertise a general rate-budget contract. | Also publishing the recommended `X-RateLimit-*` counters. |
+| Optional response fields | Response records publish nullable properties with their keys present so clients have one stable shape across responses. The hand-built problem schema omits optional members when unset. | Treating absent keys and explicit nulls as interchangeable on responses. |
+
+[API conventions](../../api/conventions.md#which-collections-are-paged) lists the current array
+endpoints that lack a domain count bound. #473 converted the historical collections listed there.
+Only two creates send `Location` today ([Response headers](#response-headers-us-29-09-455));
+[#459](https://github.com/hugiFreezy0815/TrackMyWealth/issues/459) adds it to every 201.
+
+## Follow-up work
+
+### Collection paging
+
+[Issue #570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570) tracks all eight
+operations below.
+
+The eight array operations listed in
+[API conventions](../../api/conventions.md#which-collections-are-paged) need either a paged
+contract or a documented domain bound that guarantees a complete result. Preserve the current
+authorization scope and sorting semantics for each operation. Plan the client migration and
+obtain breaking-change approval before changing a response shape.
+
+The Sprint 6 plan (decision 3) treated accounts, portfolios and categories as small bounded
+lists that return a plain array "each with a documented upper bound". The review of #371
+(PR #566, 2026-11-13) found that these three have no enforced or published count bound: "tens,
+not thousands" describes the expected size, it does not limit it. Decision 3 itself stands: an
+array is allowed only for a complete, domain-bounded list. What is open is whether each of the
+eight lists gets such a bound or is paged, and #570 decides that per operation. Until then they
+keep returning the complete result.
+
+`ApiConventionsDocumentTest` keeps the guide's two operation tables in step with the contract: a
+paged operation, a sort field or a plain-array response that the guide does not list fails the
+build.
+
+- Accounts, portfolios, categories, categorization rules, import templates and sessions need
+  paging unless a domain count bound is established. For categories, retain the tree hierarchy
+  across the migration. The current depth limit leaves the number of nodes unrestricted.
+- Workspace members need a contract that lets clients retrieve the complete authorized
+  membership list when the workspace exceeds the current 200-row limit.
+- Import template detection needs a bounded result or paging that preserves its ranking.
+  One candidate per available template inherits the template collection's unbounded size.
+
+Verify that callers can retrieve all permitted results, including above the default page size
+and across an equal-sort-value boundary. Verify that foreign records remain invisible.
+
+### Category request schema
+
+[Issue #577](https://github.com/hugiFreezy0815/TrackMyWealth/issues/577) tracks this.
+
+Align `UpdateCategoryRequest.parentId` in generated OpenAPI and mobile types with the server's
+existing behavior. Omission and an explicit JSON null both represent a top-level workspace
+category, and a UUID selects a parent. Verify that the generated schema accepts all three forms
+and rejects a malformed UUID. Keep the server's separate rules for shipped categories.
+
+## Lifecycle policies
+
+### Idempotent creates
+
+[Issue #574](https://github.com/hugiFreezy0815/TrackMyWealth/issues/574) implements this
+policy.
+
+The approved follow-up starts with statement upload and then covers creating POST operations.
+For a supported operation, the client sends an `Idempotency-Key` containing a fresh UUID for
+each logical create, using the same UUID for each retry. The server scopes the key to the user
+and workspace, associates it with the operation and request fingerprint, and keeps the result
+for 24 hours. The same key and matching request replay the stored response without creating
+another resource. Reusing the key with a different request returns 422. A matching request
+still in flight returns 409. PUT and DELETE keep their HTTP idempotency semantics.
+
+The
+[IETF Idempotency-Key draft](https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/)
+is the design reference. Row deduplication alone was rejected because it cannot prevent duplicate
+import batches after a lost upload response. Clients can rely on the header only once the
+operation publishes support in OpenAPI.
+
+### Deprecation and removal
+
+[Issue #576](https://github.com/hugiFreezy0815/TrackMyWealth/issues/576) implements this
+policy.
+
+Mark deprecated operations or fields with `deprecated: true` in OpenAPI. From the announced
+deprecation date, affected responses carry `Deprecation`
+([RFC 9745](https://www.rfc-editor.org/rfc/rfc9745)) and a `Link` with `rel="deprecation"` to
+migration instructions. Publish the removal date in `Sunset`
+([RFC 8594](https://www.rfc-editor.org/rfc/rfc8594)) once it can be committed to.
+
+**Minimum notice.** The notice period is the supported-client window, not a fixed number of
+days: removal can occur only after every supported app version has migrated and the announced
+sunset date has passed. This is the recommendation of 2026-11-05 on #371, which the product owner
+accepted as written. A fixed period in days is not used because the backend is self-hosted and
+the app comes from the store: a calendar date says nothing about which app versions still call
+the element. The condition can only be verified once a minimum supported app version is
+enforced, which is part of #576.
+
+Removal still follows the `api-breaking` process. Immediate removal or relying on an OpenAPI
+marker alone leaves released clients without a migration window.
+
+### Distributed tracing
+
+[Issue #575](https://github.com/hugiFreezy0815/TrackMyWealth/issues/575) implements this
+policy.
+
+The approved follow-up accepts and propagates
+[W3C Trace Context](https://www.w3.org/TR/trace-context/) `traceparent` using Spring Boot
+Micrometer Tracing and records the trace ID in logs. Retain the existing validated
+`X-Correlation-Id` as the client-visible support reference. Client-supplied identifiers never
+influence authorization.
+Using only the custom header would lose standard trace propagation, and replacing it outright
+would break the existing support reference.
+
+## Response fields (US-29-07, #451)
+
+### Context
 
 The committed `api/openapi.yaml` (#372) is what client code is generated from (#375). Until #451
 no response schema listed a property as `required`, so a generator would make every response field
@@ -21,7 +167,7 @@ The backend does say this:
 - In OpenAPI 3.1, `required` means only that the key is present. Whether its value may be null is a
   separate question: `type: [string, "null"]`.
 
-## Decision
+### Decision
 
 **Presence.** Every property of a response schema is `required`.
 
@@ -39,9 +185,8 @@ The contract declares an `@Nullable` component nullable:
 **Generated, never hand-edited.** `config.RecordSchemaMarker` (a swagger `ModelConverter`) marks each
 schema with the record it is generated from. `config.ResponseFieldContract` (an `OpenApiCustomizer`)
 then sets `required` and nullability from the record components. A response schema that has no
-record behind it fails the document's generation. The one exception is a schema built by hand,
-which declares its own list: `ApiProblem` requires `title`, `status` and `code`. Its `detail`,
-`instance` and `errors` are left out when unset, so they are absent then, not null.
+record behind it fails the document's generation. The hand-built `ApiProblem` schema declares its
+own required fields: `title`, `status` and `code`. Its optional fields are omitted when unset.
 
 **Request schemas are untouched.** Their `required` list is what bean validation demands of the
 caller. Seven import-template parts are used by requests and responses alike
@@ -57,14 +202,14 @@ not marked `@Nullable` makes `DocumentedSuccessStatusFilter` answer 500 naming
 "every reference-typed component is annotated one way or the other". It cannot see what the backend
 really returns.
 
-## Consequences
+### Consequences
 
 - Generated client types are exact: `string` for a field that is always filled, `string | null` for
   a nullable one, and no optional response fields.
 - Removing a response field is breaking by oasdiff's own rule (`response-required-property-removed`),
   also behind a nullable reference (`anyOf`). `scripts/api_breaking.py` still raises
   `response-optional-property-removed` to an error, for the optional fields of the hand-built
-  `ApiProblem` (`detail`, `instance`, `errors`).
+  `ApiProblem`.
 - Making a field nullable later is a breaking change (`response-property-became-nullable`) and needs
   the `api-breaking` label and a note. A new response field is additive.
 - A new response record component that can be null must be marked `@Nullable` in the same PR. The

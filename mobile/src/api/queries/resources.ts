@@ -43,6 +43,36 @@ export const useNetWorth = (currency?: string, { enabled = true }: QueryGate = {
     queryFn: () => typedApi.get('/api/v1/net-worth', { query: currency ? { currency } : {} }),
     enabled,
   });
+type HistoryPeriod = components['schemas']['ValueHistoryResponse']['period'];
+
+export const useNetWorthHistory = (
+  currency: string | undefined,
+  period: HistoryPeriod,
+  enabled: boolean,
+) =>
+  useQuery<components['schemas']['ValueHistoryResponse']>({
+    queryKey: queryKeys.netWorthHistory(currency, period),
+    // A period change may reuse the previous series offline, within the same currency only.
+    placeholderData: (previous, query) => (query?.queryKey[1] === currency ? previous : undefined),
+    queryFn: ({ signal }) =>
+      typedApi.get('/api/v1/net-worth/history', { query: { currency, period }, signal }),
+    enabled: enabled && !!currency,
+  });
+
+export const usePortfolioHistory = (portfolioId: string, period: HistoryPeriod, enabled: boolean) =>
+  useQuery<components['schemas']['ValueHistoryResponse']>({
+    queryKey: queryKeys.portfolioHistory(portfolioId, period),
+    placeholderData: (previous, query) =>
+      query?.queryKey[1] === portfolioId ? previous : undefined,
+    queryFn: ({ signal }) =>
+      typedApi.get('/api/v1/portfolios/{portfolioId}/history', {
+        params: { portfolioId },
+        query: { period },
+        signal,
+      }),
+    enabled: enabled && !!portfolioId,
+  });
+
 export const useAccounts = (portfolioId?: string, { enabled = true }: QueryGate = {}) =>
   useQuery({
     queryKey: queryKeys.accounts({ portfolioId }),

@@ -54,6 +54,9 @@ device is still advisable before a production rollout. Use `npm ci` for reproduc
 
 ## Running locally
 
+For a clean checkout, follow the [frontend onboarding guide](../docs/frontend/README.md) to
+set up a synthetic demo account and make your first typed API call.
+
 The backend and PostgreSQL must be running first - see the root README.
 
 ```bash
@@ -81,10 +84,57 @@ app-store release cycle:
 npx expo export -p web    # -> dist/ (static HTML/JS/CSS)
 ```
 
-`dist/` can be deployed to any static host (Vercel, Netlify, Cloudflare Pages, an S3 bucket, ...).
-`.github/workflows/mobile-web-ci.yml` builds this export on every push/PR touching `mobile/**` as
-a build-verification smoke test; wire your host's own deploy step into that workflow (or a
-separate one) once you've picked one.
+The reference deployment serves the export with nginx and the security headers below. With
+Docker, it is the optional `web` service of the root `docker-compose.yml`. From the repository
+root (set the values in `.env`, see `.env.example`):
+
+```bash
+WEB_API_URL=https://api.example.com WEB_API_ORIGINS=https://api.example.com \
+  docker compose --profile web up -d --build web
+bash mobile/deploy/nginx/check-headers.sh http://127.0.0.1:8082 <export-dir> https://api.example.com
+```
+
+`check-headers.sh` needs the export to list its routes: `npx expo export -p web` in `mobile/`
+gives `dist`, or copy it from the container (`docker compose cp web:/srv/web/html/. <dir>`).
+The image (`deploy/nginx/Dockerfile`) builds the export, runs nginx as an unprivileged user and
+writes the Content-Security-Policy from `WEB_API_ORIGINS` at every start. It refuses to start
+without an origin.
+
+Without Docker, on a host with nginx and Python 3, run the following from `mobile/`:
+
+```bash
+prefix="$(pwd)/web-host"
+mkdir -p "$prefix"
+cp deploy/nginx/nginx.conf /etc/nginx/mime.types "$prefix/"
+ln -s "$(pwd)/dist" "$prefix/html"
+python3 deploy/nginx/write-csp.py dist "$prefix/content-security-policy.conf" \
+  --api-origin https://api.example.com
+nginx -p "$prefix/" -c "$prefix/nginx.conf"
+bash deploy/nginx/check-headers.sh http://127.0.0.1:8082 dist https://api.example.com
+```
+
+Put the listener behind an HTTPS reverse proxy and redirect public HTTP requests to HTTPS.
+Preserve the upstream headers and keep the web and API origins separate. HSTS applies to the app
+hostname and its subdomains. Set `EXPO_PUBLIC_API_URL` (Compose: `WEB_API_URL`) when exporting
+to set the default server shown at sign-in. List every server members may enter
+(`--api-origin`, repeated, or `WEB_API_ORIGINS`, space-separated) as an origin without any path;
+the CSP blocks all others. Loopback HTTP origins are supported for local testing. Regenerate the
+policy with every export and deploy the export and its policy together. Reload nginx after
+updating the policy.
+
+HTML and errors use `Cache-Control: no-store`. Fingerprinted Expo JS, CSS, images and fonts use
+immutable caching; nginx compresses JS, CSS, JSON and SVG. All responses carry the CSP,
+`Referrer-Policy: no-referrer`, `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`,
+`X-Frame-Options: DENY`, and a `Permissions-Policy` that disables camera, microphone,
+geolocation and payment. If you use another host, apply the same headers and dynamic-route
+rewrites there. The CSP hashes the Expo hydration script and static style attributes. It allows
+inline style elements for Expo's runtime-generated styles, including its mobile viewport
+adjustments.
+
+Mobile Web CI unit-tests the CSP generator (`deploy/nginx/test_write_csp.py`), serves each
+export through the reference config and checks the HTTP responses, including a deep link for
+every dynamic route. It then loads the app in headless Chrome and fails on any CSP violation
+(`deploy/nginx/check-csp.mjs`), and builds and checks the Docker image.
 
 **The backend must allow the web app's origin via CORS**, since a browser enforces same-origin
 restrictions that a native app is not subject to - see `backend/src/main/java/.../config/
@@ -156,11 +206,14 @@ broken screen.
   `DETECT_SCREEN_CAPTURE` must stay: on Android 14+ the module registers a screen-capture
   callback at start-up and crashes the app without it (install-time, no prompt, no data access). Web cannot protect browser
   thumbnails; Hide amounts is the protection there.
-- **Sign-out** moves to /overview, ends the session and, on web, loads a fresh document, so
-  nothing of the session stays in memory. A signed-out page that the browser restores from its
-  back-forward cache is reloaded. A page cannot erase browser history: earlier URLs (IDs only)
-  stay, and opening one asks for sign-in. The web host should also serve the HTML with
-  `Cache-Control: no-store`.
+- **Sign-out** moves to /overview, ends the session and, on web, records a new sign-out marker
+  and loads a fresh document, so nothing of the session stays in memory. A page the browser
+  restores from its back-forward cache reloads when it is signed out or when it cannot prove that
+  no sign-out happened since it started (marker changed, removed or unreadable). A restored page
+  of a signed-in member who left the site and pressed Back keeps the session (#535). Because the
+  host serves the HTML with `no-store`, Chrome 157 restores no such page once it has called the
+  API: Back then loads the page afresh and asks for sign-in. A page cannot erase browser
+  history: earlier URLs (IDs only) stay, and opening one asks for sign-in.
 - **Copy** comes from `src/i18n/*.json` via react-intl. ESLint fails literal UI strings in
   `src/app` and `src/features` (legacy reference-data and imports migrate with their tickets).
 

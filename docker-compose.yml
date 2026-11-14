@@ -8,8 +8,9 @@
 # image-level POSTGRES_DB variable to do that step for you. See
 # docs/architecture/adr/0001-database-auto-migration.md.
 #
-# The mobile/web client (`mobile/`) is not part of this stack - it's built and deployed
-# separately (native app stores; the web build as a static site). See mobile/README.md.
+# The native apps ship through the app stores. The web app is the optional `web` service below
+# (`docker compose --profile web up -d`), which serves the Expo export with the security headers of
+# #536; it must sit behind an HTTPS reverse proxy. See mobile/README.md, "Web app".
 services:
   postgres:
     image: postgres:16
@@ -92,6 +93,25 @@ services:
       #   BUSINESS_ZONE: ${BUSINESS_ZONE}
     ports:
       - "8080:8080"
+    restart: unless-stopped
+
+  # #536: the web app, built from mobile/ and served by nginx with Cache-Control no-store, CSP,
+  # HSTS, no-referrer and no framing. Opt-in: `docker compose --profile web up -d --build`.
+  web:
+    profiles: [web]
+    build:
+      context: ./mobile
+      dockerfile: deploy/nginx/Dockerfile
+      args:
+        # The server address the sign-in form suggests (baked into the export at build time).
+        EXPO_PUBLIC_API_URL: ${WEB_API_URL:-http://localhost:8080}
+    environment:
+      # Every API origin members may sign in to, space-separated, without a path. The CSP
+      # (connect-src) blocks all others. HTTPS only, except loopback for local testing.
+      WEB_API_ORIGINS: ${WEB_API_ORIGINS:-http://localhost:8080}
+    ports:
+      # Loopback only: the HTTPS reverse proxy on this host forwards to it.
+      - "${WEB_PUBLISH_ADDRESS:-127.0.0.1}:${WEB_PORT:-8082}:8082"
     restart: unless-stopped
 
 volumes:

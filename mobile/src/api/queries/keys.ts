@@ -19,6 +19,10 @@ export const queryKeys = {
   portfolio: (id: string) => [queryRoots.portfolios, id] as const,
   portfolioView: (id: string) => [queryRoots.portfolios, id, 'view'] as const,
   netWorth: (currency?: string) => [queryRoots.netWorth, currency ?? 'default'] as const,
+  netWorthHistory: (currency: string | undefined, period: string) =>
+    [queryRoots.netWorth, currency ?? 'default', 'history', period] as const,
+  portfolioHistory: (id: string, period: string) =>
+    [queryRoots.portfolios, id, 'history', period] as const,
   accounts: (filters?: object) => [queryRoots.accounts, filters ?? {}] as const,
   account: (id: string) => [queryRoots.accounts, id] as const,
   /** Prefix of every transaction query of one account: lists, counts and single rows. */

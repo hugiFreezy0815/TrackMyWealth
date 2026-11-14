@@ -5,7 +5,7 @@ import { ScrollView, Text, View } from 'react-native';
 
 import { DesignTokens, Radii, Spacing, TypeScale } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { messagesFor, type AppLocale } from '@/i18n';
+import { appLocales, messagesFor, type AppLocale } from '@/i18n';
 import {
   AccountRow,
   Amount,
@@ -64,13 +64,9 @@ export default function ComponentGallery() {
         </Text>
         <ChipGroup
           label="Language"
-          options={[
-            { value: 'en', label: 'EN' },
-            { value: 'de-CH', label: 'de-CH' },
-            { value: 'de-DE', label: 'de-DE' },
-          ]}
+          options={appLocales.map((value) => ({ value, label: value }))}
           selected={[locale]}
-          onSelect={(value) => setLocale(value as AppLocale)}
+          onSelect={setLocale}
         />
         <SectionCard title="Palette and tokens" description="Light/dark follows the device theme.">
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two }}>

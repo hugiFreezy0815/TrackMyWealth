@@ -112,6 +112,31 @@ cp .env.example .env
 npx expo start          # then choose iOS simulator, Android emulator, or web from the CLI output
 ```
 
+## Seed a synthetic demo
+
+On a fresh, disposable local Compose stack, run `python3 scripts/seed_demo.py`
+from the repository root. Use Python 3.10+ on Linux, macOS, or WSL. The script creates
+the demo logins, portfolios, accounts, ledger history, statement import and snapshots
+through the public API. Run it again with the same credentials file to resume or verify
+the seed without duplicating the fixtures.
+
+Every demo account has a value except the depot. An account that holds positions
+stays "Value unknown" until holdings are valued (EPIC 15), so the overview says that not
+all values are included.
+
+The script writes `.demo-credentials.json` with private file permissions. Use
+`users.member.email` and `users.member.password` to sign in. Add
+`users.member.totpSecret` to an authenticator app for six-digit codes. If the
+current code was used by the seed, wait for the next code. The `users.partner`
+login sees the same account values and has MFA disabled. The `users.admin` login
+is for administration. Keep the credentials file private and retain it while using
+that stack. When recreating the demo on a fresh database, use a new credentials file.
+
+The default API URL is `http://127.0.0.1:8080`. Use `--base-url` for a different
+port and `--credentials-file` to keep separate demo stacks apart. Non-loopback
+URLs require HTTPS and the explicit `--allow-remote` flag. Use a disposable stack
+for the demo.
+
 ## Mobile and web are the same app
 
 `mobile/` is one Expo Router codebase for iOS, Android, **and web** — the web build is deployed
@@ -298,9 +323,11 @@ through the selected provider's hub first and then through every other registere
 so rates entered against EUR keep working after a switch. A newly selected provider's history is
 loaded again from scratch because import progress is tracked per source.
 
-The web build (`mobile/`, see above) is not part of this compose file - export it
-(`npx expo export -p web`) and serve `mobile/dist/` from any static file host, including one
-running on the same NAS if you want everything on one box.
+The web app is the optional `web` service of this Compose file
+(`docker compose --profile web up -d --build`): nginx serves the export with the security headers,
+and an HTTPS reverse proxy must sit in front of it. See the
+[web deployment instructions](mobile/README.md#web-app). If you use a different static host,
+apply the same security headers and dynamic-route rewrites.
 
 ## Running behind a reverse proxy
 
@@ -462,9 +489,8 @@ core → budgeting/net worth/consolidated reporting). The working backlog is Git
 project board; `docs/user-stories/` keeps the full story texts, including epics not yet turned
 into issues.
 
-For the implemented pagination contract (page envelope, size cap, sort whitelists, which lists
-are not paged, and client refresh after imports), see
-[API conventions](docs/api/conventions.md#paging).
+For resource naming, authentication, paging, errors and conditional writes, see the
+[API conventions](docs/api/conventions.md) and [ADR 0006](docs/architecture/adr/0006-api-contract-conventions.md).
 
 ## Loading the backlog into GitHub Issues
 
