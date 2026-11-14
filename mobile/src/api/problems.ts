@@ -1,4 +1,4 @@
-import { ApiError } from './client';
+import { ApiError, SessionRefreshUnavailableError } from './client';
 import { IMPORT_ROW_CODES, PROBLEM_CODE_REACTIONS } from './problem-codes.generated';
 import type { components } from './schema';
 
@@ -72,7 +72,12 @@ export function problemReaction(error: ApiError): ProblemReaction {
   const sentCode = problem?.code;
   const code = sentCode !== undefined && isKnownProblemCode(sentCode) ? sentCode : undefined;
   return {
-    reaction: code ? PROBLEM_CODE_REACTIONS[code] : reactionForStatus(error.status),
+    reaction:
+      error instanceof SessionRefreshUnavailableError
+        ? 'RETRY_LATER'
+        : code
+          ? PROBLEM_CODE_REACTIONS[code]
+          : reactionForStatus(error.status),
     code,
     sentCode,
     status: error.status,

@@ -4,9 +4,11 @@ import {
   DecimalString,
   NetworkError,
   REQUEST_TIMEOUT_MS,
+  SessionRefreshUnavailableError,
   setAccessToken,
   setRefreshHandler,
 } from './client';
+import { problemReaction } from './problems';
 
 function mockFetchOnce(response: Partial<Response> & { json?: () => Promise<unknown> }) {
   const fetchMock = jest.fn().mockResolvedValue({
@@ -179,6 +181,17 @@ describe('api client', () => {
     await expect(api.get('/api/v1/accounts')).rejects.toMatchObject({ status: 401 });
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports temporary renewal failure as retryable without replaying the request', async () => {
+    const unavailable = new SessionRefreshUnavailableError(30);
+    setRefreshHandler(async () => unavailable);
+    const fetchMock = mockFetchOnce({ ok: false, status: 401 });
+
+    await expect(api.get('/api/v1/accounts')).rejects.toBe(unavailable);
+    expect(problemReaction(unavailable)).toMatchObject({ reaction: 'RETRY_LATER' });
+    expect(unavailable.retryAfterSeconds).toBe(30);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('resends without another rotation when the token was already rotated while in flight', async () => {

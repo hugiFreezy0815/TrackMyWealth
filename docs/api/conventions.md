@@ -61,10 +61,10 @@ React to the refresh answer as follows:
 | `400 VALIDATION_FAILED` | The refresh token is malformed. | Clear the session and sign in again. |
 | `429 RATE_LIMITED`, a 5xx, a timeout or no connection | The server could not answer now. | Keep the session. Wait before the next refresh, for `Retry-After` seconds when the header is sent. |
 
-The app does not yet wait in the last case. It keeps the session and fails the waiting requests
-with their original 401, but the next request that gets a 401 starts another refresh, also
-inside the `Retry-After` time, and the screen shows the "session has ended" message although
-the session is kept. [#578](https://github.com/hugiFreezy0815/TrackMyWealth/issues/578) tracks both.
+After a temporary failure, waiting requests get a retryable error and the app keeps the session.
+The app uses a five-second delay when `Retry-After` is absent or unreadable. A 401 during this
+window gets the same retryable error with the remaining delay and makes no refresh request.
+The first 401 at or after the deadline can start a new shared refresh.
 
 Workspace-scoped lists derive their workspace from the authenticated session. Members see all
 records in that workspace that match the operation's filters. Personal endpoints, such as
