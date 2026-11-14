@@ -1,0 +1,13 @@
+Datum von:;="__DATE__"
+Datum bis:;="__DATE__"
+Kategorie:;="Alle"
+Konto:;="CH00 0000 0000 0000 0000 0"
+Währung:;="CHF"
+
+Datum;Bewegungstyp;Avisierungstext;Gutschrift in CHF;Lastschrift in CHF;Label;Kategorie
+
+__DATE__;Buchung;Cloudberry Kiosk;;-13.75;;
+__DATE__;Buchung;Paper Moon Repair;;-24.50;;
+
+Disclaimer:
+"Synthetic demo bookings"

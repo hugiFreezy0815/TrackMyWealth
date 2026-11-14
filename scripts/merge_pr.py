@@ -87,7 +87,18 @@ REQUIRED_CHECKS: Dict[str, Tuple[str, Optional[Tuple[str, ...]]]] = {
     ),
     "android": ("Mobile Native CI", MOBILE_NATIVE_PATHS),
     "ios": ("Mobile Native CI", MOBILE_NATIVE_PATHS),
-    "scripts": ("Scripts CI", ("scripts/", ".github/workflows/")),
+    "scripts": (
+        "Scripts CI",
+        (
+            "scripts/",
+            "backend/",
+            "api/",
+            "docker-compose.yml",
+            "deploy/postgres/",
+            ".env.example",
+            ".github/workflows/",
+        ),
+    ),
     # #378: contrast and amount-format checks of the UX-03 visual foundations.
     "ux-checks": ("UX docs CI", ("docs/ux/", ".github/workflows/ux-docs-ci.yml")),
 }
