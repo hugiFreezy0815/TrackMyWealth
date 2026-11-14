@@ -10,7 +10,8 @@ import { ShellScreen } from '@/features/shell/screen';
 import { TransactionDetail } from '@/features/transaction-detail/transaction-detail';
 
 export default function AccountDetailRoute() {
-  const { accountId } = useLocalSearchParams<{ accountId: string }>();
+  const { accountId, tab } = useLocalSearchParams<{ accountId: string; tab?: string | string[] }>();
+  const initialTab = tab === 'positions' ? 'positions' : 'activity';
   const router = useRouter();
   const intl = useIntl();
   const identity = useIdentity();
@@ -60,6 +61,8 @@ export default function AccountDetailRoute() {
       }
     >
       <AccountDetail
+        key={JSON.stringify([accountId, initialTab])}
+        initialTab={initialTab}
         accountId={accountId ?? ''}
         refreshing={refreshing}
         onRefresh={() => void refresh()}

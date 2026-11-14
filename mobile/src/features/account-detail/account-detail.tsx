@@ -63,6 +63,7 @@ import { TransactionResults } from './transaction-results';
 export type AccountDetailProps = {
   accountId: string;
   onBack: () => void;
+  initialTab?: 'positions' | 'activity';
   onTransaction?: (id: string) => void;
   /** The selected transaction in a desktop S4 panel, if any. */
   selectedTransactionId?: string | null;
@@ -112,6 +113,7 @@ export function AccountDetail({
   onBack,
   onTransaction,
   selectedTransactionId,
+  initialTab = 'activity',
   onImport,
   refreshing = false,
   onRefresh,
@@ -122,7 +124,7 @@ export function AccountDetail({
   const client = useQueryClient();
   const [uncategorized, setUncategorized] = useState(false);
   const [sort, setSort] = useState<TransactionSort>('bookingDate,desc');
-  const [tab, setTab] = useState<'positions' | 'activity'>('activity');
+  const [tab, setTab] = useState(initialTab);
   const [categoryTarget, setCategoryTarget] = useState<Transaction | null>(null);
   const [pendingCategoryId, setPendingCategoryId] = useState<string | null>(null);
   const [reloadingConflict, setReloadingConflict] = useState(false);

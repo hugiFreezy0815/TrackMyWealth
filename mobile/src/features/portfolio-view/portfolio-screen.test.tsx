@@ -543,7 +543,12 @@ describe('S2 depot positions (#478)', () => {
     ).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: 'Show all 7 positions' }));
     await fireEvent.press(screen.getByRole('button', { name: /^Fund 2,/ }));
-    expect(onAccount.mock.calls).toEqual([['depot'], ['depot']]);
+    await fireEvent.press(screen.getByRole('button', { name: /^DKB Depot,/ }));
+    expect(onAccount.mock.calls).toEqual([
+      ['depot', 'positions'],
+      ['depot', 'positions'],
+      ['depot'],
+    ]);
   });
 
   it('gives no cost-basis reason for an unpriced position that has a cost basis', async () => {

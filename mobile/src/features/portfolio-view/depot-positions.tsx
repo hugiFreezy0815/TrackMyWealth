@@ -19,11 +19,11 @@ export function DepotPositions({
   onAccount,
 }: {
   account: PortfolioAccount;
-  onAccount: (accountId: string) => void;
+  onAccount: (accountId: string, tab?: 'positions') => void;
 }) {
   const intl = useIntl();
   const positions = useAccountPositions(account.accountId);
-  const open = () => onAccount(account.accountId);
+  const open = () => onAccount(account.accountId, 'positions');
   if (positions.isPending) return <LoadingSkeleton count={2} />;
   if (positions.isError) {
     return <ErrorBanner error={positions.error} onRetry={() => void positions.refetch()} />;
