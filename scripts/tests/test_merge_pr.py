@@ -114,18 +114,26 @@ class ProblemsTest(unittest.TestCase):
     def test_a_changed_part_of_the_repository_requires_its_checks(self):
         self.assertEqual(
             required_checks(["backend/pom.xml"]),
-            ["semgrep", "gitleaks", "test", "sql-lint", "api-breaking"],
+            ["semgrep", "gitleaks", "test", "sql-lint", "api-breaking", "scripts"],
         )
+        for file in (
+            "docker-compose.yml",
+            ".env.example",
+            "deploy/postgres/initdb/10-trackmywealth-roles.sh",
+        ):
+            with self.subTest(file=file):
+                self.assertIn("scripts", required_checks([file]))
         self.assertEqual(
             required_checks(["api/openapi.yaml"]),
-            ["semgrep", "gitleaks", "test", "sql-lint", "api-breaking", "build-web"],
+            ["semgrep", "gitleaks", "test", "sql-lint", "api-breaking", "build-web", "scripts"],
             "#372: the committed API contract is checked against the code by Backend CI and"
             " against main's contract by the breaking-change check; #375: the app's types are"
-            " generated from it, so Mobile Web CI checks they are current",
+            " generated from it, so Mobile Web CI checks they are current; #385: the demo seed is"
+            " the contract's end-to-end smoke test",
         )
         self.assertEqual(
             required_checks(["api/problem-codes.json"]),
-            ["semgrep", "gitleaks", "test", "sql-lint", "api-breaking", "build-web"],
+            ["semgrep", "gitleaks", "test", "sql-lint", "api-breaking", "build-web", "scripts"],
             "#375: the app's known problem codes are generated from the registry",
         )
         self.assertEqual(

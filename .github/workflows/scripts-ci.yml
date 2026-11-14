@@ -3,15 +3,27 @@ name: Scripts CI
 # #187: unit tests for the merge gate (scripts/merge_pr.py) and the main-health alert
 # (scripts/main_health.py), including the check that merge_pr.py's REQUIRED_CHECKS match the
 # workflows' triggers. Standard library only, so no dependencies to install.
+# #385: it also seeds a disposable Compose stack twice (scripts/seed_demo.py), the end-to-end
+# smoke test of the API contract, so backend, contract and Compose changes run it too.
 on:
   push:
     branches: [main]
     paths:
       - "scripts/**"
+      - "backend/**"
+      - "api/**"
+      - "docker-compose.yml"
+      - "deploy/postgres/**"
+      - ".env.example"
       - ".github/workflows/**"
   pull_request:
     paths:
       - "scripts/**"
+      - "backend/**"
+      - "api/**"
+      - "docker-compose.yml"
+      - "deploy/postgres/**"
+      - ".env.example"
       - ".github/workflows/**"
 
 permissions:
@@ -25,3 +37,20 @@ jobs:
 
       - name: Unit tests
         run: python3 -m unittest discover -s scripts/tests -v
+
+      - name: Verify the demo seed and its rerun
+        timeout-minutes: 15
+        run: |
+          export JWT_SECRET="$(openssl rand -base64 32)"
+          export MFA_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+          docker compose up -d --build
+          curl --retry 30 --retry-all-errors --retry-delay 2 --max-time 5 \
+            --fail --silent --show-error http://127.0.0.1:8080/actuator/health > /dev/null
+          first=$(python3 scripts/seed_demo.py)
+          second=$(python3 scripts/seed_demo.py)
+          test "$first" = "$second"
+          printf '%s\n' "$second"
+
+      - name: Stop the disposable stack
+        if: always()
+        run: docker compose down --volumes
