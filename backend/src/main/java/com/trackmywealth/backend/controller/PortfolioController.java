@@ -62,8 +62,10 @@ public class PortfolioController {
   }
 
   /**
-   * US-04-05 (#381): every active portfolio of the workspace with its totals, in tab order. A
-   * bounded list, deliberately not paged: a workspace holds a handful of portfolios.
+   * US-04-05 (#381): every active portfolio of the workspace with its totals, in tab order. Not
+   * paged: a workspace is expected to hold a handful of portfolios. Nothing enforces that bound
+   * yet, so the list is a known exception in docs/api/conventions.md until #570 decides between
+   * paging and an enforced bound.
    */
   @ProblemCodes({ProblemCode.VALIDATION_FAILED, ProblemCode.NOT_FOUND})
   @Operation(
