@@ -112,6 +112,31 @@ cp .env.example .env
 npx expo start          # then choose iOS simulator, Android emulator, or web from the CLI output
 ```
 
+## Seed a synthetic demo
+
+On a fresh, disposable local Compose stack, run `python3 scripts/seed_demo.py`
+from the repository root. Use Python 3.10+ on Linux, macOS, or WSL. The script creates
+the demo logins, portfolios, accounts, ledger history, statement import and snapshots
+through the public API. Run it again with the same credentials file to resume or verify
+the seed without duplicating the fixtures.
+
+Every demo account has a value except the depot. An account that holds positions
+stays "Value unknown" until holdings are valued (EPIC 15), so the overview says that not
+all values are included.
+
+The script writes `.demo-credentials.json` with private file permissions. Use
+`users.member.email` and `users.member.password` to sign in. Add
+`users.member.totpSecret` to an authenticator app for six-digit codes. If the
+current code was used by the seed, wait for the next code. The `users.partner`
+login sees the same account values and has MFA disabled. The `users.admin` login
+is for administration. Keep the credentials file private and retain it while using
+that stack. When recreating the demo on a fresh database, use a new credentials file.
+
+The default API URL is `http://127.0.0.1:8080`. Use `--base-url` for a different
+port and `--credentials-file` to keep separate demo stacks apart. Non-loopback
+URLs require HTTPS and the explicit `--allow-remote` flag. Use a disposable stack
+for the demo.
+
 ## Mobile and web are the same app
 
 `mobile/` is one Expo Router codebase for iOS, Android, **and web** — the web build is deployed
