@@ -1,7 +1,13 @@
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
-import { ApiError, setAccessToken, setRefreshHandler } from '@/api/client';
+import {
+  ApiError,
+  SessionRefreshUnavailableError,
+  type SessionRefreshResult,
+  setAccessToken,
+  setRefreshHandler,
+} from '@/api/client';
 import { problemReaction } from '@/api/problems';
 import type { components } from '@/api/schema';
 import { typedApi } from '@/api/typed-api';
@@ -12,6 +18,7 @@ export type Identity = components['schemas']['CurrentUserResponse'];
 type Listener = () => void;
 
 const STORAGE_KEY = 'trackmywealth.session.refresh';
+const DEFAULT_REFRESH_DELAY_SECONDS = 5;
 // Readable only while the device is unlocked, never restored onto another device from a backup.
 const STORAGE_OPTIONS: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
@@ -23,7 +30,8 @@ let identity: Identity | null = null;
 // True while GET /users/me for freshly accepted tokens is in flight.
 let verifyingIdentity = false;
 let challenge: string | null = null;
-let pendingRefresh: Promise<string | null> | null = null;
+let pendingRefresh: Promise<SessionRefreshResult> | null = null;
+let refreshNotBefore = 0;
 let generation = 0;
 
 function changed() {
@@ -78,6 +86,7 @@ async function accept(tokens: Tokens): Promise<void> {
   await persist(tokens.refreshToken);
   if (current !== generation) return;
   refresh = tokens.refreshToken;
+  refreshNotBefore = 0;
   access = tokens.accessToken;
   setAccessToken(access);
   verifyingIdentity = true;
@@ -140,8 +149,10 @@ export function cancelMfa(): void {
   changed();
 }
 
-async function rotate(): Promise<string | null> {
+async function rotate(): Promise<SessionRefreshResult> {
   if (!refresh) return null;
+  const remainingSeconds = (refreshNotBefore - Date.now()) / 1000;
+  if (remainingSeconds > 0) return new SessionRefreshUnavailableError(remainingSeconds);
   const before = generation;
   try {
     const tokens = await typedApi.post('/api/v1/auth/refresh', { body: { refreshToken: refresh } });
@@ -151,12 +162,23 @@ async function rotate(): Promise<string | null> {
     await accept(tokens);
     return access;
   } catch (error) {
-    if (before === generation && rejectedByServer(error)) await clearSession();
-    return before === generation ? null : access;
+    if (before !== generation) return access;
+    if (rejectedByServer(error)) {
+      await clearSession();
+      return access;
+    }
+    const now = Date.now();
+    const retryAfter = error instanceof ApiError ? error.retryAfterSeconds : undefined;
+    const delay =
+      retryAfter !== undefined && now + retryAfter * 1000 <= Number.MAX_SAFE_INTEGER
+        ? retryAfter
+        : DEFAULT_REFRESH_DELAY_SECONDS;
+    refreshNotBefore = now + delay * 1000;
+    return new SessionRefreshUnavailableError(delay);
   }
 }
 
-export function refreshSession(): Promise<string | null> {
+function refreshSession(): Promise<SessionRefreshResult> {
   if (!pendingRefresh) {
     pendingRefresh = rotate().finally(() => {
       pendingRefresh = null;
@@ -182,6 +204,7 @@ export async function restoreSession(): Promise<void> {
 async function clearSession(): Promise<void> {
   generation++;
   refresh = null;
+  refreshNotBefore = 0;
   access = null;
   challenge = null;
   identity = null;

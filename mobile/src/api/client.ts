@@ -21,6 +21,14 @@ export class ApiError extends Error {
   }
 }
 
+/** The session still exists, but its access token cannot be renewed yet. */
+export class SessionRefreshUnavailableError extends ApiError {
+  constructor(retryAfterSeconds: number) {
+    super('Session renewal is temporarily unavailable', 503, undefined, retryAfterSeconds);
+    this.name = 'SessionRefreshUnavailableError';
+  }
+}
+
 /** The server could not be reached or did not answer in time, so there is no HTTP status. */
 export class NetworkError extends Error {
   constructor(message: string) {
@@ -59,11 +67,12 @@ export function setAccessToken(token: string | null): void {
   accessToken = token;
 }
 
-// Called on a 401 to rotate the session; resolves to the new access token, or null when the
-// session could not be renewed. The login/refresh/MFA endpoints under /api/v1/auth/ never retry.
-let refreshHandler: (() => Promise<string | null>) | null = null;
+// Called on a 401 to rotate the session. Null means there is no remaining session to renew.
+// The login/refresh/MFA endpoints under /api/v1/auth/ never retry.
+export type SessionRefreshResult = string | SessionRefreshUnavailableError | null;
+let refreshHandler: (() => Promise<SessionRefreshResult>) | null = null;
 
-export function setRefreshHandler(handler: (() => Promise<string | null>) | null): void {
+export function setRefreshHandler(handler: (() => Promise<SessionRefreshResult>) | null): void {
   refreshHandler = handler;
 }
 
@@ -110,7 +119,10 @@ export function parseRetryAfter(
 ): number | undefined {
   const value = header?.trim();
   if (!value) return undefined;
-  if (/^\d+$/.test(value)) return Number(value);
+  if (/^\d+$/.test(value)) {
+    const seconds = Number(value);
+    return Number.isFinite(seconds) ? seconds : undefined;
+  }
   // Only an HTTP-date (it names a weekday); Date.parse also reads "2" or "2.5" as a year.
   if (!/^[A-Za-z]{3},/.test(value)) return undefined;
   const at = Date.parse(value);
@@ -149,6 +161,7 @@ async function exchange(path: string, options: ExchangeOptions): Promise<Respons
   ) {
     // Another request already rotated the token while this one was in flight: just resend.
     const renewed = accessToken && accessToken !== sentToken ? accessToken : await refreshHandler();
+    if (renewed instanceof SessionRefreshUnavailableError) throw renewed;
     if (renewed) response = await attempt(accessToken);
   }
 

@@ -134,14 +134,29 @@ class RateLimitFilterTest {
 
     // refresh: a completely separate rule's bucket - login's being exhausted above must not bleed
     // into it (an invalid token still gets its normal 401, not a 429).
+    for (int i = 0; i < CAPACITY; i++) {
+      client()
+          .post()
+          .uri("/api/v1/auth/refresh")
+          .contentType(MediaType.APPLICATION_JSON)
+          .body(new RefreshTokenRequest("not-a-real-token"))
+          .exchange()
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
     client()
         .post()
         .uri("/api/v1/auth/refresh")
+        .header("Origin", "http://localhost:19006")
         .contentType(MediaType.APPLICATION_JSON)
         .body(new RefreshTokenRequest("not-a-real-token"))
         .exchange()
         .expectStatus()
-        .isEqualTo(HttpStatus.UNAUTHORIZED);
+        .isEqualTo(HttpStatus.TOO_MANY_REQUESTS)
+        .expectHeader()
+        .exists("Retry-After")
+        .expectHeader()
+        .value("Access-Control-Expose-Headers", value -> assertThat(value).contains("Retry-After"));
 
     // setup: succeeds at most once (it self-disables) - every call after the first is a business
     // 409, not a 429, until the rate limit itself is exhausted.

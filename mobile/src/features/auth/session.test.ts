@@ -1,7 +1,12 @@
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
-import { api, setAccessToken } from '@/api/client';
+import {
+  api,
+  REQUEST_TIMEOUT_MS,
+  SessionRefreshUnavailableError,
+  setAccessToken,
+} from '@/api/client';
 import {
   cancelMfa,
   isAdministrator,
@@ -30,7 +35,7 @@ function tokens(n: number) {
   };
 }
 
-type Reply = { status: number; body?: unknown } | Error;
+type Reply = { status: number; body?: unknown; retryAfter?: string } | Error;
 type Route = (url: string, init: RequestInit) => Reply | Promise<Reply>;
 
 /** A fake server: each request is answered by the route, and every call is recorded. */
@@ -41,6 +46,7 @@ function serve(route: Route) {
     return {
       ok: reply.status >= 200 && reply.status < 300,
       status: reply.status,
+      headers: new Headers(reply.retryAfter ? { 'Retry-After': reply.retryAfter } : undefined),
       json: async () => reply.body,
     };
   });
@@ -292,7 +298,10 @@ describe('secure auth session', () => {
     });
     await signIn('demo@example.com', 'test');
 
-    await expect(api.get('/api/v1/accounts')).rejects.toMatchObject({ status: 401 });
+    await expect(api.get('/api/v1/accounts')).rejects.toMatchObject({
+      name: 'SessionRefreshUnavailableError',
+      retryAfterSeconds: 5,
+    });
 
     expect(sessionSnapshot().signedIn).toBe(true);
     expect(secureStore.deleteItemAsync).not.toHaveBeenCalled();
@@ -306,10 +315,87 @@ describe('secure auth session', () => {
     });
     await signIn('demo@example.com', 'test');
 
-    await expect(api.get('/api/v1/accounts')).rejects.toMatchObject({ status: 401 });
+    await expect(api.get('/api/v1/accounts')).rejects.toBeInstanceOf(
+      SessionRefreshUnavailableError,
+    );
 
     expect(sessionSnapshot().signedIn).toBe(true);
     expect(secureStore.deleteItemAsync).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { description: 'a 30-second header', header: '30', delaySeconds: 30 },
+    { description: 'an infinite delay', header: '9'.repeat(309), delaySeconds: 5 },
+    { description: 'a deadline overflow', header: '9'.repeat(308), delaySeconds: 5 },
+    { description: 'an unsafe deadline', header: '9007199254740', delaySeconds: 5 },
+  ])(
+    'shares the refresh, waits, and replays after $description',
+    async ({ header, delaySeconds }) => {
+      const now = jest.spyOn(Date, 'now').mockReturnValue(100_000);
+      let refreshCalls = 0;
+      const fetchMock = serve((url, init) => {
+        if (url.endsWith('/auth/refresh')) {
+          refreshCalls += 1;
+          return refreshCalls === 1
+            ? { status: 429, retryAfter: header }
+            : { status: 200, body: tokens(2) };
+        }
+        if (url.endsWith('/accounts')) {
+          const auth = (init.headers as Record<string, string>).Authorization;
+          return auth === 'Bearer access-2' ? { status: 200, body: ['ok'] } : { status: 401 };
+        }
+        return plainLogin(url) ?? { status: 404 };
+      });
+      try {
+        await signIn('demo@example.com', 'test');
+        const accounts = () => api.get('/api/v1/accounts');
+        await Promise.all([
+          expect(accounts()).rejects.toMatchObject({ retryAfterSeconds: delaySeconds }),
+          expect(accounts()).rejects.toMatchObject({ retryAfterSeconds: delaySeconds }),
+        ]);
+        const deadline = 100_000 + delaySeconds * 1000;
+        now.mockReturnValue(deadline - 1000);
+        await expect(accounts()).rejects.toMatchObject({ retryAfterSeconds: 1 });
+        expect(refreshCalls).toBe(1);
+        expect(sessionSnapshot().signedIn).toBe(true);
+
+        now.mockReturnValue(deadline);
+        await expect(accounts()).resolves.toEqual(['ok']);
+        expect(refreshCalls).toBe(2);
+        expect(callsTo(fetchMock, '/accounts')).toHaveLength(5);
+      } finally {
+        now.mockRestore();
+      }
+    },
+  );
+
+  it('keeps the session and applies the default delay when a refresh times out', async () => {
+    jest.useFakeTimers();
+    const fetchMock = serve((url, init) => {
+      if (url.endsWith('/auth/refresh')) {
+        return new Promise<Reply>((resolve) =>
+          init.signal?.addEventListener('abort', () => resolve(new Error('Aborted'))),
+        );
+      }
+      if (url.endsWith('/accounts')) return { status: 401 };
+      return plainLogin(url) ?? { status: 404 };
+    });
+    try {
+      await signIn('demo@example.com', 'test');
+      const result = expect(api.get('/api/v1/accounts')).rejects.toMatchObject({
+        name: 'SessionRefreshUnavailableError',
+        retryAfterSeconds: 5,
+      });
+      await jest.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+      await result;
+      await expect(api.get('/api/v1/accounts')).rejects.toBeInstanceOf(
+        SessionRefreshUnavailableError,
+      );
+      expect(callsTo(fetchMock, '/auth/refresh')).toHaveLength(1);
+      expect(sessionSnapshot().signedIn).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('restores a stored session on start by rotating its refresh token', async () => {

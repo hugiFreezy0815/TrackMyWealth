@@ -176,7 +176,8 @@ public class SecurityConfig {
             SecurityController.IGNORED_FIELDS_HEADER,
             CorrelationIdFilter.HEADER,
             HttpHeaders.ETAG,
-            HttpHeaders.LOCATION));
+            HttpHeaders.LOCATION,
+            HttpHeaders.RETRY_AFTER));
 
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
     source.registerCorsConfiguration("/**", configuration);
