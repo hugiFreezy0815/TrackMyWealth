@@ -1906,6 +1906,11 @@ export interface components {
       status: string;
       /** Format: date-time */
       archivedAt: string | null;
+      /** Format: date */
+      openedAt: string | null;
+      /** Format: date */
+      closedAt: string | null;
+      jurisdiction: string | null;
       /** Format: int32 */
       version: number;
       warnings: string[];
@@ -2256,6 +2261,8 @@ export interface components {
       pensionScheme?: string;
       customAssetType?: string;
       countsAsSaving?: boolean;
+      /** Format: date */
+      openedAt?: string;
     };
     CreateCategorizationRuleRequest: {
       matchType: string;

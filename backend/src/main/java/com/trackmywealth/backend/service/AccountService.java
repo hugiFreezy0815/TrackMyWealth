@@ -208,6 +208,7 @@ public class AccountService {
     account.setName(request.name());
     account.setAccountType(request.accountType());
     account.setNativeCurrency(request.nativeCurrency());
+    account.setOpenedAt(request.openedAt());
     applyCapabilityDefaults(account, request);
     // saveAndFlush, not save: `nature` is a Postgres GENERATED ALWAYS AS (...) STORED column
     // (V4), only computed once the INSERT statement actually executes - a plain save() defers
@@ -238,6 +239,7 @@ public class AccountService {
             parent.getName() + SAVINGS_POCKET_NAME_SUFFIX,
             SAVINGS,
             currency,
+            null,
             null,
             null,
             null,
@@ -697,6 +699,9 @@ public class AccountService {
         account.getSavingsPocketAccountId(),
         account.getStatus(),
         account.getArchivedAt(),
+        account.getOpenedAt(),
+        account.getClosedAt(),
+        account.getJurisdiction(),
         VersionPreconditionService.persistedVersion(account.getVersion(), VERSIONED_RESOURCE),
         // PR-011/FR-CON-007: the warning is shown on the account, not only on its figures.
         accountDataQualityService.warningsFor(account.getId()),

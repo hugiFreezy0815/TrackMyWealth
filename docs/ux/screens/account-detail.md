@@ -62,7 +62,11 @@ list as in S2's `PositionRow`) and **Activity** (the transaction list of this sp
 ## Requests
 
 1. `GET /api/v1/accounts/{accountId}` → `AccountSummaryResponse`: name, type, currency,
-   capabilities, status, `version` (ETag), reconciliation, warnings.
+   capabilities, status, `version` (ETag), reconciliation, warnings, and `openedAt`.
+   Show a saved date in the header. The actions menu opens an optional date picker to change
+   or clear it. Save with `PUT /api/v1/accounts/{accountId}` and `If-Match`, carrying forward
+   the other mutable fields. On conflict, let the member review the latest version before
+   resubmitting. After saving, refresh Overview and Portfolio View history.
 2. The account's value with its status: the `AccountListItemResponse` for this account, taken
    from the S1/S2 cache, or else from `GET /api/v1/accounts?portfolioId={portfolioId}` (with
    `archived=true` for an archived account), picking `id = accountId`. *A single-account
@@ -182,6 +186,9 @@ Errors on these actions:
 | W06 bulk checkboxes, "Always categorise …", "Apply to 6 earlier" | Hidden | Bulk and rules are not in sprint 7 |
 
 ## Acceptance checks for the UI story
+
+- Given a saved opening date, it appears on Account detail and in the editor. A member can
+  clear it. A concurrent change opens the conflict dialog and keeps the draft when reviewing.
 
 - Given an account with 120 transactions, the list loads 50, then 50, then 20, with no
   duplicates. After a category change it restarts at page 0 with the same filter.

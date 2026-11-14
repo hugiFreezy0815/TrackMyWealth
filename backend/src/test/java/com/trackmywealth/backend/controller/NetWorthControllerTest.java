@@ -14,6 +14,7 @@ import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.PortfolioSection;
 import com.trackmywealth.backend.dto.ReassignAccountPortfolioRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
+import com.trackmywealth.backend.dto.UpdateAccountRequest;
 import com.trackmywealth.backend.dto.ValueHistoryResponse;
 import com.trackmywealth.backend.dto.ValueHistoryWarningValues;
 import com.trackmywealth.backend.dto.ValueStatus;
@@ -316,6 +317,55 @@ class NetWorthControllerTest {
     assertThat(history.change().percent()).isNull();
     assertThat(history.complete()).isTrue();
     assertThat(history.sections()).isEmpty();
+  }
+
+  @Test
+  void declaredOpeningDateRemovesYearlyInceptionWarningAndEarlierEvidenceStillCounts()
+      throws Exception {
+    String token = bootstrapAdministrator();
+    LocalDate yearStart = today().minusYears(1);
+    UUID baseline =
+        createAccount(
+                token,
+                AccountRequests.account("Established", "CASH", "CHF")
+                    .openedAt(yearStart.minusDays(30))
+                    .build())
+            .id();
+    seedOpeningBalance(baseline, "2000", yearStart.minusDays(30));
+    AccountSummaryResponse recent =
+        createAccount(token, AccountRequests.account("Recent", "CASH", "CHF").build());
+    LocalDate evidence = today().minusDays(30);
+    seedOpeningBalance(recent.id(), "1000", evidence);
+
+    ValueHistoryResponse uncertain = history(token, "1Y");
+    assertThat(uncertain.warningCodes()).contains(ValueHistoryWarningValues.INCEPTION_UNCERTAIN);
+    assertThat(uncertain.points().get(0).value()).isEqualByComparingTo("2000");
+
+    for (LocalDate openedAt : List.of(yearStart.plusDays(1), evidence.plusDays(14))) {
+      recent =
+          client(token)
+              .put()
+              .uri("/api/v1/accounts/" + recent.id())
+              .header("If-Match", "\"" + recent.version() + "\"")
+              .contentType(MediaType.APPLICATION_JSON)
+              .body(new UpdateAccountRequest("Recent", "CASH", "CHF", null, openedAt, null))
+              .exchange()
+              .expectStatus()
+              .isOk()
+              .expectBody(AccountSummaryResponse.class)
+              .returnResult()
+              .getResponseBody();
+      ValueHistoryResponse known = history(token, "1Y");
+      assertThat(known.warningCodes())
+          .doesNotContain(ValueHistoryWarningValues.INCEPTION_UNCERTAIN);
+      assertThat(known.points().get(0).value()).isEqualByComparingTo("2000");
+      assertThat(known.change().percent()).isEqualByComparingTo("50");
+      assertThat(known.points())
+          .anySatisfy(point -> {
+            assertThat(point.date()).isBetween(evidence, evidence.plusDays(13));
+            assertThat(point.value()).isEqualByComparingTo("3000");
+          });
+    }
   }
 
   @Test

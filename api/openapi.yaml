@@ -18516,6 +18516,20 @@ components:
           - string
           - "null"
           format: date-time
+        openedAt:
+          type:
+          - string
+          - "null"
+          format: date
+        closedAt:
+          type:
+          - string
+          - "null"
+          format: date
+        jurisdiction:
+          type:
+          - string
+          - "null"
         version:
           type: integer
           format: int32
@@ -18528,6 +18542,7 @@ components:
       required:
       - accountType
       - archivedAt
+      - closedAt
       - countsAsSaving
       - discretionary
       - hasAmortisation
@@ -18536,10 +18551,12 @@ components:
       - hasTransactions
       - holdsPositions
       - id
+      - jurisdiction
       - manualValuation
       - name
       - nativeCurrency
       - nature
+      - openedAt
       - portfolioId
       - reconciliation
       - savingsPocketAccountId
@@ -19298,6 +19315,9 @@ components:
           pattern: REAL_ESTATE|VEHICLE|PRECIOUS_METAL|COLLECTIBLE|OTHER
         countsAsSaving:
           type: boolean
+        openedAt:
+          type: string
+          format: date
       required:
       - accountType
       - name

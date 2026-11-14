@@ -19,6 +19,7 @@ import {
   useCategories,
   useChangeTransactionCategory,
   useUncategorizedCount,
+  useUpdateAccountOpeningDate,
   type TransactionSort,
 } from '@/api/queries/resources';
 import {
@@ -26,14 +27,18 @@ import {
   Amount,
   ChipGroup,
   ConflictDialog,
+  DateField,
+  Dialog,
   EmptyState,
   ErrorBanner,
   LoadingSkeleton,
   OfflineBanner,
   ValueStatusBadge,
+  localDateToIso,
 } from '@/components/shared';
 import { Spacing, TypeScale } from '@/constants/theme';
 import { formatDate } from '@/format/date';
+import { validationErrors } from '@/features/add-flow/model';
 import { PositionView } from '@/features/portfolio-view/position-view';
 import { useSavingsPocketLink } from '@/features/savings-pocket/link-pocket';
 import { showToast } from '@/features/shell/toast';
@@ -56,6 +61,7 @@ import {
   hasUnknownCategory,
   uniqueTransactions,
   type AccountListItem,
+  type AccountSummary,
   type Transaction,
 } from './model';
 import { TransactionResults } from './transaction-results';
@@ -72,7 +78,7 @@ export type AccountDetailProps = {
   onRefresh?: () => void;
 };
 
-type OpenDialog = 'actions' | 'sort' | 'archive' | 'value' | null;
+type OpenDialog = 'actions' | 'sort' | 'archive' | 'value' | 'openingDate' | null;
 
 const isNotFound = (error: unknown) =>
   error instanceof ApiError &&
@@ -128,6 +134,10 @@ export function AccountDetail({
   const [reloadingConflict, setReloadingConflict] = useState(false);
   const writeInFlight = useRef(false);
   const [dialog, setDialog] = useState<OpenDialog>(null);
+  const [openingDateDraft, setOpeningDateDraft] = useState<{
+    account: AccountSummary;
+    openedAt: string | null;
+  } | null>(null);
   const [writeError, setWriteError] = useState<unknown>(null);
   const retryWrite = useRef<(() => void) | null>(null);
   const conflict = useConflict();
@@ -154,6 +164,11 @@ export function AccountDetail({
   const positions = useAccountPositions(accountId, !!summary?.holdsPositions);
   const categoryWrite = useChangeTransactionCategory(accountId);
   const archiveWrite = useAccountArchiveAction(accountId);
+  const openingDateWrite = useUpdateAccountOpeningDate(accountId);
+  const today = localDateToIso(new Date());
+  const openingDateInFuture = !!openingDateDraft?.openedAt && openingDateDraft.openedAt > today;
+  const openingDateRejected = !!openingDateRejected;
+  const openingDateInvalid = openingDateInFuture || openingDateRejected;
   // #466: offered in the actions menu; the account lists it needs are read when the menu opens.
   const pocket = useSavingsPocketLink({
     account: summary,
@@ -263,6 +278,27 @@ export function AccountDetail({
     }, queryKeys.account(accountId));
   }
 
+  function changeOpeningDate(openedAt: string | null) {
+    setOpeningDateDraft((draft) => (draft ? { ...draft, openedAt } : null));
+    setWriteError(null);
+  }
+
+  function saveOpeningDate() {
+    if (
+      !openingDateDraft ||
+      !online ||
+      openingDateWrite.isPending ||
+      reloadingConflict ||
+      openingDateInFuture
+    )
+      return;
+    void runWrite(async () => {
+      await openingDateWrite.mutateAsync(openingDateDraft);
+      setDialog(null);
+      setOpeningDateDraft(null);
+    }, queryKeys.account(accountId));
+  }
+
   if (account.isError && isAccessFailure(account.error)) {
     // This guard takes precedence even when TanStack Query retains a cached account summary.
     // Never present cached identity, balances, positions or transactions after 401/403/404.
@@ -355,7 +391,7 @@ export function AccountDetail({
       {account.isError ? (
         <ErrorBanner error={account.error} onRetry={() => void account.refetch()} />
       ) : null}
-      {writeError ? (
+      {writeError && dialog !== 'openingDate' ? (
         <ErrorBanner error={writeError} onRetry={() => retryWrite.current?.()} />
       ) : null}
       <View
@@ -401,6 +437,14 @@ export function AccountDetail({
         onRetryValue={refresh}
         onExplainValue={() => setDialog('value')}
       />
+      {summary.openedAt ? (
+        <Text style={{ ...TypeScale.bodyMedium, color: theme.textSecondary }}>
+          {intl.formatMessage(
+            { id: 'account.openedAt.display' },
+            { date: formatDate(summary.openedAt, intl.locale) },
+          )}
+        </Text>
+      ) : null}
       {pocket.currentLine}
       {value && (activeAccounts.isError || archivedAccounts.isError) ? (
         <ErrorBanner error={activeAccounts.error ?? archivedAccounts.error} onRetry={refresh} />
@@ -619,6 +663,12 @@ export function AccountDetail({
           onImport();
         }}
         onArchive={() => setDialog('archive')}
+        onEditOpeningDate={() => {
+          setWriteError(null);
+          openingDateWrite.reset();
+          setOpeningDateDraft({ account: summary, openedAt: summary.openedAt ?? null });
+          setDialog('openingDate');
+        }}
         pocketAction={pocket.trigger(() => setDialog(null))}
       />
       {pocket.dialog}
@@ -655,6 +705,53 @@ export function AccountDetail({
         value={value}
         onClose={() => setDialog(null)}
       />
+      {openingDateDraft && (
+        <Dialog
+          visible={dialog === 'openingDate' && !conflict.conflicted}
+          title={intl.formatMessage({ id: 'account.openedAt.edit' })}
+          closeDisabled={openingDateWrite.isPending}
+          onClose={() => {
+            setDialog(null);
+            setOpeningDateDraft(null);
+            setWriteError(null);
+            retryWrite.current = null;
+          }}
+        >
+          <DateField
+            label={intl.formatMessage({ id: 'account.openedAt.optional' })}
+            value={openingDateDraft.openedAt}
+            onChange={changeOpeningDate}
+            onClear={() => changeOpeningDate(null)}
+            hint={intl.formatMessage({ id: 'account.openedAt.hint' })}
+            maximumDate={today}
+            disabled={openingDateWrite.isPending || reloadingConflict}
+            error={
+              openingDateInvalid
+                ? intl.formatMessage({ id: 'account.openedAt.invalid' })
+                : undefined
+            }
+          />
+          {writeError && !openingDateRejected ? (
+            <ErrorBanner error={writeError} />
+          ) : null}
+          {!online ? (
+            <Text accessibilityRole="alert" style={{ color: theme.statusWarning }}>
+              {intl.formatMessage({ id: 'addFlow.offline' })}
+            </Text>
+          ) : null}
+          <ActionButton
+            label={intl.formatMessage({ id: 'account.openedAt.save' })}
+            disabled={
+              !online ||
+              openingDateWrite.isPending ||
+              reloadingConflict ||
+              openingDateDraft.openedAt === (openingDateDraft.account.openedAt ?? null) ||
+              openingDateInFuture
+            }
+            onPress={saveOpeningDate}
+          />
+        </Dialog>
+      )}
       <ConflictDialog
         visible={conflict.conflicted}
         onClose={() => {
@@ -662,6 +759,10 @@ export function AccountDetail({
           setCategoryTarget(null);
           setPendingCategoryId(null);
           setReloadingConflict(false);
+          if (dialog === 'openingDate') {
+            setDialog(null);
+            setOpeningDateDraft(null);
+          }
         }}
         onDiscard={() => {
           conflict.dismiss();
@@ -669,6 +770,7 @@ export function AccountDetail({
           setPendingCategoryId(null);
           setReloadingConflict(false);
           setDialog(null);
+          setOpeningDateDraft(null);
         }}
         onReview={() => {
           conflict.dismiss();
@@ -676,7 +778,12 @@ export function AccountDetail({
           void (async () => {
             try {
               if (categoryTarget) await reloadTransactionVersion(categoryTarget.id);
-              else await reloadAccountVersion();
+              else {
+                const latest = await reloadAccountVersion();
+                if (dialog === 'openingDate') {
+                  setOpeningDateDraft((draft) => (draft ? { ...draft, account: latest } : null));
+                }
+              }
               await invalidateFinancialData(client);
             } catch (error) {
               if (isNotFound(error)) {

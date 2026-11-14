@@ -159,6 +159,31 @@ export function useAccountArchiveAction(accountId: string) {
   });
 }
 
+type AccountSummary = components['schemas']['AccountSummaryResponse'];
+
+export function useUpdateAccountOpeningDate(accountId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ account, openedAt }: { account: AccountSummary; openedAt: string | null }) =>
+      typedApi.put('/api/v1/accounts/{accountId}', {
+        params: { accountId },
+        version: ifMatch(account),
+        body: {
+          name: account.name,
+          accountType: account.accountType,
+          nativeCurrency: account.nativeCurrency,
+          jurisdiction: account.jurisdiction ?? undefined,
+          closedAt: account.closedAt ?? undefined,
+          openedAt: openedAt ?? undefined,
+        },
+      }),
+    onSuccess: async (updated) => {
+      client.setQueryData(queryKeys.account(accountId), updated);
+      await invalidateFinancialData(client);
+    },
+  });
+}
+
 export function useChangeTransactionCategory(accountId: string) {
   const client = useQueryClient();
   return useMutation({

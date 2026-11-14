@@ -896,7 +896,7 @@ class ApiConventionsIntegrationTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateAccountRequest(
-                null, type, type, "CHF", null, null, null, null, null, null, null))
+                null, type, type, "CHF", null, null, null, null, null, null, null, null))
         .exchange()
         .expectStatus()
         .isCreated()
