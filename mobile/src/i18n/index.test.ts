@@ -60,6 +60,13 @@ describe('locales and ICU messages', () => {
     expect(messagesFor('de-CH')['ui.close']).toBe('Schliessen');
   });
 
+  it('never shows "ß" in Swiss German: every such message has a de-CH override with "ss"', () => {
+    const swiss = messagesFor('de-CH');
+    expect(Object.keys(swiss).filter((key) => swiss[key].includes('ß'))).toEqual([]);
+    expect(messagesFor('de-DE')['history.warning.pendingMovements']).toMatch(/einfließen/);
+    expect(swiss['history.warning.pendingMovements']).toMatch(/einfliessen/);
+  });
+
   it.each([
     ['fr-CH', 'fr', '2 opérations'],
     ['it-CH', 'it', '2 movimenti'],

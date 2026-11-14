@@ -14596,6 +14596,8 @@ paths:
       parameters:
       - name: period
         in: query
+        description: "The history window: 1W, 1M, YTD, 1Y or MAX; any other value\
+          \ is a 400 VALIDATION_FAILED."
         required: false
         schema:
           type: string
@@ -15193,6 +15195,8 @@ paths:
           format: uuid
       - name: period
         in: query
+        description: "The history window: 1W, 1M, YTD, 1Y or MAX; any other value\
+          \ is a 400 VALIDATION_FAILED."
         required: false
         schema:
           type: string
@@ -23485,6 +23489,12 @@ components:
           type: string
         period:
           type: string
+          enum:
+          - 1W
+          - 1M
+          - YTD
+          - 1Y
+          - MAX
         from:
           type: string
           format: date
@@ -23507,6 +23517,20 @@ components:
           type: array
           items:
             type: string
+        warningCodes:
+          type: array
+          items:
+            type: string
+            enum:
+            - VALUE_UNKNOWN
+            - INCEPTION_UNCERTAIN
+            - LIFECYCLE_UNVERIFIED
+            - ATTRIBUTION_PENDING_REVIEW
+            - ATTRIBUTION_FX_UNAVAILABLE
+            - CAPITAL_MOVEMENTS_UNAVAILABLE
+            - TRANSACTIONS_BEFORE_OPENING_BALANCE
+            - BOOKED_BEFORE_OPENING_BALANCE
+            - OPEN_RECONCILIATION_DIFFERENCE
       required:
       - change
       - complete
@@ -23516,6 +23540,7 @@ components:
       - points
       - sections
       - to
+      - warningCodes
       - warnings
     WorkspaceMemberListItemResponse:
       type: object

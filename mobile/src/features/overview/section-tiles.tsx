@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { IntlShape } from 'react-intl';
+import { useIntl, type IntlShape } from 'react-intl';
 import { Text, View } from 'react-native';
 
 import { labelFor } from '@/api/enum-label';
@@ -8,6 +8,7 @@ import { amountTexts } from '@/components/shared/amount';
 import { valueStatusTexts } from '@/components/shared/value-status';
 import { Radii, Spacing, TypeScale } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import type { ValueHistory } from '@/features/value-history/value-chart';
 import type { NetWorth } from './overview-model';
 import { InfoText, msg } from './overview-text';
 
@@ -51,10 +52,17 @@ export function SectionTiles({
   data,
   hidden,
   intl,
+  changes,
+  changePeriod,
+  changeUncertain = false,
 }: {
   data: NetWorth;
   hidden: boolean;
   intl: IntlShape;
+  changes?: ValueHistory['sections'];
+  /** The period of `changes`, and whether the server flags that change as possibly distorted. */
+  changePeriod?: ValueHistory['period'];
+  changeUncertain?: boolean;
 }) {
   const theme = useTheme();
   const [width, setWidth] = useState(0);
@@ -72,6 +80,7 @@ export function SectionTiles({
           intl,
           labelFor(SECTION_LABELS, section.section, 'overview.unknownSection'),
         );
+        const change = changes?.find((item) => item.section === section.section)?.change;
         const valueKnown = section.valueStatus !== 'UNKNOWN';
         const texts = amountTexts(intl, {
           value: section.subtotal,
@@ -116,6 +125,15 @@ export function SectionTiles({
                 }}
               />
             </View>
+            {change && changePeriod ? (
+              <SectionChangeLine
+                amount={change.amount}
+                currency={data.currency}
+                period={changePeriod}
+                hidden={hidden}
+                uncertain={changeUncertain}
+              />
+            ) : null}
             <ValueStatusBadge status={section.valueStatus} />
             {!section.complete ? (
               <InfoText warning>{msg(intl, 'total.incomplete')}</InfoText>
@@ -123,6 +141,52 @@ export function SectionTiles({
           </View>
         );
       })}
+    </View>
+  );
+}
+
+/** M03 tile line "+CHF 1'240 this month": gain/loss colour unless hidden or possibly distorted. */
+function SectionChangeLine({
+  amount,
+  currency,
+  period,
+  hidden,
+  uncertain,
+}: {
+  amount: string;
+  currency: string;
+  period: ValueHistory['period'];
+  hidden: boolean;
+  uncertain: boolean;
+}) {
+  const intl = useIntl();
+  const theme = useTheme();
+  const { display } = amountTexts(intl, {
+    value: amount,
+    currency,
+    signRole: 'change',
+    masked: hidden,
+  });
+  const color =
+    hidden || uncertain
+      ? theme.textSecondary
+      : display.startsWith('−')
+        ? theme.statusLoss
+        : display.startsWith('+')
+          ? theme.statusGain
+          : theme.textSecondary;
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', gap: 4 }}>
+      <Amount
+        value={amount}
+        currency={currency}
+        masked={hidden}
+        signRole="change"
+        style={{ ...TypeScale.bodyMedium, color }}
+      />
+      <Text style={{ ...TypeScale.bodyMedium, color }}>
+        {msg(intl, `history.chipRange.${period}`)}
+      </Text>
     </View>
   );
 }
