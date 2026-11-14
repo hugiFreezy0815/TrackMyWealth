@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { IntlShape } from 'react-intl';
 import { Pressable, Text, View } from 'react-native';
 
@@ -42,7 +43,8 @@ export function NetWorthCard({
   explain,
   intl,
   compact = false,
-}: CardProps & { compact?: boolean }) {
+  children,
+}: CardProps & { compact?: boolean; children?: ReactNode }) {
   const theme = useTheme();
   return (
     <SectionCard title={msg(intl, 'overview.netWorth')}>
@@ -82,6 +84,7 @@ export function NetWorthCard({
           <InfoText warning>{msg(intl, 'total.incomplete')}</InfoText>
         </Pressable>
       ) : null}
+      {children}
     </SectionCard>
   );
 }

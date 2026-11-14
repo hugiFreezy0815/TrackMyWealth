@@ -4,7 +4,9 @@ import com.trackmywealth.backend.dto.CashFlowContribution;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse.CurrencyAmount;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
+import com.trackmywealth.backend.dto.HistoryWarning;
 import com.trackmywealth.backend.dto.PortfolioCapitalFlows;
+import com.trackmywealth.backend.dto.ValueHistoryWarningValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.SavingsRateMethodology;
 import com.trackmywealth.backend.repository.AccountRepository;
@@ -206,9 +208,12 @@ public class CashFlowService {
         transactionRepository.sumSpendingByDateAndCurrency(accountIds, SPENDING_TYPES, from, to);
     List<Object[]> pending =
         transactionRepository.sumPendingReviewByDateAndCurrency(accountIds, from, to);
-    List<String> warnings = new ArrayList<>();
+    List<HistoryWarning> warnings = new ArrayList<>();
     if (!pending.isEmpty()) {
-      warnings.add("Transactions are pending review; contribution attribution is incomplete.");
+      warnings.add(
+          new HistoryWarning(
+              ValueHistoryWarningValues.ATTRIBUTION_PENDING_REVIEW,
+              "Transactions are pending review; contribution attribution is incomplete."));
     }
     List<Object[]> all = Stream.concat(income.stream(), spending.stream()).toList();
     if (all.isEmpty()) {
@@ -217,7 +222,10 @@ public class CashFlowService {
     List<CurrencyAmount> converted = converted(all, currency, new HashMap<>());
     CurrencyAmount contribution = converted.get(0);
     if (!contribution.valueKnown()) {
-      warnings.add("Currency conversion unavailable for contributions.");
+      warnings.add(
+          new HistoryWarning(
+              ValueHistoryWarningValues.ATTRIBUTION_FX_UNAVAILABLE,
+              "Currency conversion unavailable for contributions."));
     }
     return new CashFlowContribution(
         contribution.amount(), pending.isEmpty() && contribution.valueKnown(), warnings);
@@ -267,15 +275,21 @@ public class CashFlowService {
         externalConverted.isEmpty() ? BigDecimal.ZERO : externalConverted.get(0).amount();
     BigDecimal movements =
         internalConverted.isEmpty() ? BigDecimal.ZERO : internalConverted.get(0).amount();
-    List<String> warnings = new ArrayList<>();
+    List<HistoryWarning> warnings = new ArrayList<>();
     if (hasPending) {
-      warnings.add("Transactions are pending review; portfolio attribution is incomplete.");
+      warnings.add(
+          new HistoryWarning(
+              ValueHistoryWarningValues.ATTRIBUTION_PENDING_REVIEW,
+              "Transactions are pending review; portfolio attribution is incomplete."));
     }
     boolean known =
         (externalConverted.isEmpty() || externalConverted.get(0).valueKnown())
             && (internalConverted.isEmpty() || internalConverted.get(0).valueKnown());
     if (!known) {
-      warnings.add("Currency conversion unavailable for portfolio capital flows.");
+      warnings.add(
+          new HistoryWarning(
+              ValueHistoryWarningValues.ATTRIBUTION_FX_UNAVAILABLE,
+              "Currency conversion unavailable for portfolio capital flows."));
     }
     return new PortfolioCapitalFlows(contributions, movements, !hasPending && known, warnings);
   }

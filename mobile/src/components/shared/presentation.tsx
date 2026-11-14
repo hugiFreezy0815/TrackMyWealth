@@ -11,6 +11,7 @@ import { formatDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
 
 import { Amount, amountTexts } from './amount';
+import { choiceKeyProps } from './choice-key';
 import {
   isValueKnown,
   type ValueStatus,
@@ -60,10 +61,15 @@ export function ChangeChip({
   amount,
   currency,
   percentage,
+  percentageLabel,
+  uncertain = false,
 }: {
   amount: DecimalString;
   currency: string;
   percentage?: string | null;
+  percentageLabel?: string;
+  /** The server flags the change as possibly distorted: neutral colours, no percentage. */
+  uncertain?: boolean;
 }) {
   const theme = useTheme();
   const intl = useIntl();
@@ -77,16 +83,13 @@ export function ChangeChip({
     masked: hidden,
   });
   const direction = display.startsWith('−') ? 'down' : display.startsWith('+') ? 'up' : 'flat';
+  const tone = uncertain ? 'flat' : direction;
   const color =
-    direction === 'down'
-      ? theme.statusLoss
-      : direction === 'up'
-        ? theme.statusGain
-        : theme.textSecondary;
+    tone === 'down' ? theme.statusLoss : tone === 'up' ? theme.statusGain : theme.textSecondary;
   const backgroundColor =
-    direction === 'down'
+    tone === 'down'
       ? theme.statusLossSubtle
-      : direction === 'up'
+      : tone === 'up'
         ? theme.statusGainSubtle
         : theme.bgSubtle;
   return (
@@ -117,8 +120,10 @@ export function ChangeChip({
         signRole="change"
         style={{ ...TypeScale.numberMedium, fontWeight: '600', color }}
       />
-      {percentage && !hidden ? (
-        <Text style={{ ...TypeScale.numberMedium, color }}>{percentage}</Text>
+      {percentage && !hidden && !uncertain ? (
+        <Text accessibilityLabel={percentageLabel} style={{ ...TypeScale.numberMedium, color }}>
+          {percentage}
+        </Text>
       ) : null}
     </View>
   );
@@ -353,7 +358,7 @@ export function PortfolioTabs({
   );
 }
 
-export type ChipOption = { value: string; label: string };
+export type ChipOption = { value: string; label: string; accessibilityLabel?: string };
 export function ChipGroup({
   options,
   selected,
@@ -393,10 +398,11 @@ export function ChipGroup({
             accessibilityRole={multi ? 'checkbox' : 'radio'}
             aria-checked={active}
             aria-disabled={disabled}
-            accessibilityLabel={option.label}
+            accessibilityLabel={option.accessibilityLabel ?? option.label}
             accessibilityHint={describedBy?.text}
             disabled={disabled}
             onPress={() => onSelect(option.value)}
+            {...choiceKeyProps(() => onSelect(option.value), disabled)}
             style={{
               minHeight: 44,
               minWidth: 44,

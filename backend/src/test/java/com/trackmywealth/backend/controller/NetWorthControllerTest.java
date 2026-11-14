@@ -15,6 +15,7 @@ import com.trackmywealth.backend.dto.PortfolioSection;
 import com.trackmywealth.backend.dto.ReassignAccountPortfolioRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.ValueHistoryResponse;
+import com.trackmywealth.backend.dto.ValueHistoryWarningValues;
 import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
@@ -337,6 +338,30 @@ class NetWorthControllerTest {
         .isEqualByComparingTo("12000");
     assertThat(history.complete()).isFalse();
     assertThat(history.warnings()).anyMatch(warning -> warning.contains("Gold"));
+    assertThat(history.warningCodes())
+        .containsExactly(ValueHistoryWarningValues.INCEPTION_UNCERTAIN);
+  }
+
+  @Test
+  void anAccountWithoutAnFxRateIsAValueUnknownCodeWithoutItsName() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse portfolio = createPortfolio(token, "DKB", "EUR");
+    UUID cash =
+        createAccount(
+                token,
+                AccountRequests.account("Private euro cash", "CASH", "EUR")
+                    .portfolioId(portfolio.id())
+                    .build())
+            .id();
+    seedOpeningBalance(cash, "1000.00");
+
+    ValueHistoryResponse history = history(token, "1W");
+
+    assertThat(history.complete()).isFalse();
+    assertThat(history.warnings()).anyMatch(w -> w.startsWith("Private euro cash: value unknown"));
+    assertThat(history.warningCodes())
+        .contains(ValueHistoryWarningValues.VALUE_UNKNOWN)
+        .noneMatch(code -> code.contains("Private"));
   }
 
   @Test
@@ -409,6 +434,8 @@ class NetWorthControllerTest {
 
     assertThat(response.complete()).isTrue();
     assertThat(response.warnings()).noneMatch(w -> w.contains("may have been restated"));
+    assertThat(response.warningCodes())
+        .doesNotContain(ValueHistoryWarningValues.LIFECYCLE_UNVERIFIED);
     assertThat(valueOn(response, today())).isEqualByComparingTo("2000");
   }
 
@@ -424,6 +451,8 @@ class NetWorthControllerTest {
 
     assertThat(response.complete()).isFalse();
     assertThat(response.warnings()).anyMatch(w -> w.contains("may have been restated"));
+    assertThat(response.warningCodes())
+        .containsExactly(ValueHistoryWarningValues.LIFECYCLE_UNVERIFIED);
     assertThat(valueOn(response, today())).isEqualByComparingTo("2000");
   }
 
@@ -445,6 +474,10 @@ class NetWorthControllerTest {
     assertThat(valueOn(established, today())).isEqualByComparingTo("3000");
     assertThat(recent.complete()).isFalse();
     assertThat(recent.warnings()).anyMatch(w -> w.contains("inception before first activity"));
+    // The codes are stable and never carry an account name; the sentences above do.
+    assertThat(recent.warningCodes())
+        .containsExactly(ValueHistoryWarningValues.INCEPTION_UNCERTAIN);
+    assertThat(established.warningCodes()).isEmpty();
   }
 
   @Test
@@ -659,6 +692,12 @@ class NetWorthControllerTest {
     ValueHistoryResponse workspaceHistory = history(token, "1W");
     assertThat(portfolioHistory.complete()).isFalse();
     assertThat(portfolioHistory.warnings()).anyMatch(w -> w.contains("pending review"));
+    assertThat(portfolioHistory.warningCodes())
+        .contains(
+            ValueHistoryWarningValues.ATTRIBUTION_PENDING_REVIEW,
+            ValueHistoryWarningValues.CAPITAL_MOVEMENTS_UNAVAILABLE);
+    assertThat(workspaceHistory.warningCodes())
+        .contains(ValueHistoryWarningValues.ATTRIBUTION_PENDING_REVIEW);
     assertThat(portfolioHistory.change().marketAndFx()).isNull();
     assertThat(workspaceHistory.complete()).isFalse();
     assertThat(workspaceHistory.change().marketAndFx()).isNull();

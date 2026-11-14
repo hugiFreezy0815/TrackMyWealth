@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { IntlProvider } from 'react-intl';
 import { StyleSheet } from 'react-native';
 
@@ -7,13 +8,16 @@ import {
   useAccounts,
   useCashFlow,
   useNetWorth,
+  useNetWorthHistory,
   usePortfolios,
   useWorkspace,
 } from '@/api/queries/resources';
+import { typedApi } from '@/api/typed-api';
 import type { components } from '@/api/schema';
 import { Colors } from '@/constants/theme';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import en from '@/i18n/en.json';
+import { selectHistoryPeriod } from '@/features/value-history/period';
 import de from '@/i18n/de.json';
 import { OverviewScreen, type OverviewScreenProps } from './overview-screen';
 
@@ -32,6 +36,7 @@ jest.mock('@/api/queries/resources', () => ({
   useWorkspace: jest.fn(),
   usePortfolios: jest.fn(),
   useNetWorth: jest.fn(),
+  useNetWorthHistory: jest.fn(),
   useAccounts: jest.fn(),
   useCashFlow: jest.fn(),
 }));
@@ -162,6 +167,9 @@ function failure(error: Error) {
 }
 function setFixtures() {
   jest
+    .mocked(useNetWorthHistory)
+    .mockReturnValue(success(undefined) as unknown as ReturnType<typeof useNetWorthHistory>);
+  jest
     .mocked(useWorkspace)
     .mockReturnValue(success(workspace) as unknown as ReturnType<typeof useWorkspace>);
   jest
@@ -180,11 +188,14 @@ function setFixtures() {
 async function renderOverview(
   locale: 'en' | 'de' = 'en',
   props: Partial<OverviewScreenProps> = {},
+  queryClient = new QueryClient(),
 ) {
   return render(
-    <IntlProvider locale={locale} messages={locale === 'de' ? de : en}>
-      <OverviewScreen onAddPortfolio={jest.fn()} onReviewAccount={jest.fn()} {...props} />
-    </IntlProvider>,
+    <QueryClientProvider client={queryClient}>
+      <IntlProvider locale={locale} messages={locale === 'de' ? de : en}>
+        <OverviewScreen onAddPortfolio={jest.fn()} onReviewAccount={jest.fn()} {...props} />
+      </IntlProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -228,6 +239,7 @@ describe('Overview S1 (#489)', () => {
     jest.clearAllMocks();
     mockWindow.width = 390;
     setFixtures();
+    selectHistoryPeriod('1M');
     jest.mocked(useAmountsHidden).mockReturnValue(false);
   });
 
@@ -239,6 +251,128 @@ describe('Overview S1 (#489)', () => {
     expect(screen.getByText('Cash & savings')).toBeTruthy();
     expect(screen.getByText(/≈CHF/)).toBeTruthy();
     expect(screen.getAllByText('Euro Bank')[0]).toBeTruthy();
+  });
+
+  it('renders server changes for the active period and drops them while switching', async () => {
+    const change = {
+      amount: '42.75',
+      percent: '3.2',
+      contributions: '1.50',
+      capitalMovements: null,
+      marketAndFx: null,
+    };
+    const history: components['schemas']['ValueHistoryResponse'] = {
+      period: '1M',
+      currency: 'CHF',
+      from: '2026-10-08',
+      to: '2026-11-08',
+      points: [
+        { date: '2026-10-08', value: '1000', estimated: true },
+        { date: '2026-11-08', value: '1200', estimated: false },
+      ],
+      change,
+      sections: [{ section: 'CASH_AND_SAVINGS', change: { ...change, amount: '17.12' } }],
+      complete: false,
+      // The sentences name accounts and are never shown; the app reads the codes.
+      warnings: [
+        'Currency conversion unavailable for contributions.',
+        'Private account 65432.10: opening value unavailable',
+        'Transactions are pending review; contribution attribution is incomplete.',
+      ],
+      warningCodes: [
+        'ATTRIBUTION_FX_UNAVAILABLE',
+        'ATTRIBUTION_PENDING_REVIEW',
+        'FUTURE_CODE' as never,
+      ],
+    };
+    jest
+      .mocked(useNetWorthHistory)
+      .mockImplementation(
+        (_currency, period) =>
+          success(period === '1M' ? history : undefined) as unknown as ReturnType<
+            typeof useNetWorthHistory
+          >,
+      );
+    await renderOverview();
+    expect(useNetWorthHistory).toHaveBeenLastCalledWith('CHF', '1M', true);
+    expect(screen.getByRole('image', { name: /8 Oct 2026.*plus 42.75.*estimated/i })).toBeTruthy();
+    expect(screen.getByText('+3.2%')).toBeTruthy();
+    expect(screen.getByText('+0.5%')).toBeTruthy();
+    expect(screen.getByLabelText('plus 17.12 Swiss francs')).toBeTruthy();
+    // The chip and the section tile both name the period of their change (M03).
+    expect(screen.getAllByText('past month')).toHaveLength(2);
+    expect(screen.getByText('Net saving')).toBeTruthy();
+    expect(screen.queryByText('Market & FX')).toBeNull();
+    expect(screen.getByText(/parts of the change are incomplete/)).toBeTruthy();
+    expect(screen.getByText('Some historical exchange rates are unavailable.')).toBeTruthy();
+    expect(screen.getByText(/Some transactions still need review/)).toBeTruthy();
+    expect(screen.getByText('Some history details need a check.')).toBeTruthy();
+    expect(screen.queryByText(/Private account|65432[.]10|value unavailable/)).toBeNull();
+    expect(screen.queryByText(/This change may be off/)).toBeNull();
+
+    await fireEvent.press(screen.getByRole('radio', { name: '1W, Past week' }));
+    expect(useNetWorthHistory).toHaveBeenLastCalledWith('CHF', '1W', true);
+    expect(screen.queryByText('+0.5%')).toBeNull();
+    expect(screen.queryByLabelText('plus 17.12 Swiss francs')).toBeNull();
+  });
+
+  it('keeps the monthly chart and section changes offline until the yearly history loads', async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } },
+    });
+    const actual =
+      jest.requireActual<typeof import('@/api/queries/resources')>('@/api/queries/resources');
+    jest.mocked(useNetWorthHistory).mockImplementation(actual.useNetWorthHistory);
+    const change = {
+      amount: '10.25',
+      percent: null,
+      contributions: null,
+      capitalMovements: null,
+      marketAndFx: null,
+    };
+    const monthly: components['schemas']['ValueHistoryResponse'] = {
+      period: '1M',
+      currency: 'CHF',
+      from: '2026-10-08',
+      to: '2026-11-08',
+      points: [{ date: '2026-11-08', value: '1200', estimated: false }],
+      change,
+      sections: [{ section: 'CASH_AND_SAVINGS', change: { ...change, amount: '13.40' } }],
+      complete: true,
+      warnings: [],
+      warningCodes: [],
+    };
+    const get = jest
+      .spyOn(typedApi, 'get')
+      .mockResolvedValueOnce(monthly)
+      .mockResolvedValueOnce({
+        ...monthly,
+        period: '1Y',
+        change: { ...change, amount: '52.21' },
+        sections: [],
+      });
+    try {
+      await renderOverview('en', {}, client);
+      await screen.findByRole('image', { name: /plus 10[.]25/ });
+      await act(() => onlineManager.setOnline(false));
+      await fireEvent.press(screen.getByRole('radio', { name: '1Y, Past year' }));
+      expect(screen.getByText('The 1Y period is unavailable offline. Showing 1M.')).toBeTruthy();
+      expect(screen.getByRole('image', { name: /plus 10[.]25/ })).toBeTruthy();
+      expect(screen.getByLabelText('plus 13.40 Swiss francs')).toBeTruthy();
+      expect(get).toHaveBeenCalledTimes(1);
+
+      await act(() => onlineManager.setOnline(true));
+      await screen.findByRole('image', { name: /plus 52[.]21/ });
+      expect(screen.queryByText(/period is unavailable offline/)).toBeNull();
+      expect(screen.queryByLabelText('plus 13.40 Swiss francs')).toBeNull();
+      expect(get).toHaveBeenLastCalledWith(
+        '/api/v1/net-worth/history',
+        expect.objectContaining({ query: { currency: 'CHF', period: '1Y' } }),
+      );
+    } finally {
+      await act(() => onlineManager.setOnline(true));
+      get.mockRestore();
+    }
   });
 
   it('falls back to the German tab label without exposing technical terminology', async () => {

@@ -3932,7 +3932,8 @@ export interface components {
     };
     ValueHistoryResponse: {
       currency: string;
-      period: string;
+      /** @enum {string} */
+      period: '1W' | '1M' | 'YTD' | '1Y' | 'MAX';
       /** Format: date */
       from: string;
       /** Format: date */
@@ -3942,6 +3943,17 @@ export interface components {
       sections: components['schemas']['SectionChange'][];
       complete: boolean;
       warnings: string[];
+      warningCodes: (
+        | 'VALUE_UNKNOWN'
+        | 'INCEPTION_UNCERTAIN'
+        | 'LIFECYCLE_UNVERIFIED'
+        | 'ATTRIBUTION_PENDING_REVIEW'
+        | 'ATTRIBUTION_FX_UNAVAILABLE'
+        | 'CAPITAL_MOVEMENTS_UNAVAILABLE'
+        | 'TRANSACTIONS_BEFORE_OPENING_BALANCE'
+        | 'BOOKED_BEFORE_OPENING_BALANCE'
+        | 'OPEN_RECONCILIATION_DIFFERENCE'
+      )[];
     };
     WorkspaceMemberListItemResponse: {
       /** Format: uuid */
@@ -16001,6 +16013,7 @@ export interface operations {
   getNetWorthHistory: {
     parameters: {
       query?: {
+        /** @description The history window: 1W, 1M, YTD, 1Y or MAX; any other value is a 400 VALIDATION_FAILED. */
         period?: string;
         currency?: string;
       };
@@ -16502,6 +16515,7 @@ export interface operations {
   getPortfolioHistory: {
     parameters: {
       query?: {
+        /** @description The history window: 1W, 1M, YTD, 1Y or MAX; any other value is a 400 VALIDATION_FAILED. */
         period?: string;
       };
       header?: {
