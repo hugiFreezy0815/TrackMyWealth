@@ -323,42 +323,51 @@ describe('secure auth session', () => {
     expect(secureStore.deleteItemAsync).not.toHaveBeenCalled();
   });
 
-  it('shares a rate-limited refresh and waits until Retry-After before rotating and replaying', async () => {
-    const now = jest.spyOn(Date, 'now').mockReturnValue(100_000);
-    let refreshCalls = 0;
-    const fetchMock = serve((url, init) => {
-      if (url.endsWith('/auth/refresh')) {
-        refreshCalls += 1;
-        return refreshCalls === 1
-          ? { status: 429, retryAfter: '30' }
-          : { status: 200, body: tokens(2) };
-      }
-      if (url.endsWith('/accounts')) {
-        const auth = (init.headers as Record<string, string>).Authorization;
-        return auth === 'Bearer access-2' ? { status: 200, body: ['ok'] } : { status: 401 };
-      }
-      return plainLogin(url) ?? { status: 404 };
-    });
-    try {
-      await signIn('demo@example.com', 'test');
-      const accounts = () => api.get('/api/v1/accounts');
-      await Promise.all([
-        expect(accounts()).rejects.toMatchObject({ retryAfterSeconds: 30 }),
-        expect(accounts()).rejects.toMatchObject({ retryAfterSeconds: 30 }),
-      ]);
-      now.mockReturnValue(129_000);
-      await expect(accounts()).rejects.toMatchObject({ retryAfterSeconds: 1 });
-      expect(refreshCalls).toBe(1);
-      expect(sessionSnapshot().signedIn).toBe(true);
+  it.each([
+    { description: 'a 30-second header', header: '30', delaySeconds: 30 },
+    { description: 'an infinite delay', header: '9'.repeat(309), delaySeconds: 5 },
+    { description: 'a deadline overflow', header: '9'.repeat(308), delaySeconds: 5 },
+    { description: 'an unsafe deadline', header: '9007199254740', delaySeconds: 5 },
+  ])(
+    'shares the refresh, waits, and replays after $description',
+    async ({ header, delaySeconds }) => {
+      const now = jest.spyOn(Date, 'now').mockReturnValue(100_000);
+      let refreshCalls = 0;
+      const fetchMock = serve((url, init) => {
+        if (url.endsWith('/auth/refresh')) {
+          refreshCalls += 1;
+          return refreshCalls === 1
+            ? { status: 429, retryAfter: header }
+            : { status: 200, body: tokens(2) };
+        }
+        if (url.endsWith('/accounts')) {
+          const auth = (init.headers as Record<string, string>).Authorization;
+          return auth === 'Bearer access-2' ? { status: 200, body: ['ok'] } : { status: 401 };
+        }
+        return plainLogin(url) ?? { status: 404 };
+      });
+      try {
+        await signIn('demo@example.com', 'test');
+        const accounts = () => api.get('/api/v1/accounts');
+        await Promise.all([
+          expect(accounts()).rejects.toMatchObject({ retryAfterSeconds: delaySeconds }),
+          expect(accounts()).rejects.toMatchObject({ retryAfterSeconds: delaySeconds }),
+        ]);
+        const deadline = 100_000 + delaySeconds * 1000;
+        now.mockReturnValue(deadline - 1000);
+        await expect(accounts()).rejects.toMatchObject({ retryAfterSeconds: 1 });
+        expect(refreshCalls).toBe(1);
+        expect(sessionSnapshot().signedIn).toBe(true);
 
-      now.mockReturnValue(130_000);
-      await expect(accounts()).resolves.toEqual(['ok']);
-      expect(refreshCalls).toBe(2);
-      expect(callsTo(fetchMock, '/accounts')).toHaveLength(5);
-    } finally {
-      now.mockRestore();
-    }
-  });
+        now.mockReturnValue(deadline);
+        await expect(accounts()).resolves.toEqual(['ok']);
+        expect(refreshCalls).toBe(2);
+        expect(callsTo(fetchMock, '/accounts')).toHaveLength(5);
+      } finally {
+        now.mockRestore();
+      }
+    },
+  );
 
   it('keeps the session and applies the default delay when a refresh times out', async () => {
     jest.useFakeTimers();

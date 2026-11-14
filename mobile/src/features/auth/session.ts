@@ -167,10 +167,13 @@ async function rotate(): Promise<SessionRefreshResult> {
       await clearSession();
       return access;
     }
+    const now = Date.now();
+    const retryAfter = error instanceof ApiError ? error.retryAfterSeconds : undefined;
     const delay =
-      (error instanceof ApiError ? error.retryAfterSeconds : undefined) ??
-      DEFAULT_REFRESH_DELAY_SECONDS;
-    refreshNotBefore = Date.now() + delay * 1000;
+      retryAfter !== undefined && now + retryAfter * 1000 <= Number.MAX_SAFE_INTEGER
+        ? retryAfter
+        : DEFAULT_REFRESH_DELAY_SECONDS;
+    refreshNotBefore = now + delay * 1000;
     return new SessionRefreshUnavailableError(delay);
   }
 }

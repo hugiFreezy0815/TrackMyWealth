@@ -119,7 +119,10 @@ export function parseRetryAfter(
 ): number | undefined {
   const value = header?.trim();
   if (!value) return undefined;
-  if (/^\d+$/.test(value)) return Number(value);
+  if (/^\d+$/.test(value)) {
+    const seconds = Number(value);
+    return Number.isFinite(seconds) ? seconds : undefined;
+  }
   // Only an HTTP-date (it names a weekday); Date.parse also reads "2" or "2.5" as a year.
   if (!/^[A-Za-z]{3},/.test(value)) return undefined;
   const at = Date.parse(value);
