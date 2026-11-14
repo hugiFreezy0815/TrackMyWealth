@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useIntl } from 'react-intl';
 import { Pressable, Text, View } from 'react-native';
 
@@ -123,10 +123,12 @@ export function PortfolioHeader({
   data,
   view,
   onExplain,
+  children,
 }: {
   data: HeaderData;
   view: PortfolioView | undefined;
   onExplain: () => void;
+  children?: ReactNode;
 }) {
   const intl = useIntl();
   const theme = useTheme();
@@ -201,6 +203,7 @@ export function PortfolioHeader({
         />
       ) : null}
       {view ? <FxHint view={view} data={data} /> : null}
+      {children}
     </SectionCard>
   );
 }

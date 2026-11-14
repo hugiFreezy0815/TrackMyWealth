@@ -9,7 +9,7 @@ public record PortfolioCapitalFlows(
     @Nullable BigDecimal contributions,
     @Nullable BigDecimal capitalMovements,
     boolean complete,
-    List<String> warnings) {
+    List<HistoryWarning> warnings) {
   public PortfolioCapitalFlows {
     warnings = List.copyOf(warnings);
   }

@@ -1,4 +1,4 @@
-# #554 sign-in with the keyboard open: iOS and web checks (PR #558)
+# #554 sign-in with the keyboard open: iOS, Android and web checks (PRs #558, #564)
 
 Date: 2026-11-13. Follow-up to PR #558 (merged at `61199f8`): checks ran on the review fixes in
 `fde175c9`, built on `main` at `63dad693` (#559, merged since, only removed unused dependencies).
@@ -31,10 +31,40 @@ the typed email and a 15-character password (`secret-password`). iOS leaves secu
 keyboard out of screenshots, so this step is proven by the request, not by a picture. The flow
 dismisses iOS's own "Save Password?" sheet.
 
-Not covered: Android (no Android SDK on the check Mac) and a physical device. Android must be
-checked by hand: with Server, Email, Password and the MFA code focused, the field and its button
-must stay above the keyboard (the app draws edge-to-edge, so the window no longer resizes for the
-keyboard; `KeyboardAvoidingView` now uses `padding` on Android too).
+Not covered on iOS: a physical device.
+
+## Android emulator (native release build)
+
+Date: 2026-11-13. `main` at `ee084e19` (PR #564 merged). Android emulator 37.2.13, Pixel 10 Pro
+system image API 37 (Google Play, arm64-v8a), Maestro 2.12.1. Release build
+(`expo prebuild --platform android`, `./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a`,
+`EXPO_PUBLIC_API_URL=http://localhost:8099`), `adb reverse tcp:8099 tcp:8099`, the same
+`mock-api.mjs`. Flow: `auth-android.yaml`.
+
+| Device | Text size | Result | Screenshots |
+|---|---|---|---|
+| Pixel 10 Pro, about 427 dp wide | default (font scale 1.0) | Pass | `android-pixel10-*.png` |
+| Pixel 10 Pro set to 375 dp wide (`adb shell wm density 546`) | 200 % (`font_scale 2.0`) | Pass | `android-small200-*.png` |
+
+What the screenshots show, per run:
+
+1. `1-server-focused`: keyboard open on Server; the card moves up out of the keyboard's way.
+   At default size Email, Password and "Sign in" stay visible; at 200 % the form continues below.
+2. `2-server-focused-scrolled`: with the keyboard still open, the form scrolls to Password and "Sign in".
+3. `3-email-after-return`: Return in Server moved the focus to Email (the typed address lands there).
+4. `4-password-focused`: Return in Email moved the focus to Password; the field stays above the
+   keyboard. At default size "Sign in" is visible too; at 200 % it is reached by scrolling (step 2).
+5. `5-mfa-keyboard`: MFA step with the number pad open: the code field, "Verify code" and
+   "Start over" are all above the keyboard, also at 200 %.
+6. `6-mfa-scrolled`: after a scroll gesture (the keyboard closes on drag).
+7. `7-mfa-after-done`: Done (✓) on the number pad submitted the code; the mock answers 401, so the
+   app shows "Could not sign in…".
+8. `8-after-start-over`: "Start over" returns to the sign-in step, scrolled to the top.
+
+The mock received exactly one login per run, with the typed email and a 15-character password,
+and one `POST /api/v1/auth/mfa/verify` from the Done key. No "save password" prompt appeared.
+
+Not covered on Android: a physical device, and API 35 (the level CI uses); the emulator runs API 37.
 
 ## Web (Metro dev server)
 

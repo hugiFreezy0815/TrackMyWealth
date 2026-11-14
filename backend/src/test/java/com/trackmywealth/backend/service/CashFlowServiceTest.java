@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse.CurrencyAmount;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
+import com.trackmywealth.backend.dto.ValueHistoryWarningValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.SavingsRateMethodology;
 import com.trackmywealth.backend.repository.AccountRepository;
@@ -213,7 +214,11 @@ class CashFlowServiceTest {
     var result = service.netContributions(List.of(UUID.randomUUID()), DAY_1, DAY_3, "CHF");
     assertThat(result.complete()).isFalse();
     assertThat(result.amount()).isEqualByComparingTo("0");
-    assertThat(result.warnings()).anyMatch(warning -> warning.contains("pending review"));
+    assertThat(result.warnings())
+        .anyMatch(
+            warning ->
+                warning.message().contains("pending review")
+                    && ValueHistoryWarningValues.ATTRIBUTION_PENDING_REVIEW.equals(warning.code()));
     verify(transactionRepository)
         .sumPendingReviewByDateAndCurrency(anyCollection(), eq(DAY_1), eq(DAY_3));
   }
@@ -224,7 +229,11 @@ class CashFlowServiceTest {
     var result = service.netContributions(List.of(UUID.randomUUID()), DAY_1, DAY_3, "CHF");
     assertThat(result.complete()).isFalse();
     assertThat(result.amount()).isNull();
-    assertThat(result.warnings()).anyMatch(warning -> warning.contains("Currency conversion"));
+    assertThat(result.warnings())
+        .anyMatch(
+            warning ->
+                warning.message().contains("Currency conversion")
+                    && ValueHistoryWarningValues.ATTRIBUTION_FX_UNAVAILABLE.equals(warning.code()));
   }
 
   @Test

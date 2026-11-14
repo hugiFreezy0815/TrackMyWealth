@@ -979,7 +979,13 @@ export function TransactionDetail({
                     {
                       key: 'source',
                       label: intl.formatMessage({ id: 'txn.sourceDetail' }),
-                      value: `${transaction.importBatch.fileFormat} · ${formatDateTime(transaction.importBatch.uploadedAt, intl.locale)}`,
+                      value: intl.formatMessage(
+                        { id: 'txn.sourceDetail.value' },
+                        {
+                          format: transaction.importBatch.fileFormat,
+                          date: formatDateTime(transaction.importBatch.uploadedAt, intl.locale),
+                        },
+                      ),
                     },
                   ]
                 : []),

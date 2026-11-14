@@ -239,13 +239,23 @@ class ImportSnapshotCompletionServiceTest {
                 + " dem Kontostand.");
     // What keeps the commit back comes first, in the singular or the plural.
     assertThat(explanations.explain("COMPLETES", completes, DATE, 0, 2, false, Locale.ENGLISH))
-        .startsWith("2 positions are securities your workspace does not know yet.");
+        .isEqualTo(
+            "2 positions are securities not yet recorded in your overview. Add them, then"
+                + " import the statement.");
     assertThat(explanations.explain("COMPLETES", completes, DATE, 1, 0, false, Locale.GERMAN))
         .startsWith("Eine Zeile dieses Auszugs ist nicht lesbar.");
     assertThat(explanations.explain("COMPLETES", completes, DATE, 0, 1, false, Locale.ENGLISH))
         .isEqualTo(
-            "One position is a security your workspace does not know yet. Create it, then"
+            "One position is a security not yet recorded in your overview. Add it, then"
                 + " import the statement.");
+    assertThat(explanations.explain("COMPLETES", completes, DATE, 0, 1, false, Locale.GERMAN))
+        .isEqualTo(
+            "Eine Position ist ein Wertpapier, das in deiner Übersicht noch fehlt. Lege es an und"
+                + " importiere dann den Auszug.");
+    assertThat(explanations.explain("COMPLETES", completes, DATE, 0, 2, false, Locale.GERMAN))
+        .isEqualTo(
+            "2 Positionen sind Wertpapiere, die in deiner Übersicht noch fehlen. Lege sie an und"
+                + " importiere dann den Auszug.");
     ImportSnapshotPlan decided =
         new ImportSnapshotPlan(
             ImportSnapshotValues.COMPLETES,

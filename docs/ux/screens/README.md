@@ -52,12 +52,8 @@ data source. Every such difference is listed under "Differences from Figma" in t
   renderer and all S1–S7 component inputs/states. It is pending independent review and PO approval
   until #378 is closed; its [light/dark gallery](../02-visual-foundations.html) is a static
   reference, not product code. The component map below remains the per-screen source of truth.
-- **#379 (glossary and copy) owns the final wording.** The EN/DE texts here are drafts with
-  their message keys, written as complete ICU messages.
-- **German addresses the member with "du" (PO decision 2026-11-05).** Every German text in the
-  app uses the informal form ("Name deiner Übersicht", "Bitte lade neu"). The DE texts in
-  `docs/api/error-codes.md` still use "Sie". #379 rewrites them, and the app uses its own
-  "du" texts for every message key.
+- **#379 (glossary and copy):** use the [UX-04 glossary and app catalogues](../03-glossary.md)
+  for final wording. German addresses the member with **du** (PO decision 2026-11-05).
 
 ## Rules for every screen
 
