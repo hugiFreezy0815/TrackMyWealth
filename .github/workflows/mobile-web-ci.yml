@@ -131,8 +131,10 @@ jobs:
             echo 'The CSP check accepted a policy that blocks the hydration script' >&2
             exit 1
           fi
-          if ! grep -F 'CSP violation' "$prefix/csp-negative.log"; then
-            echo 'The CSP check failed without reporting the expected violation:' >&2
+          # Only the blocked hydration script counts: Chrome's effective directive for an
+          # inline <script> is script-src-elem, with blocked URI "inline".
+          if ! grep -Fx '  CSP violation: script-src-elem inline' "$prefix/csp-negative.log"; then
+            echo 'The CSP check did not report the blocked inline hydration script:' >&2
             cat "$prefix/csp-negative.log" >&2
             exit 1
           fi

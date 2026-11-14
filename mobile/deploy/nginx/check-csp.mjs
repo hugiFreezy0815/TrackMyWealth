@@ -74,10 +74,12 @@ function connect(url) {
   });
 }
 
+// One line per violation: "<effective directive> <blocked URI>", e.g. "script-src-elem inline"
+// for a blocked inline script. CI's negative check matches that line exactly.
 const RECORD_VIOLATIONS = `
   window.__cspViolations = [];
   document.addEventListener('securitypolicyviolation', (event) =>
-    window.__cspViolations.push(event.violatedDirective + ' ' + (event.blockedURI || 'inline')));
+    window.__cspViolations.push(event.effectiveDirective + ' ' + (event.blockedURI || 'inline')));
 `;
 
 let failed = false;
