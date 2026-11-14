@@ -26,6 +26,8 @@ updates:
       - dependency-name: react-native
       - dependency-name: react-native-worklets
       - dependency-name: react-native-reanimated
+      # Expo Go ships the SDK-pinned native DateTimePicker. Update it with Expo.
+      - dependency-name: "@react-native-community/datetimepicker"
       # Same for react and react-dom (SDK 58 pins 19.3.0; #406 moved react-dom to 19.3.1 and broke
       # the check). react-native-gesture-handler is pinned to ~3.2.1, so patches still come through.
       - dependency-name: react
