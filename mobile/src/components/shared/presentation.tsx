@@ -11,6 +11,7 @@ import { formatDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
 
 import { Amount, amountTexts } from './amount';
+import { choiceKeyProps } from './choice-key';
 import {
   isValueKnown,
   type ValueStatus,
@@ -401,6 +402,7 @@ export function ChipGroup({
             accessibilityHint={describedBy?.text}
             disabled={disabled}
             onPress={() => onSelect(option.value)}
+            {...choiceKeyProps(() => onSelect(option.value), disabled)}
             style={{
               minHeight: 44,
               minWidth: 44,
