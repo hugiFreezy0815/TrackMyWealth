@@ -7,3 +7,7 @@
 # Local synthetic demo logins and their concurrency lock.
 /.demo-credentials.json
 /.demo-credentials.json.lock
+
+# Screenshots of other apps (Parqet, getquin, BlueBudget), kept locally as design reference.
+# They are third-party images and must not enter the history.
+/docs/screens/examples/
