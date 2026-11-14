@@ -462,9 +462,8 @@ core → budgeting/net worth/consolidated reporting). The working backlog is Git
 project board; `docs/user-stories/` keeps the full story texts, including epics not yet turned
 into issues.
 
-For the implemented pagination contract (page envelope, size cap, sort whitelists, which lists
-are not paged, and client refresh after imports), see
-[API conventions](docs/api/conventions.md#paging).
+For resource naming, authentication, paging, errors and conditional writes, see the
+[API conventions](docs/api/conventions.md) and [ADR 0006](docs/architecture/adr/0006-api-contract-conventions.md).
 
 ## Loading the backlog into GitHub Issues
 
