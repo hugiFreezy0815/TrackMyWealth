@@ -116,12 +116,26 @@ jobs:
           sed -E "s/script-src 'self' [^;]*/script-src 'self'/" "$prefix/policy.good" \
             > "$prefix/content-security-policy.conf"
           nginx -p "$prefix/" -c "$prefix/nginx.conf" -s reload
-          sleep 1
+          # The reload is asynchronous: wait until nginx serves the policy without the hash.
+          for attempt in $(seq 50); do
+            script_src=$(curl -fsS -o /dev/null -D - http://127.0.0.1:8082/ |
+              sed -nE "s/^content-security-policy:.*script-src ([^;]*);.*/\1/ip" || true)
+            [[ $script_src == "'self'" ]] && break
+            if ((attempt == 50)); then
+              echo "nginx still serves script-src $script_src after the reload" >&2
+              exit 1
+            fi
+            sleep 0.2
+          done
           if node deploy/nginx/check-csp.mjs http://127.0.0.1:8082 / > "$prefix/csp-negative.log" 2>&1; then
             echo 'The CSP check accepted a policy that blocks the hydration script' >&2
             exit 1
           fi
-          grep -F 'CSP violation' "$prefix/csp-negative.log"
+          if ! grep -F 'CSP violation' "$prefix/csp-negative.log"; then
+            echo 'The CSP check failed without reporting the expected violation:' >&2
+            cat "$prefix/csp-negative.log" >&2
+            exit 1
+          fi
 
       # #536: the reference image (docker-compose.yml, profile web) serves the same headers.
       - name: Check the web image

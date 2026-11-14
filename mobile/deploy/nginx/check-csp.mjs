@@ -29,8 +29,11 @@ const chrome = spawn(
   { stdio: 'ignore' },
 );
 
+// A cold Chrome on a CI runner can take well over 10 s to open its DevTools port.
+const STARTUP_SECONDS = 30;
+
 async function browserEndpoint() {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  for (let attempt = 0; attempt < STARTUP_SECONDS * 10; attempt += 1) {
     try {
       const [port, path] = readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split('\n');
       return `ws://127.0.0.1:${port}${path}`;
@@ -38,7 +41,7 @@ async function browserEndpoint() {
       await delay(100);
     }
   }
-  throw new Error('Chrome did not start');
+  throw new Error(`Chrome did not start within ${STARTUP_SECONDS} s (no CSP result)`);
 }
 
 function connect(url) {
