@@ -94,7 +94,7 @@ tag by surrounding the version with double quotes. Follow
 [RFC 6585](https://www.rfc-editor.org/rfc/rfc6585) and
 [ADR 0004](../architecture/adr/0004-http-optimistic-concurrency.md).
 
-This example renames a top-level workspace category. Omit `parentId` for a top-level category.
+This example renames a top-level workspace category.
 
 ```http
 PUT /api/v1/categories/{id}
@@ -105,10 +105,9 @@ If-Match: "7"
 {"nameEn":"Groceries","nameDe":"Lebensmittel"}
 ```
 
-The server also accepts an explicit JSON null for `parentId`. The published
-`UpdateCategoryRequest` schema currently accepts only an omitted property or a UUID string.
-[#577](https://github.com/hugiFreezy0815/TrackMyWealth/issues/577) aligns the schema
-(ADR 0006, "Category request schema").
+On category creation and update, omit `parentId` or send JSON `null` for a top-level
+workspace category. Send a UUID to select a parent. For a shipped category, omission, null,
+or its current parent UUID keeps its shipped position. A different parent returns 422.
 
 Missing preconditions return `428 VERSION_REQUIRED`. Stale tags return `412 VERSION_CONFLICT`.
 A malformed tag returns `400 VALIDATION_FAILED`. On a conflict, reload the resource, let the
