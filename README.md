@@ -298,7 +298,9 @@ through the selected provider's hub first and then through every other registere
 so rates entered against EUR keep working after a switch. A newly selected provider's history is
 loaded again from scratch because import progress is tracked per source.
 
-Deploy the web build separately from this Compose stack using the
+The web app is the optional `web` service of this Compose file
+(`docker compose --profile web up -d --build`): nginx serves the export with the security headers,
+and an HTTPS reverse proxy must sit in front of it. See the
 [web deployment instructions](mobile/README.md#web-app). If you use a different static host,
 apply the same security headers and dynamic-route rewrites.
 

@@ -28,7 +28,7 @@ export default function TabLayout() {
 
   useEffect(() => {
     const stopQueryEnvironment = configureQueryEnvironment();
-    const removeBackForwardGuard = installBackForwardGuard();
+    const removeBackForwardGuard = installBackForwardGuard(() => sessionSnapshot().signedIn);
     const unsubscribe = subscribeSession(() => setSession(sessionSnapshot()));
     // The stored session belongs to the configured server, so that address comes first.
     loadServerUrl()
