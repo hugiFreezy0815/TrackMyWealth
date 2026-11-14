@@ -3,6 +3,7 @@ package com.trackmywealth.backend.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Request body for {@code POST /api/v1/categories} (US-08-04). {@code parentId} is optional (a
@@ -10,7 +11,7 @@ import java.util.UUID;
  * generates the stable code (FR-CAT-008) so it can never clash with a default one.
  */
 public record CreateCategoryRequest(
-    UUID parentId,
+    @Nullable UUID parentId,
     @NotBlank @Size(max = CategoryLabels.MAX_LENGTH) String nameEn,
     @NotBlank @Size(max = CategoryLabels.MAX_LENGTH) String nameDe) {
 

@@ -88,12 +88,14 @@ and across an equal-sort-value boundary. Verify that foreign records remain invi
 
 ### Category request schema
 
-[Issue #577](https://github.com/hugiFreezy0815/TrackMyWealth/issues/577) tracks this.
+`CreateCategoryRequest.parentId` and `UpdateCategoryRequest.parentId` are optional and nullable
+in OpenAPI and the generated mobile types. Omission or an explicit JSON null selects the top
+level for a workspace category, and a UUID selects a parent. For a shipped category, omission,
+null or its current parent UUID retains its position. A different parent is rejected.
 
-Align `UpdateCategoryRequest.parentId` in generated OpenAPI and mobile types with the server's
-existing behavior. Omission and an explicit JSON null both represent a top-level workspace
-category, and a UUID selects a parent. Verify that the generated schema accepts all three forms
-and rejects a malformed UUID. Keep the server's separate rules for shipped categories.
+Declare request nullability where the API explicitly supports JSON null as part of the
+operation's behavior. Apply this to the two category requests (#577) and review other request
+fields individually. Bean validation still determines whether each property is required.
 
 ## Lifecycle policies
 
@@ -188,8 +190,8 @@ then sets `required` and nullability from the record components. A response sche
 record behind it fails the document's generation. The hand-built `ApiProblem` schema declares its
 own required fields: `title`, `status` and `code`. Its optional fields are omitted when unset.
 
-**Request schemas are untouched.** Their `required` list is what bean validation demands of the
-caller. Seven import-template parts are used by requests and responses alike
+**Response field processing leaves request schemas untouched.** Their `required` list is what
+bean validation demands of the caller. Seven import-template parts are used by requests and responses alike
 (`ImportColumnMapping`, `ImportPdfLayout`, ...). The document splits each of them: requests keep
 the schema, and responses refer to a copy named `<name>Response`. The Java records stay shared.
 Rejected: leaving shared schemas without `required`, which would leave seven response schemas

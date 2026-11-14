@@ -1,6 +1,8 @@
 package com.trackmywealth.backend.config;
 
+import com.trackmywealth.backend.dto.CreateCategoryRequest;
 import com.trackmywealth.backend.dto.PagingValues;
+import com.trackmywealth.backend.dto.UpdateCategoryRequest;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.web.CorrelationIdFilter;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
@@ -160,6 +162,7 @@ public class ApiDocumentationConfig {
     components.addSchemas(API_PROBLEM_SCHEMA, problemSchema());
     components.addResponses(API_PROBLEM_RESPONSE, problemResponse());
     ResponseHeaderContract.addComponents(components);
+    documentCategoryParentNullability(components);
 
     components.addSecuritySchemes(
         BEARER_SCHEME,
@@ -193,6 +196,17 @@ public class ApiDocumentationConfig {
                               .values()
                               .forEach(ApiDocumentationConfig::documentCorrelationResponseHeader);
                         }));
+  }
+
+  /** Create and update accept an explicit null parent as well as omission (#577). */
+  private static void documentCategoryParentNullability(Components components) {
+    for (Class<?> request : List.of(CreateCategoryRequest.class, UpdateCategoryRequest.class)) {
+      Schema<?> schema = components.getSchemas().get(request.getSimpleName());
+      if (schema != null) {
+        Map<String, Schema> properties = schema.getProperties();
+        properties.put("parentId", ResponseFieldContract.nullable(properties.get("parentId")));
+      }
+    }
   }
 
   /**

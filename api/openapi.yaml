@@ -19328,7 +19328,9 @@ components:
       type: object
       properties:
         parentId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         nameEn:
           type: string
@@ -23391,7 +23393,9 @@ components:
       type: object
       properties:
         parentId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         nameEn:
           type: string

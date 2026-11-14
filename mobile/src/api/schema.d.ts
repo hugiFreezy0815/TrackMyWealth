@@ -2267,7 +2267,7 @@ export interface components {
     };
     CreateCategoryRequest: {
       /** Format: uuid */
-      parentId?: string;
+      parentId?: string | null;
       nameEn: string;
       nameDe: string;
     };
@@ -3896,7 +3896,7 @@ export interface components {
     };
     UpdateCategoryRequest: {
       /** Format: uuid */
-      parentId?: string;
+      parentId?: string | null;
       nameEn: string;
       nameDe: string;
     };

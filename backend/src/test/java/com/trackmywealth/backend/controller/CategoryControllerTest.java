@@ -369,6 +369,40 @@ class CategoryControllerTest {
   }
 
   @Test
+  void explicitNullMovesAWorkspaceCategoryToTheTopLevel() {
+    String token = bootstrapAdministrator();
+    CategoryResponse category =
+        created(token, new CreateCategoryRequest(defaultId("LEISURE"), "Music", "Musik"));
+
+    client(token)
+        .put()
+        .uri(BASE + "/" + category.id())
+        .header("If-Match", "\"" + category.version() + "\"")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            """
+            {"parentId":null,"nameEn":"Music","nameDe":"Musik"}
+            """)
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    assertThat(getCategory(token, category.id()).parentId()).isNull();
+  }
+
+  @Test
+  void nullParentKeepsAShippedChildInItsOriginalPosition() {
+    String token = bootstrapAdministrator();
+    UUID dining = defaultId("DINING");
+
+    update(token, dining, new UpdateCategoryRequest(null, "Dining", "Essen gehen"))
+        .expectStatus()
+        .isOk();
+
+    assertThat(getCategory(token, dining).parentId()).isEqualTo(defaultId("LEISURE"));
+  }
+
+  @Test
   void anOwnCategoryCanBeMovedButNotUnderItsOwnSubtree() {
     String token = bootstrapAdministrator();
     CategoryResponse hobby = created(token, new CreateCategoryRequest(null, "Hobby", "Hobby"));

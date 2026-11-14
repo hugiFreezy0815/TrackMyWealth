@@ -2,10 +2,14 @@ package com.trackmywealth.backend.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.trackmywealth.backend.dto.CreateCategoryRequest;
+import com.trackmywealth.backend.dto.UpdateCategoryRequest;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ResponseHeader;
 import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
+import io.swagger.v3.core.converter.ModelConverters;
+import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem;
@@ -16,11 +20,13 @@ import io.swagger.v3.oas.models.links.Link;
 import io.swagger.v3.oas.models.media.Content;
 import io.swagger.v3.oas.models.media.Encoding;
 import io.swagger.v3.oas.models.media.MediaType;
+import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.media.StringSchema;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -34,6 +40,24 @@ import org.springframework.web.method.HandlerMethod;
 class ApiDocumentationContractTest {
 
   private final ApiDocumentationConfig config = new ApiDocumentationConfig();
+
+  @Test
+  void categoryRequestsDocumentOptionalNullableUuidParents() {
+    Components components = new Components();
+    for (Class<?> request : List.of(CreateCategoryRequest.class, UpdateCategoryRequest.class)) {
+      ModelConverters.getInstance(true).readAll(request).forEach(components::addSchemas);
+    }
+
+    config.apiWireConventions().customise(new OpenAPI().components(components));
+
+    for (Class<?> request : List.of(CreateCategoryRequest.class, UpdateCategoryRequest.class)) {
+      Schema<?> schema = components.getSchemas().get(request.getSimpleName());
+      assertThat(schema.getRequired()).containsExactlyInAnyOrder("nameEn", "nameDe");
+      Schema<?> parentId = schema.getProperties().get("parentId");
+      assertThat(parentId.getTypes()).containsExactly("string", "null");
+      assertThat(parentId.getFormat()).isEqualTo("uuid");
+    }
+  }
 
   @Test
   void eachDeclaredStatusIsItsOwnCopyOfTheGeneratedResponse() throws NoSuchMethodException {

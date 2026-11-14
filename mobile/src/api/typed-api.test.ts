@@ -57,6 +57,23 @@ describe('typedApi', () => {
     expect(JSON.parse(init.body as string)).toEqual({ importAccountId: 'a2', batchId: 'b1' });
   });
 
+  it('sends an explicit null parent when updating a category', async () => {
+    const fetchMock = mockFetch({ id: 'category', parentId: null, version: 4 });
+
+    await typedApi.put('/api/v1/categories/{id}', {
+      params: { id: 'category' },
+      version: 3,
+      body: { parentId: null, nameEn: 'Music', nameDe: 'Musik' },
+    });
+
+    const { init } = sent(fetchMock);
+    expect(JSON.parse(init.body as string)).toEqual({
+      parentId: null,
+      nameEn: 'Music',
+      nameDe: 'Musik',
+    });
+  });
+
   it('writes the query, repeating a list and leaving out unset values', async () => {
     const fetchMock = mockFetch({ items: [], page: 0, size: 20, totalItems: 0, totalPages: 0 });
 
