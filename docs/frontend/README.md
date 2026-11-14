@@ -7,7 +7,7 @@ Start with a clean TrackMyWealth checkout. This walkthrough uses a local backend
 Install Docker with Compose and Node.js 22, as used by [Mobile Web CI](../../.github/workflows/mobile-web-ci.yml). For native targets, set up an [Expo SDK 58](https://docs.expo.dev/versions/v58.0.0/) development environment. The iOS simulator requires macOS and Xcode. Android requires Android Studio and a running emulator.
 
 1. From the repository root, follow the [root README's Compose setup](../../README.md#running-on-a-nas-or-any-single-machine-self-hosted-setup) to create your private local `.env`, including a generated `MFA_ENCRYPTION_KEY`, and start PostgreSQL and the backend. Use a local database with no real data.
-2. Check the backend with `curl --fail http://localhost:8080/actuator/health`. Wait for `UP` before provisioning a user.
+2. Check the backend with `curl --fail http://localhost:8080/actuator/health`. Wait for `UP` before seeding the demo data.
 3. In a second terminal, run `cd mobile`, `npm ci`, and `cp .env.example .env`. Set `EXPO_PUBLIC_API_URL` before starting Expo.
 
 | Target           | API URL in `mobile/.env` | Start in `mobile/`         |
@@ -18,16 +18,14 @@ Install Docker with Compose and Node.js 22, as used by [Mobile Web CI](../../.gi
 
 Use the browser URL printed by Expo. The local CORS defaults cover a web origin on `localhost`. See [Mobile & Web setup](../../mobile/README.md#running-locally) for device networking and [the web section](../../mobile/README.md#web-app) for CORS. Expo bundles `EXPO_PUBLIC_*` values into the client, so put only the backend URL there.
 
-## Create a local demo login
+## Seed the demo data
 
-The automated [demo seed in #385](https://github.com/hugiFreezy0815/TrackMyWealth/issues/385) is pending. These steps provision a demo login through the API, then create one account through the app. Use an HTTP client against `http://localhost:8080` and consult the [OpenAPI contract](../../api/openapi.yaml) for each request. Enter generated local-only passwords directly in the client. Keep passwords, tokens and the authenticator setup key out of saved requests, logs and screenshots.
+Seed the stack with synthetic data before you sign in. Follow [Seed a synthetic demo](../../README.md#seed-a-synthetic-demo) in the root README: with the backend up on a fresh, disposable stack, run `python3 scripts/seed_demo.py` from the repository root (Python 3.10+). The seed creates the demo logins, portfolios, accounts, six months of activity and a committed statement import through the public API, and writes the generated logins to `.demo-credentials.json`. Git ignores that file; keep it private and out of logs and screenshots.
 
-1. On an empty database, send `POST /api/v1/setup/administrator` with `email` (for example, `frontend-admin@example.test`), `password` (at least 12 characters) and `currencyCode` (`CHF`). The response includes an `accessToken`. If the local database is already initialized, obtain a token with `POST /api/v1/auth/login` using its local administrator credentials. If the login response requires MFA, send its `mfaChallengeToken` as `challengeToken` with the current `code` to `POST /api/v1/auth/mfa/verify` and use the returned `accessToken`.
-2. Send `POST /api/v1/admin/users` with the administrator's bearer token. Set `email` to `frontend-demo@example.test`, `password` to a separate generated password, `role` to `STANDARD_USER`, and `language` to `EN`. Reuse the member if you already provisioned it.
-3. Send `POST /api/v1/auth/login` with the demo member's `email` and `password` to get a member access token from `tokens.accessToken`. Use that token for `POST /api/v1/users/me/mfa/enroll` with the member's `password`. Add the returned `secret` to an authenticator app, then send its current six-digit `code` to `POST /api/v1/users/me/mfa/confirm` with the same bearer token.
-4. Sign in to TrackMyWealth with the demo member's email and password and enter the current authenticator code. The app completes the challenge through `POST /api/v1/auth/mfa/verify`. Use a fresh code if the one from enrollment is rejected. If every code is rejected as invalid or expired, compare the backend container clock with your device clock (`docker compose exec backend date -u`). Docker Desktop's clock can fall minutes behind after the computer sleeps. Restart Docker Desktop to resynchronize it.
-5. On first run, name the overview **Frontend demo** and select CHF. Choose **Add your first portfolio**, then **Not in the list? Create your own**. Create **Demo Bank** with country Switzerland, type Bank and currency CHF. Add a CHF current account named **Demo Current**, leave the optional identifier blank and record an opening balance of **100.00 CHF** dated today.
-6. On Overview, open the **Demo Bank** tab. Verify that **Demo Current** appears and opens Account detail. Turn off **Hide amounts** with the eye control to check the balance.
+1. Add `users.member.totpSecret` from `.demo-credentials.json` to an authenticator app.
+2. Sign in to TrackMyWealth with `users.member.email` and `users.member.password`, then enter the current authenticator code. The app completes the challenge through `POST /api/v1/auth/mfa/verify`. If the seed used the current code, wait for the next one. If every code is rejected as invalid or expired, compare the backend container clock with your device clock (`docker compose exec backend date -u`). Docker Desktop's clock can fall minutes behind after the computer sleeps. Restart Docker Desktop to resynchronize it.
+3. Overview opens on the seeded workspace, **TrackMyWealth Synthetic Demo**. Turn off **Hide amounts** with the eye control to see the figures. The overview notes that not all values are included, because the seeded depot stays "Value unknown" until holdings are valued.
+4. Open the **Demo · Cloudberry Bank** tab. Verify that **Demo · Cloudberry Current** appears and opens Account detail with its transactions.
 
 The API client renews an expired access token through `POST /api/v1/auth/refresh` and retries the original request once. To verify this, leave the signed-in app open until the access token expires (15 minutes by default), then trigger a request using the control for your platform:
 
@@ -53,7 +51,7 @@ export function listAccounts(
 }
 ```
 
-Call this with **Demo Bank**'s portfolio ID from `GET /api/v1/portfolios`, within the signed-in app. The response should include **Demo Current**. The Portfolio View screen itself uses the view endpoint in the map below.
+Call this with **Demo · Cloudberry Bank**'s portfolio ID from `GET /api/v1/portfolios`, within the signed-in app. The response should include **Demo · Cloudberry Current**. The Portfolio View screen itself uses the view endpoint in the map below.
 
 After a contract change, run `npm run api:types`, `npm run api:types:check`, and `npx tsc --noEmit` from `mobile/`. Include the generated files with the contract change. See the [API client README](../../mobile/README.md#api-client) for the generator and transport details.
 
@@ -84,4 +82,4 @@ All paths below are relative to `/api/v1`. Paths labeled as backend-only belong 
 
 ## Record the onboarding dry run
 
-Before closing [#386](https://github.com/hugiFreezy0815/TrackMyWealth/issues/386), have a frontend developer unfamiliar with the backend follow this guide from a clean checkout. Record the platform, whether provisioning was manual or used #385, and the outcomes for sign-in, MFA, token refresh and the typed request returning **Demo Current**. Fix or file any gaps found during the run.
+Before closing [#386](https://github.com/hugiFreezy0815/TrackMyWealth/issues/386), have a frontend developer unfamiliar with the backend follow this guide from a clean checkout. Record the platform, whether the demo seed ran cleanly, and the outcomes for sign-in, MFA, token refresh and the typed request returning **Demo · Cloudberry Current**. Fix or file any gaps found during the run.
