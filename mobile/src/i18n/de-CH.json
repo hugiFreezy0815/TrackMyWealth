@@ -10,5 +10,7 @@
   "statement.file.tooLarge": "Diese Datei ist grösser als 5 MB. Wähle eine kleinere Datei.",
   "statement.updateRequired": "Aktualisiere die App, um diesen Import abzuschliessen.",
   "statement.error.IMPORT_FILE_TOO_LARGE": "Die Datei überschreitet die Grössenbeschränkung.",
-  "transactionType.CORPORATE_ACTION": "Kapitalmassnahme"
+  "transactionType.CORPORATE_ACTION": "Kapitalmassnahme",
+  "history.warning.pendingMovements": "Einige Transaktionen müssen noch geprüft werden, bevor sie in die Aufschlüsselung einfliessen können.",
+  "savingsPocket.futureOnly": "Die Verknüpfung gilt für jeden Import, den du ab jetzt abschliesst. Bereits importierte Umbuchungen bleiben zur Prüfung offen."
 }

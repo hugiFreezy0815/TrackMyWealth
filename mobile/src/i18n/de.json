@@ -31,7 +31,7 @@
   "history.offlineShowing": "Der Zeitraum {requested} ist offline nicht verfügbar. Angezeigt wird {shown}.",
   "history.offlineUnavailable": "Der Zeitraum {requested} ist offline nicht verfügbar.",
   "history.warning.missingFx": "Einige historische Wechselkurse sind nicht verfügbar.",
-  "history.warning.pendingMovements": "Einige Transaktionen müssen noch geprüft werden, bevor sie in die Aufschlüsselung einfliessen können.",
+  "history.warning.pendingMovements": "Einige Transaktionen müssen noch geprüft werden, bevor sie in die Aufschlüsselung einfließen können.",
   "history.warning.capitalMovements": "Einige Kapitalbewegungen konnten nicht in die Aufschlüsselung aufgenommen werden.",
   "history.warning.unknownValue": "Für mindestens ein Konto ist ein historischer Wert nicht verfügbar.",
   "history.warning.lifecycle": "Der frühere Kontoverlauf konnte nicht vollständig geprüft werden.",
