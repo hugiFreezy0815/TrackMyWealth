@@ -45,3 +45,7 @@ example
 
 # native smoke test output (scripts/native-smoke.sh)
 /smoke
+
+# Web deployment (deploy/nginx)
+web-host/
+__pycache__/

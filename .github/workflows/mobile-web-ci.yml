@@ -76,8 +76,72 @@ jobs:
       - name: Test
         run: npx jest --ci
 
+      # #536: the CSP generator guards against policy injection and hashes the export's inline code.
+      - name: Unit-test the CSP generator
+        run: python3 -m unittest discover -s deploy/nginx -p 'test_*.py' -v
+
       # This is the independent web app's build step - it's the same Expo Router codebase as
       # iOS/Android (see mobile/README.md), exported as a static site. A successful export here
       # is what the deploy pipeline for the web app would run before publishing `dist/`.
       - name: Build web export
         run: npx expo export -p web
+
+      - name: Install nginx for the deployment smoke test
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nginx
+
+      - name: Check deployed web headers
+        run: |
+          prefix=$(mktemp -d)
+          cp deploy/nginx/nginx.conf "$prefix/"
+          cp /etc/nginx/mime.types "$prefix/"
+          ln -s "$PWD/dist" "$prefix/html"
+          python3 deploy/nginx/write-csp.py dist "$prefix/content-security-policy.conf" \
+            --api-origin http://localhost:8080
+          nginx -p "$prefix/" -c "$prefix/nginx.conf"
+          trap 'nginx -p "$prefix/" -c "$prefix/nginx.conf" -s quit' EXIT
+          bash deploy/nginx/check-headers.sh http://127.0.0.1:8082 dist http://localhost:8080
+          if bash deploy/nginx/check-headers.sh http://127.0.0.1:8082 dist \
+            http://localhost:8080 https://missing-api.example.invalid > "$prefix/negative.log" 2>&1; then
+            echo 'The smoke check accepted a policy with a missing API origin' >&2
+            exit 1
+          fi
+          grep -F 'Unexpected connect-src on /' "$prefix/negative.log"
+          # The app must load under the CSP: headless Chrome (preinstalled on the runner) reports
+          # every violation. A policy without the hydration script's hash must fail the check.
+          node deploy/nginx/check-csp.mjs http://127.0.0.1:8082 / /overview /settings \
+            /accounts/example/transactions/example
+          cp "$prefix/content-security-policy.conf" "$prefix/policy.good"
+          sed -E "s/script-src 'self' [^;]*/script-src 'self'/" "$prefix/policy.good" \
+            > "$prefix/content-security-policy.conf"
+          nginx -p "$prefix/" -c "$prefix/nginx.conf" -s reload
+          sleep 1
+          if node deploy/nginx/check-csp.mjs http://127.0.0.1:8082 / > "$prefix/csp-negative.log" 2>&1; then
+            echo 'The CSP check accepted a policy that blocks the hydration script' >&2
+            exit 1
+          fi
+          grep -F 'CSP violation' "$prefix/csp-negative.log"
+
+      # #536: the reference image (docker-compose.yml, profile web) serves the same headers.
+      - name: Check the web image
+        run: |
+          docker build -f deploy/nginx/Dockerfile --build-arg EXPO_PUBLIC_API_URL=http://localhost:8080 \
+            -t trackmywealth-web:ci .
+          if docker run --rm trackmywealth-web:ci > /tmp/no-origins.log 2>&1; then
+            echo 'The web image started without WEB_API_ORIGINS' >&2
+            exit 1
+          fi
+          grep -F 'WEB_API_ORIGINS must name' /tmp/no-origins.log
+          container=$(docker run -d -p 127.0.0.1:8083:8082 \
+            -e WEB_API_ORIGINS='http://localhost:8080 https://api.example.com' trackmywealth-web:ci)
+          trap 'docker rm -f "$container" > /dev/null' EXIT
+          for attempt in $(seq 30); do
+            curl -fsS -o /dev/null http://127.0.0.1:8083/ && break
+            sleep 1
+          done
+          export_dir=$(mktemp -d)
+          docker cp "$container:/srv/web/html/." "$export_dir"
+          bash deploy/nginx/check-headers.sh http://127.0.0.1:8083 "$export_dir" \
+            http://localhost:8080 https://api.example.com
+          node deploy/nginx/check-csp.mjs http://127.0.0.1:8083 / /overview

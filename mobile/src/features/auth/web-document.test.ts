@@ -3,9 +3,32 @@ import { Platform } from 'react-native';
 import { installBackForwardGuard, replaceDocument } from './web-document';
 
 const ORIGINAL_OS = Platform.OS;
+const MARKER = 'trackmywealth.sign-out';
+
+function fakeStorage() {
+  const values = new Map<string, string>();
+  return {
+    values,
+    getItem: jest.fn((key: string) => values.get(key) ?? null),
+    setItem: jest.fn((key: string, value: string) => void values.set(key, value)),
+    removeItem: jest.fn((key: string) => void values.delete(key)),
+  };
+}
+
 const location = { replace: jest.fn(), reload: jest.fn() };
 const listeners = new Map<string, (event: { persisted: boolean }) => void>();
+const localStore = fakeStorage();
+const sessionStore = fakeStorage();
+let randomByte = 0;
 const windowStub = {
+  localStorage: localStore,
+  sessionStorage: sessionStore,
+  crypto: {
+    getRandomValues: (bytes: Uint8Array) => {
+      randomByte += 1;
+      return bytes.fill(randomByte);
+    },
+  },
   location,
   addEventListener: jest.fn((type: string, listener: (event: { persisted: boolean }) => void) =>
     listeners.set(type, listener),
@@ -14,21 +37,44 @@ const windowStub = {
 };
 let originalWindow: PropertyDescriptor | undefined;
 
+const restore = () => listeners.get('pageshow')?.({ persisted: true });
+const failing = () => {
+  throw new Error('QuotaExceededError');
+};
+
 beforeEach(() => {
   originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
   Object.defineProperty(globalThis, 'window', { value: windowStub, configurable: true });
+  Platform.OS = 'web';
 });
 afterEach(() => {
   Platform.OS = ORIGINAL_OS;
   if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
   listeners.clear();
+  localStore.values.clear();
+  sessionStore.values.clear();
   jest.clearAllMocks();
 });
 
 describe('sign-out on web', () => {
-  it('replaces the document, so no in-memory state of the session survives', () => {
-    Platform.OS = 'web';
+  it('records a new sign-out marker and replaces the document', () => {
+    localStore.values.set(MARKER, 'before');
+    sessionStore.values.set(MARKER, 'before');
+
     replaceDocument('/overview');
+
+    expect(localStore.values.get(MARKER)).not.toBe('before');
+    expect(sessionStore.values.get(MARKER)).toBe(localStore.values.get(MARKER));
+    expect(location.replace).toHaveBeenCalledWith('/overview');
+  });
+
+  it('removes the old marker when the new one cannot be written', () => {
+    localStore.values.set(MARKER, 'before');
+    localStore.setItem.mockImplementationOnce(failing);
+
+    replaceDocument('/overview');
+
+    expect(localStore.values.has(MARKER)).toBe(false);
     expect(location.replace).toHaveBeenCalledWith('/overview');
   });
 
@@ -40,33 +86,68 @@ describe('sign-out on web', () => {
 });
 
 describe('back-forward cache guard', () => {
-  it('reloads a signed-out page the browser restored from its cache', () => {
-    Platform.OS = 'web';
-    installBackForwardGuard(() => false);
-
-    listeners.get('pageshow')?.({ persisted: true });
-
-    expect(location.reload).toHaveBeenCalled();
-  });
-
-  it('keeps a signed-in page, which a reload would sign out', () => {
-    Platform.OS = 'web';
+  it('keeps a signed-in page when no sign-out happened since it started (#535)', () => {
     installBackForwardGuard(() => true);
 
-    listeners.get('pageshow')?.({ persisted: true });
+    restore();
 
     expect(location.reload).not.toHaveBeenCalled();
   });
 
+  it('reloads a restored page that is signed out', () => {
+    installBackForwardGuard(() => false);
+
+    restore();
+
+    expect(location.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('reloads a signed-in page when another document signed out after it started', () => {
+    installBackForwardGuard(() => true);
+
+    replaceDocument('/overview');
+    restore();
+
+    expect(location.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('reloads a signed-in page when the sign-out could not write its marker', () => {
+    installBackForwardGuard(() => true);
+    localStore.setItem.mockImplementationOnce(failing);
+    sessionStore.setItem.mockImplementationOnce(failing);
+
+    replaceDocument('/overview');
+    restore();
+
+    expect(location.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('reloads a signed-in page that cannot read the marker', () => {
+    installBackForwardGuard(() => true);
+    sessionStore.getItem.mockImplementationOnce(failing);
+
+    restore();
+
+    expect(location.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('reloads a signed-in page that could not store a marker at start-up', () => {
+    localStore.setItem.mockImplementationOnce(failing);
+    installBackForwardGuard(() => true);
+
+    restore();
+
+    expect(location.reload).toHaveBeenCalledTimes(1);
+  });
+
   it('ignores a normal page load and can be removed', () => {
-    Platform.OS = 'web';
     const remove = installBackForwardGuard(() => false);
 
     listeners.get('pageshow')?.({ persisted: false });
     expect(location.reload).not.toHaveBeenCalled();
 
     remove();
-    expect(listeners.has('pageshow')).toBe(false);
+    expect(windowStub.removeEventListener).toHaveBeenCalledWith('pageshow', expect.any(Function));
   });
 
   it('installs nothing in native apps', () => {

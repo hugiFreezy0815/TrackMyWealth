@@ -323,9 +323,11 @@ through the selected provider's hub first and then through every other registere
 so rates entered against EUR keep working after a switch. A newly selected provider's history is
 loaded again from scratch because import progress is tracked per source.
 
-The web build (`mobile/`, see above) is not part of this compose file - export it
-(`npx expo export -p web`) and serve `mobile/dist/` from any static file host, including one
-running on the same NAS if you want everything on one box.
+The web app is the optional `web` service of this Compose file
+(`docker compose --profile web up -d --build`): nginx serves the export with the security headers,
+and an HTTPS reverse proxy must sit in front of it. See the
+[web deployment instructions](mobile/README.md#web-app). If you use a different static host,
+apply the same security headers and dynamic-route rewrites.
 
 ## Running behind a reverse proxy
 
