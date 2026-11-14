@@ -3,7 +3,7 @@ import { fireEvent, screen } from '@testing-library/react-native';
 import { messagesFor, type AppLocale } from '@/i18n';
 import { renderWithIntl } from '@/i18n/test-utils';
 
-import { ApiError } from '@/api/client';
+import { ApiError, SessionRefreshUnavailableError } from '@/api/client';
 import { importErrorMessageKey } from '@/features/statement-import/model';
 import {
   BottomSheet,
@@ -51,6 +51,18 @@ describe('ErrorBanner', () => {
   it('offers a retry on errors that allow one', async () => {
     const onRetry = jest.fn();
     await renderWithIntl(<ErrorBanner onRetry={onRetry} />, 'en');
+    await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a retryable message when session renewal is temporarily unavailable', async () => {
+    const onRetry = jest.fn();
+    await renderWithIntl(
+      <ErrorBanner error={new SessionRefreshUnavailableError(30)} onRetry={onRetry} />,
+      'en',
+    );
+
+    expect(screen.getByText('The service is busy. Try again in a moment.')).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });

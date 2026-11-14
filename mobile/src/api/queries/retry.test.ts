@@ -26,6 +26,10 @@ describe('Retry-After header', () => {
     expect(parseRetryAfter(header, now)).toBeUndefined();
   });
 
+  it('ignores a delay that overflows to Infinity', () => {
+    expect(parseRetryAfter('9'.repeat(309), now)).toBeUndefined();
+  });
+
   it('is carried by the ApiError of a failed request', async () => {
     globalThis.fetch = jest.fn(async () =>
       respond(429, 'RATE_LIMITED', { 'Retry-After': '2' }),
