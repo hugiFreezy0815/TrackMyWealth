@@ -89,6 +89,7 @@ public class ApiDocumentationConfig {
   private static final List<PathPattern> PUBLIC_API = patterns(SecurityConfig.PUBLIC_API_PATTERNS);
   private static final String DECIMAL_FORMAT = "decimal";
   private static final String QUERY = "query";
+  private static final String HEADER_PARAMETER = "header";
   // springdoc's name for an undecorated Pageable parameter.
   private static final String PAGEABLE_PARAMETER = "pageable";
   private static final String PROBLEM_RESPONSE_REF =
@@ -169,7 +170,7 @@ public class ApiDocumentationConfig {
         "Traceparent",
         new Parameter()
             .name(TraceparentResponseFilter.HEADER)
-            .in("header")
+            .in(HEADER_PARAMETER)
             .description("W3C trace context. Invalid or absent values start a trace.")
             .required(false)
             .schema(new StringSchema()));
@@ -509,7 +510,7 @@ public class ApiDocumentationConfig {
         .filter(
             parameter ->
                 IfMatchVersionParser.HEADER.equalsIgnoreCase(parameter.getName())
-                    && "header".equals(parameter.getIn()))
+                    && HEADER_PARAMETER.equals(parameter.getIn()))
         .findFirst()
         .ifPresent(
             parameter -> {
@@ -532,14 +533,14 @@ public class ApiDocumentationConfig {
                 .anyMatch(
                     parameter ->
                         CorrelationIdFilter.HEADER.equalsIgnoreCase(parameter.getName())
-                            && "header".equals(parameter.getIn()));
+                            && HEADER_PARAMETER.equals(parameter.getIn()));
     if (alreadyDocumented) {
       return;
     }
     operation.addParametersItem(
         new Parameter()
             .name(CorrelationIdFilter.HEADER)
-            .in("header")
+            .in(HEADER_PARAMETER)
             .required(false)
             .description(
                 "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the"

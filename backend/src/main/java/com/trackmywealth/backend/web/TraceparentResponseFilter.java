@@ -43,7 +43,8 @@ public class TraceparentResponseFilter extends OncePerRequestFilter {
       filterChain.doFilter(request, response);
       return;
     }
-    try (var traceScope = MDC.putCloseable(TRACE_ID_MDC_KEY, traceContext.traceId())) {
+    MDC.put(TRACE_ID_MDC_KEY, traceContext.traceId());
+    try {
       propagator.inject(
           traceContext,
           response,
@@ -53,6 +54,8 @@ public class TraceparentResponseFilter extends OncePerRequestFilter {
             }
           });
       filterChain.doFilter(request, response);
+    } finally {
+      MDC.remove(TRACE_ID_MDC_KEY);
     }
   }
 
