@@ -3664,6 +3664,7 @@ export interface components {
       workspaceName?: string;
       currencyCode: string;
     };
+    /** @description Omit reportedValue, reportedCurrency and reportedPrice together, or supply reportedValue and reportedCurrency together. When supplying both, reportedPrice is optional. Other combinations return HTTP 422. */
     SnapshotHoldingRequest: {
       /** Format: uuid */
       securityId: string;

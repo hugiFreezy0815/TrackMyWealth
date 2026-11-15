@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.dto;
 
 import com.trackmywealth.backend.validation.ValidCurrencyCode;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -19,6 +20,11 @@ import java.util.UUID;
  * statement's market value and currency are optional and supplied together. A unit price may
  * accompany the market value.
  */
+@Schema(
+    description =
+        "Omit reportedValue, reportedCurrency and reportedPrice together, or supply reportedValue"
+            + " and reportedCurrency together. When supplying both, reportedPrice is optional."
+            + " Other combinations return HTTP 422.")
 public record SnapshotHoldingRequest(
     @NotNull UUID securityId,
     @NotNull @Positive @Digits(integer = 18, fraction = 10) BigDecimal quantity,
