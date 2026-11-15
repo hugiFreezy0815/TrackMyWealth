@@ -213,6 +213,64 @@ describe('S4 transaction detail', () => {
     expect(screen.getByText('Bank · Current account')).toBeTruthy();
   });
 
+  it.each([
+    ['en', 'Converted amount', 'at'],
+    ['de', 'Umrechnungsbetrag', 'zum Kurs'],
+  ] as const)(
+    'shows the server conversion and rate together in %s',
+    async (locale, label, atRate) => {
+      fixtures({
+        ...base,
+        currency: 'EUR',
+        amountInAccountCurrency: '-80.25',
+        fxRateToAccountCurrency: '0.951234',
+      });
+      await show(locale);
+      expect(screen.queryByText(label)).toBeNull();
+
+      await fireEvent.press(screen.getByRole('button', { name: /Details/ }));
+
+      expect(screen.getByText(label)).toBeTruthy();
+      expect(screen.getByText(`≈−CHF 80.25 ${atRate} 0.951234`)).toBeTruthy();
+      expect(screen.getByText('POS')).toBeTruthy();
+    },
+  );
+
+  it('masks the converted amount and rate in text and accessibility labels', async () => {
+    fixtures({
+      ...base,
+      currency: 'EUR',
+      amountInAccountCurrency: '-80.25',
+      fxRateToAccountCurrency: '0.951234',
+    });
+    jest.mocked(useAmountsHidden).mockReturnValue(true);
+    await show();
+
+    await fireEvent.press(screen.getByRole('button', { name: /Details/ }));
+
+    expect(screen.getByText('Converted amount')).toBeTruthy();
+    expect(screen.queryByText(/80.25|0.951234/)).toBeNull();
+    expect(screen.queryByLabelText(/80[.,]25|0[.,]951234/)).toBeNull();
+  });
+
+  it.each([
+    ['CHF', '-80.25'],
+    ['EUR', null],
+  ])('omits a conversion with currency %s and server amount %s', async (currency, amount) => {
+    fixtures({
+      ...base,
+      currency,
+      amountInAccountCurrency: amount,
+      fxRateToAccountCurrency: '0.951234',
+    });
+    await show();
+
+    await fireEvent.press(screen.getByRole('button', { name: /Details/ }));
+
+    expect(screen.queryByText('Converted amount')).toBeNull();
+    expect(screen.queryByText(/0.951234/)).toBeNull();
+  });
+
   it('masks trade quantity in visible text and accessibility labels', async () => {
     fixtures({ ...base, transactionType: 'BUY', quantity: '12345.6789' });
     jest.mocked(useAmountsHidden).mockReturnValue(true);

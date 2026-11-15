@@ -605,7 +605,7 @@
   "txn.mcc": "Merchant category code",
   "txn.externalId": "Bank reference",
   "txn.converted": "Converted amount",
-  "txn.fxRate": "FX rate",
+  "txn.converted.atRate": "{amount} at {rate}",
   "txn.history.title": "Change history",
   "txn.history.more": "Load more history",
   "txn.history.imported": "Imported from {format} statement on {date}",

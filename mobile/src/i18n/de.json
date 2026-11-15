@@ -605,7 +605,7 @@
   "txn.mcc": "Händlerkategoriecode",
   "txn.externalId": "Bankreferenz",
   "txn.converted": "Umrechnungsbetrag",
-  "txn.fxRate": "Wechselkurs",
+  "txn.converted.atRate": "{amount} zum Kurs {rate}",
   "txn.history.title": "Änderungsverlauf",
   "txn.history.more": "Mehr Verlauf laden",
   "txn.history.imported": "Aus {format}-Auszug vom {date} importiert",

@@ -34,17 +34,19 @@ import { problemReaction } from '@/api/problems';
 import {
   ActionButton,
   Amount,
+  amountTexts,
   BottomSheet,
   ConflictDialog,
   Dialog,
   EmptyState,
   ErrorBanner,
   Figure,
+  figureTexts,
   KeyValueList,
   LoadingSkeleton,
   OfflineBanner,
 } from '@/components/shared';
-import { Spacing, TypeScale, Radii } from '@/constants/theme';
+import { Fonts, Spacing, TypeScale, Radii } from '@/constants/theme';
 import { moveAccessibilityFocus } from '@/components/shared/accessibility-focus';
 import { transactionTypeLabel, transactionWarningTexts } from '@/features/account-detail/model';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
@@ -584,6 +586,23 @@ export function TransactionDetail({
       <ErrorBanner error={record.error} onRetry={() => void record.refetch()} />
     );
   }
+  const accountCurrency = account.data?.nativeCurrency;
+  const conversion =
+    advanced &&
+    accountCurrency &&
+    transaction.currency !== accountCurrency &&
+    transaction.amountInAccountCurrency != null
+      ? amountTexts(intl, {
+          value: transaction.amountInAccountCurrency,
+          currency: accountCurrency,
+          approx: true,
+          masked: hidden,
+        })
+      : null;
+  const conversionRate =
+    conversion && !hidden && transaction.fxRateToAccountCurrency != null
+      ? figureTexts(intl, { kind: 'rate', value: transaction.fxRateToAccountCurrency })
+      : null;
   const name =
     transactionTitle(transaction) === transaction.transactionType
       ? transactionTypeLabel(transaction.transactionType, intl)
@@ -970,7 +989,17 @@ export function TransactionDetail({
                     {
                       key: 'bankCode',
                       label: intl.formatMessage({ id: 'txn.bankCode' }),
-                      value: transaction.bankTransactionCode,
+                      value: (
+                        <Text
+                          style={{
+                            ...TypeScale.bodyMedium,
+                            color: theme.textPrimary,
+                            fontFamily: Fonts?.mono,
+                          }}
+                        >
+                          {transaction.bankTransactionCode}
+                        </Text>
+                      ),
                     },
                   ]
                 : []),
@@ -1007,29 +1036,31 @@ export function TransactionDetail({
                     },
                   ]
                 : []),
-              ...(transaction.amountInAccountCurrency !== null &&
-              account.data &&
-              transaction.currency !== account.data.nativeCurrency
+              ...(conversion
                 ? [
                     {
                       key: 'conversion',
                       label: intl.formatMessage({ id: 'txn.converted' }),
                       value: (
-                        <Amount
-                          value={transaction.amountInAccountCurrency}
-                          currency={account.data.nativeCurrency}
-                          approx
-                        />
+                        <Text
+                          accessibilityLabel={
+                            conversionRate
+                              ? intl.formatMessage(
+                                  { id: 'txn.converted.atRate' },
+                                  { amount: conversion.label, rate: conversionRate.label },
+                                )
+                              : conversion.label
+                          }
+                          style={{ ...TypeScale.bodyMedium, color: theme.textPrimary }}
+                        >
+                          {conversionRate
+                            ? intl.formatMessage(
+                                { id: 'txn.converted.atRate' },
+                                { amount: conversion.display, rate: conversionRate.display },
+                              )
+                            : conversion.display}
+                        </Text>
                       ),
-                    },
-                  ]
-                : []),
-              ...(transaction.fxRateToAccountCurrency && !hidden
-                ? [
-                    {
-                      key: 'fx',
-                      label: intl.formatMessage({ id: 'txn.fxRate' }),
-                      value: transaction.fxRateToAccountCurrency,
                     },
                   ]
                 : []),
