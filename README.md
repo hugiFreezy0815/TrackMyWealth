@@ -368,6 +368,11 @@ cd backend
 or `api/**`, lints new or changed migrations with sqlfluff, and builds the Docker image.
 GitHub-hosted runners have Docker preinstalled, so no extra CI setup is needed for Testcontainers.
 
+**Request tracing (#575).** API request logs include the W3C trace ID and the support
+correlation ID. Use `X-Correlation-Id` to find a user-reported error, or use the trace ID
+from `traceparent` to correlate backend logs with an upstream proxy. The default
+installation has no trace exporter.
+
 **API contract (#372).** `api/openapi.yaml` is the committed OpenAPI document of the REST API, the
 file client code is generated from. `./mvnw verify` keeps it in step with the code:
 

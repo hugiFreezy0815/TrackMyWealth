@@ -11,6 +11,7 @@ import com.trackmywealth.backend.web.PagedArgumentResolver;
 import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SortWhitelist;
 import com.trackmywealth.backend.web.SuccessStatus;
+import com.trackmywealth.backend.web.TraceparentResponseFilter;
 import io.swagger.v3.core.converter.ModelConverter;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
@@ -63,6 +64,8 @@ public class ApiDocumentationConfig {
 
   private static final String API_PROBLEM_SCHEMA = "ApiProblem";
   private static final String API_PROBLEM_RESPONSE = "ApiProblemResponse";
+  private static final String TRACEPARENT_REQUEST_REF = "#/components/parameters/Traceparent";
+  private static final String TRACEPARENT_RESPONSE_REF = "#/components/headers/Traceparent";
 
   /** The problem envelope's schema, for the per-status error responses (#374). */
   public static final String API_PROBLEM_REF = "#/components/schemas/" + API_PROBLEM_SCHEMA;
@@ -162,6 +165,19 @@ public class ApiDocumentationConfig {
     components.addSchemas(API_PROBLEM_SCHEMA, problemSchema());
     components.addResponses(API_PROBLEM_RESPONSE, problemResponse());
     ResponseHeaderContract.addComponents(components);
+    components.addParameters(
+        "Traceparent",
+        new Parameter()
+            .name(TraceparentResponseFilter.HEADER)
+            .in("header")
+            .description("W3C trace context. Invalid or absent values start a trace.")
+            .required(false)
+            .schema(new StringSchema()));
+    components.addHeaders(
+        "Traceparent",
+        new Header()
+            .description("W3C trace context for the server span.")
+            .schema(new StringSchema()));
     documentCategoryParentNullability(components);
 
     components.addSecuritySchemes(
@@ -189,12 +205,14 @@ public class ApiDocumentationConfig {
                           documentAuthentication(path, operation);
                           documentCorrelationRequestHeader(operation);
                           documentOptimisticConcurrency(operation);
+                          operation.addParametersItem(
+                              new Parameter().$ref(TRACEPARENT_REQUEST_REF));
                           Map<String, ApiResponse> responses = responsesOf(operation);
                           responses.putIfAbsent(
                               "default", new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
                           responses
                               .values()
-                              .forEach(ApiDocumentationConfig::documentCorrelationResponseHeader);
+                              .forEach(ApiDocumentationConfig::documentResponseHeaders);
                         }));
   }
 
@@ -470,7 +488,8 @@ public class ApiDocumentationConfig {
         .description("Error response using the TrackMyWealth problem-detail contract.")
         .content(
             new Content().addMediaType(MediaType.APPLICATION_PROBLEM_JSON_VALUE, problemMediaType))
-        .addHeaderObject(CorrelationIdFilter.HEADER, correlationResponseHeader());
+        .addHeaderObject(CorrelationIdFilter.HEADER, correlationResponseHeader())
+        .addHeaderObject(TraceparentResponseFilter.HEADER, traceparentHeaderRef());
   }
 
   // As a Map: Swagger's ApiResponses is a LinkedHashMap, and only map operations are needed here.
@@ -528,12 +547,21 @@ public class ApiDocumentationConfig {
             .schema(new StringSchema().minLength(8).maxLength(64).pattern("[A-Za-z0-9._-]{8,64}")));
   }
 
-  private static void documentCorrelationResponseHeader(ApiResponse response) {
-    if (response != null
-        && (response.getHeaders() == null
-            || !response.getHeaders().containsKey(CorrelationIdFilter.HEADER))) {
+  private static void documentResponseHeaders(ApiResponse response) {
+    if (response == null) {
+      return;
+    }
+    if (response.getHeaders() == null
+        || !response.getHeaders().containsKey(CorrelationIdFilter.HEADER)) {
       response.addHeaderObject(CorrelationIdFilter.HEADER, correlationResponseHeader());
     }
+    if (response.get$ref() == null) {
+      response.addHeaderObject(TraceparentResponseFilter.HEADER, traceparentHeaderRef());
+    }
+  }
+
+  private static Header traceparentHeaderRef() {
+    return new Header().$ref(TRACEPARENT_RESPONSE_REF);
   }
 
   private static Header correlationResponseHeader() {
