@@ -1,0 +1,30 @@
+PASS  desktop portfolio: "Show all 6 positions" shown
+PASS  desktop tap holding: opens the depot
+PASS  desktop tap holding: Positions selected
+PASS  desktop tap holding: all 6 holdings listed — 6/6
+PASS  desktop show all: opens the depot
+PASS  desktop show all: Positions selected
+PASS  desktop show all: all 6 holdings listed — 6/6
+PASS  desktop account row: Activity selected
+PASS  desktop account row: no holdings listed
+PASS  desktop switch to Positions
+PASS  desktop switch back to Activity
+PASS  desktop: no console error
+PASS  phone portfolio: "Show all 6 positions" shown
+PASS  phone tap holding: opens the depot
+PASS  phone tap holding: Positions selected
+PASS  phone tap holding: all 6 holdings listed — 6/6
+PASS  phone show all: opens the depot
+PASS  phone show all: Positions selected
+PASS  phone show all: all 6 holdings listed — 6/6
+PASS  phone account row: Activity selected
+PASS  phone account row: no holdings listed
+PASS  phone switch to Positions
+PASS  phone switch back to Activity
+PASS  phone: no console error
+axe desktop Portfolio View: no violations
+axe desktop Account Detail · Positions: no violations
+axe desktop Account Detail · Activity: no violations
+axe phone Portfolio View: no violations
+axe phone Account Detail · Positions: no violations
+axe phone Account Detail · Activity: no violations

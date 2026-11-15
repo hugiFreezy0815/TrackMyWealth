@@ -50,7 +50,7 @@ type Props = {
   onAddPortfolio: () => void;
   onAddAccount: (portfolioId: string) => void;
   onImport: () => void;
-  onAccount: (accountId: string) => void;
+  onAccount: (accountId: string, tab?: 'positions') => void;
   onMissing: () => void;
 };
 
@@ -63,7 +63,7 @@ function SectionCardView({
   section: PortfolioSection;
   currency: string;
   onExplain: () => void;
-  onAccount: (accountId: string) => void;
+  onAccount: (accountId: string, tab?: 'positions') => void;
 }) {
   const intl = useIntl();
   const theme = useTheme();

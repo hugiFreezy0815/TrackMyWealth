@@ -40,10 +40,10 @@ export default function PortfolioRoute() {
         }
         // S7 (#492) picks the account itself; until it merges the route is a safe placeholder.
         onImport={() => router.push('/imports/new' as Href)}
-        onAccount={(id) =>
+        onAccount={(id, tab) =>
           router.push({
             pathname: '/accounts/[accountId]',
-            params: { accountId: id },
+            params: { accountId: id, ...(tab ? { tab } : {}) },
           } as Href)
         }
       />
