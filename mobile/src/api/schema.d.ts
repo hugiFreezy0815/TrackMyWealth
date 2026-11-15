@@ -3678,6 +3678,17 @@ export interface components {
        */
       reportedCostBasis?: DecimalString;
       costBasisIsEstimated?: boolean;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      reportedPrice?: DecimalString;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      reportedValue?: DecimalString;
+      reportedCurrency?: string;
     };
     SnapshotHoldingResponse: {
       /** Format: uuid */

@@ -18,7 +18,16 @@ import java.time.LocalDate;
  *     is judged by; {@code null} for a value that never goes stale
  */
 public record NativeAccountValue(
-    BigDecimal amount, String basis, LocalDate sourceDate, LocalDate confirmedOn) {
+    BigDecimal amount,
+    String basis,
+    LocalDate sourceDate,
+    LocalDate confirmedOn,
+    boolean sourceFxStale) {
+
+  public NativeAccountValue(
+      BigDecimal amount, String basis, LocalDate sourceDate, LocalDate confirmedOn) {
+    this(amount, basis, sourceDate, confirmedOn, false);
+  }
 
   public NativeAccountValue(BigDecimal amount, String basis) {
     this(amount, basis, null, null);

@@ -6,8 +6,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * One reported position of a snapshot, with enough of the security to display it. {@code
- * reportedPrice}, {@code reportedValue} and {@code reportedCurrency} are what an imported statement
- * printed for it (#273), {@code null} for a holding entered by hand.
+ * reportedPrice}, {@code reportedValue} and {@code reportedCurrency} are what the statement printed
+ * for it (#273), {@code null} for a holding entered by hand.
  */
 public record SnapshotHoldingResponse(
     UUID id,

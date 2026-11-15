@@ -271,6 +271,11 @@ public class AccountSnapshotService {
 
     Set<UUID> securityIds = new HashSet<>();
     for (SnapshotHoldingRequest holding : holdings) {
+      if ((holding.reportedValue() == null) != (holding.reportedCurrency() == null)
+          || (holding.reportedPrice() != null && holding.reportedValue() == null)) {
+        throw unprocessable(
+            "Report value and currency together, and only include price with a reported value.");
+      }
       if (!securityIds.add(holding.securityId())) {
         throw unprocessable(
             "Security " + holding.securityId() + " is listed more than once; combine the lines.");
@@ -300,6 +305,8 @@ public class AccountSnapshotService {
                       atScale(request.reportedCostBasis(), FxRateService.MONEY_SCALE));
                   holding.setCostBasisEstimated(
                       Boolean.TRUE.equals(request.costBasisIsEstimated()));
+                  holding.setReported(
+                      request.reportedPrice(), request.reportedValue(), request.reportedCurrency());
                   return holding;
                 })
             .toList();

@@ -607,6 +607,7 @@ class AccountValuationServiceTest {
         snapshotRepository,
         transactionRepository,
         accountCurrencyService,
+        mock(AccountPositionsService.class),
         accountDataQualityService,
         fxRateService,
         businessDateService,

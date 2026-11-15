@@ -19,6 +19,7 @@ import java.util.UUID;
  *     the newest snapshot with a balance on or before the valuation date
  * @param latestValuations for custom assets: the latest manual valuation on or before that date,
  *     already resolved to a value
+ * @param reportedHoldingsValues complete cash and holdings values from statement snapshots
  * @param unresolvedLoanRepayments the loans with a payment whose split is still unknown (US-10-02)
  * @param originalPrincipals the original principal of each mortgage or loan without a statement
  *     balance
@@ -35,6 +36,7 @@ public record AccountValueSources(
     Map<UUID, SnapshotBalance> openingBalances,
     Map<UUID, SnapshotBalance> latestSnapshots,
     Map<UUID, NativeAccountValue> latestValuations,
+    Map<UUID, NativeAccountValue> reportedHoldingsValues,
     Set<UUID> unresolvedLoanRepayments,
     Map<UUID, BigDecimal> originalPrincipals,
     Map<UUID, BigDecimal> ledgerSums,
@@ -47,6 +49,7 @@ public record AccountValueSources(
     openingBalances = Map.copyOf(openingBalances);
     latestSnapshots = Map.copyOf(latestSnapshots);
     latestValuations = Map.copyOf(latestValuations);
+    reportedHoldingsValues = Map.copyOf(reportedHoldingsValues);
     unresolvedLoanRepayments = Set.copyOf(unresolvedLoanRepayments);
     originalPrincipals = Map.copyOf(originalPrincipals);
     ledgerSums = Map.copyOf(ledgerSums);

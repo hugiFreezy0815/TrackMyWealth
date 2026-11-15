@@ -22872,6 +22872,18 @@ components:
             on requests; JSON numbers remain accepted for compatibility.
         costBasisIsEstimated:
           type: boolean
+        reportedPrice:
+          type: string
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        reportedValue:
+          type: string
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        reportedCurrency:
+          type: string
       required:
       - quantity
       - securityId
