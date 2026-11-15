@@ -299,13 +299,13 @@ class ApiDocumentationContractTest {
   }
 
   @Test
-  void theSharedHeadersAreRequiredComponentsAndTheETagNamesIfMatch() {
+  void theSharedHeadersDocumentVersioningLocationAndTracing() {
     OpenAPI openApi = new OpenAPI();
 
     config.apiWireConventions().customise(openApi);
 
     Map<String, Header> headers = openApi.getComponents().getHeaders();
-    assertThat(headers).containsOnlyKeys("ETag", "Location");
+    assertThat(headers).containsOnlyKeys("ETag", "Location", "Traceparent");
     assertThat(headers.get("ETag").getRequired()).isTrue();
     assertThat(headers.get("ETag").getDescription()).contains("If-Match");
     assertThat(headers.get("ETag").getSchema().getType()).isEqualTo("string");
@@ -317,6 +317,14 @@ class ApiDocumentationContractTest {
     assertThat("W/\"7\"").doesNotMatch(pattern);
     assertThat(headers.get("Location").getRequired()).isTrue();
     assertThat(headers.get("Location").getSchema().getFormat()).isEqualTo("uri-reference");
+    assertThat(headers.get("Traceparent").getSchema().getType()).isEqualTo("string");
+    assertThat(headers.get("Traceparent").getRequired()).isNotEqualTo(Boolean.TRUE);
+
+    var traceparent = openApi.getComponents().getParameters().get("Traceparent");
+    assertThat(traceparent.getName()).isEqualTo("traceparent");
+    assertThat(traceparent.getIn()).isEqualTo("header");
+    assertThat(traceparent.getRequired()).isFalse();
+    assertThat(traceparent.getSchema().getType()).isEqualTo("string");
   }
 
   @Test
