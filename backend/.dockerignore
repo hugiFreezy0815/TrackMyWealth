@@ -6,3 +6,4 @@ target/
 .DS_Store
 .env
 *.log
+# Verification only (#572 REV-002): a backend-only change must schedule Scripts CI.
