@@ -1,8 +1,10 @@
 package com.trackmywealth.backend.web;
 
 import io.micrometer.tracing.Span;
+import io.micrometer.tracing.TraceContext;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.propagation.Propagator;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -10,19 +12,17 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /** Adds the active server span to request logs and the response before security runs. */
 @Component
-// Spring Boot's ServerHttpObservationFilter opens the scope at HIGHEST_PRECEDENCE + 1.
-@Order(Ordered.HIGHEST_PRECEDENCE + 2)
 public class TraceparentResponseFilter extends OncePerRequestFilter {
 
   public static final String HEADER = "traceparent";
   public static final String TRACE_ID_MDC_KEY = "requestTraceId";
+  private static final String TRACE_CONTEXT_ATTRIBUTE =
+      TraceparentResponseFilter.class.getName() + ".traceContext";
 
   private final ObjectProvider<Tracer> tracers;
   private final ObjectProvider<Propagator> propagators;
@@ -37,16 +37,15 @@ public class TraceparentResponseFilter extends OncePerRequestFilter {
   protected void doFilterInternal(
       HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
       throws ServletException, IOException {
-    Tracer tracer = tracers.getIfAvailable();
-    Span span = tracer == null ? null : tracer.currentSpan();
+    TraceContext traceContext = traceContextOf(request);
     Propagator propagator = propagators.getIfAvailable();
-    if (span == null || propagator == null) {
+    if (traceContext == null || propagator == null) {
       filterChain.doFilter(request, response);
       return;
     }
-    try (var traceScope = MDC.putCloseable(TRACE_ID_MDC_KEY, span.context().traceId())) {
+    try (var traceScope = MDC.putCloseable(TRACE_ID_MDC_KEY, traceContext.traceId())) {
       propagator.inject(
-          span.context(),
+          traceContext,
           response,
           (carrier, name, value) -> {
             if (HEADER.equalsIgnoreCase(name)) {
@@ -55,5 +54,28 @@ public class TraceparentResponseFilter extends OncePerRequestFilter {
           });
       filterChain.doFilter(request, response);
     }
+  }
+
+  @Override
+  protected boolean shouldNotFilterErrorDispatch() {
+    return false;
+  }
+
+  private TraceContext traceContextOf(HttpServletRequest request) {
+    if (request.getAttribute(TRACE_CONTEXT_ATTRIBUTE) instanceof TraceContext saved) {
+      return saved;
+    }
+    // The server observation has already closed on a separate container error dispatch.
+    if (request.getDispatcherType() == DispatcherType.ERROR) {
+      return null;
+    }
+    Tracer tracer = tracers.getIfAvailable();
+    Span span = tracer == null ? null : tracer.currentSpan();
+    if (span == null) {
+      return null;
+    }
+    TraceContext context = span.context();
+    request.setAttribute(TRACE_CONTEXT_ATTRIBUTE, context);
+    return context;
   }
 }

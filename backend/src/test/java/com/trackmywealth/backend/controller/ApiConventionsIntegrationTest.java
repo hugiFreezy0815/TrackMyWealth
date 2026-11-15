@@ -22,6 +22,9 @@ import com.trackmywealth.backend.web.SortWhitelist;
 import com.trackmywealth.backend.web.TraceparentResponseFilter;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.servlet.DispatcherType;
+import jakarta.servlet.Filter;
+import jakarta.servlet.ServletException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
@@ -42,6 +45,7 @@ import java.util.UUID;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -49,9 +53,15 @@ import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.MethodParameter;
+import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -84,7 +94,10 @@ import tools.jackson.databind.ObjectMapper;
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(ApiConventionsIntegrationTest.FailureProbeController.class)
+@Import({
+  ApiConventionsIntegrationTest.FailureProbeController.class,
+  ApiConventionsIntegrationTest.ServletFailureProbe.class
+})
 class ApiConventionsIntegrationTest {
 
   private static final Set<RequestMethod> MUTATING_METHODS =
@@ -357,6 +370,7 @@ class ApiConventionsIntegrationTest {
   private static final String TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736";
   private static final String PARENT_ID = "00f067aa0ba902b7";
   private static final String VALID_TRACEPARENT = "00-" + TRACE_ID + "-" + PARENT_ID + "-01";
+  private static final String SERVLET_FAILURE_PATH = "/api/v1/test/servlet-failure";
 
   @Test
   void continuesTheCallerTraceAndUsesTheServerSpanInTheResponse() {
@@ -394,6 +408,34 @@ class ApiConventionsIntegrationTest {
     JsonNode body = problem(response, HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED");
     response.expectHeader().valueMatches("traceparent", "00-" + TRACE_ID + "-[0-9a-f]{16}-01");
     assertThat(body.path("correlationId").asString()).isEqualTo("support-7f3a9c21");
+  }
+
+  @Test
+  @ExtendWith(OutputCaptureExtension.class)
+  void carriesTheOriginalTraceThroughContainerErrorDispatch(CapturedOutput output) {
+    String supportId = "servlet-failure-599";
+    var response =
+        anonymousClient()
+            .get()
+            .uri(SERVLET_FAILURE_PATH)
+            .header("traceparent", VALID_TRACEPARENT)
+            .header("X-Correlation-Id", supportId)
+            .exchange();
+    JsonNode body = problem(response, HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL");
+    response
+        .expectHeader()
+        .value(
+            "traceparent",
+            value ->
+                assertThat(value)
+                    .matches("00-" + TRACE_ID + "-[0-9a-f]{16}-01")
+                    .isNotEqualTo(VALID_TRACEPARENT));
+    assertThat(body.path("instance").asString()).isEqualTo(SERVLET_FAILURE_PATH);
+    assertThat(body.path("correlationId").asString()).isEqualTo(supportId);
+    assertThat(output.getAll().lines())
+        .filteredOn(line -> line.contains("Error outside Spring MVC answered with 500"))
+        .singleElement()
+        .satisfies(line -> assertThat(line).contains("[traceId=" + TRACE_ID + "]", supportId));
   }
 
   private EntityExchangeResult<String> traceProbe(String token, String traceparent) {
@@ -1060,6 +1102,22 @@ class ApiConventionsIntegrationTest {
         .baseUrl("http://localhost:%d".formatted(port))
         .defaultHeader("Authorization", "Bearer " + accessToken)
         .build();
+  }
+
+  @TestConfiguration(proxyBeanMethods = false)
+  static class ServletFailureProbe {
+    @Bean
+    FilterRegistrationBean<Filter> outsideMvcFailure() {
+      Filter failure =
+          (request, response, chain) -> {
+            throw new ServletException("Intentional servlet filter failure");
+          };
+      var registration = new FilterRegistrationBean<>(failure);
+      registration.addUrlPatterns(SERVLET_FAILURE_PATH);
+      registration.setDispatcherTypes(DispatcherType.REQUEST);
+      registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 3);
+      return registration;
+    }
   }
 
   @RestController
