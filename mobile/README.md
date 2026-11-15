@@ -89,10 +89,14 @@ Docker, it is the optional `web` service of the root `docker-compose.yml`. From 
 root (set the values in `.env`, see `.env.example`):
 
 ```bash
-WEB_API_URL=https://api.example.com WEB_API_ORIGINS=https://api.example.com \
-  docker compose --profile web up -d --build web
+# .env: WEB_API_URL=https://api.example.com, WEB_API_ORIGINS=https://api.example.com,
+#       CORS_ALLOWED_ORIGINS=https://app.example.com (the web app's own public origin)
+docker compose --profile web up -d --build
 bash mobile/deploy/nginx/check-headers.sh http://127.0.0.1:8082 <export-dir> https://api.example.com
 ```
+
+`CORS_ALLOWED_ORIGINS` tells the backend to accept requests from the web app's origin. Without it
+the browser's preflight is refused (403) and nobody can sign in on the web.
 
 `check-headers.sh` needs the export to list its routes: `npx expo export -p web` in `mobile/`
 gives `dist`, or copy it from the container (`docker compose cp web:/srv/web/html/. <dir>`).

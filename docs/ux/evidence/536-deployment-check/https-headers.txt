@@ -1,0 +1,59 @@
+== GET https://localhost/
+HTTP/2 200 
+alt-svc: h3=":443"; ma=2592000
+cache-control: no-store
+content-security-policy: default-src 'self'; connect-src 'self' https://localhost:8443; script-src 'self' 'sha256-67fhrP0+BkBqmgGGXTtgiVO/9EQs3QruYNU/7fnRkI8='; style-src 'self' 'sha256-fmjpZpO8Q/QnFSFVnMh7Z9XPRo/jMubaVR+NQfgRMyI=' 'sha256-rAsZX+hTi+JY/qoeWXnu23cP5TNQxUOmYfewnN6SCtY='; style-src-elem 'self' 'unsafe-inline'; style-src-attr 'unsafe-hashes' 'sha256-O0zefelMDCV5LVlTp999LLB1OksZus7QdWebxa2XsXg='; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+content-type: text/html
+permissions-policy: camera=(), microphone=(), geolocation=(), payment=()
+referrer-policy: no-referrer
+server: Caddy
+server: nginx
+strict-transport-security: max-age=31536000; includeSubDomains
+x-content-type-options: nosniff
+x-frame-options: DENY
+
+== GET https://localhost/accounts/example/transactions/example
+HTTP/2 200 
+alt-svc: h3=":443"; ma=2592000
+cache-control: no-store
+content-security-policy: default-src 'self'; connect-src 'self' https://localhost:8443; script-src 'self' 'sha256-67fhrP0+BkBqmgGGXTtgiVO/9EQs3QruYNU/7fnRkI8='; style-src 'self' 'sha256-fmjpZpO8Q/QnFSFVnMh7Z9XPRo/jMubaVR+NQfgRMyI=' 'sha256-rAsZX+hTi+JY/qoeWXnu23cP5TNQxUOmYfewnN6SCtY='; style-src-elem 'self' 'unsafe-inline'; style-src-attr 'unsafe-hashes' 'sha256-O0zefelMDCV5LVlTp999LLB1OksZus7QdWebxa2XsXg='; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+content-type: text/html
+permissions-policy: camera=(), microphone=(), geolocation=(), payment=()
+referrer-policy: no-referrer
+server: Caddy
+server: nginx
+strict-transport-security: max-age=31536000; includeSubDomains
+x-content-type-options: nosniff
+x-frame-options: DENY
+
+== GET https://localhost/_expo/static/js/web/entry-fbe5abe416a191f42453394b55a0f16a.js
+HTTP/2 200 
+alt-svc: h3=":443"; ma=2592000
+cache-control: public, max-age=31536000, immutable
+content-security-policy: default-src 'self'; connect-src 'self' https://localhost:8443; script-src 'self' 'sha256-67fhrP0+BkBqmgGGXTtgiVO/9EQs3QruYNU/7fnRkI8='; style-src 'self' 'sha256-fmjpZpO8Q/QnFSFVnMh7Z9XPRo/jMubaVR+NQfgRMyI=' 'sha256-rAsZX+hTi+JY/qoeWXnu23cP5TNQxUOmYfewnN6SCtY='; style-src-elem 'self' 'unsafe-inline'; style-src-attr 'unsafe-hashes' 'sha256-O0zefelMDCV5LVlTp999LLB1OksZus7QdWebxa2XsXg='; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+content-type: application/javascript
+permissions-policy: camera=(), microphone=(), geolocation=(), payment=()
+referrer-policy: no-referrer
+server: Caddy
+server: nginx
+strict-transport-security: max-age=31536000; includeSubDomains
+x-content-type-options: nosniff
+x-frame-options: DENY
+
+== GET https://localhost/missing-page
+HTTP/2 404 
+alt-svc: h3=":443"; ma=2592000
+cache-control: no-store
+content-security-policy: default-src 'self'; connect-src 'self' https://localhost:8443; script-src 'self' 'sha256-67fhrP0+BkBqmgGGXTtgiVO/9EQs3QruYNU/7fnRkI8='; style-src 'self' 'sha256-fmjpZpO8Q/QnFSFVnMh7Z9XPRo/jMubaVR+NQfgRMyI=' 'sha256-rAsZX+hTi+JY/qoeWXnu23cP5TNQxUOmYfewnN6SCtY='; style-src-elem 'self' 'unsafe-inline'; style-src-attr 'unsafe-hashes' 'sha256-O0zefelMDCV5LVlTp999LLB1OksZus7QdWebxa2XsXg='; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+content-type: text/html
+permissions-policy: camera=(), microphone=(), geolocation=(), payment=()
+referrer-policy: no-referrer
+server: Caddy
+server: nginx
+strict-transport-security: max-age=31536000; includeSubDomains
+x-content-type-options: nosniff
+x-frame-options: DENY
+
+== GET http://localhost/
+HTTP/1.1 308 Permanent Redirect
+Location: https://localhost/
