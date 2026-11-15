@@ -1,0 +1,15 @@
+{
+	local_certs
+}
+# Web app origin. Caddy redirects http://localhost to HTTPS automatically.
+localhost {
+	reverse_proxy web:8082
+}
+# API origin, kept separate from the web origin.
+localhost:8443 {
+	reverse_proxy backend:8080
+}
+# Same web app under a hostname with a TLD, for the HTTP Observatory scanner (network alias).
+app.trackmywealth.test {
+	reverse_proxy web:8082
+}

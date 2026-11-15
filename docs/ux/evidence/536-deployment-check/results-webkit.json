@@ -1,0 +1,51 @@
+{
+  "browser": "webkit",
+  "version": "18.2",
+  "results": [
+    {
+      "name": "HTML over HTTPS carries Cache-Control: no-store",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sign-in works (CORS + CSP connect-src)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no Referer to another site from an account URL",
+      "pass": true,
+      "detail": "null"
+    },
+    {
+      "name": "no Referer on API requests",
+      "pass": true,
+      "detail": "16 calls"
+    },
+    {
+      "name": "Back after leaving the site: sign-in form, no workspace data (PO 2026-11-14)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sign-out lands on the sign-in form",
+      "pass": true,
+      "detail": "https://localhost/overview"
+    },
+    {
+      "name": "after sign-out, Back ×6 never shows workspace data",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no CSP violation",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "framing from another origin is refused",
+      "pass": true,
+      "detail": "https://localhost/"
+    }
+  ]
+}

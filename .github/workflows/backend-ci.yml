@@ -69,12 +69,14 @@ jobs:
 
       # #544: verify both explicit values reach the backend service, and omitted values
       # remain empty so developers can still run postgres-only Compose commands.
+      # #536: CORS_ALLOWED_ORIGINS reaches it too, and falls back to the app's own dev default.
       - name: Check Compose secret forwarding
         working-directory: .
         run: |
           MFA_ENCRYPTION_KEY=test-mfa-key IMPORT_ACCOUNT_IDENTIFIER_KEY=test-identifier-key \
+            CORS_ALLOWED_ORIGINS=https://app.example.com \
             docker compose config --format json > /tmp/tmw-compose-configured.json
-          env -u MFA_ENCRYPTION_KEY -u IMPORT_ACCOUNT_IDENTIFIER_KEY \
+          env -u MFA_ENCRYPTION_KEY -u IMPORT_ACCOUNT_IDENTIFIER_KEY -u CORS_ALLOWED_ORIGINS \
             docker compose config --format json > /tmp/tmw-compose-unset.json
           python3 - <<'PY'
           import json
@@ -89,6 +91,8 @@ jobs:
           }.items():
               assert configured[name] == expected, name
               assert unset[name] == "", name
+          assert configured["CORS_ALLOWED_ORIGINS"] == "https://app.example.com"
+          assert unset["CORS_ALLOWED_ORIGINS"] == "http://localhost:*"
           PY
 
   history-performance:
