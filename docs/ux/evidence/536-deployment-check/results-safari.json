@@ -1,0 +1,26 @@
+{
+  "browser": "safari",
+  "version": "27.2",
+  "results": [
+    {
+      "name": "sign-in works",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "Back after leaving the site: sign-in form, or the same member still signed in",
+      "pass": true,
+      "detail": "same session restored"
+    },
+    {
+      "name": "sign-out lands on the sign-in form",
+      "pass": true,
+      "detail": "http://localhost:8084/overview"
+    },
+    {
+      "name": "after sign-out, Back ×6 never shows workspace data",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

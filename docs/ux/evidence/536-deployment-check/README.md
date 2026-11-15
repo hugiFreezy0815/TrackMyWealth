@@ -49,7 +49,27 @@ Raw results: `results-chrome.json`, `results-webkit.json`. Screenshots: `*-1-acc
 
 WebKit keeps the blocked frame's URL but leaves its document empty and logs "Refused to load https://localhost/ because it does not appear in the frame-ancestors directive".
 
-Real Safari was not run: `safaridriver` needs a one-time `sudo safaridriver --enable` on this Mac.
+## Real Safari (`safari-536.mjs`, 2026-11-15)
+
+Safari 27.2 was driven through `safaridriver` after `sudo safaridriver --enable`. `safaridriver`
+cannot accept Caddy's untrusted local CA, so this run used the same Compose stack (this
+branch's `main`) without the proxy. The web app was on `http://localhost:8084` and the API on
+`http://localhost:8091`, with the same nginx headers. Browsers treat `localhost` as a secure
+context. HTTPS itself is covered by the Chrome and WebKit runs above.
+
+| Check | Safari 27.2 |
+|---|---|
+| Sign-in works (device locale German, member language English) | Pass |
+| Back after leaving the site (to example.com): sign-in form, or the same member still signed in | Pass: Safari restored the page from its back-forward cache despite `no-store`, with the session intact |
+| Sign-out lands on the sign-in form | Pass |
+| After sign-out, Back six times never shows workspace data | Pass |
+
+Unlike Chrome, Safari restores a `no-store` page after the member left the site. The #571
+guard then keeps the session, because no sign-out happened since that page started. That is
+the member's own session, not another member's data, and matches the PO decision of
+2026-11-14 ("Back may ask for sign-in; it never shows the previous member's data"). After a
+sign-out Safari shows only the sign-in form. Raw results: `results-safari.json`. Screenshots:
+`safari-1-account.png`, `safari-2-back-after-leaving.png`, `safari-3-back-after-sign-out.png`.
 
 ## Found and fixed
 
