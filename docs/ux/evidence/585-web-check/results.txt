@@ -1,0 +1,32 @@
+PASS  Before: 1Y history warns INCEPTION_UNCERTAIN (accounts without opening date)  (INCEPTION_UNCERTAIN,OPEN_RECONCILIATION_DIFFERENCE,VALUE_UNKNOWN)
+PASS  S6: date field is optional and ends at the phone's today  (max=2026-11-16)
+PASS  S6: hint about earlier bookings shown
+PASS  S6: a future date shows the field error
+PASS  S6: Add account is disabled for a future date
+PASS  S6: the phone's today is accepted
+PASS  axe desktop S6 Add account: 0 violations
+PASS  S6: POST /accounts carries openedAt  ({"portfolioId":"d3f73829-c277-4880-8abc-99c0f3ecc0ac","name":"Opened 0cj3","accountType":"CASH","nativeCurrency":"CHF","openedAt":"2025-01-01"})
+PASS  S3: header shows the saved date
+PASS  S3: editor shows the saved date
+PASS  S3: Save disabled while unchanged
+PASS  axe desktop S3 Edit opening date: 0 violations
+PASS  S3: PUT carries If-Match  ("0")
+PASS  S3: PUT keeps the other fields  ({"name":"Opened 0cj3","accountType":"CASH","nativeCurrency":"CHF","openedAt":"2024-06-30"})
+PASS  S3: server stores the date as picked  (2024-06-30)
+PASS  S3: Overview history is read again after the save
+PASS  S3: Portfolio View history is read again after the save
+PASS  Conflict setup: concurrent rename saved  (200)
+PASS  Conflict: stale version shows the conflict dialog
+PASS  Conflict: the draft date is kept for review
+PASS  Conflict: resave uses the new version and keeps the rename  ("2" Opened 0cj3 renamed)
+PASS  Clear: the date is removed
+PASS  Archived: Edit opening date is disabled
+PASS  Archived cleanup: restored in the app
+PASS  API: phone today in the earliest zone (2026-11-17) is accepted and stored as sent  (200 2026-11-17)
+PASS  API: a date not yet today anywhere (2026-11-19) gets 400 VALIDATION_FAILED  (400 must be a date in the past or in the present)
+PASS  axe phone S6 Add account: 0 violations
+PASS  Phone S6: no horizontal scroll
+PASS  axe phone S3 Edit opening date: 0 violations
+PASS  No console error
+
+

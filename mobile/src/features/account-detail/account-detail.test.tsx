@@ -584,6 +584,123 @@ describe('S3 account detail acceptance checks (#494)', () => {
     );
   });
 
+  it('clears the opening date via If-Match, preserves other fields, and invalidates both histories', async () => {
+    const state = fakeServer(
+      summary({
+        openedAt: '2025-01-01',
+        closedAt: '2026-01-01',
+        jurisdiction: 'CH',
+      }),
+      [],
+    );
+    api.put.mockImplementationOnce(async () => {
+      state.account = { ...state.account, openedAt: null, version: 3 };
+      return state.account as never;
+    });
+    const { client } = await renderDetail();
+    const overviewHistory = queryKeys.netWorthHistory('EUR', '1Y');
+    const portfolioHistory = queryKeys.portfolioHistory('p1', '1Y');
+    client.setQueryData(overviewHistory, {});
+    client.setQueryData(portfolioHistory, {});
+
+    expect(await screen.findByText('Opened on 1 Jan 2025')).toBeOnTheScreen();
+    await fireEvent.press(screen.getByLabelText('Account actions'));
+    await fireEvent.press(screen.getByRole('button', { name: 'Edit opening date' }));
+    await fireEvent.press(screen.getByRole('button', { name: /^Clear date/ }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save opening date' }));
+
+    await waitFor(() => expect(screen.queryByText('Opened on 1 Jan 2025')).toBeNull());
+    expect(api.put).toHaveBeenCalledWith('/api/v1/accounts/{accountId}', {
+      params: { accountId: 'acc' },
+      version: 2,
+      body: {
+        name: 'Girokonto',
+        accountType: 'CASH',
+        nativeCurrency: 'EUR',
+        jurisdiction: 'CH',
+        closedAt: '2026-01-01',
+        openedAt: undefined,
+      },
+    });
+    expect(client.getQueryState(overviewHistory)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(portfolioHistory)?.isInvalidated).toBe(true);
+  });
+
+  it('shows an opening date rejection on the field and clears it when the date changes', async () => {
+    fakeServer(summary({ openedAt: '2025-01-01' }), []);
+    api.put.mockRejectedValueOnce(
+      new ApiError('invalid', 400, {
+        status: 400,
+        title: 'Invalid request',
+        code: 'VALIDATION_FAILED',
+        errors: [{ field: 'openedAt', message: 'Invalid date' }],
+      }),
+    );
+    await renderDetail();
+    await fireEvent.press(await screen.findByLabelText('Account actions'));
+    await fireEvent.press(screen.getByRole('button', { name: 'Edit opening date' }));
+
+    const date = () => screen.getByRole('button', { name: /^Opened on/ });
+    const save = () => screen.getByRole('button', { name: 'Save opening date' });
+    await fireEvent.press(screen.getByRole('button', { name: /^Clear date/ }));
+    await fireEvent.press(save());
+    const message = 'Choose today or an earlier date.';
+    expect(await screen.findByText(message)).toBeOnTheScreen();
+    expect(date().props.accessibilityHint).toBe(message);
+
+    await fireEvent.press(date());
+    await fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+    expect(screen.queryByText(message)).toBeNull();
+  });
+
+  it('keeps the date draft and blocks saves until a failed conflict reload is retried', async () => {
+    const state = fakeServer(summary({ openedAt: '2025-01-01' }), []);
+    api.put.mockRejectedValueOnce(
+      new ApiError('changed', 412, { status: 412, title: 'Conflict', code: 'VERSION_CONFLICT' }),
+    );
+    await renderDetail();
+    await fireEvent.press(await screen.findByLabelText('Account actions'));
+    await fireEvent.press(screen.getByRole('button', { name: 'Edit opening date' }));
+    await fireEvent.press(screen.getByRole('button', { name: /^Clear date/ }));
+    state.account = {
+      ...state.account,
+      name: 'Renamed',
+      jurisdiction: 'CH',
+      closedAt: '2025-12-31',
+      version: 3,
+    };
+    await fireEvent.press(screen.getByRole('button', { name: 'Save opening date' }));
+    const review = await screen.findByText('Review and save again');
+    api.get.mockRejectedValueOnce(new NetworkError('reload failed'));
+    await fireEvent.press(review);
+
+    const save = () => screen.getByRole('button', { name: 'Save opening date' });
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    expect(save()).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Opened on .*Choose a date/ })).toBeOnTheScreen();
+    expect(api.put).toHaveBeenCalledTimes(1);
+
+    await fireEvent.press(retry);
+    await waitFor(() => expect(save()).toBeEnabled());
+    expect(api.put).toHaveBeenCalledTimes(1);
+    api.put.mockResolvedValueOnce({ ...state.account, openedAt: null, version: 4 } as never);
+    await fireEvent.press(save());
+    expect(api.put).toHaveBeenLastCalledWith(
+      '/api/v1/accounts/{accountId}',
+      expect.objectContaining({
+        version: 3,
+        body: {
+          name: 'Renamed',
+          accountType: 'CASH',
+          nativeCurrency: 'EUR',
+          jurisdiction: 'CH',
+          closedAt: '2025-12-31',
+          openedAt: undefined,
+        },
+      }),
+    );
+  });
+
   it('disables changes on an archived account and restores with If-Match', async () => {
     fakeServer(summary({ status: 'ARCHIVED', archivedAt: '2026-10-01T10:00:00Z', version: 5 }), [
       txn(0),
@@ -596,6 +713,7 @@ describe('S3 account detail acceptance checks (#494)', () => {
     expect(await screen.findByLabelText('Change category: Food')).toBeDisabled();
     await fireEvent.press(screen.getByLabelText('Account actions'));
     expect(screen.getByRole('button', { name: 'Import statement' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Edit opening date' })).toBeDisabled();
 
     await fireEvent.press(screen.getByRole('button', { name: 'Restore account' }));
     await waitFor(() =>

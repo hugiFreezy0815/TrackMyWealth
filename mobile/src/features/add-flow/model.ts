@@ -224,7 +224,12 @@ export function validationErrors(error: unknown): Record<string, string> {
   // Domain problems such as ACCOUNT_IDENTIFIER_INVALID name their one field as a property.
   const single = (body as { field?: unknown } | undefined)?.field;
   if (typeof single === 'string') fields.push(single);
-  return Object.fromEntries(fields.map((field) => [field, 'addFlow.fieldError']));
+  return Object.fromEntries(
+    fields.map((field) => [
+      field,
+      field === 'openedAt' ? 'account.openedAt.invalid' : 'addFlow.fieldError',
+    ]),
+  );
 }
 
 export function hasProblemCode(error: unknown, code: string): boolean {

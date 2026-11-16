@@ -2,7 +2,15 @@ import { useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';
 import { Switch, Text, View } from 'react-native';
 
-import { AmountField, ChipGroup, ChoiceField, SelectField, TextField } from '@/components/shared';
+import {
+  AmountField,
+  ChipGroup,
+  ChoiceField,
+  DateField,
+  SelectField,
+  TextField,
+  localDateToIso,
+} from '@/components/shared';
 import { Spacing, TypeScale } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { currencyOptions } from '@/i18n/iso';
@@ -55,6 +63,7 @@ export function AccountDetails({
   const type = draft.accountType;
   const warning = msg('addAccount.type.warning');
   const required = msg('addFlow.required');
+  const today = localDateToIso(new Date());
 
   return (
     <>
@@ -101,6 +110,20 @@ export function AccountDetails({
         disabled={disabled}
         hint={msg('addAccount.currency.immutable')}
         error={fieldError('nativeCurrency')}
+      />
+      <DateField
+        label={msg('account.openedAt.optional')}
+        value={draft.openedAt}
+        onChange={(openedAt) => onChange({ openedAt })}
+        onClear={() => onChange({ openedAt: null })}
+        maximumDate={today}
+        hint={msg('account.openedAt.hint')}
+        error={
+          draft.openedAt && draft.openedAt > today
+            ? msg('account.openedAt.invalid')
+            : fieldError('openedAt')
+        }
+        disabled={disabled}
       />
       {type === 'SAVINGS' ? (
         <View

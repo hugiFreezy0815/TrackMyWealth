@@ -2,6 +2,7 @@ package com.trackmywealth.backend.testsupport;
 
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.UUID;
 
 /**
@@ -33,6 +34,7 @@ public final class AccountRequests {
     private String pensionScheme;
     private String customAssetType;
     private Boolean countsAsSaving;
+    private LocalDate openedAt;
 
     private Builder(String name, String accountType, String nativeCurrency) {
       this.name = name;
@@ -80,6 +82,11 @@ public final class AccountRequests {
       return this;
     }
 
+    public Builder openedAt(LocalDate openedAt) {
+      this.openedAt = openedAt;
+      return this;
+    }
+
     public CreateAccountRequest build() {
       return new CreateAccountRequest(
           portfolioId,
@@ -92,7 +99,8 @@ public final class AccountRequests {
           interestRatePercent,
           pensionScheme,
           customAssetType,
-          countsAsSaving);
+          countsAsSaving,
+          openedAt);
     }
   }
 }
