@@ -463,6 +463,52 @@ describe('S3 account detail acceptance checks (#494)', () => {
     },
   );
 
+  it('keeps pagination blocked after a cached page 0 fails to refresh until retry succeeds', async () => {
+    fakeServer(
+      summary(),
+      Array.from({ length: 60 }, (_, index) =>
+        txn(index, { categoryId: index ? 'food' : 'uncat' }),
+      ),
+    );
+    await renderDetail({ staleTime: 30_000 });
+    expect(await screen.findByText('Showing 50 of 60')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Load more' }));
+    expect(await screen.findByText('Showing 60 of 60')).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId('account-needs-category'));
+    expect(await screen.findByText('Showing 1 of 1')).toBeTruthy();
+
+    api.get.mockRejectedValueOnce(new NetworkError('page 0 refresh failed'));
+    const callsBeforeReturn = listCalls().length;
+    await fireEvent.press(screen.getByRole('radio', { name: 'All' }));
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    expect(screen.getByText('Showing 50 of 60')).toBeTruthy();
+    expect(screen.getByText('Shop 000')).toBeTruthy();
+
+    const loadMore = screen.getByRole('button', { name: 'Load more' });
+    expect(loadMore).toBeDisabled();
+    await fireEvent.press(loadMore);
+    await fireEvent(screen.getByTestId('account-transaction-list'), 'onEndReached');
+    expect(
+      listCalls()
+        .slice(callsBeforeReturn)
+        .map(({ page }) => page),
+    ).toEqual([0]);
+
+    await fireEvent.press(retry);
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Load more' })).toBeEnabled();
+    });
+    await fireEvent.press(screen.getByRole('button', { name: 'Load more' }));
+    expect(await screen.findByText('Showing 60 of 60')).toBeTruthy();
+    expect(
+      listCalls()
+        .slice(callsBeforeReturn)
+        .map(({ page }) => page),
+    ).toEqual([0, 0, 1]);
+  });
+
   it('uses a virtualized SectionList with headers inside the scroll owner for 1,000+ rows', async () => {
     fakeServer(
       summary(),
