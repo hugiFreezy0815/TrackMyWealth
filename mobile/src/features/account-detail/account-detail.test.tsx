@@ -163,11 +163,12 @@ async function renderDetail(
     onBack?: () => void;
     cachedAccounts?: AccountListItem[];
     initialTab?: 'positions' | 'activity';
+    staleTime?: number;
   } = {},
 ) {
   const client = new QueryClient({
     defaultOptions: {
-      queries: { retry: false, gcTime: Infinity },
+      queries: { retry: false, gcTime: Infinity, staleTime: props.staleTime },
       mutations: { retry: false, gcTime: Infinity },
     },
   });
@@ -418,6 +419,49 @@ describe('S3 account detail acceptance checks (#494)', () => {
     expect(screen.queryByTestId('transactions-end-marker')).toBeNull();
     expect(listCalls().map((query) => query.page)).toEqual([0, 1, 2]);
   });
+
+  it.each(['filter', 'sort'] as const)(
+    'reloads only page 0 when returning to a previous %s',
+    async (selection) => {
+      fakeServer(
+        summary(),
+        Array.from({ length: 110 }, (_, index) =>
+          txn(index, { categoryId: index < 60 ? 'uncat' : 'food' }),
+        ),
+      );
+      await renderDetail({ staleTime: 30_000 });
+      expect(await screen.findByText('Showing 50 of 110')).toBeTruthy();
+      await fireEvent.press(screen.getByText('Load more'));
+      expect(await screen.findByText('Showing 100 of 110')).toBeTruthy();
+
+      if (selection === 'filter') {
+        await fireEvent.press(screen.getByTestId('account-needs-category'));
+        expect(await screen.findByText('Showing 50 of 60')).toBeTruthy();
+      } else {
+        await fireEvent.press(screen.getByRole('button', { name: /^Newest first/ }));
+        await fireEvent.press(screen.getByRole('radio', { name: 'Oldest first' }));
+        await waitFor(() =>
+          expect(listCalls().at(-1)).toMatchObject({ page: 0, sort: ['bookingDate,asc'] }),
+        );
+      }
+
+      const callsBeforeReturn = listCalls().length;
+      if (selection === 'filter') {
+        await fireEvent.press(screen.getByRole('radio', { name: 'All' }));
+      } else {
+        await fireEvent.press(await screen.findByRole('button', { name: /^Oldest first/ }));
+        await fireEvent.press(screen.getByRole('radio', { name: 'Newest first' }));
+      }
+
+      expect(await screen.findByText('Showing 50 of 110')).toBeTruthy();
+      expect(screen.queryByText('Showing 100 of 110')).toBeNull();
+      await waitFor(() =>
+        expect(listCalls().slice(callsBeforeReturn)).toEqual([
+          expect.objectContaining({ page: 0, uncategorized: false, sort: ['bookingDate,desc'] }),
+        ]),
+      );
+    },
+  );
 
   it('uses a virtualized SectionList with headers inside the scroll owner for 1,000+ rows', async () => {
     fakeServer(

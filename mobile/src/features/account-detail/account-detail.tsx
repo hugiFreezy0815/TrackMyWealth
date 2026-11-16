@@ -7,7 +7,7 @@ import { ApiError, NetworkError } from '@/api/client';
 import { typedApi } from '@/api/typed-api';
 import { problemReaction } from '@/api/problems';
 import { retryVersionRequired, useConflict } from '@/api/queries/conflict';
-import { invalidateFinancialData } from '@/api/queries/invalidation';
+import { invalidateFinancialData, invalidateFromFirstPage } from '@/api/queries/invalidation';
 import { queryKeys, queryRoots } from '@/api/queries/keys';
 import {
   useAccount,
@@ -169,9 +169,41 @@ export function AccountDetail({
   const locked =
     !online || archived || reloadingConflict || categoryWrite.isPending || archiveWrite.isPending;
 
-  // Spec S3: the chip is hidden at 0 and the filter falls back to All (server count, page 0).
-  // Adjusted while rendering, so the stale filter never reaches a request or a frame.
-  if (uncategorized && count.data === 0) setUncategorized(false);
+  const restartActivityQuery = useCallback(
+    (nextFilter: boolean, nextSort: TransactionSort) => {
+      const filters = {
+        queryKey: queryKeys.accountTransactions(accountId, {
+          uncategorized: nextFilter,
+          sort: nextSort,
+        }),
+        exact: true,
+      };
+      // A request for the previous visit must not repopulate pages after they are trimmed.
+      void client.cancelQueries(filters);
+      // Refetch when the new selection becomes active, keeping page 0 available offline.
+      return invalidateFromFirstPage(client, { ...filters, refetchType: 'none' });
+    },
+    [accountId, client],
+  );
+
+  function changeActivityView(nextFilter: boolean, nextSort: TransactionSort) {
+    if (nextFilter === uncategorized && nextSort === sort) return;
+    void restartActivityQuery(nextFilter, nextSort);
+    setUncategorized(nextFilter);
+    setSort(nextSort);
+  }
+
+  // Spec S3: fall back to All at page 0 once the server count reaches zero.
+  useEffect(() => {
+    if (!uncategorized || count.data !== 0) return;
+    let active = true;
+    void restartActivityQuery(false, sort).then(() => {
+      if (active) setUncategorized(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [count.data, restartActivityQuery, sort, uncategorized]);
 
   // Spec S3 row 4: a category id the cached list lacks triggers one reload of /categories.
   const reloadedCategories = useRef(false);
@@ -469,13 +501,13 @@ export function AccountDetail({
                 : []),
             ]}
             selected={[uncategorized ? 'uncategorized' : 'all']}
-            onSelect={(next) => setUncategorized(next === 'uncategorized')}
+            onSelect={(next) => changeActivityView(next === 'uncategorized', sort)}
           />
           {countValue > 0 ? (
             <Pressable
               testID="account-needs-category"
               accessibilityRole="button"
-              onPress={() => setUncategorized(true)}
+              onPress={() => changeActivityView(true, sort)}
               style={{
                 padding: Spacing.two,
                 backgroundColor: theme.statusWarningSubtle,
@@ -520,7 +552,7 @@ export function AccountDetail({
               <EmptyState
                 title={intl.formatMessage({ id: 'account.noUncategorized' })}
                 actionLabel={intl.formatMessage({ id: 'account.showAll' })}
-                onAction={() => setUncategorized(false)}
+                onAction={() => changeActivityView(false, sort)}
               />
             ) : (
               <EmptyState
@@ -550,7 +582,7 @@ export function AccountDetail({
       ) : null}
       {transactions.hasNextPage && !transactions.isFetchNextPageError ? (
         <ActionButton
-          disabled={transactions.isFetchingNextPage}
+          disabled={transactions.isFetching}
           label={intl.formatMessage({ id: 'account.loadMore' })}
           onPress={() => void transactions.fetchNextPage()}
         />
@@ -578,7 +610,7 @@ export function AccountDetail({
               onEndReached={
                 transactions.hasNextPage && !transactions.isFetchNextPageError
                   ? () => {
-                      if (!transactions.isFetchingNextPage) void transactions.fetchNextPage();
+                      if (!transactions.isFetching) void transactions.fetchNextPage();
                     }
                   : undefined
               }
@@ -600,7 +632,7 @@ export function AccountDetail({
           onEndReached={
             showingTransactions && transactions.hasNextPage && !transactions.isFetchNextPageError
               ? () => {
-                  if (!transactions.isFetchingNextPage) void transactions.fetchNextPage();
+                  if (!transactions.isFetching) void transactions.fetchNextPage();
                 }
               : undefined
           }
@@ -629,7 +661,7 @@ export function AccountDetail({
         sort={sort}
         onClose={() => setDialog(null)}
         onSort={(next) => {
-          setSort(next);
+          changeActivityView(uncategorized, next);
           setDialog(null);
         }}
       />
