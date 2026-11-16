@@ -409,6 +409,34 @@ describe('S2 Portfolio View acceptance (#493)', () => {
     expect(screen.getByRole('button', { name: /Home total, minus/ })).toBeTruthy();
   });
 
+  it.each([
+    ['en', /approximately minus 91\.25/],
+    ['de', /ungefähr minus 91,25/],
+  ] as const)('announces the server-converted row balance in %s', async (locale, label) => {
+    setData(
+      view([
+        makeSection('CASH_AND_SAVINGS', [
+          makeAccount('Foreign account', {
+            currency: 'CHF',
+            balance: '-100.00',
+            valueInPortfolioCurrency: '-91.25',
+          }),
+          makeAccount('Same currency'),
+          makeAccount('Missing conversion', { currency: 'CHF', valueInPortfolioCurrency: null }),
+          makeAccount('Unknown value', { currency: 'CHF', valueKnown: false }),
+        ]),
+      ]),
+    );
+    await mount(locale);
+    const row = screen.getByRole('button', { name: /^Foreign account,/ });
+    expect(row.props.accessibilityLabel).toMatch(label);
+    for (const name of [/^Same currency,/, /^Missing conversion,/, /^Unknown value,/]) {
+      expect(screen.getByRole('button', { name }).props.accessibilityLabel).not.toMatch(
+        /approximately|ungefähr/,
+      );
+    }
+  });
+
   it('shows the stale source date, the due chip and no chip without a due date', async () => {
     const due = new Date();
     due.setDate(due.getDate() + 8);
@@ -717,10 +745,20 @@ describe('S2 privacy ("Hide amounts", FR-CLI-005)', () => {
   it('masks amounts, units, percentages and the FX rate, without a revealing loss colour', async () => {
     jest.mocked(useAmountsHidden).mockReturnValue(true);
     setData(
-      view([depotSection({ totalReturn: '7.84', balance: '-5.00' })], {
-        conversionRate: '0.9362',
-        conversionRateDate: '2026-10-20',
-      }),
+      view(
+        [
+          depotSection({
+            totalReturn: '7.84',
+            balance: '-5.00',
+            currency: 'CHF',
+            valueInPortfolioCurrency: '-4.68',
+          }),
+        ],
+        {
+          conversionRate: '0.9362',
+          conversionRateDate: '2026-10-20',
+        },
+      ),
     );
     setPositions([position('1', { quantity: '310', unrealisedGainPercent: '-3.75' })]);
     await mount();
@@ -730,7 +768,7 @@ describe('S2 privacy ("Hide amounts", FR-CLI-005)', () => {
     expect(total.props.accessibilityLabel).toBe('hidden');
     expect(color(total)).not.toBe(LOSS);
     expect(screen.getByText('•••• units · IE000000001')).toBeTruthy();
-    expect(renderedText()).not.toMatch(/200\.00|190\.00|−5|3[.,]8|7[.,]8|310|9362/);
+    expect(renderedText()).not.toMatch(/200\.00|190\.00|−5|4[.,]68|3[.,]8|7[.,]8|310|9362/);
     expect(screen.getByRole('button', { name: /^Fund 1, hidden, hidden units/ })).toBeTruthy();
   });
 });

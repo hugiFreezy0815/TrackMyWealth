@@ -100,6 +100,11 @@ export function PortfolioAccountRow({
     valueKnown: known,
     masked: hidden,
   }).label;
+  const conversion =
+    known && account.currency !== portfolioCurrency && account.valueInPortfolioCurrency !== null
+      ? { value: account.valueInPortfolioCurrency, currency: portfolioCurrency, approx: true }
+      : null;
+  const spokenConversion = conversion && !hidden ? amountTexts(intl, conversion).label : null;
   return (
     <View
       testID={rowTestId(account.accountId)}
@@ -112,7 +117,9 @@ export function PortfolioAccountRow({
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={[account.name, spokenAmount, detail].join(', ')}
+        accessibilityLabel={[account.name, spokenAmount, spokenConversion, detail]
+          .filter(Boolean)
+          .join(', ')}
         onPress={() => onAccount(account.accountId)}
         style={{ minHeight: 56, paddingVertical: Spacing.two, gap: Spacing.one }}
       >
@@ -140,20 +147,12 @@ export function PortfolioAccountRow({
                 ...TypeScale.numberLarge,
                 // With "Hide amounts" a red figure would reveal the sign (as ChangeChip).
                 color:
-                  !hidden && isNegativeAmount(account.balance)
+                  known && !hidden && isNegativeAmount(account.balance)
                     ? theme.statusLoss
                     : theme.textPrimary,
               }}
             />
-            {account.currency !== portfolioCurrency && account.valueInPortfolioCurrency !== null ? (
-              <Amount
-                approx
-                value={account.valueInPortfolioCurrency}
-                valueKnown={known}
-                currency={portfolioCurrency}
-                style={TypeScale.caption}
-              />
-            ) : null}
+            {conversion ? <Amount {...conversion} style={TypeScale.caption} /> : null}
           </View>
         </View>
       </Pressable>
