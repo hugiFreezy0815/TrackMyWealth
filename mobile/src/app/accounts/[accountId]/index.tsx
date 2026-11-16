@@ -24,8 +24,8 @@ export default function AccountDetailRoute() {
   if (isAdministrator(identity)) return <Redirect href={homeFor(true)} />;
   const openTransaction = (transactionId: string) => {
     if (webPanel) {
-      if (!selectedTransaction)
-        previousFocus.current = document.activeElement as HTMLElement | null;
+      previousFocus.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setSelectedTransaction(transactionId);
     } else {
       router.push({
@@ -52,7 +52,7 @@ export default function AccountDetailRoute() {
             accountId={accountId ?? ''}
             transactionId={selectedTransaction}
             onBack={closePanel}
-            onRelatedTransaction={openTransaction}
+            onRelatedTransaction={setSelectedTransaction}
             onAccount={(id) =>
               router.push({ pathname: '/accounts/[accountId]', params: { accountId: id } })
             }

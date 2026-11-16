@@ -4,6 +4,7 @@
 // Needs playwright-core and @axe-core/playwright (scratch folder) and the installed Google Chrome.
 import { chromium } from 'playwright-core';
 import AxeBuilder from '@axe-core/playwright';
+import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
 
 const [accountId, out] = process.argv.slice(2);
@@ -124,9 +125,17 @@ for (const [name, options] of [
   await shot(page, 'account-desktop');
   // S4: selecting a row opens the desktop panel without leaving the account, focuses
   // its heading after the detail loads and restores focus to the originating row on close.
-  const opener = page.locator('table tbody tr td:nth-child(2) button').first();
-  await opener.focus();
-  await opener.click();
+  const transactionButtons = page.locator('table tbody button[data-transaction-open]');
+  await transactionButtons.first().focus();
+  // Move farther than one screen so this also checks scrolling.
+  for (let row = 0; row < 20; row++) await page.keyboard.press('ArrowDown');
+  const opener = transactionButtons.nth(20);
+  assert(await opener.evaluate((node) => document.activeElement === node));
+  assert(await opener.evaluate((node) => {
+    const bounds = node.getBoundingClientRect();
+    return bounds.top >= 0 && bounds.bottom <= window.innerHeight;
+  }));
+  await page.keyboard.press('Enter');
   const panel = page.getByTestId('shell-detail-panel');
   await panel.waitFor({ state: 'visible' });
   await panel.getByRole('heading').first().waitFor({ state: 'visible', timeout: 30000 });
@@ -146,6 +155,7 @@ for (const [name, options] of [
   results.desktop.detailPanel.focusReturned = await opener.evaluate(
     (node) => document.activeElement === node,
   );
+  assert(results.desktop.detailPanel.focusReturned);
   await context.close();
 }
 {

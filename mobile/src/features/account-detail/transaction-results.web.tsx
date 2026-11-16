@@ -1,5 +1,5 @@
 import { useIntl } from 'react-intl';
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import { useWindowDimensions } from 'react-native';
 
 import { Amount } from '@/components/shared';
@@ -35,6 +35,17 @@ export function TransactionResults(props: TransactionResultsProps) {
   ) : (
     <TransactionTable {...props} />
   );
+}
+
+function focusAdjacentTransaction(event: KeyboardEvent<HTMLButtonElement>) {
+  const { key, currentTarget, altKey, ctrlKey, metaKey, shiftKey } = event;
+  if ((key !== 'ArrowUp' && key !== 'ArrowDown') || altKey || ctrlKey || metaKey || shiftKey)
+    return;
+
+  event.preventDefault();
+  const row = currentTarget.closest('tr');
+  const nextRow = key === 'ArrowUp' ? row?.previousElementSibling : row?.nextElementSibling;
+  nextRow?.querySelector<HTMLButtonElement>('button[data-transaction-open]:enabled')?.focus();
 }
 
 function TransactionTable({
@@ -95,11 +106,19 @@ function TransactionTable({
           {transactions.map((transaction) => {
             const view = presentTransaction(transaction, webContext, intl);
             return (
-              <tr key={transaction.id}>
+              <tr
+                key={transaction.id}
+                onFocus={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget)) {
+                    event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                  }
+                }}
+              >
                 <td style={cellStyle}>{formatDate(transaction.bookingDate, intl.locale)}</td>
                 <td style={cellStyle}>
                   <button
                     type="button"
+                    data-transaction-open
                     style={{
                       border: 0,
                       background: 'transparent',
@@ -112,7 +131,15 @@ function TransactionTable({
                     }}
                     aria-current={selectedTransactionId === transaction.id ? 'true' : undefined}
                     disabled={!onOpen}
-                    onClick={onOpen ? () => onOpen(transaction.id) : undefined}
+                    onKeyDown={focusAdjacentTransaction}
+                    onClick={
+                      onOpen
+                        ? (event) => {
+                            event.currentTarget.focus();
+                            onOpen(transaction.id);
+                          }
+                        : undefined
+                    }
                   >
                     {view.title}
                   </button>
