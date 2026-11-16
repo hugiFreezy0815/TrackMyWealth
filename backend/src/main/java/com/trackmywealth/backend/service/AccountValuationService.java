@@ -62,11 +62,10 @@ import org.springframework.web.server.ResponseStatusException;
  * <p>US-25-04: an account with an opening balance - any account except the first two kinds, which
  * reject one ({@code OpeningBalanceService}) - is valued as that balance plus its ledger after the
  * opening date, and is unknown before that date. A card's own ledger value is superseded by it. An
- * account that {@code holdsPositions} keeps an unknown value even with one: its cash is only part
- * of it until holdings are valued (EPIC 15). An account without a ledger ({@code hasTransactions =
- * false}) is valued from its latest snapshot instead, the opening balance being one of them. Every
- * other account without an opening balance has no value source yet and resolves as unknown, not
- * zero.
+ * account that {@code holdsPositions} is valued from cash and holdings in its latest holdings
+ * statement when all of those figures are known (#586). Other accounts without a ledger ({@code
+ * hasTransactions = false}) use their latest snapshot, which includes an opening balance if one was
+ * recorded. Accounts with no applicable value source are unknown.
  *
  * <p>#380: every read goes through {@link #valuationsOf}, which loads each kind of value source
  * once for the whole batch ({@link AccountValueSources}), so valuing fifty accounts runs the same
@@ -86,6 +85,7 @@ public class AccountValuationService {
   private final AccountSnapshotRepository accountSnapshotRepository;
   private final TransactionRepository transactionRepository;
   private final AccountCurrencyService accountCurrencyService;
+  private final AccountPositionsService accountPositionsService;
   private final AccountDataQualityService accountDataQualityService;
   private final FxRateService fxRateService;
   private final BusinessDateService businessDateService;
@@ -101,6 +101,7 @@ public class AccountValuationService {
       AccountSnapshotRepository accountSnapshotRepository,
       TransactionRepository transactionRepository,
       AccountCurrencyService accountCurrencyService,
+      AccountPositionsService accountPositionsService,
       AccountDataQualityService accountDataQualityService,
       FxRateService fxRateService,
       BusinessDateService businessDateService,
@@ -114,6 +115,7 @@ public class AccountValuationService {
     this.accountSnapshotRepository = accountSnapshotRepository;
     this.transactionRepository = transactionRepository;
     this.accountCurrencyService = accountCurrencyService;
+    this.accountPositionsService = accountPositionsService;
     this.accountDataQualityService = accountDataQualityService;
     this.fxRateService = fxRateService;
     this.businessDateService = businessDateService;
@@ -377,7 +379,7 @@ public class AccountValuationService {
    * after its opening balance.
    */
   private AccountValueSources sourcesFor(Collection<Account> accounts, LocalDate asOf) {
-    // Kept for an account that holds positions: no value from it yet, but the warnings read it.
+    // For an account that holds positions, the opening balance is only used for warnings.
     Map<UUID, SnapshotBalance> openingBalances = new HashMap<>();
     List<UUID> openingCandidates = idsOf(accounts, AccountValuationService::takesOpeningBalance);
     if (!openingCandidates.isEmpty()) {
@@ -477,11 +479,19 @@ public class AccountValuationService {
                 .stream()
                 .collect(Collectors.toMap(KeyedDate::key, KeyedDate::date));
 
+    Map<UUID, String> ownCurrencies = accountCurrencyService.ownCurrencies(accounts);
+    List<UUID> holdsPositions = idsOf(accounts, Account::isHoldsPositions);
+    Map<UUID, NativeAccountValue> reportedHoldingsValues =
+        holdsPositions.isEmpty()
+            ? Map.of()
+            : accountPositionsService.reportedValuesFor(holdsPositions, ownCurrencies, asOf);
+
     return new AccountValueSources(
-        accountCurrencyService.ownCurrencies(accounts),
+        ownCurrencies,
         openingBalances,
         latestSnapshots,
         latestValuations,
+        reportedHoldingsValues,
         unresolvedLoanRepayments,
         originalPrincipals,
         ledgerSums,
@@ -568,7 +578,7 @@ public class AccountValuationService {
       return unknown(account, ownCurrency, targetCurrency, warnings);
     }
     NativeAccountValue resolved = nativeValue.get();
-    boolean sourceStale = isStale(resolved.confirmedOn(), asOf);
+    boolean sourceStale = resolved.sourceFxStale() || isStale(resolved.confirmedOn(), asOf);
 
     if (ownCurrency.equals(targetCurrency)) {
       // Rounded, not returned raw: resolved.amount() can carry more than money's usual 4 decimal
@@ -633,6 +643,9 @@ public class AccountValuationService {
       }
       return Optional.ofNullable(sources.originalPrincipals().get(accountId))
           .map(principal -> loanValue(accountId, principal, sources));
+    }
+    if (account.isHoldsPositions()) {
+      return Optional.ofNullable(sources.reportedHoldingsValues().get(accountId));
     }
     if (!account.isHasTransactions()) {
       return latestSnapshot(account, sources);
@@ -708,14 +721,10 @@ public class AccountValuationService {
    * #232 review: an account without a ledger ({@code VESTED_BENEFITS}) changes value only through
    * what its provider reports, so its value is its newest snapshot balance on or before {@code
    * asOf} - the opening balance included, being a snapshot too - with that snapshot's date, so a
-   * client can show how old it is. Nothing recorded by then: unknown, not zero. An account that
-   * {@code holdsPositions} stays unknown, as with an opening balance (EPIC 15).
+   * client can show how old it is. Nothing recorded by then: unknown, not zero.
    */
   private static Optional<NativeAccountValue> latestSnapshot(
       Account account, AccountValueSources sources) {
-    if (account.isHoldsPositions()) {
-      return Optional.empty();
-    }
     return Optional.ofNullable(sources.latestSnapshots().get(account.getId()))
         .map(
             snapshot ->
@@ -741,7 +750,7 @@ public class AccountValuationService {
       SnapshotBalance openingBalance,
       AccountValueSources sources,
       LocalDate asOf) {
-    if (account.isHoldsPositions() || asOf.isBefore(openingBalance.snapshotDate())) {
+    if (asOf.isBefore(openingBalance.snapshotDate())) {
       return Optional.empty();
     }
     BigDecimal ledger =

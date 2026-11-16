@@ -2,6 +2,7 @@ package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.trackmywealth.backend.dto.AccountListItemResponse;
 import com.trackmywealth.backend.dto.AccountPositionResponse;
 import com.trackmywealth.backend.dto.AccountPositionsResponse;
 import com.trackmywealth.backend.dto.AccountPositionsSource;
@@ -12,11 +13,14 @@ import com.trackmywealth.backend.dto.CreateSecurityRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
+import com.trackmywealth.backend.dto.NetWorthResponse;
+import com.trackmywealth.backend.dto.PortfolioViewResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.SnapshotHoldingRequest;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
+import com.trackmywealth.backend.dto.ValueHistoryResponse;
 import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
@@ -49,9 +53,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 /**
  * US-15-05 (#478): a depot's positions from its newest holdings snapshot. One test per acceptance
  * criterion of the issue, plus the authorization rules (#389, FR-TEN-007).
- *
- * <p>The manual snapshot API takes no reported value, price or currency (those come from a holdings
- * import), so the tests set them on the stored rows directly.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -245,7 +246,7 @@ class AccountPositionsControllerTest {
             token,
             depot.id(),
             new RecordAccountSnapshotRequest(
-                today(), null, List.of(holding(security.id(), "1", null))));
+                today(), BigDecimal.ZERO, List.of(holding(security.id(), "1", null))));
     execute(
         "UPDATE snapshot_holding SET reported_value = 100, reported_currency = 'USD'"
             + " WHERE snapshot_id = ?",
@@ -257,6 +258,7 @@ class AccountPositionsControllerTest {
     assertThat(result.positions().get(0).value()).isEqualByComparingTo("100");
     assertThat(result.positions().get(0).valueInAccountCurrency()).isNull();
     assertThat(result.positions().get(0).valueStatus()).isEqualTo(ValueStatus.UNKNOWN);
+    assertThat(listedDepot(token).valueStatus()).isEqualTo(ValueStatus.UNKNOWN);
   }
 
   @Test
@@ -322,6 +324,171 @@ class AccountPositionsControllerTest {
         .exchange()
         .expectStatus()
         .isNotFound();
+  }
+
+  @Test
+  void completeManualStatementValuesTheDepotEverywhereFromItsStatementDate() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createAccount(token, "Mixed Currency Depot", "SECURITIES");
+    SecurityResponse domestic = createSecurity(token, "CH0038863350", "Nestle");
+    SecurityResponse foreign = createSecurity(token, "US9220427424", "Vanguard Total World");
+    LocalDate statementDate = today().minusDays(2);
+    saveFxRate(statementDate, "0.90");
+    saveFxRate(today(), "0.50");
+    recordOk(
+        token,
+        depot.id(),
+        new RecordAccountSnapshotRequest(
+            statementDate,
+            new BigDecimal("1000"),
+            List.of(
+                reportedHolding(domestic.id(), "5000", "CHF"),
+                reportedHolding(foreign.id(), "2000", "USD"))));
+    recordOk(token, depot.id(), balanceOnly(today(), "2500"));
+
+    BigDecimal positionsValue =
+        positions(token, depot.id()).positions().stream()
+            .map(AccountPositionResponse::valueInAccountCurrency)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    AccountListItemResponse account = listedDepot(token);
+    assertThat(account.balance()).isEqualByComparingTo("7800");
+    assertThat(account.balance()).isEqualByComparingTo(positionsValue.add(new BigDecimal("1000")));
+    assertThat(account.valueStatus()).isEqualTo(ValueStatus.CURRENT);
+
+    NetWorthResponse netWorth = netWorth(token);
+    assertThat(netWorth.netWorth()).isEqualByComparingTo("7800");
+    assertThat(netWorth.complete()).isTrue();
+    PortfolioViewResponse portfolio =
+        get(
+            token,
+            "/api/v1/portfolios/" + depot.portfolioId() + "/view",
+            PortfolioViewResponse.class);
+    assertThat(portfolio.total()).isEqualByComparingTo("7800");
+    assertThat(portfolio.complete()).isTrue();
+
+    ValueHistoryResponse history =
+        get(token, "/api/v1/net-worth/history?period=1W&currency=CHF", ValueHistoryResponse.class);
+    assertThat(history.points())
+        .anySatisfy(
+            point -> {
+              assertThat(point.date()).isEqualTo(statementDate.minusDays(1));
+              assertThat(point.value()).isEqualByComparingTo("0");
+            });
+    assertThat(history.points())
+        .anySatisfy(
+            point -> {
+              assertThat(point.date()).isEqualTo(statementDate);
+              assertThat(point.value()).isEqualByComparingTo("7800");
+            });
+  }
+
+  @Test
+  void newestIncompleteStatementDoesNotFallBackToAnOlderCompleteValue() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createAccount(token, "Incomplete Depot", "SECURITIES");
+    SecurityResponse domestic = createSecurity(token, "CH0038863350", "Nestle");
+    SecurityResponse missing = createSecurity(token, "US9220427424", "Vanguard Total World");
+    BigDecimal cash = new BigDecimal("1000");
+    SnapshotHoldingRequest priced = reportedHolding(domestic.id(), "5000", "CHF");
+    recordOk(
+        token,
+        depot.id(),
+        new RecordAccountSnapshotRequest(today().minusDays(1), cash, List.of(priced)));
+    recordOk(
+        token,
+        depot.id(),
+        new RecordAccountSnapshotRequest(
+            today(), cash, List.of(priced, holding(missing.id(), "1", null))));
+
+    AccountListItemResponse account = listedDepot(token);
+    assertThat(account.balance()).isNull();
+    assertThat(account.valueStatus()).isEqualTo(ValueStatus.UNKNOWN);
+    assertThat(netWorth(token).complete()).isFalse();
+    assertThat(
+            get(
+                    token,
+                    "/api/v1/portfolios/" + depot.portfolioId() + "/view",
+                    PortfolioViewResponse.class)
+                .complete())
+        .isFalse();
+  }
+
+  @Test
+  void anOldStatementMakesTheDepotValueStale() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createAccount(token, "Old Depot", "SECURITIES");
+    SecurityResponse security = createSecurity(token, "CH0038863350", "Nestle");
+    recordOk(
+        token,
+        depot.id(),
+        new RecordAccountSnapshotRequest(
+            today().minusDays(60),
+            BigDecimal.ZERO,
+            List.of(reportedHolding(security.id(), "5000", "CHF"))));
+
+    assertThat(listedDepot(token).valueStatus()).isEqualTo(ValueStatus.STALE);
+  }
+
+  @Test
+  void staleStatementFxMakesTheDepotValueStale() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createAccount(token, "Stale Rate Depot", "SECURITIES");
+    SecurityResponse security = createSecurity(token, "US9220427424", "Vanguard Total World");
+    saveFxRate(today().minusDays(10), "0.90");
+    recordOk(
+        token,
+        depot.id(),
+        new RecordAccountSnapshotRequest(
+            today(), BigDecimal.ZERO, List.of(reportedHolding(security.id(), "100", "USD"))));
+
+    assertThat(listedDepot(token).balance()).isEqualByComparingTo("90");
+    assertThat(listedDepot(token).valueStatus()).isEqualTo(ValueStatus.STALE);
+  }
+
+  @Test
+  void manualReportedValueRequiresCurrency() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createAccount(token, "Depot", "SECURITIES");
+    SecurityResponse security = createSecurity(token, "CH0038863350", "Nestle");
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + depot.id() + "/snapshots")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new RecordAccountSnapshotRequest(
+                today(), BigDecimal.ZERO, List.of(reportedHolding(security.id(), "5000", null))))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+  }
+
+  private AccountListItemResponse listedDepot(String token) {
+    AccountListItemResponse[] accounts =
+        get(token, "/api/v1/accounts", AccountListItemResponse[].class);
+    assertThat(accounts).hasSize(1);
+    return accounts[0];
+  }
+
+  private NetWorthResponse netWorth(String token) {
+    return get(token, "/api/v1/net-worth?currency=CHF", NetWorthResponse.class);
+  }
+
+  private <T> T get(String token, String path, Class<T> responseType) {
+    return client(token)
+        .get()
+        .uri(path)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(responseType)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private static SnapshotHoldingRequest reportedHolding(
+      UUID security, String value, String currency) {
+    return new SnapshotHoldingRequest(
+        security, BigDecimal.ONE, null, null, null, new BigDecimal(value), currency);
   }
 
   // --- Helpers ------------------------------------------------------------------------------

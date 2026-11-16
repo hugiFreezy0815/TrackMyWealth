@@ -357,17 +357,40 @@ def seed(api, anchor):
     for key, balance, offset in (("cash", "22000.00", 1), ("depot", "25000.00", 2)):
         day = anchor - timedelta(days=offset)
         path = f"/accounts/{ids[key]}/snapshots"
-        if not any(row["snapshotDate"] == str(day) and row["source"] == "MANUAL"
-                   for row in api.pages(path)):
-            snapshot = {"snapshotDate": str(day), "balance": balance}
+        existing = next((row for row in api.pages(path)
+                         if row["snapshotDate"] == str(day) and row["source"] == "MANUAL"), None)
+        if existing is not None:
             if key == "depot":
-                security = api.request("POST", "/securities", {
-                    "idempotencyKey": "tmw-demo-v1-alpine-lantern-etf",
-                    "displayName": SECURITY_NAME, "denominationCurrency": "CHF",
-                    "instrumentType": "ETF", "assetClass": "EQUITY",
-                })
-                snapshot["holdings"] = [{"securityId": security["id"], "quantity": "20"}]
-            api.request("POST", path, snapshot)
+                holdings = existing["holdings"]
+                if (len(holdings) == 1 and holdings[0]["securityDisplayName"] == SECURITY_NAME
+                        and Decimal(holdings[0]["quantity"]) == Decimal("20")
+                        and holdings[0]["reportedValue"] is None
+                        and existing["balance"] is not None
+                        and Decimal(existing["balance"]) == Decimal(balance)):
+                    # Fill in the value omitted by earlier versions of this synthetic fixture.
+                    holding = holdings[0]
+                    api.request("PUT", f"{path}/{existing['id']}", {
+                        "balance": existing["balance"],
+                        "holdings": [{
+                            "securityId": holding["securityId"], "quantity": holding["quantity"],
+                            "reportedCostBasis": holding["reportedCostBasis"],
+                            "costBasisIsEstimated": holding["costBasisIsEstimated"],
+                            "reportedValue": "10000.00", "reportedCurrency": "CHF",
+                        }],
+                    }, version=existing["version"])
+            continue
+        snapshot = {"snapshotDate": str(day), "balance": balance}
+        if key == "depot":
+            security = api.request("POST", "/securities", {
+                "idempotencyKey": "tmw-demo-v1-alpine-lantern-etf",
+                "displayName": SECURITY_NAME, "denominationCurrency": "CHF",
+                "instrumentType": "ETF", "assetClass": "EQUITY",
+            })
+            snapshot["holdings"] = [{
+                "securityId": security["id"], "quantity": "20",
+                "reportedValue": "10000.00", "reportedCurrency": "CHF",
+            }]
+        api.request("POST", path, snapshot)
     path = f"/accounts/{ids['property']}/valuations"
     if not any(row["valuationDate"] == str(anchor - timedelta(days=60)) for row in api.pages(path)):
         api.request("POST", path, {
@@ -403,15 +426,13 @@ def valuation_fixture_ids(api, ids):
 
 EXPECTED_STATUSES = {
     "cash": "UNRECONCILED", "property": "STALE", "mortgage": "ESTIMATED",
-    # An account that holds positions stays unknown until holdings are valued (EPIC 15), and the
-    # public API offers no other value source for it.
-    "depot": "UNKNOWN",
+
 }
 # Opening balance plus the seeded ledger (cash: 4000 + 6 x (3500 - 125.50 - 300) - 28.50 - 50
 # - 38.25 imported); the manual cash snapshot of 22000 is the open reconciliation difference.
 EXPECTED_BALANCES = {
     "card": "-30", "savings": "11800", "eur": "2500", "cash": "22330.25",
-    "pension": "31000", "property": "680000", "mortgage": "-300000",
+    "pension": "31000", "property": "680000", "mortgage": "-300000", "depot": "35000",
 }
 
 
@@ -430,8 +451,6 @@ def check_account_values(ids, first, second):
         expected = EXPECTED_STATUSES.get(key)
         if expected is not None and status != expected:
             raise SeedError(f"The demo {key} account did not show {expected}.")
-        if key == "depot":
-            continue
         if balance is None or Decimal(balance) != Decimal(EXPECTED_BALANCES[key]):
             raise SeedError(f"The demo {key} account did not have the expected balance.")
     return first

@@ -4,6 +4,9 @@ import com.trackmywealth.backend.dto.AccountPositionResponse;
 import com.trackmywealth.backend.dto.AccountPositionsResponse;
 import com.trackmywealth.backend.dto.AccountPositionsSource;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
+import com.trackmywealth.backend.dto.NativeAccountValue;
+import com.trackmywealth.backend.dto.ReportedHoldingValue;
+import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountSnapshot;
@@ -20,8 +23,10 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -109,6 +114,58 @@ public class AccountPositionsService {
         positions.stream().allMatch(position -> position.valueInAccountCurrency() != null);
     return new AccountPositionsResponse(
         accountId, currency, snapshot.getSnapshotDate(), SOURCE, complete, positions);
+  }
+
+  /**
+   * Read complete reported values for accounts the caller has already authorized. A statement
+   * without cash or any converted holding value cannot establish the full account value.
+   */
+  Map<UUID, NativeAccountValue> reportedValuesFor(
+      List<UUID> accountIds, Map<UUID, String> ownCurrencies, LocalDate asOf) {
+    Map<UUID, List<ReportedHoldingValue>> byAccount =
+        snapshotRepository.findLatestReportedHoldings(accountIds, asOf).stream()
+            .collect(Collectors.groupingBy(ReportedHoldingValue::getAccountId));
+    Map<String, Optional<CurrencyConversionResult>> rates = new HashMap<>();
+    Map<UUID, NativeAccountValue> result = new HashMap<>();
+    byAccount.forEach(
+        (accountId, holdings) ->
+            reportedValue(holdings, ownCurrencies.get(accountId), rates)
+                .ifPresent(value -> result.put(accountId, value)));
+    return result;
+  }
+
+  private Optional<NativeAccountValue> reportedValue(
+      List<ReportedHoldingValue> holdings,
+      String currency,
+      Map<String, Optional<CurrencyConversionResult>> rates) {
+    ReportedHoldingValue statement = holdings.get(0);
+    BigDecimal total = statement.getCashBalance();
+    if (total == null) {
+      return Optional.empty();
+    }
+    LocalDate date = statement.getSnapshotDate();
+    boolean stale = false;
+    for (ReportedHoldingValue holding : holdings) {
+      BigDecimal reported = holding.getReportedValue();
+      String from = holding.getReportedCurrency();
+      if (reported == null || from == null) {
+        return Optional.empty();
+      }
+      CurrencyConversionResult rate =
+          rates
+              .computeIfAbsent(
+                  from + "/" + currency + "/" + date,
+                  key -> Optional.ofNullable(rate(reported, from, currency, date)))
+              .orElse(null);
+      BigDecimal converted = inAccountCurrency(reported, from, currency, rate);
+      if (converted == null) {
+        return Optional.empty();
+      }
+      total = total.add(converted);
+      stale |= rate != null && rate.stale();
+    }
+    return Optional.of(
+        new NativeAccountValue(total, ValueBasisValues.LATEST_SNAPSHOT, date, date, stale));
   }
 
   private AccountPositionResponse toPosition(

@@ -3671,6 +3671,7 @@ export interface components {
       workspaceName?: string;
       currencyCode: string;
     };
+    /** @description Omit reportedValue, reportedCurrency and reportedPrice together, or supply reportedValue and reportedCurrency together. When supplying both, reportedPrice is optional. Other combinations return HTTP 422. */
     SnapshotHoldingRequest: {
       /** Format: uuid */
       securityId: string;
@@ -3685,6 +3686,17 @@ export interface components {
        */
       reportedCostBasis?: DecimalString;
       costBasisIsEstimated?: boolean;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      reportedPrice?: DecimalString;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      reportedValue?: DecimalString;
+      reportedCurrency?: string;
     };
     SnapshotHoldingResponse: {
       /** Format: uuid */

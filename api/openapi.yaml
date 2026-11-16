@@ -24756,6 +24756,9 @@ components:
       - password
     SnapshotHoldingRequest:
       type: object
+      description: "Omit reportedValue, reportedCurrency and reportedPrice together,\
+        \ or supply reportedValue and reportedCurrency together. When supplying both,\
+        \ reportedPrice is optional. Other combinations return HTTP 422."
       properties:
         securityId:
           type: string
@@ -24772,6 +24775,18 @@ components:
             on requests; JSON numbers remain accepted for compatibility.
         costBasisIsEstimated:
           type: boolean
+        reportedPrice:
+          type: string
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        reportedValue:
+          type: string
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        reportedCurrency:
+          type: string
       required:
       - quantity
       - securityId
