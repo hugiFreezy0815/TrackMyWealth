@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Platform } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import { IntlProvider } from 'react-intl';
 import {
   useAccount,
@@ -15,6 +15,7 @@ import { useConflict } from '@/api/queries/conflict';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import type { components } from '@/api/schema';
 import { ApiError } from '@/api/client';
+import { Fonts } from '@/constants/theme';
 import en from '@/i18n/en.json';
 import de from '@/i18n/de.json';
 import { TransactionDetail } from './transaction-detail';
@@ -211,6 +212,105 @@ describe('S4 transaction detail', () => {
     expect(screen.getByText('Food › Groceries · automatic')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Reset category' })).toBeNull();
     expect(screen.getByText('Bank · Current account')).toBeTruthy();
+  });
+
+  it.each([
+    ['en', 'Converted amount', 'at'],
+    ['de', 'Umrechnungsbetrag', 'zum Kurs'],
+  ] as const)(
+    'shows the server conversion and rate together in %s',
+    async (locale, label, atRate) => {
+      fixtures({
+        ...base,
+        currency: 'EUR',
+        amountInAccountCurrency: '-80.25',
+        fxRateToAccountCurrency: '0.951234',
+      });
+      await show(locale);
+      expect(screen.queryByText(label)).toBeNull();
+
+      await fireEvent.press(screen.getByRole('button', { name: /Details/ }));
+
+      expect(screen.getByText(label)).toBeTruthy();
+      expect(screen.getByText(`≈−CHF 80.25 ${atRate} 0.951234`)).toBeTruthy();
+      expect(screen.getByText('POS')).toBeTruthy();
+    },
+  );
+
+  it('labels the conversion with the spoken amount and rate', async () => {
+    fixtures({
+      ...base,
+      currency: 'EUR',
+      amountInAccountCurrency: '-80.25',
+      fxRateToAccountCurrency: '0.951234',
+    });
+    await show();
+
+    await fireEvent.press(screen.getByRole('button', { name: /Details/ }));
+
+    expect(screen.getByText('≈−CHF 80.25 at 0.951234').props.accessibilityLabel).toBe(
+      'approximately minus 80.25 Swiss francs at 0.951234',
+    );
+  });
+
+  it('shows the converted amount alone when the server sends no rate', async () => {
+    fixtures({
+      ...base,
+      currency: 'EUR',
+      amountInAccountCurrency: '-80.25',
+      fxRateToAccountCurrency: null,
+    });
+    await show();
+
+    await fireEvent.press(screen.getByRole('button', { name: /Details/ }));
+
+    const conversion = screen.getByText('≈−CHF 80.25');
+    expect(conversion.props.accessibilityLabel).toBe('approximately minus 80.25 Swiss francs');
+    expect(screen.queryByText(/ at /)).toBeNull();
+  });
+
+  it('renders the bank code in the monospace font', async () => {
+    fixtures(base);
+    await show();
+
+    await fireEvent.press(screen.getByRole('button', { name: /Details/ }));
+
+    expect(StyleSheet.flatten(screen.getByText('POS').props.style).fontFamily).toBe(Fonts?.mono);
+  });
+
+  it('masks the converted amount and rate in text and accessibility labels', async () => {
+    fixtures({
+      ...base,
+      currency: 'EUR',
+      amountInAccountCurrency: '-80.25',
+      fxRateToAccountCurrency: '0.951234',
+    });
+    jest.mocked(useAmountsHidden).mockReturnValue(true);
+    await show();
+
+    await fireEvent.press(screen.getByRole('button', { name: /Details/ }));
+
+    expect(screen.getByText('Converted amount')).toBeTruthy();
+    expect(screen.queryByText(/80.25|0.951234/)).toBeNull();
+    expect(screen.queryByLabelText(/80[.,]25|0[.,]951234/)).toBeNull();
+  });
+
+  it.each([
+    ['CHF', '-80.25'],
+    ['EUR', null],
+  ])('omits a conversion with currency %s and server amount %s', async (currency, amount) => {
+    fixtures({
+      ...base,
+      currency,
+      amountInAccountCurrency: amount,
+      fxRateToAccountCurrency: '0.951234',
+    });
+    await show();
+
+    await fireEvent.press(screen.getByRole('button', { name: /Details/ }));
+
+    expect(screen.queryByText('Converted amount')).toBeNull();
+    expect(screen.queryByText(/0.951234/)).toBeNull();
   });
 
   it('masks trade quantity in visible text and accessibility labels', async () => {
