@@ -202,12 +202,14 @@ for (const [name, options] of [
     exact: true,
   });
   const panel = page.getByTestId('shell-detail-panel');
+  const accountDetail = page.getByTestId('account-detail');
   const back = panel.getByRole('button', { name: 'Back to account' });
   const related = panel.getByRole('link', {
     name: 'Open the previous transaction',
   });
   await opener.press('Enter');
   await related.waitFor();
+  assert(await accountDetail.isVisible(), 'Account detail must remain visible beside S4');
   await page.waitForFunction(() =>
     Boolean(
       document.activeElement?.closest('[data-testid="shell-detail-panel"]'),
@@ -240,6 +242,7 @@ for (const [name, options] of [
     arrowsAndTabScrolledAccount: true,
     focusReturnedAfterRelatedTransaction: true,
     focusedHeadingAfterFiltering: true,
+    accountContextPreserved: true,
   };
 
   await page.getByRole('radio', { name: 'All', exact: true }).press('Enter');
@@ -332,12 +335,12 @@ if (results.desktop.tableHeaders.join('|') !== 'Date|Description|Category|Amount
   failures.push('desktop: semantic transaction table headers are missing');
 }
 if (
-  !results.desktop.detailPanel?.opened ||
-  !results.desktop.detailPanel?.focusInside ||
-  !results.desktop.detailPanel?.focusReturned ||
+  !results.desktop.detailPanel?.arrowsAndTabScrolledAccount ||
+  !results.desktop.detailPanel?.focusReturnedAfterRelatedTransaction ||
+  !results.desktop.detailPanel?.focusedHeadingAfterFiltering ||
   !results.desktop.detailPanel?.accountContextPreserved
 ) {
-  failures.push('desktop S4: detail panel, focus or account context failed');
+  failures.push('desktop S4: keyboard scrolling, focus return or account context failed');
 }
 if (results.flows.importDisabled !== true || !results.flows.writes.length) {
   failures.push('flows: archive/import write controls did not behave as expected');
