@@ -159,7 +159,11 @@ const listCalls = () =>
     .map(([, options]) => (options as { query: Record<string, unknown> }).query);
 
 async function renderDetail(
-  props: { onBack?: () => void; cachedAccounts?: AccountListItem[] } = {},
+  props: {
+    onBack?: () => void;
+    cachedAccounts?: AccountListItem[];
+    initialTab?: 'positions' | 'activity';
+  } = {},
 ) {
   const client = new QueryClient({
     defaultOptions: {
@@ -174,6 +178,7 @@ async function renderDetail(
       <IntlProvider locale="en" messages={en}>
         <AccountDetail
           accountId="acc"
+          initialTab={props.initialTab}
           onBack={onBack}
           onTransaction={jest.fn()}
           onImport={jest.fn()}
@@ -313,8 +318,7 @@ describe('S3 account detail acceptance checks (#494)', () => {
       ],
     };
     fakeServer(summary({ holdsPositions: true }), [txn(0)], positions);
-    await renderDetail();
-    await fireEvent.press(await screen.findByText('Positions'));
+    await renderDetail({ initialTab: 'positions' });
     expect(await screen.findByText('Fund regular')).toBeTruthy();
     expect(screen.getAllByText('10 units').length).toBeGreaterThan(0);
     expect(screen.getAllByText('+11.1%').length).toBeGreaterThan(0);
@@ -323,6 +327,19 @@ describe('S3 account detail acceptance checks (#494)', () => {
     expect(screen.getByText('Gain not available in USD')).toBeTruthy();
     expect(screen.getAllByText('Price').length).toBeGreaterThan(0);
     expect(screen.getByText('Fund foreign')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Activity'));
+    expect(await screen.findByText('Showing 1 of 1')).toBeTruthy();
+    expect(screen.queryByText('Fund regular')).toBeNull();
+  });
+
+  it('shows activity for a cash account even when a link requests positions', async () => {
+    fakeServer(summary(), [txn(0)]);
+    await renderDetail({ initialTab: 'positions' });
+    expect(await screen.findByText('Showing 1 of 1')).toBeTruthy();
+    expect(screen.queryByText('Positions')).toBeNull();
+    expect(api.get.mock.calls.map(([path]) => path)).not.toContain(
+      '/api/v1/accounts/{accountId}/positions',
+    );
   });
 
   it('retains cached transactions and offers Retry when a refetch fails', async () => {

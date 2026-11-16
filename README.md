@@ -146,7 +146,8 @@ syncing two implementations. See `mobile/README.md`'s "Web app" section for the 
 command. Because a browser enforces CORS (unlike a native app), the backend's allowed origins are
 configurable via `app.cors.allowed-origin-patterns` in `application.yml` (env
 `CORS_ALLOWED_ORIGINS`, comma-separated, defaults to `http://localhost:*` for local dev) — add
-your deployed web app's real origin there in every other environment.
+your deployed web app's real origin there in every other environment. `docker-compose.yml`
+passes it from `.env` (see `.env.example`).
 
 ## Running on a NAS (or any single-machine self-hosted setup)
 
