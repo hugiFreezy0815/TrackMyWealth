@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { useIntl } from 'react-intl';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 
 import type { components } from '@/api/schema';
 import { withIntl } from '@/i18n/test-utils';
@@ -42,10 +42,25 @@ async function layout(width: number) {
 }
 
 describe('section tiles (M03/W01)', () => {
-  it('keeps two columns on a phone and four from 676 px', () => {
-    expect(columnsFor(358)).toBe(2);
+  const originalOS = Platform.OS;
+
+  afterEach(() => {
+    Platform.OS = originalOS;
+  });
+
+  it('uses four columns on web only when each tile gets at least 160 px', () => {
+    Platform.OS = 'web';
     expect(columnsFor(675)).toBe(2);
     expect(columnsFor(676)).toBe(4);
+  });
+
+  it.each(['ios', 'android'] as const)('keeps two columns on wide %s layouts', async (os) => {
+    Platform.OS = os;
+    await render(withIntl(<Tiles data={netWorth([section('DEPOT', '94582.15')])} />));
+    await layout(724);
+    expect(StyleSheet.flatten(screen.getByTestId('overview-section-DEPOT').props.style).width).toBe(
+      356,
+    );
   });
 
   it('keeps the 16 px figure when it fits and steps down instead of wrapping', () => {
@@ -84,6 +99,7 @@ describe('section tiles (M03/W01)', () => {
   });
 
   it('uses four tiles per row in a wide web column', async () => {
+    Platform.OS = 'web';
     await render(withIntl(<Tiles data={netWorth([section('DEPOT', '94582.15')])} />));
     await layout(724);
     expect(StyleSheet.flatten(screen.getByTestId('overview-section-DEPOT').props.style).width).toBe(
@@ -95,5 +111,30 @@ describe('section tiles (M03/W01)', () => {
     await render(withIntl(<Tiles data={netWorth([section('DEPOT', '94582.15')])} hidden />));
     expect(screen.getByLabelText('Depot, hidden')).toBeTruthy();
     expect(screen.getByTestId('overview-section-DEPOT-amount').props.children).toBe('••••');
+  });
+
+  it('renders only sections returned by the server and keeps their order', async () => {
+    await render(
+      withIntl(
+        <Tiles
+          data={netWorth([
+            section('DEPOT', '94582.15'),
+            { ...section('CASH_AND_SAVINGS', '50901.17'), complete: false },
+          ])}
+        />,
+      ),
+    );
+
+    expect(screen.getAllByTestId(/^overview-section-[A-Z_]+$/)).toEqual([
+      screen.getByTestId('overview-section-DEPOT'),
+      screen.getByTestId('overview-section-CASH_AND_SAVINGS'),
+    ]);
+    expect(screen.queryByText('Credit card')).toBeNull();
+    expect(screen.getByText('Not all values are included')).toBeTruthy();
+  });
+
+  it('omits the tile grid when the server returns no sections', async () => {
+    await render(withIntl(<Tiles data={netWorth([])} />));
+    expect(screen.queryByTestId('overview-section-tiles')).toBeNull();
   });
 });
