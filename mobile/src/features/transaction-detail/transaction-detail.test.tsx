@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Platform } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import { IntlProvider } from 'react-intl';
 import {
   useAccount,
@@ -15,6 +15,7 @@ import { useConflict } from '@/api/queries/conflict';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import type { components } from '@/api/schema';
 import { ApiError } from '@/api/client';
+import { Fonts } from '@/constants/theme';
 import en from '@/i18n/en.json';
 import de from '@/i18n/de.json';
 import { TransactionDetail } from './transaction-detail';
@@ -235,6 +236,47 @@ describe('S4 transaction detail', () => {
       expect(screen.getByText('POS')).toBeTruthy();
     },
   );
+
+  it('labels the conversion with the spoken amount and rate', async () => {
+    fixtures({
+      ...base,
+      currency: 'EUR',
+      amountInAccountCurrency: '-80.25',
+      fxRateToAccountCurrency: '0.951234',
+    });
+    await show();
+
+    await fireEvent.press(screen.getByRole('button', { name: /Details/ }));
+
+    expect(screen.getByText('≈−CHF 80.25 at 0.951234').props.accessibilityLabel).toBe(
+      'approximately minus 80.25 Swiss francs at 0.951234',
+    );
+  });
+
+  it('shows the converted amount alone when the server sends no rate', async () => {
+    fixtures({
+      ...base,
+      currency: 'EUR',
+      amountInAccountCurrency: '-80.25',
+      fxRateToAccountCurrency: null,
+    });
+    await show();
+
+    await fireEvent.press(screen.getByRole('button', { name: /Details/ }));
+
+    const conversion = screen.getByText('≈−CHF 80.25');
+    expect(conversion.props.accessibilityLabel).toBe('approximately minus 80.25 Swiss francs');
+    expect(screen.queryByText(/ at /)).toBeNull();
+  });
+
+  it('renders the bank code in the monospace font', async () => {
+    fixtures(base);
+    await show();
+
+    await fireEvent.press(screen.getByRole('button', { name: /Details/ }));
+
+    expect(StyleSheet.flatten(screen.getByText('POS').props.style).fontFamily).toBe(Fonts?.mono);
+  });
 
   it('masks the converted amount and rate in text and accessibility labels', async () => {
     fixtures({
