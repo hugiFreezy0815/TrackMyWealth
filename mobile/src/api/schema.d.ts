@@ -3999,6 +3999,7 @@ export interface components {
       headers: {
         /** @description Correlation id assigned to this request. */
         'X-Correlation-Id'?: string;
+        traceparent: components['headers']['Traceparent'];
         [name: string]: unknown;
       };
       content: {
@@ -4006,13 +4007,18 @@ export interface components {
       };
     };
   };
-  parameters: never;
+  parameters: {
+    /** @description W3C trace context. Invalid or absent values start a trace. */
+    Traceparent: string;
+  };
   requestBodies: never;
   headers: {
     /** @description Strong ETag of the returned resource's version, for example "7". Send it as If-Match to change or delete this version of the resource. */
     ETag: string;
     /** @description URL of the created resource. */
     Location: string;
+    /** @description W3C trace context for the server span. */
+    Traceparent: string;
   };
   pathItems: never;
 }
@@ -4028,6 +4034,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -4039,6 +4047,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4053,6 +4062,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4067,6 +4077,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4081,6 +4092,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4095,6 +4107,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4110,6 +4123,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -4126,6 +4141,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4140,6 +4156,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4154,6 +4171,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4168,6 +4186,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4183,6 +4202,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4197,6 +4217,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4212,6 +4233,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -4226,6 +4249,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4240,6 +4264,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4254,6 +4279,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4268,6 +4294,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4282,6 +4309,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4299,6 +4327,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -4317,6 +4347,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4331,6 +4362,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4345,6 +4377,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4359,6 +4392,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4373,6 +4407,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4387,6 +4422,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4401,6 +4437,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4415,6 +4452,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4437,6 +4475,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -4450,6 +4490,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4465,6 +4506,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4479,6 +4521,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4493,6 +4536,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4507,6 +4551,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4521,6 +4566,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4536,6 +4582,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -4554,6 +4602,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4568,6 +4617,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4582,6 +4632,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4596,6 +4647,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4611,6 +4663,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4625,6 +4678,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4639,6 +4693,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4656,6 +4711,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -4675,6 +4732,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4689,6 +4747,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4703,6 +4762,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4717,6 +4777,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4731,6 +4792,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4745,6 +4807,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4759,6 +4822,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4773,6 +4837,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4787,6 +4852,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4804,6 +4870,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -4818,6 +4886,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content?: never;
@@ -4830,6 +4899,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4844,6 +4914,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4858,6 +4929,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4872,6 +4944,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4886,6 +4959,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4900,6 +4974,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4914,6 +4989,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4928,6 +5004,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4945,6 +5022,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -4959,6 +5038,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4973,6 +5053,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -4987,6 +5068,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5001,6 +5083,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5015,6 +5098,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5029,6 +5113,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5043,6 +5128,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5057,6 +5143,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5075,6 +5162,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -5088,6 +5177,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5102,6 +5192,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5116,6 +5207,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5130,6 +5222,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5144,6 +5237,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5158,6 +5252,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5173,6 +5268,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -5187,6 +5284,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5201,6 +5299,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5215,6 +5314,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5229,6 +5329,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5243,6 +5344,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5260,6 +5362,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -5278,6 +5382,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5292,6 +5397,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5306,6 +5412,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5320,6 +5427,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5334,6 +5442,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5348,6 +5457,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5362,6 +5472,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5376,6 +5487,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5390,6 +5502,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5404,6 +5517,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5423,6 +5537,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -5437,6 +5553,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5451,6 +5568,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5465,6 +5583,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5479,6 +5598,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5493,6 +5613,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5507,6 +5628,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5521,6 +5643,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5535,6 +5658,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5552,6 +5676,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -5570,6 +5696,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5584,6 +5711,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5598,6 +5726,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5612,6 +5741,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5627,6 +5757,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5641,6 +5772,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5667,6 +5799,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5681,6 +5814,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5695,6 +5829,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5713,6 +5848,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5735,6 +5871,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -5748,6 +5886,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5763,6 +5902,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5777,6 +5917,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5791,6 +5932,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5805,6 +5947,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5823,6 +5966,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -5845,6 +5990,7 @@ export interface operations {
           Location: components['headers']['Location'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5859,6 +6005,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5873,6 +6020,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5887,6 +6035,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5903,6 +6052,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5917,6 +6067,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5947,6 +6098,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5961,6 +6113,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5980,6 +6133,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -5995,6 +6149,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -6010,6 +6166,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6024,6 +6181,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6038,6 +6196,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6052,6 +6211,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6066,6 +6226,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6081,6 +6242,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -6095,6 +6258,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6109,6 +6273,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6123,6 +6288,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6137,6 +6303,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6152,6 +6319,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6177,6 +6345,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6191,6 +6360,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6208,6 +6378,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6225,6 +6396,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -6240,6 +6413,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6254,6 +6428,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6268,6 +6443,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6282,6 +6458,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6302,6 +6479,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6316,6 +6494,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6332,6 +6511,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6346,6 +6526,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6360,6 +6541,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6377,6 +6559,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -6392,6 +6576,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6406,6 +6591,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6420,6 +6606,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6434,6 +6621,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6449,6 +6637,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6463,6 +6652,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6477,6 +6667,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6491,6 +6682,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6505,6 +6697,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6522,6 +6715,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -6537,6 +6732,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6551,6 +6747,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6565,6 +6762,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6579,6 +6777,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6594,6 +6793,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6608,6 +6808,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6622,6 +6823,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6636,6 +6838,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6650,6 +6853,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6665,6 +6869,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -6679,6 +6885,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6693,6 +6900,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6707,6 +6915,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6721,6 +6930,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6735,6 +6945,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6752,6 +6963,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -6771,6 +6984,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6785,6 +6999,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6799,6 +7014,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6813,6 +7029,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6828,6 +7045,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6842,6 +7060,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6872,6 +7091,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6886,6 +7106,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6900,6 +7121,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6919,6 +7141,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6936,6 +7159,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -6955,6 +7180,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6969,6 +7195,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6983,6 +7210,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -6997,6 +7225,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7013,6 +7242,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7027,6 +7257,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7041,6 +7272,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7055,6 +7287,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7069,6 +7302,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7092,6 +7326,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -7106,6 +7342,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7121,6 +7358,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7135,6 +7373,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7149,6 +7388,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7163,6 +7403,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7180,6 +7421,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -7200,6 +7443,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7214,6 +7458,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7228,6 +7473,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7242,6 +7488,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7257,6 +7504,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7271,6 +7519,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7286,6 +7535,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7300,6 +7550,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7314,6 +7565,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7329,6 +7581,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -7343,6 +7597,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7357,6 +7612,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7371,6 +7627,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7386,6 +7643,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7400,6 +7658,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7417,6 +7676,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -7435,6 +7696,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7449,6 +7711,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7463,6 +7726,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7478,6 +7742,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7492,6 +7757,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7506,6 +7772,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7521,6 +7788,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7535,6 +7803,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7549,6 +7818,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7564,6 +7834,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -7582,6 +7854,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7596,6 +7869,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7610,6 +7884,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7624,6 +7899,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7640,6 +7916,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7655,6 +7932,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7669,6 +7947,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7686,6 +7965,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -7699,6 +7980,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content?: never;
@@ -7711,6 +7993,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7725,6 +8008,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7740,6 +8024,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7754,6 +8039,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7768,6 +8054,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7782,6 +8069,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7797,6 +8085,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -7810,6 +8100,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7824,6 +8115,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7838,6 +8130,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7852,6 +8145,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7866,6 +8160,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7880,6 +8175,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7897,6 +8193,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -7915,6 +8213,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7929,6 +8228,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7943,6 +8243,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7957,6 +8258,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7971,6 +8273,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7985,6 +8288,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -7999,6 +8303,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8013,6 +8318,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8035,6 +8341,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -8048,6 +8356,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8063,6 +8372,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8077,6 +8387,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8091,6 +8402,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8105,6 +8417,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8120,6 +8433,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -8135,6 +8450,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8149,6 +8465,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8163,6 +8480,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8177,6 +8495,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8191,6 +8510,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8208,6 +8528,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -8227,6 +8549,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8241,6 +8564,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8255,6 +8579,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8269,6 +8594,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8284,6 +8610,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8298,6 +8625,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8312,6 +8640,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8326,6 +8655,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8343,6 +8673,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -8362,6 +8694,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8376,6 +8709,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8390,6 +8724,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8404,6 +8739,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8419,6 +8755,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8433,6 +8770,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8447,6 +8785,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8461,6 +8800,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8478,6 +8818,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -8493,6 +8835,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8507,6 +8850,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8521,6 +8865,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8535,6 +8880,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8550,6 +8896,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8564,6 +8911,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8578,6 +8926,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8592,6 +8941,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8614,6 +8964,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -8627,6 +8979,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8642,6 +8995,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8656,6 +9010,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8670,6 +9025,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8684,6 +9040,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8699,6 +9056,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -8716,6 +9075,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8730,6 +9090,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8744,6 +9105,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8758,6 +9120,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8774,6 +9137,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8788,6 +9152,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8802,6 +9167,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8819,6 +9185,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -8833,6 +9201,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8847,6 +9216,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8861,6 +9231,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8875,6 +9246,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8889,6 +9261,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8903,6 +9276,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8917,6 +9291,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8931,6 +9306,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8948,6 +9324,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -8966,6 +9344,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8980,6 +9359,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -8994,6 +9374,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9008,6 +9389,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9023,6 +9405,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9037,6 +9420,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9052,6 +9436,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9066,6 +9451,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9080,6 +9466,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9102,6 +9489,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -9115,6 +9504,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9130,6 +9520,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9144,6 +9535,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9158,6 +9550,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9172,6 +9565,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9187,6 +9581,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -9205,6 +9601,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9219,6 +9616,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9233,6 +9631,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9247,6 +9646,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9263,6 +9663,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9277,6 +9678,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9291,6 +9693,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9306,6 +9709,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -9321,6 +9726,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9335,6 +9741,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9349,6 +9756,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9363,6 +9771,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9377,6 +9786,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9394,6 +9804,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -9413,6 +9825,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9427,6 +9840,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9441,6 +9855,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9455,6 +9870,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9469,6 +9885,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9483,6 +9900,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9497,6 +9915,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9511,6 +9930,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9525,6 +9945,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9555,6 +9976,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -9568,6 +9991,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9583,6 +10007,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9597,6 +10022,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9611,6 +10037,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9625,6 +10052,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9640,6 +10068,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -9658,6 +10088,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9672,6 +10103,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9686,6 +10118,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9700,6 +10133,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9717,6 +10151,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9731,6 +10166,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9745,6 +10181,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9765,6 +10202,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -9778,6 +10217,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9793,6 +10233,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9807,6 +10248,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9821,6 +10263,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9835,6 +10278,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9850,6 +10294,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -9865,6 +10311,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9879,6 +10326,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9893,6 +10341,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9907,6 +10356,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9921,6 +10371,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9938,6 +10389,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -9957,6 +10410,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9971,6 +10425,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9985,6 +10440,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -9999,6 +10455,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10015,6 +10472,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10029,6 +10487,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10043,6 +10502,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10057,6 +10517,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10071,6 +10532,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10090,6 +10552,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -10105,6 +10569,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10119,6 +10584,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10133,6 +10599,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10147,6 +10614,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10162,6 +10630,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10176,6 +10645,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10190,6 +10660,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10204,6 +10675,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10218,6 +10690,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10235,6 +10708,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -10254,6 +10729,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10268,6 +10744,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10282,6 +10759,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10296,6 +10774,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10311,6 +10790,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10325,6 +10805,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10339,6 +10820,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10353,6 +10835,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10367,6 +10850,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10384,6 +10868,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -10399,6 +10885,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10413,6 +10900,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10427,6 +10915,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10441,6 +10930,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10456,6 +10946,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10470,6 +10961,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10484,6 +10976,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10498,6 +10991,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10520,6 +11014,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -10534,6 +11030,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10549,6 +11046,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10563,6 +11061,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10577,6 +11076,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10591,6 +11091,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10608,6 +11109,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -10623,6 +11126,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10637,6 +11141,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10651,6 +11156,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10665,6 +11171,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10680,6 +11187,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10694,6 +11202,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10708,6 +11217,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10722,6 +11232,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10736,6 +11247,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10753,6 +11265,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -10768,6 +11282,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10782,6 +11297,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10796,6 +11312,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10810,6 +11327,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10824,6 +11342,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10838,6 +11357,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10852,6 +11372,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10866,6 +11387,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10880,6 +11402,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10897,6 +11420,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -10912,6 +11437,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10926,6 +11452,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10940,6 +11467,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10954,6 +11482,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10968,6 +11497,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10982,6 +11512,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -10996,6 +11527,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11010,6 +11542,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11024,6 +11557,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11046,6 +11580,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -11059,6 +11595,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11074,6 +11611,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11088,6 +11626,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11102,6 +11641,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11116,6 +11656,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11131,6 +11672,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         accountId: string;
@@ -11148,6 +11691,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11162,6 +11706,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11176,6 +11721,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11190,6 +11736,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11205,6 +11752,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11219,6 +11767,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11234,6 +11783,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         cardAccountId: string;
@@ -11247,6 +11798,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11261,6 +11813,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11275,6 +11828,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11289,6 +11843,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11303,6 +11858,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11317,6 +11873,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11331,6 +11888,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11346,6 +11904,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         cardAccountId: string;
@@ -11360,6 +11920,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11374,6 +11935,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11388,6 +11950,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11402,6 +11965,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11416,6 +11980,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11430,6 +11995,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11447,6 +12013,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         cardAccountId: string;
@@ -11465,6 +12033,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11479,6 +12048,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11493,6 +12063,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11507,6 +12078,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11521,6 +12093,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11535,6 +12108,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11549,6 +12123,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11563,6 +12138,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11577,6 +12153,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11592,6 +12169,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         cardAccountId: string;
@@ -11605,6 +12184,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11619,6 +12199,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11633,6 +12214,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11647,6 +12229,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11661,6 +12244,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11675,6 +12259,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11690,6 +12275,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         cardAccountId: string;
@@ -11704,6 +12291,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11718,6 +12306,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11732,6 +12321,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11746,6 +12336,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11760,6 +12351,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11774,6 +12366,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11791,6 +12384,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         cardAccountId: string;
@@ -11809,6 +12404,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11823,6 +12419,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11837,6 +12434,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11851,6 +12449,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11865,6 +12464,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11879,6 +12479,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11893,6 +12494,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11907,6 +12509,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11922,6 +12525,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -11934,6 +12539,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11948,6 +12554,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11962,6 +12569,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11976,6 +12584,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -11993,6 +12602,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -12009,6 +12620,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12023,6 +12635,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12037,6 +12650,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12051,6 +12665,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12065,6 +12680,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12079,6 +12695,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12093,6 +12710,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12107,6 +12725,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12121,6 +12740,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12136,6 +12756,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -12147,6 +12769,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12161,6 +12784,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12175,6 +12799,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12189,6 +12814,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12204,6 +12830,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -12220,6 +12848,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12234,6 +12863,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12248,6 +12878,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12262,6 +12893,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12277,6 +12909,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12291,6 +12924,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12306,6 +12940,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         id: string;
@@ -12320,6 +12956,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12334,6 +12971,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12348,6 +12986,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12362,6 +13001,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12376,6 +13016,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12390,6 +13031,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12407,6 +13049,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         id: string;
@@ -12425,6 +13069,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12439,6 +13084,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12453,6 +13099,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12467,6 +13114,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12481,6 +13129,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12495,6 +13144,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12509,6 +13159,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12523,6 +13174,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12537,6 +13189,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12554,6 +13207,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         id: string;
@@ -12568,6 +13223,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12582,6 +13238,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12596,6 +13253,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12610,6 +13268,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12624,6 +13283,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12638,6 +13298,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12652,6 +13313,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12666,6 +13328,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12680,6 +13343,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12697,6 +13361,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         id: string;
@@ -12711,6 +13377,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12725,6 +13392,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12739,6 +13407,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12753,6 +13422,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12767,6 +13437,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12781,6 +13452,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12795,6 +13467,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12809,6 +13482,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12825,6 +13499,8 @@ export interface operations {
         'User-Agent'?: string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -12840,6 +13516,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12854,6 +13531,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12868,6 +13546,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12882,6 +13561,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12898,6 +13578,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12914,6 +13595,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12928,6 +13610,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12944,6 +13627,8 @@ export interface operations {
         'User-Agent'?: string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -12959,6 +13644,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12973,6 +13659,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -12987,6 +13674,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13001,6 +13689,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13017,6 +13706,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13033,6 +13723,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13047,6 +13738,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13062,6 +13754,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -13077,6 +13771,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13091,6 +13786,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13105,6 +13801,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13119,6 +13816,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13135,6 +13833,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13149,6 +13848,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13167,6 +13867,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -13178,6 +13880,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13192,6 +13895,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13206,6 +13910,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13220,6 +13925,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13234,6 +13940,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13251,6 +13958,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -13262,6 +13971,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13276,6 +13986,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13290,6 +14001,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13304,6 +14016,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13318,6 +14031,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13333,6 +14047,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -13349,6 +14065,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13363,6 +14080,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13377,6 +14095,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13391,6 +14110,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13407,6 +14127,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13421,6 +14142,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13435,6 +14157,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13450,6 +14173,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         id: string;
@@ -13464,6 +14189,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13478,6 +14204,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13492,6 +14219,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13506,6 +14234,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13520,6 +14249,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13537,6 +14267,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         id: string;
@@ -13555,6 +14287,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13569,6 +14302,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13583,6 +14317,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13597,6 +14332,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13612,6 +14348,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13626,6 +14363,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13640,6 +14378,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13654,6 +14393,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13668,6 +14408,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13685,6 +14426,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         id: string;
@@ -13698,6 +14441,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content?: never;
@@ -13710,6 +14454,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13724,6 +14469,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13738,6 +14484,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13752,6 +14499,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13766,6 +14514,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13780,6 +14529,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13794,6 +14544,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13811,6 +14562,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         id: string;
@@ -13825,6 +14578,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13839,6 +14593,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13853,6 +14608,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13867,6 +14623,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13881,6 +14638,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13895,6 +14653,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13909,6 +14668,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13923,6 +14683,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13940,6 +14701,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         id: string;
@@ -13954,6 +14717,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13968,6 +14732,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13982,6 +14747,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -13996,6 +14762,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14010,6 +14777,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14024,6 +14792,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14038,6 +14807,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14052,6 +14822,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14069,6 +14840,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -14080,6 +14853,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14094,6 +14868,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14108,6 +14883,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14122,6 +14898,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14136,6 +14913,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14151,6 +14929,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -14167,6 +14947,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14181,6 +14962,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14195,6 +14977,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14209,6 +14992,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14223,6 +15007,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14237,6 +15022,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14251,6 +15037,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14268,6 +15055,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         id: string;
@@ -14282,6 +15071,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14296,6 +15086,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14310,6 +15101,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14324,6 +15116,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14338,6 +15131,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14352,6 +15146,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14366,6 +15161,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14384,6 +15180,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -14395,6 +15193,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14409,6 +15208,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14423,6 +15223,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14437,6 +15238,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14451,6 +15253,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14466,6 +15269,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -14483,6 +15288,7 @@ export interface operations {
           Location: components['headers']['Location'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14497,6 +15303,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14511,6 +15318,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14525,6 +15333,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14539,6 +15348,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14554,6 +15364,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14568,6 +15379,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14583,6 +15395,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -14601,6 +15415,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14615,6 +15430,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14629,6 +15445,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14643,6 +15460,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14657,6 +15475,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14671,6 +15490,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14696,6 +15516,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14710,6 +15531,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14728,6 +15550,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14745,6 +15568,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -14764,6 +15589,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14778,6 +15604,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14792,6 +15619,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14806,6 +15634,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14820,6 +15649,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14834,6 +15664,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14859,6 +15690,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14873,6 +15705,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14890,6 +15723,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14905,6 +15739,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         id: string;
@@ -14919,6 +15755,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14933,6 +15770,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14947,6 +15785,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14961,6 +15800,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14975,6 +15815,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -14992,6 +15833,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         id: string;
@@ -15010,6 +15853,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15024,6 +15868,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15038,6 +15883,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15052,6 +15898,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15066,6 +15913,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15080,6 +15928,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15095,6 +15944,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15109,6 +15959,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15123,6 +15974,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15140,6 +15992,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         id: string;
@@ -15153,6 +16007,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content?: never;
@@ -15165,6 +16020,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15179,6 +16035,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15193,6 +16050,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15207,6 +16065,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15221,6 +16080,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15235,6 +16095,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15249,6 +16110,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15263,6 +16125,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15280,6 +16143,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         id: string;
@@ -15294,6 +16159,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15308,6 +16174,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15322,6 +16189,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15336,6 +16204,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15350,6 +16219,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15364,6 +16234,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15378,6 +16249,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15392,6 +16264,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15409,6 +16282,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         id: string;
@@ -15423,6 +16298,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15437,6 +16313,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15451,6 +16328,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15465,6 +16343,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15479,6 +16358,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15493,6 +16373,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15507,6 +16388,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15521,6 +16403,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15538,6 +16421,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         id: string;
@@ -15558,6 +16443,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15572,6 +16458,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15586,6 +16473,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15600,6 +16488,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15614,6 +16503,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15628,6 +16518,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15653,6 +16544,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15667,6 +16559,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15684,6 +16577,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15699,6 +16593,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         templateId: string;
@@ -15719,6 +16615,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15733,6 +16630,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15747,6 +16645,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15761,6 +16660,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15775,6 +16675,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15789,6 +16690,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15814,6 +16716,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15828,6 +16731,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15845,6 +16749,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15870,6 +16775,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -15881,6 +16788,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15896,6 +16804,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15910,6 +16819,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15924,6 +16834,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15941,6 +16852,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -15952,6 +16865,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15966,6 +16880,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15980,6 +16895,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -15994,6 +16910,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16008,6 +16925,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16027,6 +16945,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -16038,6 +16958,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16052,6 +16973,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16066,6 +16988,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16080,6 +17003,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16094,6 +17018,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16109,6 +17034,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -16120,6 +17047,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16134,6 +17062,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16148,6 +17077,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16162,6 +17092,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16176,6 +17107,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16191,6 +17123,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -16207,6 +17141,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16221,6 +17156,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16235,6 +17171,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16249,6 +17186,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16264,6 +17202,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16278,6 +17217,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16292,6 +17232,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16307,6 +17248,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         portfolioId: string;
@@ -16321,6 +17264,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16335,6 +17279,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16349,6 +17294,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16363,6 +17309,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16377,6 +17324,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16394,6 +17342,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         portfolioId: string;
@@ -16412,6 +17362,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16426,6 +17377,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16440,6 +17392,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16454,6 +17407,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16468,6 +17422,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16482,6 +17437,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16496,6 +17452,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16510,6 +17467,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16528,6 +17486,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         portfolioId: string;
@@ -16541,6 +17501,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16555,6 +17516,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16569,6 +17531,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16583,6 +17546,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16597,6 +17561,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16614,6 +17579,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         portfolioId: string;
@@ -16627,6 +17594,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16641,6 +17609,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16655,6 +17624,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16669,6 +17639,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16683,6 +17654,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16698,6 +17670,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         portfolioId: string;
@@ -16711,6 +17685,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16725,6 +17700,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16739,6 +17715,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16753,6 +17730,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16767,6 +17745,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16784,6 +17763,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -16795,6 +17776,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16809,6 +17791,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16823,6 +17806,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16837,6 +17821,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16853,6 +17838,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16867,6 +17853,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16882,6 +17869,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -16897,6 +17886,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16908,6 +17898,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16922,6 +17913,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16936,6 +17928,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16950,6 +17943,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16964,6 +17958,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16978,6 +17973,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -16994,6 +17990,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17008,6 +18005,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17023,6 +18021,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         id: string;
@@ -17036,6 +18036,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17050,6 +18051,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17064,6 +18066,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17078,6 +18081,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17092,6 +18096,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17107,6 +18112,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -17118,6 +18125,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17132,6 +18140,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17146,6 +18155,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17161,6 +18171,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         id: string;
@@ -17174,6 +18186,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17188,6 +18201,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17202,6 +18216,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17216,6 +18231,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17230,6 +18246,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17246,6 +18263,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17260,6 +18278,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17288,6 +18307,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -17299,6 +18320,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17314,6 +18336,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17328,6 +18351,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17342,6 +18366,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17356,6 +18381,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17373,6 +18399,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         matchId: string;
@@ -17387,6 +18415,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17401,6 +18430,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17415,6 +18445,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17429,6 +18460,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17443,6 +18475,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17457,6 +18490,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17471,6 +18505,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17485,6 +18520,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17502,6 +18538,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         matchId: string;
@@ -17516,6 +18554,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17530,6 +18569,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17544,6 +18584,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17558,6 +18599,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17572,6 +18614,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17586,6 +18629,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17600,6 +18644,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17614,6 +18659,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17630,6 +18676,8 @@ export interface operations {
         'User-Agent'?: string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -17645,6 +18693,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17659,6 +18708,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17674,6 +18724,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17690,6 +18741,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17704,6 +18756,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17743,6 +18796,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -17754,6 +18809,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17769,6 +18825,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17783,6 +18840,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17797,6 +18855,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17811,6 +18870,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17826,6 +18886,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -17837,6 +18899,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17851,6 +18914,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17865,6 +18929,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17880,6 +18945,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -17895,6 +18962,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content?: never;
@@ -17907,6 +18975,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17921,6 +18990,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17936,6 +19006,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17952,6 +19023,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17968,6 +19040,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17982,6 +19055,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -17997,6 +19071,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -18012,6 +19088,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content?: never;
@@ -18024,6 +19101,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18038,6 +19116,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18052,6 +19131,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18068,6 +19148,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18082,6 +19163,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18097,6 +19179,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -18112,6 +19196,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18126,6 +19211,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18140,6 +19226,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18155,6 +19242,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18171,6 +19259,7 @@ export interface operations {
           'X-Correlation-Id'?: string;
           /** @description Seconds to wait before retrying, when the server can tell. */
           'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18185,6 +19274,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18200,6 +19290,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -18212,6 +19304,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18226,6 +19319,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18240,6 +19334,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18254,6 +19349,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18269,6 +19365,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -18280,6 +19378,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18294,6 +19393,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18308,6 +19408,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18322,6 +19423,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18336,6 +19438,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18351,6 +19454,8 @@ export interface operations {
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         memberId: string;
@@ -18365,6 +19470,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18379,6 +19485,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18393,6 +19500,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18407,6 +19515,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18421,6 +19530,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18438,6 +19548,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path: {
         memberId: string;
@@ -18452,6 +19564,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18466,6 +19579,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18480,6 +19594,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18494,6 +19609,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18508,6 +19624,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18522,6 +19639,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18536,6 +19654,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18550,6 +19669,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18567,6 +19687,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -18583,6 +19705,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18597,6 +19720,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18611,6 +19735,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18625,6 +19750,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18639,6 +19765,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18653,6 +19780,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18667,6 +19795,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18684,6 +19813,8 @@ export interface operations {
         'If-Match': string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
       };
       path?: never;
       cookie?: never;
@@ -18700,6 +19831,7 @@ export interface operations {
           ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18714,6 +19846,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18728,6 +19861,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18742,6 +19876,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18756,6 +19891,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18770,6 +19906,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
@@ -18784,6 +19921,7 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
         content: {
