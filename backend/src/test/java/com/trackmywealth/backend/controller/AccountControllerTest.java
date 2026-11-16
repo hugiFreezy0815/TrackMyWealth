@@ -18,6 +18,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -35,6 +36,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.client.RestTestClient;
+import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -86,6 +88,8 @@ class AccountControllerTest {
   @LocalServerPort int port;
 
   @Autowired DataSource dataSource;
+
+  @Autowired LocalValidatorFactoryBean validatorFactory;
 
   @BeforeEach
   void cleanDatabase() throws Exception {
@@ -467,6 +471,72 @@ class AccountControllerTest {
     AccountSummaryResponse current = getAccount(token, readByBothClients.id());
     assertThat(current.name()).isEqualTo("First Writer");
     assertThat(current.version()).isEqualTo(firstWrite.version());
+  }
+
+  @Test
+  void openingDateRoundTripsAndCanBeCleared() {
+    String token = bootstrapAdministrator();
+    LocalDate openedAt = LocalDate.of(2020, 1, 1);
+    AccountSummaryResponse created =
+        createAccount(
+            token, AccountRequests.account("Checking", "CASH", "CHF").openedAt(openedAt).build());
+    assertThat(created.openedAt()).isEqualTo(openedAt);
+    assertThat(getAccount(token, created.id()).openedAt()).isEqualTo(openedAt);
+
+    updateAccount(
+            token,
+            created.id(),
+            new UpdateAccountRequest(
+                "Checking", "CASH", "CHF", "CH", null, LocalDate.of(2025, 1, 1)),
+            created.version())
+        .expectStatus()
+        .isOk();
+    AccountSummaryResponse updated = getAccount(token, created.id());
+    assertThat(updated.openedAt()).isNull();
+    assertThat(updated.jurisdiction()).isEqualTo("CH");
+    assertThat(updated.closedAt()).isEqualTo(LocalDate.of(2025, 1, 1));
+  }
+
+  @Test
+  void rejectsFutureOpeningDatesOnCreateAndUpdateWithLocalizedFieldErrors() {
+    // "Future" means not today in any zone, so every phone's today passes; the boundaries are
+    // ValidationClockConfigTest's.
+    assertThat(validatorFactory.getClockProvider().getClock().getZone())
+        .isEqualTo(ZoneOffset.ofHours(14));
+    String token = bootstrapAdministrator();
+    LocalDate future = LocalDate.now().plusYears(1);
+    var request = AccountRequests.account("Checking", "CASH", "CHF");
+    client(token)
+        .post()
+        .uri("/api/v1/accounts")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(request.openedAt(future).build())
+        .exchange()
+        .expectStatus()
+        .isBadRequest()
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VALIDATION_FAILED")
+        .jsonPath("$.errors[0].field")
+        .isEqualTo("openedAt")
+        .jsonPath("$.errors[0].message")
+        .isEqualTo("must be a date in the past or in the present");
+
+    AccountSummaryResponse created =
+        createAccount(token, AccountRequests.account("Checking", "CASH", "CHF").build());
+    updateAccount(
+            token,
+            created.id(),
+            new UpdateAccountRequest("Checking", "CASH", "CHF", null, future, null),
+            created.version())
+        .expectStatus()
+        .isBadRequest()
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VALIDATION_FAILED")
+        .jsonPath("$.errors[0].field")
+        .isEqualTo("openedAt");
+    assertThat(getAccount(token, created.id()).openedAt()).isNull();
   }
 
   @Test

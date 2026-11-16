@@ -1,3 +1,5 @@
+import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
+import { Platform } from 'react-native';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 
 import { showToast } from '@/features/shell/toast';
@@ -15,6 +17,9 @@ import {
   useSaveIdentifier,
 } from './use-create';
 
+jest.mock('@react-native-community/datetimepicker', () => ({
+  DateTimePickerAndroid: { open: jest.fn() },
+}));
 jest.mock('@/global.css', () => ({}));
 jest.mock('expo-image', () => ({ Image: 'Image' }));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
@@ -87,6 +92,29 @@ beforeEach(() => {
 });
 
 describe('Add account S6 (#491): step 1', () => {
+  it('sends the optional opening date independently of the starting value', async () => {
+    const originalOS = Platform.OS;
+    Platform.OS = 'android';
+    try {
+      await mount();
+      await fireEvent.press(screen.getByRole('button', { name: /^Opened on/ }));
+      const picker = jest.mocked(DateTimePickerAndroid.open).mock.calls[0][0];
+      await act(() =>
+        picker.onChange?.(
+          { type: 'set', nativeEvent: { timestamp: 0, utcOffset: 0 } },
+          new Date(2025, 0, 1),
+        ),
+      );
+      await fireEvent.press(addButton());
+      expect(create.mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ openedAt: '2025-01-01' }),
+      );
+      expect(opening.mutateAsync).not.toHaveBeenCalled();
+    } finally {
+      Platform.OS = originalOS;
+    }
+  });
+
   it('sends CH pillar 3a in the portfolio currency for a CH portfolio', async () => {
     await mount({ ...portfolio, country: 'CH', portfolioCurrency: 'CHF' });
     await fireEvent.press(screen.getByRole('radio', { name: 'Pillar 3a / pension' }));
@@ -286,6 +314,42 @@ describe('Add account S6 (#491): identifier', () => {
 });
 
 describe('Add account S6 (#491): step 2', () => {
+  it('keeps the starting date on or after the opening date (#585)', async () => {
+    const originalOS = Platform.OS;
+    Platform.OS = 'android';
+    try {
+      create.mutateAsync.mockResolvedValue(createdAccount({ openedAt: '2025-06-01' }));
+      await mount();
+      await fireEvent.press(addButton());
+      expect(await startTitle()).toBeTruthy();
+      const choose = async (date: Date) => {
+        await fireEvent.press(screen.getByRole('button', { name: /^Starting date/ }));
+        const picker = jest.mocked(DateTimePickerAndroid.open).mock.lastCall![0];
+        expect(picker.minimumDate).toEqual(new Date(2025, 5, 1));
+        await act(() =>
+          picker.onChange?.({ type: 'set', nativeEvent: { timestamp: 0, utcOffset: 0 } }, date),
+        );
+      };
+      await fireEvent.changeText(screen.getByLabelText('Opening balance'), '1000');
+      const save = () => screen.getByRole('button', { name: 'Save starting value' });
+
+      await choose(new Date(2025, 0, 1));
+      expect(screen.getByText('Choose the opening date or a later date.')).toBeOnTheScreen();
+      expect(save()).toBeDisabled();
+
+      await choose(new Date(2025, 5, 1));
+      expect(screen.queryByText('Choose the opening date or a later date.')).toBeNull();
+      await fireEvent.press(save());
+      await waitFor(() =>
+        expect(opening.mutateAsync).toHaveBeenCalledWith(
+          expect.objectContaining({ date: '2025-06-01', balance: '1000' }),
+        ),
+      );
+    } finally {
+      Platform.OS = originalOS;
+    }
+  });
+
   it('records a decimal-string opening balance, then closes with a toast', async () => {
     const { onFinished } = await mount();
     await fireEvent.press(addButton());

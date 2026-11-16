@@ -2,6 +2,7 @@ package com.trackmywealth.backend.dto;
 
 import com.trackmywealth.backend.validation.ValidCurrencyCode;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.PastOrPresent;
 import jakarta.validation.constraints.Pattern;
 import java.time.LocalDate;
 
@@ -28,7 +29,7 @@ public record UpdateAccountRequest(
     @NotBlank @Pattern(regexp = AccountTypeValues.PATTERN) String accountType,
     @NotBlank @ValidCurrencyCode String nativeCurrency,
     @Pattern(regexp = "[A-Z]{2}") String jurisdiction,
-    LocalDate openedAt,
+    @PastOrPresent LocalDate openedAt,
     LocalDate closedAt) {
 
   public UpdateAccountRequest {

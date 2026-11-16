@@ -1,0 +1,6 @@
+without-opening-date: warningCodes=["INCEPTION_UNCERTAIN"] percent=50.00
+  UI: AC | Bank | Portfolio currency CHF | CHF 3'000.00 | ↗ | +CHF 1'000.00 | past year | This change may be off: some values at the start or end of the period are missing. | Net saving | CHF 0.
+opened-before-period: warningCodes=["VALUE_UNKNOWN"] percent=50.00
+  UI: AC | Bank | Portfolio currency CHF | CHF 3'000.00 | ↗ | +CHF 1'000.00 | past year | This change may be off: some values at the start or end of the period are missing. | Net saving | CHF 0.
+opened-on-first-evidence: warningCodes=[] percent=50.00
+  UI:  | Portfolio currency CHF | CHF 3'000.00 | ↗ | +CHF 1'000.00 | +50.0% | past year | Net saving | CHF 0.00 | · | Capital movements | +CHF 1'000.00 | · | Market & FX | CHF 0.00 | 16 Nov 2025 | CHF 2'000.0
