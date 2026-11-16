@@ -446,20 +446,42 @@ class AccountPositionsControllerTest {
   }
 
   @Test
-  void manualReportedValueRequiresCurrency() {
+  void manualReportedFiguresComeAsValueAndCurrencyWithAnOptionalPrice() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse depot = createAccount(token, "Depot", "SECURITIES");
-    SecurityResponse security = createSecurity(token, "CH0038863350", "Nestle");
-    client(token)
-        .post()
-        .uri("/api/v1/accounts/" + depot.id() + "/snapshots")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new RecordAccountSnapshotRequest(
-                today(), BigDecimal.ZERO, List.of(reportedHolding(security.id(), "5000", null))))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    UUID security = createSecurity(token, "CH0038863350", "Nestle").id();
+    BigDecimal price = new BigDecimal("50");
+    BigDecimal value = new BigDecimal("5000");
+    List<SnapshotHoldingRequest> refused =
+        List.of(
+            new SnapshotHoldingRequest(security, BigDecimal.ONE, null, null, null, value, null),
+            new SnapshotHoldingRequest(security, BigDecimal.ONE, null, null, null, null, "CHF"),
+            new SnapshotHoldingRequest(security, BigDecimal.ONE, null, null, price, null, null));
+    for (SnapshotHoldingRequest holding : refused) {
+      client(token)
+          .post()
+          .uri("/api/v1/accounts/" + depot.id() + "/snapshots")
+          .contentType(MediaType.APPLICATION_JSON)
+          .body(new RecordAccountSnapshotRequest(today(), BigDecimal.ZERO, List.of(holding)))
+          .exchange()
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    }
+
+    recordOk(
+        token,
+        depot.id(),
+        new RecordAccountSnapshotRequest(
+            today(),
+            BigDecimal.ZERO,
+            List.of(
+                new SnapshotHoldingRequest(
+                    security, new BigDecimal("100"), null, null, price, value, "CHF"))));
+
+    AccountPositionResponse position = positions(token, depot.id()).positions().get(0);
+    assertThat(position.price()).isEqualByComparingTo("50");
+    assertThat(position.value()).isEqualByComparingTo("5000");
+    assertThat(listedDepot(token).balance()).isEqualByComparingTo("5000");
   }
 
   private AccountListItemResponse listedDepot(String token) {

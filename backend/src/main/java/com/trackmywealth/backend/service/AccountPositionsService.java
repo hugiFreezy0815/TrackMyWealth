@@ -118,7 +118,8 @@ public class AccountPositionsService {
 
   /**
    * Read complete reported values for accounts the caller has already authorized. A statement
-   * without cash or any converted holding value cannot establish the full account value.
+   * without cash, with cash in another currency that was not recorded, or without any converted
+   * holding value cannot establish the full account value (FR-PERF-018).
    */
   Map<UUID, NativeAccountValue> reportedValuesFor(
       List<UUID> accountIds, Map<UUID, String> ownCurrencies, LocalDate asOf) {
@@ -140,7 +141,7 @@ public class AccountPositionsService {
       Map<String, Optional<CurrencyConversionResult>> rates) {
     ReportedHoldingValue statement = holdings.get(0);
     BigDecimal total = statement.getCashBalance();
-    if (total == null) {
+    if (total == null || statement.isUnrecordedCash()) {
       return Optional.empty();
     }
     LocalDate date = statement.getSnapshotDate();
