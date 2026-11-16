@@ -423,18 +423,43 @@ describe('S2 Portfolio View acceptance (#493)', () => {
           }),
           makeAccount('Same currency'),
           makeAccount('Missing conversion', { currency: 'CHF', valueInPortfolioCurrency: null }),
-          makeAccount('Unknown value', { currency: 'CHF', valueKnown: false }),
         ]),
       ]),
     );
     await mount(locale);
     const row = screen.getByRole('button', { name: /^Foreign account,/ });
     expect(row.props.accessibilityLabel).toMatch(label);
-    for (const name of [/^Same currency,/, /^Missing conversion,/, /^Unknown value,/]) {
+    for (const name of [/^Same currency,/, /^Missing conversion,/]) {
       expect(screen.getByRole('button', { name }).props.accessibilityLabel).not.toMatch(
         /approximately|ungefähr/,
       );
     }
+  });
+
+  it.each([
+    ['the value is flagged unknown', { valueKnown: false }],
+    ['the status is unrecognised', { valueStatus: 'FUTURE' as PortfolioAccount['valueStatus'] }],
+  ] as const)('shows a single neutral placeholder when %s', async (_reason, overrides) => {
+    setData(
+      view([
+        makeSection('CASH_AND_SAVINGS', [
+          makeAccount('Foreign account', {
+            currency: 'CHF',
+            balance: '-100.00',
+            valueInPortfolioCurrency: '-91.25',
+            ...overrides,
+          }),
+        ]),
+      ]),
+    );
+    await mount();
+    const row = within(screen.getByTestId('account-row-Foreign account'));
+    const button = row.getByRole('button', { name: /^Foreign account,/ });
+    expect(button.props.accessibilityLabel).toMatch(/^Foreign account, Value unknown, [^0-9]+$/);
+    const placeholders = row.getAllByText('–');
+    expect(placeholders).toHaveLength(1);
+    expect(color(placeholders[0])).not.toBe(LOSS);
+    expect(row.queryByText(/100\.00|91\.25/)).toBeNull();
   });
 
   it('shows the stale source date, the due chip and no chip without a due date', async () => {
@@ -762,6 +787,10 @@ describe('S2 privacy ("Hide amounts", FR-CLI-005)', () => {
     );
     setPositions([position('1', { quantity: '310', unrealisedGainPercent: '-3.75' })]);
     await mount();
+    const accountButton = screen.getByRole('button', { name: /^DKB Depot,/ });
+    expect(accountButton.props.accessibilityLabel).toBe(
+      'DKB Depot, hidden, 3 positions · As of 30 Sep 2026',
+    );
     await fireEvent.press(screen.getByRole('button', { name: 'FX details' }));
     const total = screen.getByTestId('portfolio-total');
     expect(total.props.children).toBe('••••');

@@ -1,7 +1,7 @@
 import { useIntl, type IntlShape } from 'react-intl';
 import { Pressable, Text, View } from 'react-native';
 
-import { Amount, Figure, ValueStatusBadge, amountTexts } from '@/components/shared';
+import { Amount, Figure, ValueStatusBadge, amountTexts, isValueKnown } from '@/components/shared';
 import { Spacing, TypeScale } from '@/constants/theme';
 import { isNegativeAmount } from '@/features/overview/overview-model';
 import { msg } from '@/features/overview/overview-text';
@@ -92,7 +92,7 @@ export function PortfolioAccountRow({
   const intl = useIntl();
   const theme = useTheme();
   const hidden = useAmountsHidden();
-  const known = account.valueKnown && account.valueStatus !== 'UNKNOWN';
+  const known = account.valueKnown && isValueKnown(account.valueStatus);
   const detail = rowDetail(intl, account, section);
   const spokenAmount = amountTexts(intl, {
     value: account.balance,
