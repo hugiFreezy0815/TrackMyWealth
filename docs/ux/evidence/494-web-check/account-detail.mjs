@@ -114,48 +114,137 @@ for (const [name, options] of [
   await context.close();
 }
 
-// 3. Desktop 1280 × 900: paging, filter, category write, sort, keyboard, archive / restore.
+// 3. Desktop keyboard navigation in the normal shell scroll container.
 {
-  const { context, page, errors, writes, lists } = await open({ width: 1280, height: 900 });
+  const { context, page } = await open({ width: 1280, height: 900 });
   results.desktop = {
     tableHeaders: await page.locator('table th[scope=col]').allInnerTexts(),
     hScroll: await hScroll(page),
     axe: await axe(page),
   };
-  await shot(page, 'account-desktop');
-  // S4: selecting a row opens the desktop panel without leaving the account, focuses
-  // its heading after the detail loads and restores focus to the originating row on close.
-  const transactionButtons = page.locator('table tbody button[data-transaction-open]');
-  await transactionButtons.first().focus();
-  // Move farther than one screen so this also checks scrolling.
-  for (let row = 0; row < 20; row++) await page.keyboard.press('ArrowDown');
-  const opener = transactionButtons.nth(20);
-  assert(await opener.evaluate((node) => document.activeElement === node));
-  assert(await opener.evaluate((node) => {
-    const bounds = node.getBoundingClientRect();
-    return bounds.top >= 0 && bounds.bottom <= window.innerHeight;
-  }));
-  await page.keyboard.press('Enter');
-  const panel = page.getByTestId('shell-detail-panel');
-  await panel.waitFor({ state: 'visible' });
-  await panel.getByRole('heading').first().waitFor({ state: 'visible', timeout: 30000 });
-  await page.waitForFunction(
-    () => !!document.activeElement?.closest('[data-testid="shell-detail-panel"]'),
-    { timeout: 5000 },
+  const transactionButtons = page.locator(
+    'table tbody button[data-transaction-open]',
   );
-  results.desktop.detailPanel = {
-    opened: await panel.isVisible(),
-    focusInside: await page.evaluate(
-      () => !!document.activeElement?.closest('[data-testid="shell-detail-panel"]'),
-    ),
-    accountContextPreserved: await page.getByTestId('account-detail').isVisible(),
+  const first = transactionButtons.first();
+  const accountScroll = await first.evaluateHandle((button) => {
+    // The table wrapper can scroll horizontally. Find the ancestor that actually scrolls vertically.
+    for (let node = button.parentElement; node; node = node.parentElement) {
+      if (
+        /^(auto|scroll)$/.test(getComputedStyle(node).overflowY) &&
+        node.scrollHeight > node.clientHeight
+      ) {
+        return node;
+      }
+    }
+    throw new Error('Account scroll container not found');
+  });
+  const scrollTop = () => accountScroll.evaluate((node) => node.scrollTop);
+  const assertVisibleAndFocused = async (button) => {
+    assert(
+      await button.evaluate((node, scroller) => {
+        const bounds = node.getBoundingClientRect();
+        const top = scroller.getBoundingClientRect().top + scroller.clientTop;
+        return (
+          document.activeElement === node &&
+          bounds.top >= top - 1 &&
+          bounds.bottom <= top + scroller.clientHeight + 1
+        );
+      }, accountScroll),
+    );
   };
-  await panel.getByRole('button', { name: 'Back to account' }).click();
-  await panel.waitFor({ state: 'detached' });
-  results.desktop.detailPanel.focusReturned = await opener.evaluate(
-    (node) => document.activeElement === node,
+
+  await first.focus();
+  const beforeDown = await scrollTop();
+  for (let row = 0; row < 20; row++) await page.keyboard.press('ArrowDown');
+  await assertVisibleAndFocused(transactionButtons.nth(20));
+  assert(
+    (await scrollTop()) > beforeDown,
+    'ArrowDown must scroll the account container',
   );
-  assert(results.desktop.detailPanel.focusReturned);
+  const previous = transactionButtons.nth(19);
+  await previous.evaluate((button, scroller) => {
+    const top = scroller.getBoundingClientRect().top + scroller.clientTop;
+    scroller.scrollTop += button.getBoundingClientRect().bottom - top + 4;
+    if (button.getBoundingClientRect().bottom > top)
+      throw new Error('ArrowUp target is already visible');
+  }, accountScroll);
+  const beforeUp = await scrollTop();
+  await page.keyboard.press('ArrowUp');
+  await assertVisibleAndFocused(previous);
+  assert(
+    (await scrollTop()) < beforeUp,
+    'ArrowUp must scroll the account container',
+  );
+
+  // Tab from the last control in row 19 to the first control in row 20 below the viewport.
+  const next = transactionButtons.nth(20);
+  const previousRow = page.locator('table tbody tr').nth(19);
+  await previousRow.locator('button:enabled').last().focus();
+  await next.evaluate((button, scroller) => {
+    const bottom =
+      scroller.getBoundingClientRect().top +
+      scroller.clientTop +
+      scroller.clientHeight;
+    scroller.scrollTop += button.getBoundingClientRect().top - bottom - 4;
+    if (button.getBoundingClientRect().top < bottom)
+      throw new Error('Tab target is already visible');
+  }, accountScroll);
+  const beforeTab = await scrollTop();
+  await page.keyboard.press('Tab');
+  await assertVisibleAndFocused(next);
+  assert(
+    (await scrollTop()) > beforeTab,
+    'Tab must scroll the account container',
+  );
+
+  const opener = page.getByRole('button', {
+    name: 'Synthetic corrected purchase',
+    exact: true,
+  });
+  const panel = page.getByTestId('shell-detail-panel');
+  const back = panel.getByRole('button', { name: 'Back to account' });
+  const related = panel.getByRole('link', {
+    name: 'Open the previous transaction',
+  });
+  await opener.press('Enter');
+  await related.waitFor();
+  await page.waitForFunction(() =>
+    Boolean(
+      document.activeElement?.closest('[data-testid="shell-detail-panel"]'),
+    ),
+  );
+  assert.equal(await opener.getAttribute('aria-current'), 'true');
+  await related.press('Enter');
+  await panel
+    .getByText(/^Voided on/)
+    .first()
+    .waitFor();
+  assert.equal(await opener.getAttribute('aria-current'), null);
+  await back.press('Enter');
+  await panel.waitFor({ state: 'detached' });
+  await assertVisibleAndFocused(opener);
+
+  // The filter unmounts the opening row while S4 remains open.
+  await opener.press('Enter');
+  await related.waitFor();
+  await page.getByRole('radio', { name: /^Uncategorised \d+$/ }).press('Enter');
+  await opener.waitFor({ state: 'detached' });
+  await back.press('Enter');
+  await panel.waitFor({ state: 'detached' });
+  const heading = page.getByRole('heading', {
+    name: 'Account detail',
+    exact: true,
+  });
+  assert(await heading.evaluate((node) => document.activeElement === node));
+  results.desktop.detailPanel = {
+    arrowsAndTabScrolledAccount: true,
+    focusReturnedAfterRelatedTransaction: true,
+    focusedHeadingAfterFiltering: true,
+  };
+
+  await page.getByRole('radio', { name: 'All', exact: true }).press('Enter');
+  await page.getByText(/^Showing 50 of \d+$/).waitFor();
+  await shot(page, 'account-desktop');
   await context.close();
 }
 {

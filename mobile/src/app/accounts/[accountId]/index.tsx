@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState, type ComponentRef } from 'react';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { Platform, RefreshControl, useWindowDimensions } from 'react-native';
+import { Platform, RefreshControl, useWindowDimensions, type Text } from 'react-native';
 import { useIntl } from 'react-intl';
+import { moveAccessibilityFocus } from '@/components/shared/accessibility-focus';
 import { AccountDetail, useAccountRefresh } from '@/features/account-detail/account-detail';
 import { isAdministrator } from '@/features/auth/session';
 import { useIdentity } from '@/features/auth/use-identity';
@@ -19,12 +20,23 @@ export default function AccountDetailRoute() {
   const { width } = useWindowDimensions();
   const webPanel = Platform.OS === 'web' && width >= 1024;
   const [selectedTransaction, setSelectedTransaction] = useState<string | null>(null);
-  const previousFocus = useRef<HTMLElement | null>(null);
+  const openingRow = useRef<HTMLElement | null>(null);
+  const restoreFocus = useRef(false);
+  const titleRef = useRef<ComponentRef<typeof Text>>(null);
+
+  useLayoutEffect(() => {
+    if (selectedTransaction !== null || !restoreFocus.current) return;
+    restoreFocus.current = false;
+    const opener = openingRow.current;
+    openingRow.current = null;
+    if (opener?.isConnected && document.activeElement !== opener) opener.focus();
+    if (!opener || document.activeElement !== opener) moveAccessibilityFocus(titleRef.current);
+  }, [selectedTransaction]);
 
   if (isAdministrator(identity)) return <Redirect href={homeFor(true)} />;
   const openTransaction = (transactionId: string) => {
     if (webPanel) {
-      previousFocus.current =
+      openingRow.current =
         document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setSelectedTransaction(transactionId);
     } else {
@@ -35,13 +47,13 @@ export default function AccountDetailRoute() {
     }
   };
   const closePanel = () => {
+    restoreFocus.current = true;
     setSelectedTransaction(null);
-    previousFocus.current?.focus();
-    previousFocus.current = null;
   };
   return (
     <ShellScreen
       title={intl.formatMessage({ id: 'account.heading' })}
+      titleRef={webPanel ? titleRef : undefined}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />}
       detailWidth={400}
       virtualizedNative

@@ -15,9 +15,9 @@ workspace), a "DKB" portfolio with a EUR "Girokonto" (CASH) and a "Tagesgeld" (S
 an opening balance, 60 hand-entered bookings (four left uncategorised), an internal transfer to
 Tagesgeld, an import of the committed synthetic fixture
 `backend/src/test/resources/import/dkb-girokonto-synthetic.csv` with one imported booking then
-voided (it gets a reversal row), and a statement snapshot that does not match the ledger. The
-generated passwords go to a scratch env file. Result: 64 transactions, reconciliation
-`OPEN_DIFFERENCE`.
+corrected (the original is voided, gets a reversal row and can be opened from the replacement's
+history), and a statement snapshot that does not match the ledger. The generated passwords go to a
+scratch env file. The original evidence run had 64 transactions and reconciliation `OPEN_DIFFERENCE`.
 
 | Screenshot | What it shows |
 |---|---|
