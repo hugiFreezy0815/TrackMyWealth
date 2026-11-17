@@ -3,7 +3,7 @@ import { Text } from 'react-native';
 
 import { ActionButton, KeyValueList, SectionCard } from '@/components/shared';
 import { msg } from '@/features/overview/overview-text';
-import { formatDateTime } from '@/format/date';
+import { formatInstantDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
 
 import type { HeaderData } from './portfolio-header';
@@ -69,7 +69,7 @@ export function DataSourceCard({
         {view.lastImport
           ? msg(intl, 'portfolio.source.last', {
               format: view.lastImport.fileFormat,
-              date: formatDateTime(view.lastImport.committedAt, intl.locale),
+              date: formatInstantDate(view.lastImport.committedAt, intl.locale),
               count: view.lastImport.transactionCount,
             })
           : msg(intl, 'portfolio.source.none')}
