@@ -662,19 +662,43 @@ describe('S2 header, explanation and data source', () => {
     expect(screen.getByText('All available account values are included.')).toBeTruthy();
   });
 
-  it('shows the last import and opens the import flow', async () => {
-    setData(
-      view([], {
-        lastImport: {
-          fileFormat: 'CSV',
-          uploadedAt: '2026-10-18T08:00:00Z',
-          committedAt: '2026-10-18T08:05:00Z',
-          transactionCount: 41,
-        } as PortfolioView['lastImport'],
-      }),
-    );
+  it.each([
+    [
+      'en',
+      'Institution DKB · Germany · portfolio currency EUR',
+      'CSV: last import 18 Oct 2026 · 41 transactions',
+    ],
+    [
+      'de',
+      'Institut DKB · Deutschland · Portfoliowährung EUR',
+      'CSV: letzter Import 18.10.2026 · 41 Buchungen',
+    ],
+  ] as const)(
+    'localizes the country and the last import date in %s',
+    async (locale, subtitle, lastImport) => {
+      setData(
+        view([], {
+          institutionName: 'DKB',
+          lastImport: {
+            fileFormat: 'CSV',
+            uploadedAt: '2026-10-16T12:00:00Z',
+            committedAt: '2026-10-18T12:00:00Z',
+            transactionCount: 41,
+          },
+        }),
+        undefined,
+        [{ ...listItem, country: 'DE' }],
+      );
+      await mount(locale);
+      expect(screen.getByText(subtitle)).toBeTruthy();
+      expect(screen.getByText(lastImport)).toBeTruthy();
+    },
+  );
+
+  it('shows the empty import state and opens the import flow', async () => {
+    setData(view([]));
     const { onImport } = await mount();
-    expect(screen.getByText(/^CSV: last import .* · 41 transactions$/)).toBeTruthy();
+    expect(screen.getByText('No import yet')).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: 'Import statement' }));
     expect(onImport).toHaveBeenCalledTimes(1);
   });
