@@ -169,7 +169,9 @@ exact one:
 
 For accounts that hold positions, a newer cash-only snapshot does not replace the holdings
 statement. A missing cash balance, holding value or holding FX rate leaves the account value
-unknown. Convert each holding at the holdings snapshot date, using the same rounding as the
+unknown. So does cash in another currency that an imported statement lists but the snapshot does
+not record (#273 keeps only cash in the account's own currency): adding it is a separate decision,
+and leaving it out would understate the value (FR-PERF-018). Convert each holding at the holdings snapshot date, using the same rounding as the
 positions endpoint. A stale holding rate makes the account value stale, as does an old snapshot.
 
 `valueBasis` is `null` when `valueKnown` is `false`. `AccountValuation.valueSourceDate` is the date

@@ -13,6 +13,9 @@ public interface ReportedHoldingValue {
 
   @Nullable BigDecimal getCashBalance();
 
+  /** Whether the statement listed cash in another currency that the snapshot did not record. */
+  boolean isUnrecordedCash();
+
   @Nullable BigDecimal getReportedValue();
 
   @Nullable String getReportedCurrency();
