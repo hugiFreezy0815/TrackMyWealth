@@ -93,9 +93,20 @@ describe('S3 list focus after a reload (#494)', () => {
 
   it('leaves focus alone when the saved row stays in the list', async () => {
     const list = await renderList(['a', 'b']);
+    fakeDocument.activeElement = { name: 'category button, given back by the dialog' };
     await act(() => list.hook().saveAndDismiss('a', ['a', 'b']));
+    expect(moveAccessibilityFocus).not.toHaveBeenCalled();
+    fakeDocument.activeElement = null;
     expect(focusedRow()).toBeNull();
     expect(moveAccessibilityFocus).not.toHaveBeenCalled();
+  });
+
+  it('moves focus to the heading when the last row left and the filter fell back to All', async () => {
+    const list = await renderList(['a']);
+    // Uncategorised count 0: the All list shows the saved row again, with a new control.
+    await list.show(['x', 'a', 'y']);
+    await act(() => list.hook().saveAndDismiss('a', ['a']));
+    expect(moveAccessibilityFocus).toHaveBeenCalledWith(heading);
   });
 
   it('waits until the category dialog has released focus', async () => {

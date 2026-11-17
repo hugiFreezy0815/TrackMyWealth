@@ -19,6 +19,13 @@ function nearestRows(transactionId: string, before: readonly string[]): string[]
   return [...before.slice(index + 1), ...before.slice(0, index).reverse()];
 }
 
+/** True when focus sits on nothing: the control that had it was removed from the page. */
+function focusLost(): boolean {
+  if (typeof document === 'undefined') return false;
+  const current = document.activeElement;
+  return !current || current === document.body;
+}
+
 function focusRow(transactionId: string | undefined): boolean {
   if (!transactionId || typeof document === 'undefined') return false;
   const target = document.getElementById(transactionElementId(transactionId));
@@ -56,7 +63,9 @@ export function useRowFocus(ids: readonly string[], settled: boolean, fallback: 
     }
     if (!current.dismissed) return;
     pending.current = null;
-    if (ids.includes(current.transactionId)) return;
+    // A row that stays got focus back from the dialog. When the filter fell back to All (count
+    // 0) the row is listed again, but its old control is gone and focus with it.
+    if (ids.includes(current.transactionId) && !focusLost()) return;
     const next = nearestRows(current.transactionId, current.before).find((id) => ids.includes(id));
     if (!focusRow(next)) moveAccessibilityFocus(fallback.current);
   }, [ids, settled, fallback, request]);
