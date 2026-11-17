@@ -7,7 +7,7 @@ import { ApiError, NetworkError } from '@/api/client';
 import { typedApi } from '@/api/typed-api';
 import { problemReaction } from '@/api/problems';
 import { retryVersionRequired, useConflict } from '@/api/queries/conflict';
-import { invalidateFinancialData } from '@/api/queries/invalidation';
+import { invalidateFinancialData, invalidateFromFirstPage } from '@/api/queries/invalidation';
 import { queryKeys, queryRoots } from '@/api/queries/keys';
 import {
   useAccount,
@@ -19,6 +19,7 @@ import {
   useCategories,
   useChangeTransactionCategory,
   useUncategorizedCount,
+  useUpdateAccountOpeningDate,
   type TransactionSort,
 } from '@/api/queries/resources';
 import {
@@ -26,14 +27,18 @@ import {
   Amount,
   ChipGroup,
   ConflictDialog,
+  DateField,
+  Dialog,
   EmptyState,
   ErrorBanner,
   LoadingSkeleton,
   OfflineBanner,
   ValueStatusBadge,
+  localDateToIso,
 } from '@/components/shared';
 import { Spacing, TypeScale } from '@/constants/theme';
 import { formatDate } from '@/format/date';
+import { validationErrors } from '@/features/add-flow/model';
 import { PositionView } from '@/features/portfolio-view/position-view';
 import { useSavingsPocketLink } from '@/features/savings-pocket/link-pocket';
 import { showToast } from '@/features/shell/toast';
@@ -56,6 +61,7 @@ import {
   hasUnknownCategory,
   uniqueTransactions,
   type AccountListItem,
+  type AccountSummary,
   type Transaction,
 } from './model';
 import { TransactionResults } from './transaction-results';
@@ -73,7 +79,7 @@ export type AccountDetailProps = {
   onRefresh?: () => void;
 };
 
-type OpenDialog = 'actions' | 'sort' | 'archive' | 'value' | null;
+type OpenDialog = 'actions' | 'sort' | 'archive' | 'value' | 'openingDate' | null;
 
 const isNotFound = (error: unknown) =>
   error instanceof ApiError &&
@@ -128,8 +134,16 @@ export function AccountDetail({
   const [categoryTarget, setCategoryTarget] = useState<Transaction | null>(null);
   const [pendingCategoryId, setPendingCategoryId] = useState<string | null>(null);
   const [reloadingConflict, setReloadingConflict] = useState(false);
+  const [openingDateReloadError, setOpeningDateReloadError] = useState<{ error: unknown } | null>(
+    null,
+  );
+  const openingDateReloadInFlight = useRef(false);
   const writeInFlight = useRef(false);
   const [dialog, setDialog] = useState<OpenDialog>(null);
+  const [openingDateDraft, setOpeningDateDraft] = useState<{
+    account: AccountSummary;
+    openedAt: string | null;
+  } | null>(null);
   const [writeError, setWriteError] = useState<unknown>(null);
   const retryWrite = useRef<(() => void) | null>(null);
   const conflict = useConflict();
@@ -156,6 +170,12 @@ export function AccountDetail({
   const positions = useAccountPositions(accountId, !!summary?.holdsPositions);
   const categoryWrite = useChangeTransactionCategory(accountId);
   const archiveWrite = useAccountArchiveAction(accountId);
+  const openingDateWrite = useUpdateAccountOpeningDate(accountId);
+  const today = localDateToIso(new Date());
+  const openingDateInFuture = !!openingDateDraft?.openedAt && openingDateDraft.openedAt > today;
+  const openingDateRejected = !!validationErrors(writeError).openedAt;
+  const openingDateNeedsReload = reloadingConflict || openingDateReloadError !== null;
+  const openingDateInvalid = openingDateInFuture || openingDateRejected;
   // #466: offered in the actions menu; the account lists it needs are read when the menu opens.
   const pocket = useSavingsPocketLink({
     account: summary,
@@ -169,9 +189,41 @@ export function AccountDetail({
   const locked =
     !online || archived || reloadingConflict || categoryWrite.isPending || archiveWrite.isPending;
 
-  // Spec S3: the chip is hidden at 0 and the filter falls back to All (server count, page 0).
-  // Adjusted while rendering, so the stale filter never reaches a request or a frame.
-  if (uncategorized && count.data === 0) setUncategorized(false);
+  const restartActivityQuery = useCallback(
+    (nextFilter: boolean, nextSort: TransactionSort) => {
+      const filters = {
+        queryKey: queryKeys.accountTransactions(accountId, {
+          uncategorized: nextFilter,
+          sort: nextSort,
+        }),
+        exact: true,
+      };
+      // A request for the previous visit must not repopulate pages after they are trimmed.
+      void client.cancelQueries(filters);
+      // Refetch when the new selection becomes active, keeping page 0 available offline.
+      return invalidateFromFirstPage(client, { ...filters, refetchType: 'none' });
+    },
+    [accountId, client],
+  );
+
+  function changeActivityView(nextFilter: boolean, nextSort: TransactionSort) {
+    if (nextFilter === uncategorized && nextSort === sort) return;
+    void restartActivityQuery(nextFilter, nextSort);
+    setUncategorized(nextFilter);
+    setSort(nextSort);
+  }
+
+  // Spec S3: fall back to All at page 0 once the server count reaches zero.
+  useEffect(() => {
+    if (!uncategorized || count.data !== 0) return;
+    let active = true;
+    void restartActivityQuery(false, sort).then(() => {
+      if (active) setUncategorized(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [count.data, restartActivityQuery, sort, uncategorized]);
 
   // Spec S3 row 4: a category id the cached list lacks triggers one reload of /categories.
   const reloadedCategories = useRef(false);
@@ -262,6 +314,50 @@ export function AccountDetail({
         reloadAccountVersion,
       );
       setDialog(null);
+    }, queryKeys.account(accountId));
+  }
+
+  async function reviewOpeningDateConflict() {
+    if (openingDateReloadInFlight.current) return;
+    openingDateReloadInFlight.current = true;
+    conflict.dismiss();
+    setReloadingConflict(true);
+    setOpeningDateReloadError(null);
+    try {
+      const latest = await reloadAccountVersion();
+      setOpeningDateDraft((draft) => (draft ? { ...draft, account: latest } : null));
+      await invalidateFinancialData(client);
+    } catch (error) {
+      if (isNotFound(error)) {
+        showToast('account.notFound');
+        onBack();
+      } else {
+        setOpeningDateReloadError({ error });
+      }
+    } finally {
+      openingDateReloadInFlight.current = false;
+      setReloadingConflict(false);
+    }
+  }
+
+  function changeOpeningDate(openedAt: string | null) {
+    setOpeningDateDraft((draft) => (draft ? { ...draft, openedAt } : null));
+    setWriteError(null);
+  }
+
+  function saveOpeningDate() {
+    if (
+      !openingDateDraft ||
+      !online ||
+      openingDateWrite.isPending ||
+      openingDateNeedsReload ||
+      openingDateInFuture
+    )
+      return;
+    void runWrite(async () => {
+      await openingDateWrite.mutateAsync(openingDateDraft);
+      setDialog(null);
+      setOpeningDateDraft(null);
     }, queryKeys.account(accountId));
   }
 
@@ -357,7 +453,7 @@ export function AccountDetail({
       {account.isError ? (
         <ErrorBanner error={account.error} onRetry={() => void account.refetch()} />
       ) : null}
-      {writeError ? (
+      {writeError && dialog !== 'openingDate' ? (
         <ErrorBanner error={writeError} onRetry={() => retryWrite.current?.()} />
       ) : null}
       <View
@@ -403,6 +499,14 @@ export function AccountDetail({
         onRetryValue={refresh}
         onExplainValue={() => setDialog('value')}
       />
+      {summary.openedAt ? (
+        <Text style={{ ...TypeScale.bodyMedium, color: theme.textSecondary }}>
+          {intl.formatMessage(
+            { id: 'account.openedAt.display' },
+            { date: formatDate(summary.openedAt, intl.locale) },
+          )}
+        </Text>
+      ) : null}
       {pocket.currentLine}
       {value && (activeAccounts.isError || archivedAccounts.isError) ? (
         <ErrorBanner error={activeAccounts.error ?? archivedAccounts.error} onRetry={refresh} />
@@ -469,13 +573,13 @@ export function AccountDetail({
                 : []),
             ]}
             selected={[uncategorized ? 'uncategorized' : 'all']}
-            onSelect={(next) => setUncategorized(next === 'uncategorized')}
+            onSelect={(next) => changeActivityView(next === 'uncategorized', sort)}
           />
           {countValue > 0 ? (
             <Pressable
               testID="account-needs-category"
               accessibilityRole="button"
-              onPress={() => setUncategorized(true)}
+              onPress={() => changeActivityView(true, sort)}
               style={{
                 padding: Spacing.two,
                 backgroundColor: theme.statusWarningSubtle,
@@ -511,7 +615,7 @@ export function AccountDetail({
             <ErrorBanner error={categories.error} onRetry={() => void categories.refetch()} />
           ) : null}
           {transactions.isPending && !transactions.data ? <LoadingSkeleton count={5} /> : null}
-          {transactions.isError ? (
+          {transactions.isError && !transactions.isFetchNextPageError ? (
             // Keep previously loaded rows visible, but do not silently hide a failed refresh.
             <ErrorBanner error={transactions.error} onRetry={() => void transactions.refetch()} />
           ) : null}
@@ -520,7 +624,7 @@ export function AccountDetail({
               <EmptyState
                 title={intl.formatMessage({ id: 'account.noUncategorized' })}
                 actionLabel={intl.formatMessage({ id: 'account.showAll' })}
-                onAction={() => setUncategorized(false)}
+                onAction={() => changeActivityView(false, sort)}
               />
             ) : (
               <EmptyState
@@ -538,6 +642,16 @@ export function AccountDetail({
     </View>
   );
   const showingTransactions = hasLedger && !(summary.holdsPositions && tab === 'positions');
+  // A cached first page can remain visible after a paused or failed refresh.
+  const canFetchNextPage =
+    transactions.hasNextPage && transactions.fetchStatus === 'idle' && !transactions.isRefetchError;
+  const fetchNextPage = () => {
+    if (canFetchNextPage) void transactions.fetchNextPage({ cancelRefetch: false });
+  };
+  const onEndReached =
+    showingTransactions && canFetchNextPage && !transactions.isFetchNextPageError
+      ? fetchNextPage
+      : undefined;
   const accountFooter = showingTransactions ? (
     <View style={{ gap: Spacing.three }}>
       {records.length ? (
@@ -546,13 +660,13 @@ export function AccountDetail({
         </Text>
       ) : null}
       {transactions.isFetchNextPageError ? (
-        <ErrorBanner error={transactions.error} onRetry={() => void transactions.fetchNextPage()} />
+        <ErrorBanner error={transactions.error} onRetry={fetchNextPage} />
       ) : null}
       {transactions.hasNextPage && !transactions.isFetchNextPageError ? (
         <ActionButton
-          disabled={transactions.isFetchingNextPage}
+          disabled={!canFetchNextPage}
           label={intl.formatMessage({ id: 'account.loadMore' })}
-          onPress={() => void transactions.fetchNextPage()}
+          onPress={fetchNextPage}
         />
       ) : null}
       {transactions.isFetchingNextPage ? <ActivityIndicator /> : null}
@@ -575,13 +689,7 @@ export function AccountDetail({
                 setPendingCategoryId(null);
                 setCategoryTarget(target);
               }}
-              onEndReached={
-                transactions.hasNextPage && !transactions.isFetchNextPageError
-                  ? () => {
-                      if (!transactions.isFetchingNextPage) void transactions.fetchNextPage();
-                    }
-                  : undefined
-              }
+              onEndReached={onEndReached}
             />
           ) : null}
           {accountFooter}
@@ -597,13 +705,7 @@ export function AccountDetail({
             setPendingCategoryId(null);
             setCategoryTarget(target);
           }}
-          onEndReached={
-            showingTransactions && transactions.hasNextPage && !transactions.isFetchNextPageError
-              ? () => {
-                  if (!transactions.isFetchingNextPage) void transactions.fetchNextPage();
-                }
-              : undefined
-          }
+          onEndReached={onEndReached}
           listHeader={accountHeader}
           listFooter={accountFooter}
           refreshing={refreshing}
@@ -621,6 +723,12 @@ export function AccountDetail({
           onImport();
         }}
         onArchive={() => setDialog('archive')}
+        onEditOpeningDate={() => {
+          setWriteError(null);
+          openingDateWrite.reset();
+          setOpeningDateDraft({ account: summary, openedAt: summary.openedAt ?? null });
+          setDialog('openingDate');
+        }}
         pocketAction={pocket.trigger(() => setDialog(null))}
       />
       {pocket.dialog}
@@ -629,7 +737,7 @@ export function AccountDetail({
         sort={sort}
         onClose={() => setDialog(null)}
         onSort={(next) => {
-          setSort(next);
+          changeActivityView(uncategorized, next);
           setDialog(null);
         }}
       />
@@ -657,6 +765,58 @@ export function AccountDetail({
         value={value}
         onClose={() => setDialog(null)}
       />
+      {openingDateDraft && (
+        <Dialog
+          visible={dialog === 'openingDate' && !conflict.conflicted}
+          title={intl.formatMessage({ id: 'account.openedAt.edit' })}
+          closeDisabled={openingDateWrite.isPending || reloadingConflict}
+          onClose={() => {
+            setDialog(null);
+            setOpeningDateDraft(null);
+            setWriteError(null);
+            retryWrite.current = null;
+            setOpeningDateReloadError(null);
+          }}
+        >
+          <DateField
+            label={intl.formatMessage({ id: 'account.openedAt.optional' })}
+            value={openingDateDraft.openedAt}
+            onChange={changeOpeningDate}
+            onClear={() => changeOpeningDate(null)}
+            hint={intl.formatMessage({ id: 'account.openedAt.hint' })}
+            maximumDate={today}
+            disabled={openingDateWrite.isPending || reloadingConflict}
+            error={
+              openingDateInvalid
+                ? intl.formatMessage({ id: 'account.openedAt.invalid' })
+                : undefined
+            }
+          />
+          {openingDateReloadError ? (
+            <ErrorBanner
+              error={openingDateReloadError.error}
+              onRetry={online ? () => void reviewOpeningDateConflict() : undefined}
+            />
+          ) : null}
+          {writeError && !openingDateRejected ? <ErrorBanner error={writeError} /> : null}
+          {!online ? (
+            <Text accessibilityRole="alert" style={{ color: theme.statusWarning }}>
+              {intl.formatMessage({ id: 'addFlow.offline' })}
+            </Text>
+          ) : null}
+          <ActionButton
+            label={intl.formatMessage({ id: 'account.openedAt.save' })}
+            disabled={
+              !online ||
+              openingDateWrite.isPending ||
+              openingDateNeedsReload ||
+              openingDateDraft.openedAt === (openingDateDraft.account.openedAt ?? null) ||
+              openingDateInFuture
+            }
+            onPress={saveOpeningDate}
+          />
+        </Dialog>
+      )}
       <ConflictDialog
         visible={conflict.conflicted}
         onClose={() => {
@@ -664,6 +824,10 @@ export function AccountDetail({
           setCategoryTarget(null);
           setPendingCategoryId(null);
           setReloadingConflict(false);
+          if (dialog === 'openingDate') {
+            setDialog(null);
+            setOpeningDateDraft(null);
+          }
         }}
         onDiscard={() => {
           conflict.dismiss();
@@ -671,8 +835,13 @@ export function AccountDetail({
           setPendingCategoryId(null);
           setReloadingConflict(false);
           setDialog(null);
+          setOpeningDateDraft(null);
         }}
         onReview={() => {
+          if (dialog === 'openingDate') {
+            void reviewOpeningDateConflict();
+            return;
+          }
           conflict.dismiss();
           setReloadingConflict(true);
           void (async () => {

@@ -163,11 +163,12 @@ async function renderDetail(
     onBack?: () => void;
     cachedAccounts?: AccountListItem[];
     initialTab?: 'positions' | 'activity';
+    staleTime?: number;
   } = {},
 ) {
   const client = new QueryClient({
     defaultOptions: {
-      queries: { retry: false, gcTime: Infinity },
+      queries: { retry: false, gcTime: Infinity, staleTime: props.staleTime },
       mutations: { retry: false, gcTime: Infinity },
     },
   });
@@ -419,6 +420,95 @@ describe('S3 account detail acceptance checks (#494)', () => {
     expect(listCalls().map((query) => query.page)).toEqual([0, 1, 2]);
   });
 
+  it.each(['filter', 'sort'] as const)(
+    'reloads only page 0 when returning to a previous %s',
+    async (selection) => {
+      fakeServer(
+        summary(),
+        Array.from({ length: 110 }, (_, index) =>
+          txn(index, { categoryId: index < 60 ? 'uncat' : 'food' }),
+        ),
+      );
+      await renderDetail({ staleTime: 30_000 });
+      expect(await screen.findByText('Showing 50 of 110')).toBeTruthy();
+      await fireEvent.press(screen.getByText('Load more'));
+      expect(await screen.findByText('Showing 100 of 110')).toBeTruthy();
+
+      if (selection === 'filter') {
+        await fireEvent.press(screen.getByTestId('account-needs-category'));
+        expect(await screen.findByText('Showing 50 of 60')).toBeTruthy();
+      } else {
+        await fireEvent.press(screen.getByRole('button', { name: /^Newest first/ }));
+        await fireEvent.press(screen.getByRole('radio', { name: 'Oldest first' }));
+        await waitFor(() =>
+          expect(listCalls().at(-1)).toMatchObject({ page: 0, sort: ['bookingDate,asc'] }),
+        );
+      }
+
+      const callsBeforeReturn = listCalls().length;
+      if (selection === 'filter') {
+        await fireEvent.press(screen.getByRole('radio', { name: 'All' }));
+      } else {
+        await fireEvent.press(await screen.findByRole('button', { name: /^Oldest first/ }));
+        await fireEvent.press(screen.getByRole('radio', { name: 'Newest first' }));
+      }
+
+      expect(await screen.findByText('Showing 50 of 110')).toBeTruthy();
+      expect(screen.queryByText('Showing 100 of 110')).toBeNull();
+      await waitFor(() =>
+        expect(listCalls().slice(callsBeforeReturn)).toEqual([
+          expect.objectContaining({ page: 0, uncategorized: false, sort: ['bookingDate,desc'] }),
+        ]),
+      );
+    },
+  );
+
+  it('keeps pagination blocked after a cached page 0 fails to refresh until retry succeeds', async () => {
+    fakeServer(
+      summary(),
+      Array.from({ length: 60 }, (_, index) =>
+        txn(index, { categoryId: index ? 'food' : 'uncat' }),
+      ),
+    );
+    await renderDetail({ staleTime: 30_000 });
+    expect(await screen.findByText('Showing 50 of 60')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Load more' }));
+    expect(await screen.findByText('Showing 60 of 60')).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId('account-needs-category'));
+    expect(await screen.findByText('Showing 1 of 1')).toBeTruthy();
+
+    api.get.mockRejectedValueOnce(new NetworkError('page 0 refresh failed'));
+    const callsBeforeReturn = listCalls().length;
+    await fireEvent.press(screen.getByRole('radio', { name: 'All' }));
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    expect(screen.getByText('Showing 50 of 60')).toBeTruthy();
+    expect(screen.getByText('Shop 000')).toBeTruthy();
+
+    const loadMore = screen.getByRole('button', { name: 'Load more' });
+    expect(loadMore).toBeDisabled();
+    await fireEvent.press(loadMore);
+    await fireEvent(screen.getByTestId('account-transaction-list'), 'onEndReached');
+    expect(
+      listCalls()
+        .slice(callsBeforeReturn)
+        .map(({ page }) => page),
+    ).toEqual([0]);
+
+    await fireEvent.press(retry);
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Load more' })).toBeEnabled();
+    });
+    await fireEvent.press(screen.getByRole('button', { name: 'Load more' }));
+    expect(await screen.findByText('Showing 60 of 60')).toBeTruthy();
+    expect(
+      listCalls()
+        .slice(callsBeforeReturn)
+        .map(({ page }) => page),
+    ).toEqual([0, 0, 1]);
+  });
+
   it('uses a virtualized SectionList with headers inside the scroll owner for 1,000+ rows', async () => {
     fakeServer(
       summary(),
@@ -584,6 +674,123 @@ describe('S3 account detail acceptance checks (#494)', () => {
     );
   });
 
+  it('clears the opening date via If-Match, preserves other fields, and invalidates both histories', async () => {
+    const state = fakeServer(
+      summary({
+        openedAt: '2025-01-01',
+        closedAt: '2026-01-01',
+        jurisdiction: 'CH',
+      }),
+      [],
+    );
+    api.put.mockImplementationOnce(async () => {
+      state.account = { ...state.account, openedAt: null, version: 3 };
+      return state.account as never;
+    });
+    const { client } = await renderDetail();
+    const overviewHistory = queryKeys.netWorthHistory('EUR', '1Y');
+    const portfolioHistory = queryKeys.portfolioHistory('p1', '1Y');
+    client.setQueryData(overviewHistory, {});
+    client.setQueryData(portfolioHistory, {});
+
+    expect(await screen.findByText('Opened on 1 Jan 2025')).toBeOnTheScreen();
+    await fireEvent.press(screen.getByLabelText('Account actions'));
+    await fireEvent.press(screen.getByRole('button', { name: 'Edit opening date' }));
+    await fireEvent.press(screen.getByRole('button', { name: /^Clear date/ }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save opening date' }));
+
+    await waitFor(() => expect(screen.queryByText('Opened on 1 Jan 2025')).toBeNull());
+    expect(api.put).toHaveBeenCalledWith('/api/v1/accounts/{accountId}', {
+      params: { accountId: 'acc' },
+      version: 2,
+      body: {
+        name: 'Girokonto',
+        accountType: 'CASH',
+        nativeCurrency: 'EUR',
+        jurisdiction: 'CH',
+        closedAt: '2026-01-01',
+        openedAt: undefined,
+      },
+    });
+    expect(client.getQueryState(overviewHistory)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(portfolioHistory)?.isInvalidated).toBe(true);
+  });
+
+  it('shows an opening date rejection on the field and clears it when the date changes', async () => {
+    fakeServer(summary({ openedAt: '2025-01-01' }), []);
+    api.put.mockRejectedValueOnce(
+      new ApiError('invalid', 400, {
+        status: 400,
+        title: 'Invalid request',
+        code: 'VALIDATION_FAILED',
+        errors: [{ field: 'openedAt', message: 'Invalid date' }],
+      }),
+    );
+    await renderDetail();
+    await fireEvent.press(await screen.findByLabelText('Account actions'));
+    await fireEvent.press(screen.getByRole('button', { name: 'Edit opening date' }));
+
+    const date = () => screen.getByRole('button', { name: /^Opened on/ });
+    const save = () => screen.getByRole('button', { name: 'Save opening date' });
+    await fireEvent.press(screen.getByRole('button', { name: /^Clear date/ }));
+    await fireEvent.press(save());
+    const message = 'Choose today or an earlier date.';
+    expect(await screen.findByText(message)).toBeOnTheScreen();
+    expect(date().props.accessibilityHint).toBe(message);
+
+    await fireEvent.press(date());
+    await fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+    expect(screen.queryByText(message)).toBeNull();
+  });
+
+  it('keeps the date draft and blocks saves until a failed conflict reload is retried', async () => {
+    const state = fakeServer(summary({ openedAt: '2025-01-01' }), []);
+    api.put.mockRejectedValueOnce(
+      new ApiError('changed', 412, { status: 412, title: 'Conflict', code: 'VERSION_CONFLICT' }),
+    );
+    await renderDetail();
+    await fireEvent.press(await screen.findByLabelText('Account actions'));
+    await fireEvent.press(screen.getByRole('button', { name: 'Edit opening date' }));
+    await fireEvent.press(screen.getByRole('button', { name: /^Clear date/ }));
+    state.account = {
+      ...state.account,
+      name: 'Renamed',
+      jurisdiction: 'CH',
+      closedAt: '2025-12-31',
+      version: 3,
+    };
+    await fireEvent.press(screen.getByRole('button', { name: 'Save opening date' }));
+    const review = await screen.findByText('Review and save again');
+    api.get.mockRejectedValueOnce(new NetworkError('reload failed'));
+    await fireEvent.press(review);
+
+    const save = () => screen.getByRole('button', { name: 'Save opening date' });
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    expect(save()).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Opened on .*Choose a date/ })).toBeOnTheScreen();
+    expect(api.put).toHaveBeenCalledTimes(1);
+
+    await fireEvent.press(retry);
+    await waitFor(() => expect(save()).toBeEnabled());
+    expect(api.put).toHaveBeenCalledTimes(1);
+    api.put.mockResolvedValueOnce({ ...state.account, openedAt: null, version: 4 } as never);
+    await fireEvent.press(save());
+    expect(api.put).toHaveBeenLastCalledWith(
+      '/api/v1/accounts/{accountId}',
+      expect.objectContaining({
+        version: 3,
+        body: {
+          name: 'Renamed',
+          accountType: 'CASH',
+          nativeCurrency: 'EUR',
+          jurisdiction: 'CH',
+          closedAt: '2025-12-31',
+          openedAt: undefined,
+        },
+      }),
+    );
+  });
+
   it('disables changes on an archived account and restores with If-Match', async () => {
     fakeServer(summary({ status: 'ARCHIVED', archivedAt: '2026-10-01T10:00:00Z', version: 5 }), [
       txn(0),
@@ -596,6 +803,7 @@ describe('S3 account detail acceptance checks (#494)', () => {
     expect(await screen.findByLabelText('Change category: Food')).toBeDisabled();
     await fireEvent.press(screen.getByLabelText('Account actions'));
     expect(screen.getByRole('button', { name: 'Import statement' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Edit opening date' })).toBeDisabled();
 
     await fireEvent.press(screen.getByRole('button', { name: 'Restore account' }));
     await waitFor(() =>

@@ -2,8 +2,10 @@ package com.trackmywealth.backend.dto;
 
 import com.trackmywealth.backend.validation.ValidCurrencyCode;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.PastOrPresent;
 import jakarta.validation.constraints.Pattern;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.UUID;
 
 /**
@@ -44,7 +46,8 @@ public record CreateAccountRequest(
         String pensionScheme,
     @Pattern(regexp = "REAL_ESTATE|VEHICLE|PRECIOUS_METAL|COLLECTIBLE|OTHER")
         String customAssetType,
-    Boolean countsAsSaving) {
+    Boolean countsAsSaving,
+    @PastOrPresent LocalDate openedAt) {
 
   public CreateAccountRequest {
     name = RequestStrings.blankToNull(name);

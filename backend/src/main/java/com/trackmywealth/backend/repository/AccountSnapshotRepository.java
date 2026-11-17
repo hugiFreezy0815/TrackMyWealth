@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.repository;
 
+import com.trackmywealth.backend.dto.ReportedHoldingValue;
 import com.trackmywealth.backend.entity.AccountSnapshot;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDate;
@@ -37,6 +38,48 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
           + " ORDER BY s.snapshotDate DESC, s.createdAt DESC, s.id DESC")
   List<AccountSnapshot> findNewestWithHoldings(
       @Param("accountId") UUID accountId, Pageable pageable);
+
+  /**
+   * Same holdings selection as the positions read, bounded by the valuation date. Read the cash and
+   * holdings in one statement so a concurrent snapshot replacement cannot mix revisions. {@code
+   * unrecordedCash} says whether an import that contributed to the snapshot listed cash in another
+   * currency than the snapshot's: that cash is shown at import but not recorded (#273), so the
+   * snapshot alone cannot state the account's full value (#586, FR-PERF-018).
+   */
+  @Query(
+      value =
+          """
+          WITH latest AS (
+            SELECT DISTINCT ON (s.account_id) s.id, s.account_id, s.snapshot_date, s.balance,
+                   s.currency, s.balance_import_batch_id
+            FROM account_snapshot s
+            WHERE s.account_id IN (:accountIds)
+              AND s.snapshot_date <= :asOf
+              AND s.withdrawn_at IS NULL
+              AND EXISTS (SELECT 1 FROM snapshot_holding h WHERE h.snapshot_id = s.id)
+            ORDER BY s.account_id, s.snapshot_date DESC, s.created_at DESC, s.id DESC
+          ),
+          flagged AS (
+            SELECT l.*, EXISTS (
+                     SELECT 1 FROM import_holding_row r
+                     WHERE r.kind = 'CASH'
+                       AND r.currency IS DISTINCT FROM l.currency
+                       AND (r.import_batch_id = l.balance_import_batch_id
+                            OR r.import_batch_id IN (
+                              SELECT h.import_batch_id FROM snapshot_holding h
+                              WHERE h.snapshot_id = l.id))
+                   ) AS unrecorded_cash
+            FROM latest l
+          )
+          SELECT s.account_id AS "accountId", s.snapshot_date AS "snapshotDate",
+                 s.balance AS "cashBalance", s.unrecorded_cash AS "unrecordedCash",
+                 h.reported_value AS "reportedValue", h.reported_currency AS "reportedCurrency"
+          FROM flagged s
+          JOIN snapshot_holding h ON h.snapshot_id = s.id
+          """,
+      nativeQuery = true)
+  List<ReportedHoldingValue> findLatestReportedHoldings(
+      @Param("accountIds") Collection<UUID> accountIds, @Param("asOf") LocalDate asOf);
 
   // US-25-04: V58's partial unique index allows at most one.
   Optional<AccountSnapshot> findByAccountIdAndOpeningBalanceTrue(UUID accountId);

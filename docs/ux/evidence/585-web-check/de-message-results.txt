@@ -1,0 +1,2 @@
+create DE member 201 
+DE member, future openedAt: VALIDATION_FAILED openedAt → muss in der Vergangenheit oder Gegenwart liegen | detail: Die Anfrage ist ungültig.

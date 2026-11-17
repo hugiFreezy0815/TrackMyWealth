@@ -57,8 +57,9 @@ import org.jspecify.annotations.Nullable;
  *     app.valuation.snapshot-stale-after} before the valuation date (#380): a snapshot or manual
  *     valuation by its own date; a loan statement by the latest payment on the loan since (an
  *     instalment, or a payment's interest on the paying account), else its own date, so regular
- *     payments keep it current (#445). {@link ValueStatus} then calls it {@code STALE}. Always
- *     {@code false} when {@code valueSourceDate} is {@code null}
+ *     payments keep it current (#445). Stale FX used to value any reported holding also makes the
+ *     source stale (#586). {@link ValueStatus} then calls it {@code STALE}. Always {@code false}
+ *     when {@code valueSourceDate} is {@code null}
  * @param warnings the account's data-quality warnings ({@link DataQualityWarningValues}), empty
  *     when there are none - independent of {@code valueKnown}, a client shows them on the account
  *     (PR-011, FR-CON-007)

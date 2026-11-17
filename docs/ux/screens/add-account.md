@@ -35,10 +35,17 @@ LIABILITIES
 ( Credit card )( Mortgage )( Loan )
 Account name      [ Tagesgeld          ]
 Account currency  [ EUR · Euro       ⌄ ]
+Opened on (optional) [ Select date ]
 IBAN (optional)   [ DE89 3704 0044 0532 0130 00 ]
 ⚠ The account type can't be changed later. To change it, close this account and add a new one.
             [ Add account ]
 ```
+
+The optional opening date goes in `POST /api/v1/accounts` as `openedAt`. The date picker
+ends at the phone's today. The server stores the date as picked and rejects it only when it is
+not today in any time zone yet (400 `VALIDATION_FAILED`), so the phone's today always passes.
+Explain that an earlier booking takes precedence for value history. The opening date
+is independent of the starting balance date.
 
 ### Type chips → request
 
@@ -85,6 +92,10 @@ Which step 2 shows depends on the capability flags of the created account, not o
 | `manualValuation` (property, vehicle, …) | **Current value**: value and date. Help: "Estimate of today's value. You can update it any time." | `POST /api/v1/accounts/{id}/valuations` `{ valuationDate, value }` |
 | `hasAmortisation` (mortgage, loan) | No step 2. The value comes from the principal and repayments or a loan statement | – |
 | `holdsPositions` (depot) | Opening balance for the cash part as above. A note says holdings come from importing a holdings statement (#367, later) | as above |
+
+With an opening date from step 1, the step 2 date cannot be earlier: the picker starts at the
+opening date, and an earlier date shows "Choose the opening date or a later date." (the server
+rejects it with 422).
 
 Every step 2 has **"Skip for now"**. The account then shows `UNKNOWN` or "No opening
 balance" (S3 reconciliation line `NO_OPENING_BALANCE`), never 0.

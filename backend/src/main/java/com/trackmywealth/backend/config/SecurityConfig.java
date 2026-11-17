@@ -7,6 +7,7 @@ import com.trackmywealth.backend.security.JwtAuthenticationFilter;
 import com.trackmywealth.backend.security.RateLimitFilter;
 import com.trackmywealth.backend.web.CorrelationIdFilter;
 import com.trackmywealth.backend.web.ProblemResponseWriter;
+import com.trackmywealth.backend.web.TraceparentResponseFilter;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.actuate.info.InfoEndpoint;
@@ -162,7 +163,12 @@ public class SecurityConfig {
     configuration.setAllowedOriginPatterns(allowedOriginPatterns);
     configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     configuration.setAllowedHeaders(
-        List.of("Authorization", "Content-Type", CorrelationIdFilter.HEADER, HttpHeaders.IF_MATCH));
+        List.of(
+            "Authorization",
+            "Content-Type",
+            CorrelationIdFilter.HEADER,
+            HttpHeaders.IF_MATCH,
+            TraceparentResponseFilter.HEADER));
     // Bearer tokens are sent via the Authorization header (see mobile/src/api/client.ts), not
     // cookies, so credentialed (cookie-carrying) CORS requests are not needed yet. Revisit
     // if/when EPIC-02's web refresh-token cookie (FR-AUT-006) is implemented.
@@ -177,7 +183,8 @@ public class SecurityConfig {
             CorrelationIdFilter.HEADER,
             HttpHeaders.ETAG,
             HttpHeaders.LOCATION,
-            HttpHeaders.RETRY_AFTER));
+            HttpHeaders.RETRY_AFTER,
+            TraceparentResponseFilter.HEADER));
 
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
     source.registerCorsConfiguration("/**", configuration);

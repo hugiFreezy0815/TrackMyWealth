@@ -1,0 +1,6 @@
+step2 date inputs [ 'Starting date min=2025-06-01 max=2026-11-16 value=2026-11-16' ]
+save disabled for 2025-01-01: true
+server: [
+  '201 {"id":"add21bc5-0b2c-4d4b-99d7-a1ea8f10da2e","accountId":"8f72dbcf-e1d2-4e17-8716-04ff29a6649c","date":"2025-06-01","balance":"1000.0000","currency":"CHF","createdAt":"2026-11-16T17:46:12.215047Z","updatedAt":null,"version":0,"warnings":[]}'
+]
+UI: 

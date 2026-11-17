@@ -1,4 +1,9 @@
-import type { InfiniteData, Query, QueryClient, QueryFilters } from '@tanstack/react-query';
+import type {
+  InfiniteData,
+  InvalidateQueryFilters,
+  Query,
+  QueryClient,
+} from '@tanstack/react-query';
 
 import { queryRoots } from './keys';
 
@@ -25,7 +30,7 @@ function isPaged(query: Query): boolean {
  */
 export async function invalidateFromFirstPage(
   client: QueryClient,
-  filters: QueryFilters,
+  filters: InvalidateQueryFilters,
 ): Promise<void> {
   for (const query of client.getQueryCache().findAll(filters)) {
     if (!isPaged(query)) continue;
