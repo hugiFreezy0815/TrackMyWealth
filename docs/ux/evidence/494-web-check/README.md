@@ -15,9 +15,9 @@ workspace), a "DKB" portfolio with a EUR "Girokonto" (CASH) and a "Tagesgeld" (S
 an opening balance, 60 hand-entered bookings (four left uncategorised), an internal transfer to
 Tagesgeld, an import of the committed synthetic fixture
 `backend/src/test/resources/import/dkb-girokonto-synthetic.csv` with one imported booking then
-voided (it gets a reversal row), and a statement snapshot that does not match the ledger. The
-generated passwords go to a scratch env file. Result: 64 transactions, reconciliation
-`OPEN_DIFFERENCE`.
+corrected (the original is voided, gets a reversal row and can be opened from the replacement's
+history), and a statement snapshot that does not match the ledger. The generated passwords go to a
+scratch env file. The original evidence run had 64 transactions and reconciliation `OPEN_DIFFERENCE`.
 
 | Screenshot | What it shows |
 |---|---|
@@ -27,6 +27,20 @@ generated passwords go to a scratch env file. Result: 64 transactions, reconcili
 | `account-zoom-200.png` | 640 × 450, device scale factor 2: a responsive viewport/DPR simulation, **not** an actual 200% browser zoom check |
 | `account-desktop.png` | 1280 × 900: the W06 table (Date, Description, Category, Amount) with the voided row struck through, "Reversal of 28 Jan 2031", "Internal transfer · excluded", uncategorised chips in warning style |
 | `account-desktop-after-flows.png` | After load more, a category change, the amount sort, archive and restore |
+
+**Re-run 2026-11-17 (PR #605 review, branch merged with `main` at a676f9c4).** Fresh compose
+stack, `seed.mjs` (65 transactions, `OPEN_DIFFERENCE`), Metro web, system Chrome headless.
+`account-detail.mjs` exited 0. All four S4 keyboard assertions were true: Arrow Down/Up and Tab
+scroll the account container to the focused row; focus returns to the opening row after following
+the related transaction; focus moves to the "Account detail" heading when a filter removed the
+opening row; the account detail stays visible beside S4. Axe found no violations (phone light,
+phone dark, desktop). No horizontal scroll at 390, 320, 640 @2x and 1280 px. No page or console
+errors. Flows: "Showing 65 of 65" after Load more; Uncategorised 4 → 3 via `PUT …/category`
+`If-Match: "1"`; archive `If-Match: "0"`, restore `If-Match: "1"`; Import disabled while archived;
+Escape returns focus to "Account actions". This run found two problems, both fixed in the PR. Enter
+did not follow "Open the previous transaction" (react-native-web ignores Enter on a
+`role="link"` div; fixed with `linkKeyProps`). `open()` waited for "Showing 50 of", but the phone
+list already loads every page on scroll. The screenshots above are from the original run.
 
 **Results**
 

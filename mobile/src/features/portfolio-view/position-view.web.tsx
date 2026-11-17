@@ -3,6 +3,7 @@ import { useIntl } from 'react-intl';
 import { Pressable, Text, View, useWindowDimensions } from 'react-native';
 
 import { Amount, Figure, ValueStatusBadge } from '@/components/shared';
+import { linkKeyProps } from '@/components/shared/link-key';
 import { isValueKnown } from '@/components/shared/value-status';
 import { Spacing, TypeScale } from '@/constants/theme';
 import { msg } from '@/features/overview/overview-text';
@@ -73,6 +74,7 @@ function PositionCell({
       accessibilityLabel={label}
       accessibilityHint={msg(intl, 'portfolio.position.openHint')}
       onPress={onOpen}
+      {...linkKeyProps(onOpen)}
       style={style}
     >
       {content}
