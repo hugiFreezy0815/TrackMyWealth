@@ -47,7 +47,8 @@ async function open({ width, height, colorScheme = 'light', deviceScaleFactor = 
     history.pushState({}, '', path);
     dispatchEvent(new PopStateEvent('popstate'));
   }, `/accounts/${accountId}`);
-  await page.getByText(/^Showing 50 of \d+$/).waitFor({ timeout: 30000 });
+  // Phone pages on scroll (onEndReached) and may already show every row; desktop stops at 50.
+  await page.getByText(/^Showing \d+ of \d+$/).waitFor({ timeout: 30000 });
   return { context, page, errors, writes, lists };
 }
 
