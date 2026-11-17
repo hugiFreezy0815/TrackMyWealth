@@ -1,0 +1,40 @@
+PASS  en phone foreign row announces the converted balance — Demo · Glacier Franc Current, minus 100.00 Swiss francs, approximately minus 108.31 euros, Current account
+PASS  en phone foreign row shows "≈" on screen — Demo · Glacier Franc Current Current account −CHF 100.00 ≈−EUR 108.31
+PASS  en phone same-currency row has no conversion — Demo · Paper Moon Current, 2500.00 euros, Current account
+PASS  en phone unknown row says "Value unknown" without conversion — Demo · Glacier Franc Savings, Value unknown, Savings
+PASS  en phone unknown row shows exactly one "–" — 1
+PASS  en phone unknown "–" is not in loss colour — dash rgb(11, 28, 63), name rgb(11, 28, 63)
+PASS  en phone hidden: foreign row label masked — Demo · Glacier Franc Current, hidden, Current account
+PASS  en phone hidden: no converted or native figure anywhere
+PASS  en phone no console or page error
+PASS  en desktop foreign row announces the converted balance — Demo · Glacier Franc Current, minus 100.00 Swiss francs, approximately minus 108.31 euros, Current account
+PASS  en desktop foreign row shows "≈" on screen — Demo · Glacier Franc Current Current account −CHF 100.00 ≈−EUR 108.31
+PASS  en desktop same-currency row has no conversion — Demo · Paper Moon Current, 2500.00 euros, Current account
+PASS  en desktop unknown row says "Value unknown" without conversion — Demo · Glacier Franc Savings, Value unknown, Savings
+PASS  en desktop unknown row shows exactly one "–" — 1
+PASS  en desktop unknown "–" is not in loss colour — dash rgb(11, 28, 63), name rgb(11, 28, 63)
+PASS  en desktop hidden: foreign row label masked — Demo · Glacier Franc Current, hidden, Current account
+PASS  en desktop hidden: no converted or native figure anywhere
+PASS  en desktop no console or page error
+axe en phone Portfolio View: no violations
+axe en desktop Portfolio View: no violations
+PASS  de-DE phone foreign row announces the converted balance — Demo · Glacier Franc Current, minus 100,00 Schweizer Franken, ungefähr minus 108,31 Euro, Girokonto
+PASS  de-DE phone foreign row shows "≈" on screen — Demo · Glacier Franc Current Girokonto −CHF 100.00 ≈−EUR 108.31
+PASS  de-DE phone same-currency row has no conversion — Demo · Paper Moon Current, 2500,00 Euro, Girokonto
+PASS  de-DE phone unknown row says "Wert unbekannt" without conversion — Demo · Glacier Franc Savings, Wert unbekannt, Sparen
+PASS  de-DE phone unknown row shows exactly one "–" — 1
+PASS  de-DE phone unknown "–" is not in loss colour — dash rgb(11, 28, 63), name rgb(11, 28, 63)
+PASS  de-DE phone hidden: foreign row label masked — Demo · Glacier Franc Current, verborgen, Girokonto
+PASS  de-DE phone hidden: no converted or native figure anywhere
+FAIL  de-DE phone no console or page error — Minified React error #418; visit https://react.dev/errors/418?args[]=text&args[]= for the full message or use the non-minified dev environment for full errors a
+axe de-DE phone Portfolio View: no violations
+PASS  de-CH phone foreign row announces the converted balance — Demo · Glacier Franc Current, minus 100.00 Schweizer Franken, ungefähr minus 108.31 Euro, Privatkonto
+PASS  de-CH phone foreign row shows "≈" on screen — Demo · Glacier Franc Current Privatkonto −CHF 100.00 ≈−EUR 108.31
+PASS  de-CH phone same-currency row has no conversion — Demo · Paper Moon Current, 2500.00 Euro, Privatkonto
+PASS  de-CH phone unknown row says "Wert unbekannt" without conversion — Demo · Glacier Franc Savings, Wert unbekannt, Sparen
+PASS  de-CH phone unknown row shows exactly one "–" — 1
+PASS  de-CH phone unknown "–" is not in loss colour — dash rgb(11, 28, 63), name rgb(11, 28, 63)
+PASS  de-CH phone hidden: foreign row label masked — Demo · Glacier Franc Current, verborgen, Privatkonto
+PASS  de-CH phone hidden: no converted or native figure anywhere
+FAIL  de-CH phone no console or page error — Minified React error #418; visit https://react.dev/errors/418?args[]=text&args[]= for the full message or use the non-minified dev environment for full errors a
+axe de-CH phone Portfolio View: no violations
