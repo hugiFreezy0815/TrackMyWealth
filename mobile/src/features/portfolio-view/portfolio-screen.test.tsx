@@ -666,15 +666,15 @@ describe('S2 header, explanation and data source', () => {
     [
       'en',
       'Institution DKB · Germany · portfolio currency EUR',
-      'CSV: last import 18 Oct 2026 · 41 transactions',
+      'CSV: last import 17 Oct 2026 · 41 transactions',
     ],
     [
       'de',
       'Institut DKB · Deutschland · Portfoliowährung EUR',
-      'CSV: letzter Import 18.10.2026 · 41 Buchungen',
+      'CSV: letzter Import 17.10.2026 · 41 Buchungen',
     ],
   ] as const)(
-    'localizes the country and the last import date in %s',
+    'localizes the country and uses the local commit day across UTC midnight in %s',
     async (locale, subtitle, lastImport) => {
       setData(
         view([], {
@@ -682,16 +682,33 @@ describe('S2 header, explanation and data source', () => {
           lastImport: {
             fileFormat: 'CSV',
             uploadedAt: '2026-10-16T12:00:00Z',
-            committedAt: '2026-10-18T12:00:00Z',
+            committedAt: '2026-10-18T00:15:00Z',
             transactionCount: 41,
           },
         }),
         undefined,
         [{ ...listItem, country: 'DE' }],
       );
-      await mount(locale);
-      expect(screen.getByText(subtitle)).toBeTruthy();
-      expect(screen.getByText(lastImport)).toBeTruthy();
+      const DateTimeFormat = Intl.DateTimeFormat;
+      const formatInDeviceZone = (
+        locales?: Intl.LocalesArgument,
+        options?: Intl.DateTimeFormatOptions,
+      ) =>
+        new DateTimeFormat(locales, {
+          ...options,
+          timeZone: options?.timeZone ?? 'America/Los_Angeles',
+        });
+      Intl.DateTimeFormat = new Proxy(DateTimeFormat, {
+        apply: (_target, _thisArg, [locales, options]) => formatInDeviceZone(locales, options),
+        construct: (_target, [locales, options]) => formatInDeviceZone(locales, options),
+      });
+      try {
+        await mount(locale);
+        expect(screen.getByText(subtitle)).toBeTruthy();
+        expect(screen.getByText(lastImport)).toBeTruthy();
+      } finally {
+        Intl.DateTimeFormat = DateTimeFormat;
+      }
     },
   );
 
