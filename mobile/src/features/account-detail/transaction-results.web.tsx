@@ -9,6 +9,7 @@ import { formatDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
 
 import { presentTransaction, type RowContext, type Transaction } from './model';
+import { transactionElementId } from './row-focus';
 import { TransactionResults as PhoneResults } from './transaction-results.native';
 import { focusAdjacentTransaction, revealFocusedRow } from './transaction-keyboard.web';
 
@@ -101,6 +102,7 @@ function TransactionTable({
                 <td style={cellStyle}>
                   <button
                     type="button"
+                    id={transactionElementId(transaction.id)}
                     data-transaction-open
                     style={{
                       border: 0,
