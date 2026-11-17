@@ -1,0 +1,222 @@
+{
+  "results": [
+    {
+      "name": "AT-01: first transaction row reachable by Tab",
+      "pass": true,
+      "detail": "Tab stop 11"
+    },
+    {
+      "name": "AT-01: focus visible on every stop",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AT-01: Shift+Tab moves back",
+      "pass": true,
+      "detail": "Newest first ⌄"
+    },
+    {
+      "name": "AT-03: Oldest first: focus back on the sort control",
+      "pass": true,
+      "detail": "Oldest first ⌄"
+    },
+    {
+      "name": "AT-03: Oldest first: rows in order",
+      "pass": true,
+      "detail": "1767308400000, 1767308400000, 1767394800000, 1767394800000"
+    },
+    {
+      "name": "AT-03: Largest amount: focus back on the sort control",
+      "pass": true,
+      "detail": "Largest amount ⌄"
+    },
+    {
+      "name": "AT-03: Largest amount: rows in order",
+      "pass": true,
+      "detail": "-7.61, -7.62, -7.87, -8.03"
+    },
+    {
+      "name": "AT-03: Smallest amount: focus back on the sort control",
+      "pass": true,
+      "detail": "Smallest amount ⌄"
+    },
+    {
+      "name": "AT-03: Smallest amount: rows in order",
+      "pass": true,
+      "detail": "-204.88, -203.81, -203.76, -203.32"
+    },
+    {
+      "name": "AT-03: Newest first: focus back on the sort control",
+      "pass": true,
+      "detail": "Newest first ⌄"
+    },
+    {
+      "name": "AT-03: Newest first: rows in order",
+      "pass": true,
+      "detail": "1794438000000, 1794438000000, 1794438000000, 1794438000000"
+    },
+    {
+      "name": "Load more: focus on the first new row",
+      "pass": true,
+      "detail": "Synthetic Bookshop 00017"
+    },
+    {
+      "name": "Load more: count announced in the polite live region",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AT-05 (1k): ArrowDown reaches row 1,000",
+      "pass": true,
+      "detail": "Synthetic Streaming 00964"
+    },
+    {
+      "name": "AT-05 (1k): focused row scrolled into view",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AT-04: details panel takes focus",
+      "pass": true,
+      "detail": "Synthetic Streaming 00964"
+    },
+    {
+      "name": "AT-04: focus returns to the same row",
+      "pass": true,
+      "detail": "Synthetic Streaming 00964"
+    },
+    {
+      "name": "AT-06: one polite count after filtering, no diagnostics",
+      "pass": true,
+      "detail": "polite: Showing 8 of 8"
+    },
+    {
+      "name": "axe: desktop, Uncategorised filter",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "Category save: focus moves to the next row",
+      "pass": true,
+      "detail": "Yk818947 1eb7"
+    },
+    {
+      "name": "Category save: new count announced",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "Category save on the last row: focus moves to the previous row",
+      "pass": true,
+      "detail": "Yk3473da 1bb1"
+    },
+    {
+      "name": "Category save of the only row: focus moves to the account heading",
+      "pass": true,
+      "detail": "Demo · Paper Moon Current"
+    },
+    {
+      "name": "CWV: LCP ≤ 2.5 s (sign-in, first load)",
+      "pass": true,
+      "detail": "120 ms"
+    },
+    {
+      "name": "CWV: account list visible ≤ 2.5 s after navigation",
+      "pass": true,
+      "detail": "787 ms"
+    },
+    {
+      "name": "CWV: CLS ≤ 0.1 (whole session)",
+      "pass": true,
+      "detail": "0.017"
+    },
+    {
+      "name": "CWV: INP ≤ 200 ms (slowest interaction, ~1,000 arrow keys and clicks)",
+      "pass": true,
+      "detail": "40 ms"
+    },
+    {
+      "name": "desktop: no console errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AT-07: 320 px: no sideways scroll, nothing truncated",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "axe: 320 px",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AT-07: 200 % zoom active (window 1280)",
+      "pass": true,
+      "detail": "{\"dpr\":2,\"css\":640,\"window\":1280}"
+    },
+    {
+      "name": "AT-07: 200 % zoom, window 1280 (640 CSS px): no sideways scroll, nothing truncated",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AT-07: 200 % zoom active (window 780)",
+      "pass": true,
+      "detail": "{\"dpr\":2,\"css\":390,\"window\":780}"
+    },
+    {
+      "name": "AT-07: 200 % zoom, window 780 (390 CSS px): no sideways scroll, nothing truncated",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AT-07: forced colours: focus visible",
+      "pass": true,
+      "detail": ""
+    }
+  ],
+  "data": {
+    "listVisibleMs": 787,
+    "tabStops": [
+      "DIV:Overview",
+      "DIV:Settings",
+      "DIV:Hide amounts",
+      "BUTTON:‹ Back to overview",
+      "BUTTON:Account actions",
+      "BUTTON:−EUR 72'845.91≈−CHF 67'258.63EstimatedAs of 17 Nov 2026",
+      "DIV:All",
+      "DIV:Uncategorised 8",
+      "BUTTON:⚠ 8 transactions need a categoryThey are counted, never hidd",
+      "BUTTON:Newest first ⌄",
+      "BUTTON:Yk6332c2 bcb5"
+    ],
+    "loadMoreMsTo1000": [
+      113,
+      128,
+      118,
+      127,
+      131,
+      132,
+      133,
+      141,
+      132,
+      148,
+      146,
+      147,
+      165,
+      180,
+      162,
+      182,
+      179,
+      195
+    ],
+    "vitals": {
+      "lcpSignIn": 120,
+      "cls": 0.01701806640625,
+      "inpApprox": 40,
+      "interactions": 1031,
+      "listVisibleMs": 787
+    }
+  }
+}

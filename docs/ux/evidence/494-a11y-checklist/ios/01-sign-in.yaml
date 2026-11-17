@@ -1,0 +1,29 @@
+# #494 native check: fresh install, sign in as the demo partner (no MFA).
+appId: com.anonymous.trackmywealth
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "Sign in"
+    timeout: 60000
+- tapOn:
+    text: "Email"
+    index: 1
+- inputText: ${TMW_EMAIL}
+- pressKey: Enter
+- tapOn:
+    text: "Password"
+    index: 1
+- inputText: ${TMW_PASSWORD}
+- pressKey: Enter
+- tapOn:
+    text: "Sign in"
+    index: 1
+    optional: true
+- tapOn:
+    text: "Not Now"
+    optional: true
+- extendedWaitUntil:
+    visible: "Overview"
+    timeout: 60000

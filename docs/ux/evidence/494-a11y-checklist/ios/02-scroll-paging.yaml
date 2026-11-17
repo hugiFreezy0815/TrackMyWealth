@@ -1,0 +1,21 @@
+# #494 native check: the account opened by deep link (run-494.sh). Scrolling alone loads pages
+# (infinite scroll, next page when the last ten rows come into view). Seeded rows 500-599 sit on
+# pages 11-12: seeing any of them means ten pages loaded by scrolling, with no button. A range,
+# not one row: a swipe moves several tall rows, so a single row can pass between two checks.
+# On iOS a row is one button whose label joins title, type and amounts: match the whole label.
+appId: com.anonymous.trackmywealth
+---
+- tapOn:
+    text: "Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "Uncategorised ${UNCAT}"
+    timeout: 60000
+- takeScreenshot: ios-494-01-account
+- scrollUntilVisible:
+    element:
+      text: "Synthetic [A-Za-z ]+ 005[0-9][0-9],.*"
+    direction: DOWN
+    speed: 60
+    timeout: 480000
+- takeScreenshot: ios-494-02-after-scroll-paging

@@ -1,0 +1,107 @@
+{
+  "results": [
+    {
+      "name": "all rows loaded",
+      "pass": true,
+      "detail": "10024"
+    },
+    {
+      "name": "Load more: INP ≤ 200 ms at every size up to 10k",
+      "pass": true,
+      "detail": "16 ms"
+    },
+    {
+      "name": "AT-05 (10k): ArrowDown reaches the last row",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AT-05 (10k): focused row scrolled into view",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AT-05 (10k): arrow key latency ≤ 200 ms",
+      "pass": true,
+      "detail": "slowest 64 ms, 6 ms per press incl. driver"
+    },
+    {
+      "name": "filter switch at 10k: INP ≤ 200 ms",
+      "pass": true,
+      "detail": "event 16 ms, rows replaced and painted after 469 ms"
+    },
+    {
+      "name": "filter switch at 10k: DOM back to one page",
+      "pass": true,
+      "detail": "2 rows, 122 nodes"
+    },
+    {
+      "name": "no page errors",
+      "pass": true,
+      "detail": ""
+    }
+  ],
+  "timeline": [
+    {
+      "shown": 1000,
+      "loadMoreMs": 46,
+      "loadMoreEventMs": 16,
+      "rows": 1000,
+      "domNodes": 10616,
+      "heapMb": 30,
+      "slowestEventMs": 16
+    },
+    {
+      "shown": 2500,
+      "loadMoreMs": 46,
+      "loadMoreEventMs": 16,
+      "rows": 2500,
+      "domNodes": 28616,
+      "heapMb": 62,
+      "slowestEventMs": 16
+    },
+    {
+      "shown": 5000,
+      "loadMoreMs": 41,
+      "loadMoreEventMs": 0,
+      "rows": 5000,
+      "domNodes": 58616,
+      "heapMb": 103,
+      "slowestEventMs": 0
+    },
+    {
+      "shown": 7500,
+      "loadMoreMs": 58,
+      "loadMoreEventMs": 0,
+      "rows": 7500,
+      "domNodes": 88616,
+      "heapMb": 120,
+      "slowestEventMs": 0
+    },
+    {
+      "shown": 10024,
+      "loadMoreMs": 67,
+      "loadMoreEventMs": 0,
+      "rows": 10024,
+      "domNodes": 118902,
+      "heapMb": 174,
+      "slowestEventMs": 16
+    }
+  ],
+  "arrows": {
+    "rows": 10024,
+    "domNodes": 118902,
+    "heapMb": 157,
+    "slowestEventMs": 64
+  },
+  "afterFilter": {
+    "rows": 2,
+    "domNodes": 122,
+    "heapMb": 175,
+    "slowestEventMs": 472
+  },
+  "filterTiming": {
+    "totalMs": 469,
+    "eventMs": 16
+  }
+}
