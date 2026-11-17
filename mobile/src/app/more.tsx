@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useIntl } from 'react-intl';
+import { linkKeyProps } from '@/components/shared/link-key';
 import { ThemedText } from '@/components/themed-text';
 import { ShellScreen } from '@/features/shell/screen';
 
@@ -13,6 +14,7 @@ export default function MoreRoute() {
         accessibilityRole="link"
         style={styles.item}
         onPress={() => router.push('/settings')}
+        {...linkKeyProps(() => router.push('/settings'))}
       >
         <ThemedText>{intl.formatMessage({ id: 'nav.settings' })}</ThemedText>
       </Pressable>

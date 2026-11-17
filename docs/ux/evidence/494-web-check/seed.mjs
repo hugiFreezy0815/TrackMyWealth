@@ -122,7 +122,7 @@ await call(
   }),
 );
 
-// Import the synthetic statement, then void one imported booking (it gets a reversal row).
+// Correct an imported booking. The original is voided and stays readable from S4 history.
 const form = new FormData();
 form.append(
   'file',
@@ -136,11 +136,33 @@ await call('POST', `${batchPath}/commit`, as({ ifMatch: batch.etag }));
 const page = (await call('GET', `${txPath}?size=200`, as())).json;
 const imported = page.content.find((row) => row.importBatch && row.amount.startsWith('-'));
 const current = await call('GET', `${txPath}/${imported.id}`, as());
-await call(
-  'DELETE',
-  `${txPath}/${imported.id}?reason=${encodeURIComponent('Synthetic duplicate')}`,
-  as({ ifMatch: current.etag }),
+const correction = await call(
+  'PUT',
+  `${txPath}/${imported.id}`,
+  as({
+    body: {
+      transactionType: imported.transactionType,
+      bookingDate: imported.bookingDate,
+      amount: '-18.00',
+      currency: imported.currency,
+      merchantDescription: 'Synthetic corrected purchase',
+      reason: 'Synthetic correction',
+    },
+    ifMatch: current.etag,
+  }),
 );
+const corrected = await call(
+  'GET',
+  `${txPath}/${correction.json.transaction.id}`,
+  as(),
+);
+if (corrected.json.categoryId !== pick.id) {
+  await call(
+    'PUT',
+    `${txPath}/${corrected.json.id}/category`,
+    as({ body: { categoryId: pick.id }, ifMatch: corrected.etag }),
+  );
+}
 
 // A statement balance that does not match the ledger: an open reconciliation difference.
 await call(

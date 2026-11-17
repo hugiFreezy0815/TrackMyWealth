@@ -48,6 +48,7 @@ import {
 } from '@/components/shared';
 import { Fonts, Spacing, TypeScale, Radii } from '@/constants/theme';
 import { moveAccessibilityFocus } from '@/components/shared/accessibility-focus';
+import { linkKeyProps } from '@/components/shared/link-key';
 import { transactionTypeLabel, transactionWarningTexts } from '@/features/account-detail/model';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { formatDate, formatDateTime } from '@/format/date';
@@ -1101,6 +1102,7 @@ export function TransactionDetail({
                   <Pressable
                     accessibilityRole="link"
                     onPress={() => onRelatedTransaction(relatedId)}
+                    {...linkKeyProps(() => onRelatedTransaction(relatedId))}
                     style={{ minHeight: 44, justifyContent: 'center' }}
                   >
                     <Text style={{ color: theme.brandLink }}>

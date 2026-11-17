@@ -10,6 +10,7 @@ import { useTheme } from '@/hooks/use-theme';
 
 import { presentTransaction, type RowContext, type Transaction } from './model';
 import { TransactionResults as PhoneResults } from './transaction-results.native';
+import { focusAdjacentTransaction, revealFocusedRow } from './transaction-keyboard.web';
 
 export type TransactionResultsProps = {
   transactions: Transaction[];
@@ -97,11 +98,12 @@ function TransactionTable({
           {transactions.map((transaction) => {
             const view = presentTransaction(transaction, webContext, intl);
             return (
-              <tr key={transaction.id}>
+              <tr key={transaction.id} onFocus={revealFocusedRow}>
                 <td style={cellStyle}>{formatDate(transaction.bookingDate, intl.locale)}</td>
                 <td style={cellStyle}>
                   <button
                     type="button"
+                    data-transaction-open
                     style={{
                       border: 0,
                       background: 'transparent',
@@ -114,7 +116,15 @@ function TransactionTable({
                     }}
                     aria-current={selectedTransactionId === transaction.id ? 'true' : undefined}
                     disabled={!onOpen}
-                    onClick={onOpen ? () => onOpen(transaction.id) : undefined}
+                    onKeyDown={focusAdjacentTransaction}
+                    onClick={
+                      onOpen
+                        ? (event) => {
+                            event.currentTarget.focus();
+                            onOpen(transaction.id);
+                          }
+                        : undefined
+                    }
                   >
                     {view.title}
                   </button>

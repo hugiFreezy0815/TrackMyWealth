@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import type { ReactElement, ReactNode } from 'react';
+import type { ComponentRef, ReactElement, ReactNode, Ref } from 'react';
 import {
   Platform,
   Pressable,
@@ -8,6 +8,7 @@ import {
   View,
   useWindowDimensions,
   type RefreshControlProps,
+  type Text,
 } from 'react-native';
 import { useIntl } from 'react-intl';
 
@@ -23,6 +24,7 @@ export const DETAIL_PANEL_WIDTH = 360;
 
 type Props = {
   title: string;
+  titleRef?: Ref<ComponentRef<typeof Text>>;
   children: ReactNode;
   /** Contextual detail (W01 right panel): beside the content on desktop, below it otherwise. */
   aside?: ReactNode;
@@ -38,6 +40,7 @@ type Props = {
 
 export function ShellScreen({
   title,
+  titleRef,
   children,
   aside,
   privacyToggle = true,
@@ -62,7 +65,13 @@ export function ShellScreen({
     >
       <View style={styles.content}>
         <View style={styles.header}>
-          <ThemedText type="subtitle" role="heading" style={styles.heading}>
+          <ThemedText
+            ref={titleRef}
+            tabIndex={titleRef ? -1 : undefined}
+            type="subtitle"
+            role="heading"
+            style={styles.heading}
+          >
             {title}
           </ThemedText>
           {privacyToggle && <AmountVisibilityToggle />}
