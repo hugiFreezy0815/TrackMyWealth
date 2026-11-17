@@ -1,0 +1,142 @@
+{
+  "results": [
+    {
+      "name": "desktop account detail: axe",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop uncategorised filter: axe",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop: back to All shows page 0 only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop: back to All requests page 0 once",
+      "pass": true,
+      "detail": "0/false/bookingDate,desc"
+    },
+    {
+      "name": "desktop: back to Newest first shows page 0 only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop: back to Newest first requests page 0 once",
+      "pass": true,
+      "detail": "0/false/bookingDate,desc"
+    },
+    {
+      "name": "desktop: cached page 0 stays visible",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop: Load more disabled after failed refresh",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop: no page 1 while page 0 is stale",
+      "pass": true,
+      "detail": "0/false/bookingDate,desc 0/false/bookingDate,desc 0/false/bookingDate,desc 0/false/bookingDate,desc"
+    },
+    {
+      "name": "desktop failed refresh: axe",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop: Load more enabled after Retry",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop: paging resumes after Retry",
+      "pass": true,
+      "detail": "0/false/bookingDate,desc 0/false/bookingDate,desc 0/false/bookingDate,desc 0/false/bookingDate,desc 0/false/bookingDate,desc 1/false/bookingDate,desc"
+    },
+    {
+      "name": "desktop: no console errors (besides the injected failure)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "phone account detail: axe",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "phone uncategorised filter: axe",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "phone: back to All shows page 0 only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "phone: back to All requests page 0 once",
+      "pass": true,
+      "detail": "0/false/bookingDate,desc"
+    },
+    {
+      "name": "phone: back to Newest first shows page 0 only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "phone: back to Newest first requests page 0 once",
+      "pass": true,
+      "detail": "0/false/bookingDate,desc"
+    },
+    {
+      "name": "phone: cached page 0 stays visible",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "phone: Load more disabled after failed refresh",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "phone: no page 1 while page 0 is stale",
+      "pass": true,
+      "detail": "0/false/bookingDate,desc 0/false/bookingDate,desc 0/false/bookingDate,desc 0/false/bookingDate,desc"
+    },
+    {
+      "name": "phone failed refresh: axe",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "phone: Load more enabled after Retry",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "phone: paging resumes after Retry",
+      "pass": true,
+      "detail": "0/false/bookingDate,desc 0/false/bookingDate,desc 0/false/bookingDate,desc 0/false/bookingDate,desc 0/false/bookingDate,desc 1/false/bookingDate,desc"
+    },
+    {
+      "name": "phone: no console errors (besides the injected failure)",
+      "pass": true,
+      "detail": ""
+    }
+  ],
+  "axeReport": {
+    "desktop account detail": [],
+    "desktop uncategorised filter": [],
+    "desktop failed refresh": [],
+    "phone account detail": [],
+    "phone uncategorised filter": [],
+    "phone failed refresh": []
+  }
+}
