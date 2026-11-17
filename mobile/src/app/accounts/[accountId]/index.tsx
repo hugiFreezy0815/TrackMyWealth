@@ -1,9 +1,9 @@
-import { useLayoutEffect, useRef, useState, type ComponentRef } from 'react';
+import { useRef, useState, type ComponentRef } from 'react';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Platform, RefreshControl, useWindowDimensions, type Text } from 'react-native';
 import { useIntl } from 'react-intl';
-import { moveAccessibilityFocus } from '@/components/shared/accessibility-focus';
 import { AccountDetail, useAccountRefresh } from '@/features/account-detail/account-detail';
+import { usePanelFocusReturn } from '@/features/account-detail/panel-focus';
 import { isAdministrator } from '@/features/auth/session';
 import { useIdentity } from '@/features/auth/use-identity';
 import { homeFor } from '@/features/shell/navigation';
@@ -20,24 +20,13 @@ export default function AccountDetailRoute() {
   const { width } = useWindowDimensions();
   const webPanel = Platform.OS === 'web' && width >= 1024;
   const [selectedTransaction, setSelectedTransaction] = useState<string | null>(null);
-  const openingRow = useRef<HTMLElement | null>(null);
-  const restoreFocus = useRef(false);
   const titleRef = useRef<ComponentRef<typeof Text>>(null);
-
-  useLayoutEffect(() => {
-    if (selectedTransaction !== null || !restoreFocus.current) return;
-    restoreFocus.current = false;
-    const opener = openingRow.current;
-    openingRow.current = null;
-    if (opener?.isConnected && document.activeElement !== opener) opener.focus();
-    if (!opener || document.activeElement !== opener) moveAccessibilityFocus(titleRef.current);
-  }, [selectedTransaction]);
+  const panelFocus = usePanelFocusReturn(selectedTransaction !== null, titleRef);
 
   if (isAdministrator(identity)) return <Redirect href={homeFor(true)} />;
   const openTransaction = (transactionId: string) => {
     if (webPanel) {
-      openingRow.current =
-        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      panelFocus.rememberOpener();
       setSelectedTransaction(transactionId);
     } else {
       router.push({
@@ -47,7 +36,7 @@ export default function AccountDetailRoute() {
     }
   };
   const closePanel = () => {
-    restoreFocus.current = true;
+    panelFocus.returnFocusOnClose();
     setSelectedTransaction(null);
   };
   return (

@@ -1,5 +1,5 @@
 import { useIntl } from 'react-intl';
-import type { KeyboardEvent, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useWindowDimensions } from 'react-native';
 
 import { Amount } from '@/components/shared';
@@ -10,6 +10,7 @@ import { useTheme } from '@/hooks/use-theme';
 
 import { presentTransaction, type RowContext, type Transaction } from './model';
 import { TransactionResults as PhoneResults } from './transaction-results.native';
+import { focusAdjacentTransaction, revealFocusedRow } from './transaction-keyboard.web';
 
 export type TransactionResultsProps = {
   transactions: Transaction[];
@@ -35,17 +36,6 @@ export function TransactionResults(props: TransactionResultsProps) {
   ) : (
     <TransactionTable {...props} />
   );
-}
-
-function focusAdjacentTransaction(event: KeyboardEvent<HTMLButtonElement>) {
-  const { key, currentTarget, altKey, ctrlKey, metaKey, shiftKey } = event;
-  if ((key !== 'ArrowUp' && key !== 'ArrowDown') || altKey || ctrlKey || metaKey || shiftKey)
-    return;
-
-  event.preventDefault();
-  const row = currentTarget.closest('tr');
-  const nextRow = key === 'ArrowUp' ? row?.previousElementSibling : row?.nextElementSibling;
-  nextRow?.querySelector<HTMLButtonElement>('button[data-transaction-open]:enabled')?.focus();
 }
 
 function TransactionTable({
@@ -106,14 +96,7 @@ function TransactionTable({
           {transactions.map((transaction) => {
             const view = presentTransaction(transaction, webContext, intl);
             return (
-              <tr
-                key={transaction.id}
-                onFocus={(event) => {
-                  if (!event.currentTarget.contains(event.relatedTarget)) {
-                    event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-                  }
-                }}
-              >
+              <tr key={transaction.id} onFocus={revealFocusedRow}>
                 <td style={cellStyle}>{formatDate(transaction.bookingDate, intl.locale)}</td>
                 <td style={cellStyle}>
                   <button
