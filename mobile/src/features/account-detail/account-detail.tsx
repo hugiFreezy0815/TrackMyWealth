@@ -764,6 +764,7 @@ export function AccountDetail({
           setCategoryTarget(null);
         }}
         onPick={changeCategory}
+        onDismiss={rowFocus.dialogDismissed}
       />
       <ArchiveDialog
         visible={dialog === 'archive'}

@@ -40,8 +40,15 @@ async function renderList(ids: string[], settled = true) {
     (props: { ids: string[]; settled: boolean }) => useRowFocus(props.ids, props.settled, fallback),
     { initialProps: { ids, settled } },
   );
+  const hook = () => view.result.current;
   return {
-    hook: () => view.result.current,
+    hook: () => ({
+      ...hook(),
+      saveAndDismiss: (id: string, before: string[]) => {
+        hook().afterCategorySave(id, before);
+        hook().dialogDismissed();
+      },
+    }),
     show: async (next: string[], nextSettled = true) => {
       showRows(next);
       await view.rerender({ ids: next, settled: nextSettled });
@@ -65,7 +72,7 @@ describe('S3 list focus after a reload (#494)', () => {
   it('moves focus to the next row when a category save removes the row', async () => {
     const list = await renderList(['a', 'b', 'c']);
     await list.show(['a', 'c']);
-    await act(() => list.hook().afterCategorySave('b', ['a', 'b', 'c']));
+    await act(() => list.hook().saveAndDismiss('b', ['a', 'b', 'c']));
     expect(focusedRow()).toBe(transactionElementId('c'));
     expect(moveAccessibilityFocus).not.toHaveBeenCalled();
   });
@@ -73,27 +80,43 @@ describe('S3 list focus after a reload (#494)', () => {
   it('moves focus to the previous row when the last row leaves', async () => {
     const list = await renderList(['a', 'b']);
     await list.show(['a']);
-    await act(() => list.hook().afterCategorySave('b', ['a', 'b']));
+    await act(() => list.hook().saveAndDismiss('b', ['a', 'b']));
     expect(focusedRow()).toBe(transactionElementId('a'));
   });
 
   it('moves focus to the heading when the list is left empty', async () => {
     const list = await renderList(['a']);
     await list.show([]);
-    await act(() => list.hook().afterCategorySave('a', ['a']));
+    await act(() => list.hook().saveAndDismiss('a', ['a']));
     expect(moveAccessibilityFocus).toHaveBeenCalledWith(heading);
   });
 
   it('leaves focus alone when the saved row stays in the list', async () => {
     const list = await renderList(['a', 'b']);
-    await act(() => list.hook().afterCategorySave('a', ['a', 'b']));
+    await act(() => list.hook().saveAndDismiss('a', ['a', 'b']));
+    expect(focusedRow()).toBeNull();
+    expect(moveAccessibilityFocus).not.toHaveBeenCalled();
+  });
+
+  it('waits until the category dialog has released focus', async () => {
+    const list = await renderList(['a', 'b', 'c']);
+    await list.show(['a', 'c']);
+    await act(() => list.hook().afterCategorySave('b', ['a', 'b', 'c']));
+    expect(focusedRow()).toBeNull();
+    await act(() => list.hook().dialogDismissed());
+    expect(focusedRow()).toBe(transactionElementId('c'));
+  });
+
+  it('ignores a dialog closed without a save', async () => {
+    const list = await renderList(['a', 'b']);
+    await act(() => list.hook().dialogDismissed());
     expect(focusedRow()).toBeNull();
     expect(moveAccessibilityFocus).not.toHaveBeenCalled();
   });
 
   it('waits for a running reload before choosing the row', async () => {
     const list = await renderList(['a', 'b', 'c'], false);
-    await act(() => list.hook().afterCategorySave('b', ['a', 'b', 'c']));
+    await act(() => list.hook().saveAndDismiss('b', ['a', 'b', 'c']));
     expect(focusedRow()).toBeNull();
     await list.show(['a', 'c'], true);
     expect(focusedRow()).toBe(transactionElementId('c'));
@@ -130,7 +153,7 @@ describe('S3 list focus after a reload (#494)', () => {
     Platform.OS = 'ios';
     const list = await renderList(['a', 'b']);
     await list.show(['a']);
-    await act(() => list.hook().afterCategorySave('b', ['a', 'b']));
+    await act(() => list.hook().saveAndDismiss('b', ['a', 'b']));
     expect(focusedRow()).toBeNull();
     expect(moveAccessibilityFocus).not.toHaveBeenCalled();
   });

@@ -9,7 +9,7 @@ type Fallback = { readonly current: Parameters<typeof moveAccessibilityFocus>[0]
 export const transactionElementId = (transactionId: string) => `transaction-${transactionId}`;
 
 type Pending =
-  | { kind: 'removed'; transactionId: string; before: readonly string[] }
+  | { kind: 'removed'; transactionId: string; before: readonly string[]; dismissed: boolean }
   | { kind: 'appended'; before: readonly string[] };
 
 /** The rows nearest to a removed one: the following rows first, then the preceding ones. */
@@ -33,7 +33,8 @@ function focusRow(transactionId: string | undefined): boolean {
  *
  * - After a category save, the reload can drop the row (Uncategorised filter). Focus then moves
  *   to the next row, else the previous one, else `fallback` (the account heading,
- *   `tabIndex={-1}`). A row that stays keeps the focus the closing dialog gives back.
+ *   `tabIndex={-1}`). A row that stays keeps the focus the closing dialog gives back. The move
+ *   waits for `dialogDismissed`: until then the web modal's focus trap pulls focus back in.
  * - After "Load more", focus moves to the first new row: the button may be gone (last page), and
  *   reading continues where the new rows start. The "Showing …" live region announces the count.
  *
@@ -53,6 +54,7 @@ export function useRowFocus(ids: readonly string[], settled: boolean, fallback: 
       focusRow(ids[current.before.length]);
       return;
     }
+    if (!current.dismissed) return;
     pending.current = null;
     if (ids.includes(current.transactionId)) return;
     const next = nearestRows(current.transactionId, current.before).find((id) => ids.includes(id));
@@ -64,7 +66,13 @@ export function useRowFocus(ids: readonly string[], settled: boolean, fallback: 
     /** Call once the save and its list reload are done, with the rows shown before the save. */
     afterCategorySave: (transactionId: string, before: readonly string[]) => {
       if (!enabled) return;
-      pending.current = { kind: 'removed', transactionId, before };
+      pending.current = { kind: 'removed', transactionId, before, dismissed: false };
+    },
+    /** The category dialog has closed and released focus (its `onDismiss`). */
+    dialogDismissed: () => {
+      const current = pending.current;
+      if (current?.kind !== 'removed') return;
+      pending.current = { ...current, dismissed: true };
       setRequest((value) => value + 1);
     },
     /** Call when "Load more" is pressed, with the rows shown before it. */
