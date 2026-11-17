@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useIntl, type IntlShape } from 'react-intl';
-import { Text, View } from 'react-native';
+import { Platform, Text, View } from 'react-native';
 
 import { labelFor } from '@/api/enum-label';
 import { Amount, ValueStatusBadge } from '@/components/shared';
@@ -34,7 +34,7 @@ const MIN_FIGURE_SIZE = 11;
 const GLYPH_EM = 0.62;
 
 export function columnsFor(width: number): 2 | 4 {
-  return width >= MIN_TILE_FOR_FOUR * 4 + GAP * 3 ? 4 : 2;
+  return Platform.OS === 'web' && width >= MIN_TILE_FOR_FOUR * 4 + GAP * 3 ? 4 : 2;
 }
 
 /**

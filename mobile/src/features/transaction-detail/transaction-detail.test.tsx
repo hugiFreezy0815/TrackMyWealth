@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Platform } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import { IntlProvider } from 'react-intl';
 import {
   useAccount,
@@ -15,6 +15,7 @@ import { useConflict } from '@/api/queries/conflict';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import type { components } from '@/api/schema';
 import { ApiError } from '@/api/client';
+import { Fonts } from '@/constants/theme';
 import en from '@/i18n/en.json';
 import de from '@/i18n/de.json';
 import { TransactionDetail } from './transaction-detail';
@@ -211,6 +212,105 @@ describe('S4 transaction detail', () => {
     expect(screen.getByText('Food › Groceries · automatic')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Reset category' })).toBeNull();
     expect(screen.getByText('Bank · Current account')).toBeTruthy();
+  });
+
+  it.each([
+    ['en', 'Converted amount', 'at'],
+    ['de', 'Umrechnungsbetrag', 'zum Kurs'],
+  ] as const)(
+    'shows the server conversion and rate together in %s',
+    async (locale, label, atRate) => {
+      fixtures({
+        ...base,
+        currency: 'EUR',
+        amountInAccountCurrency: '-80.25',
+        fxRateToAccountCurrency: '0.951234',
+      });
+      await show(locale);
+      expect(screen.queryByText(label)).toBeNull();
+
+      await fireEvent.press(screen.getByRole('button', { name: /Details/ }));
+
+      expect(screen.getByText(label)).toBeTruthy();
+      expect(screen.getByText(`≈−CHF 80.25 ${atRate} 0.951234`)).toBeTruthy();
+      expect(screen.getByText('POS')).toBeTruthy();
+    },
+  );
+
+  it('labels the conversion with the spoken amount and rate', async () => {
+    fixtures({
+      ...base,
+      currency: 'EUR',
+      amountInAccountCurrency: '-80.25',
+      fxRateToAccountCurrency: '0.951234',
+    });
+    await show();
+
+    await fireEvent.press(screen.getByRole('button', { name: /Details/ }));
+
+    expect(screen.getByText('≈−CHF 80.25 at 0.951234').props.accessibilityLabel).toBe(
+      'approximately minus 80.25 Swiss francs at 0.951234',
+    );
+  });
+
+  it('shows the converted amount alone when the server sends no rate', async () => {
+    fixtures({
+      ...base,
+      currency: 'EUR',
+      amountInAccountCurrency: '-80.25',
+      fxRateToAccountCurrency: null,
+    });
+    await show();
+
+    await fireEvent.press(screen.getByRole('button', { name: /Details/ }));
+
+    const conversion = screen.getByText('≈−CHF 80.25');
+    expect(conversion.props.accessibilityLabel).toBe('approximately minus 80.25 Swiss francs');
+    expect(screen.queryByText(/ at /)).toBeNull();
+  });
+
+  it('renders the bank code in the monospace font', async () => {
+    fixtures(base);
+    await show();
+
+    await fireEvent.press(screen.getByRole('button', { name: /Details/ }));
+
+    expect(StyleSheet.flatten(screen.getByText('POS').props.style).fontFamily).toBe(Fonts?.mono);
+  });
+
+  it('masks the converted amount and rate in text and accessibility labels', async () => {
+    fixtures({
+      ...base,
+      currency: 'EUR',
+      amountInAccountCurrency: '-80.25',
+      fxRateToAccountCurrency: '0.951234',
+    });
+    jest.mocked(useAmountsHidden).mockReturnValue(true);
+    await show();
+
+    await fireEvent.press(screen.getByRole('button', { name: /Details/ }));
+
+    expect(screen.getByText('Converted amount')).toBeTruthy();
+    expect(screen.queryByText(/80.25|0.951234/)).toBeNull();
+    expect(screen.queryByLabelText(/80[.,]25|0[.,]951234/)).toBeNull();
+  });
+
+  it.each([
+    ['CHF', '-80.25'],
+    ['EUR', null],
+  ])('omits a conversion with currency %s and server amount %s', async (currency, amount) => {
+    fixtures({
+      ...base,
+      currency,
+      amountInAccountCurrency: amount,
+      fxRateToAccountCurrency: '0.951234',
+    });
+    await show();
+
+    await fireEvent.press(screen.getByRole('button', { name: /Details/ }));
+
+    expect(screen.queryByText('Converted amount')).toBeNull();
+    expect(screen.queryByText(/0.951234/)).toBeNull();
   });
 
   it('masks trade quantity in visible text and accessibility labels', async () => {
@@ -613,6 +713,49 @@ describe('S4 transaction detail', () => {
     await waitFor(() =>
       expect(setCategory).toHaveBeenNthCalledWith(2, { categoryId: 'dining', version: 9 }),
     );
+  });
+
+  it.each([
+    ['en', '2026-11-16T18:22:00Z', 'Imported from CAMT statement on 16 Nov 2026'],
+    ['de', '2026-11-16T18:22:00Z', 'Aus CAMT-Auszug vom 16.11.2026 importiert'],
+    ['en', '2026-11-15T23:30:00Z', 'Imported from CAMT statement on 16 Nov 2026'],
+    ['en', 'not a timestamp', 'Imported from CAMT statement on –'],
+    ['en', null, 'Imported transaction'],
+  ] as const)('renders the import history in %s for %s', async (locale, uploadedAt, message) => {
+    const entry: components['schemas']['TransactionHistoryEntryResponse'] = {
+      kind: 'IMPORTED',
+      occurredAt: '2026-11-16T18:23:00Z',
+      actorDisplayName: null,
+      fromCategoryId: null,
+      toCategoryId: null,
+      reason: null,
+      relatedTransactionId: null,
+      importBatch: uploadedAt === null ? null : { id: 'batch-1', fileFormat: 'CAMT', uploadedAt },
+    };
+    jest.mocked(useTransactionHistory).mockReturnValue(
+      success({
+        pages: [
+          {
+            content: [entry],
+            page: { number: 0, size: 50, totalElements: 1, totalPages: 1 },
+          },
+        ],
+      }) as unknown as ReturnType<typeof useTransactionHistory>,
+    );
+
+    // Set a deterministic device default while respecting explicitly requested time zones.
+    const DateTimeFormat = Intl.DateTimeFormat;
+    Intl.DateTimeFormat = new Proxy(DateTimeFormat, {
+      construct(target, [locales, options]) {
+        return new target(locales, { ...options, timeZone: options?.timeZone ?? 'Europe/Zurich' });
+      },
+    });
+    try {
+      await show(locale);
+      expect(screen.getByText(message)).toBeTruthy();
+    } finally {
+      Intl.DateTimeFormat = DateTimeFormat;
+    }
   });
 
   it('keeps deactivated category labels in history without offering them for edits', async () => {

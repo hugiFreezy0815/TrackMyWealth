@@ -161,11 +161,18 @@ exact one:
 | `LEDGER` | negated sum of the card's ledger rows | yes |
 | `LEDGER_FROM_OPENING_BALANCE` | opening balance plus the ledger after the opening date (US-25-04) | yes |
 | `MANUAL_VALUATION` | latest manual valuation on or before the as-of date (`CUSTOM_ASSET`) | yes, as recorded |
-| `LATEST_SNAPSHOT` | newest snapshot balance on or before the as-of date, the opening balance included - an account without a ledger (`has_transactions = false`, vested benefits) | yes, as reported on that date |
+| `LATEST_SNAPSHOT` | newest snapshot balance on or before the as-of date, the opening balance included, for an account without a ledger; for an account holding positions, cash plus all reported holding values from the latest holdings snapshot | yes, as reported on that date |
 | `LEDGER_EMPTY` | card with no rows yet - assumed 0 | **no** - approximation |
 | `ORIGINAL_PRINCIPAL` | a loan's/mortgage's *original* principal, not its outstanding balance (no repayment recorded on it yet) | **no** - approximation |
 | `LEDGER_FROM_STATEMENT_BALANCE` | a loan's/mortgage's newest statement balance (snapshot) on or before the as-of date, adjusted by its ledger after that date (US-07-21) | yes |
 | `ORIGINAL_PRINCIPAL_LESS_REPAYMENTS` | a loan's/mortgage's original principal less the principal repaid on its ledger by the as-of date (US-10-02); repayments from before tracking began are missing | **no** - approximation |
+
+For accounts that hold positions, a newer cash-only snapshot does not replace the holdings
+statement. A missing cash balance, holding value or holding FX rate leaves the account value
+unknown. So does cash in another currency that an imported statement lists but the snapshot does
+not record (#273 keeps only cash in the account's own currency): adding it is a separate decision,
+and leaving it out would understate the value (FR-PERF-018). Convert each holding at the holdings snapshot date, using the same rounding as the
+positions endpoint. A stale holding rate makes the account value stale, as does an old snapshot.
 
 `valueBasis` is `null` when `valueKnown` is `false`. `AccountValuation.valueSourceDate` is the date
 of the observation a `LATEST_SNAPSHOT`, `MANUAL_VALUATION` or `LEDGER_FROM_STATEMENT_BALANCE`
@@ -268,7 +275,7 @@ Which accounts use it is decided by capability flags (DM-17), never by type:
 | Account | With an opening balance |
 |---|---|
 | `has_amortisation` (loan, mortgage) or `manual_valuation` (custom asset) | refused, 422 `OPENING_BALANCE_NOT_APPLICABLE`: they have their own value source |
-| `holds_positions` (depot, mandate, crypto, a pension holding funds) | stored, but the value stays unknown - the cash is only part of it until holdings are valued (EPIC 15) |
+| `holds_positions` (depot, mandate, crypto, a pension holding funds) | stored for reconciliation and warnings; account value comes from the latest holdings statement when complete (#586) |
 | `has_statement_cycle` (credit card) | replaces the card's ledger-only source (`LEDGER`/`LEDGER_EMPTY`) |
 | `has_transactions = false` (vested benefits) | no ledger to add: the account is valued from its latest snapshot on or before the as-of date (`LATEST_SNAPSHOT`), the opening balance being one of them. A newer snapshot supersedes it rather than the opening balance standing forever, and an older regular snapshot still values the account before the opening date: without a ledger the opening balance is no cut-off (#241 review) |
 | everything else (cash, savings, pension) | the source above; without ledger rows after the opening date the value is the opening balance itself |

@@ -32,7 +32,8 @@ public final class ValueBasisValues {
    * The latest snapshot balance on or before the as-of date - the opening balance included - for an
    * account without a ledger ({@code hasTransactions = false}, e.g. {@code VESTED_BENEFITS}), whose
    * snapshots are the only record of its value (#232 review). {@code AccountValuation
-   * .valueSourceDate} says how old it is.
+   * .valueSourceDate} says how old it is. For an account holding positions, this is the cash and
+   * reported holdings of its latest holdings snapshot.
    */
   public static final String LATEST_SNAPSHOT = "LATEST_SNAPSHOT";
 

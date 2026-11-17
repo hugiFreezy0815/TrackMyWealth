@@ -137,6 +137,11 @@ The server returns `X-Correlation-Id` on responses and normally copies it to the
 `correlationId`. Quote the assigned ID when reporting an error. You may supply an opaque ID
 matching `[A-Za-z0-9._-]{8,64}`; the server generates a UUID when it is absent or invalid.
 
+Clients can send an optional [W3C `traceparent`](https://www.w3.org/TR/trace-context/)
+header. The backend continues a valid trace and returns the trace ID with its own span ID in
+the response's `traceparent`. An absent or malformed header starts a new trace. Use
+`X-Correlation-Id` as the support reference.
+
 Three kinds of response can carry `Retry-After`; honor it when present:
 
 - `429 RATE_LIMITED` ([RFC 6585](https://www.rfc-editor.org/rfc/rfc6585)), on any operation;

@@ -41,7 +41,11 @@ export function StartingValueStep({
   const errors = validationErrors(mutation.error);
   const fieldError = (...fields: string[]) =>
     fields.some((field) => errors[field]) ? msg('addFlow.fieldError') : undefined;
-  const canSave = online && !mutation.isPending && amount !== null && !amountInvalid && !!date;
+  // #585: the server rejects a starting value dated before the account's opening date.
+  const openedAt = account.openedAt ?? undefined;
+  const beforeOpening = !!openedAt && !!date && date < openedAt;
+  const canSave =
+    online && !mutation.isPending && amount !== null && !amountInvalid && !!date && !beforeOpening;
 
   async function save() {
     if (!canSave || amount === null || busy.current) return;
@@ -78,8 +82,11 @@ export function StartingValueStep({
         label={msg('addAccount.date')}
         value={date}
         onChange={setDate}
+        minimumDate={openedAt}
         maximumDate={localDateToIso(new Date())}
-        error={fieldError('date', 'valuationDate')}
+        error={
+          beforeOpening ? msg('addAccount.date.beforeOpening') : fieldError('date', 'valuationDate')
+        }
       />
       <AmountField
         label={msg(valuationStep ? 'addAccount.value' : 'addAccount.balance')}

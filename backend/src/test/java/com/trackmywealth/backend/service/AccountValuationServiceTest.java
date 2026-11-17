@@ -17,6 +17,7 @@ import com.trackmywealth.backend.dto.DataQualityWarningValues;
 import com.trackmywealth.backend.dto.KeyedAmount;
 import com.trackmywealth.backend.dto.KeyedDate;
 import com.trackmywealth.backend.dto.MultiCurrencyValuations;
+import com.trackmywealth.backend.dto.NativeAccountValue;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountLoan;
@@ -76,6 +77,8 @@ class AccountValuationServiceTest {
       mock(AccountSnapshotRepository.class);
   private final TransactionRepository transactionRepository = mock(TransactionRepository.class);
   private final AccountCurrencyService accountCurrencyService = mock(AccountCurrencyService.class);
+  private final AccountPositionsService accountPositionsService =
+      mock(AccountPositionsService.class);
   private final AccountDataQualityService accountDataQualityService =
       mock(AccountDataQualityService.class);
   private final FxRateService fxRateService = mock(FxRateService.class);
@@ -164,11 +167,62 @@ class AccountValuationServiceTest {
   }
 
   @Test
-  void anAccountThatHoldsPositionsStaysUnknownWithAnOpeningBalance() {
+  void anOpeningBalanceAloneIsNoValueForAnAccountThatHoldsPositions() {
     account.setHoldsPositions(true);
     withOpeningBalance("2500.00");
 
     assertThat(service.valueIn(account, "CHF", TODAY).valueKnown()).isFalse();
+  }
+
+  // --- Reported holdings (#586) ----------------------------------------------------------------
+
+  @Test
+  void anAccountThatHoldsPositionsIsWorthItsReportedHoldingsNotItsOpeningBalance() {
+    account.setHoldsPositions(true);
+    withOpeningBalance("2500.00");
+    withReportedHoldings(
+        new NativeAccountValue(
+            new BigDecimal("7800.00"), ValueBasisValues.LATEST_SNAPSHOT, TODAY, TODAY, false));
+
+    AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
+
+    assertThat(valuation.value()).isEqualByComparingTo("7800.00");
+    assertThat(valuation.valueBasis()).isEqualTo(ValueBasisValues.LATEST_SNAPSHOT);
+    assertThat(valuation.valueSourceDate()).isEqualTo(TODAY);
+    assertThat(valuation.valueSourceStale()).isFalse();
+  }
+
+  @Test
+  void aStaleRateUnderTheReportedHoldingsMakesTheValueStale() {
+    account.setHoldsPositions(true);
+    withReportedHoldings(
+        new NativeAccountValue(
+            new BigDecimal("90.00"), ValueBasisValues.LATEST_SNAPSHOT, TODAY, TODAY, true));
+
+    AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
+
+    assertThat(valuation.valueKnown()).isTrue();
+    assertThat(valuation.valueSourceStale()).isTrue();
+  }
+
+  @Test
+  void anOldHoldingsStatementMakesTheValueStale() {
+    account.setHoldsPositions(true);
+    LocalDate old = TODAY.minus(STALE_AFTER).minusDays(1);
+    withReportedHoldings(
+        new NativeAccountValue(
+            new BigDecimal("90.00"), ValueBasisValues.LATEST_SNAPSHOT, old, old, false));
+
+    assertThat(service.valueIn(account, "CHF", TODAY).valueSourceStale()).isTrue();
+  }
+
+  @Test
+  void onlyAccountsThatHoldPositionsReadReportedHoldings() {
+    withOpeningBalance("10000.00");
+
+    service.valueIn(account, "CHF", TODAY);
+
+    verify(accountPositionsService, never()).reportedValuesFor(any(), any(), any());
   }
 
   @Test
@@ -244,7 +298,7 @@ class AccountValuationServiceTest {
   }
 
   @Test
-  void anAccountWithoutALedgerThatHoldsPositionsStaysUnknown() {
+  void aSnapshotBalanceAloneIsNoValueForAnAccountWithoutALedgerThatHoldsPositions() {
     account.setHasTransactions(false);
     account.setHoldsPositions(true);
     withLatestSnapshot(snapshot(account, UUID.randomUUID(), TODAY, "1.00"));
@@ -607,11 +661,17 @@ class AccountValuationServiceTest {
         snapshotRepository,
         transactionRepository,
         accountCurrencyService,
+        accountPositionsService,
         accountDataQualityService,
         fxRateService,
         businessDateService,
         "ECB",
         staleAfter);
+  }
+
+  private void withReportedHoldings(NativeAccountValue value) {
+    when(accountPositionsService.reportedValuesFor(any(), any(), any()))
+        .thenReturn(Map.of(account.getId(), value));
   }
 
   private void withOpeningBalance(String balance) {

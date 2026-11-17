@@ -283,7 +283,7 @@ class PagingIntegrationTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateAccountRequest(
-                null, name, "CASH", "CHF", null, null, null, null, null, null, null))
+                null, name, "CASH", "CHF", null, null, null, null, null, null, null, null))
         .exchange()
         .expectStatus()
         .isCreated()

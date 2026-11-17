@@ -120,9 +120,8 @@ the demo logins, portfolios, accounts, ledger history, statement import and snap
 through the public API. Run it again with the same credentials file to resume or verify
 the seed without duplicating the fixtures.
 
-Every demo account has a value except the depot. An account that holds positions
-stays "Value unknown" until holdings are valued (EPIC 15), so the overview says that not
-all values are included.
+The demo depot is worth CHF 35,000 from its holdings snapshot: CHF 25,000 cash
+and CHF 10,000 in reported holdings.
 
 The script writes `.demo-credentials.json` with private file permissions. Use
 `users.member.email` and `users.member.password` to sign in. Add
@@ -369,6 +368,11 @@ cd backend
 or `api/**`, lints new or changed migrations with sqlfluff, and builds the Docker image.
 GitHub-hosted runners have Docker preinstalled, so no extra CI setup is needed for Testcontainers.
 
+**Request tracing (#575).** API request logs include the W3C trace ID and the support
+correlation ID. Use `X-Correlation-Id` to find a user-reported error, or use the trace ID
+from `traceparent` to correlate backend logs with an upstream proxy. The default
+installation has no trace exporter.
+
 **API contract (#372).** `api/openapi.yaml` is the committed OpenAPI document of the REST API, the
 file client code is generated from. `./mvnw verify` keeps it in step with the code:
 
@@ -561,7 +565,7 @@ GitHub issues. In short:
     credit-card account has a value from its opening balance plus its ledger after it (US-25-04);
     without one it is unknown (`valueKnown = false`), except a credit card (from its ledger alone).
     A custom asset is valued from its valuations and a loan or mortgage at its original principal.
-    A depot's value stays unknown until holdings are valued (EPIC 15).
+    A depot is valued from cash and reported holdings in its latest holdings snapshot (#586).
   - The cross-cutting backlog epics 21, 22, 29, 30, 31 and 32 are partly covered by what is listed
     above (e.g. validation messages, MFA and rate limiting, the API conventions, the Docker
     deployment, the transaction lifecycle, the admin reference-data API); their remaining stories

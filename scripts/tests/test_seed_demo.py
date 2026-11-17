@@ -125,15 +125,15 @@ class AccountValuesTest(unittest.TestCase):
             first[f"id-{key}"] = value
         return seed_demo.check_account_values(self.ids, first, dict(first))
 
-    def test_every_account_but_the_depot_needs_its_expected_value(self):
+    def test_every_account_needs_its_expected_value(self):
         self.assertEqual(self.check(), self.values)
-        for key in sorted(set(self.ids) - {"depot"}):
+        for key in sorted(self.ids):
             with self.subTest(key=key), \
                     self.assertRaisesRegex(seed_demo.SeedError, f"demo {key} account"):
                 self.check(**{key: (None, self.values[f"id-{key}"][1])})
 
-    def test_the_depot_is_unknown_until_holdings_are_valued(self):
-        with self.assertRaisesRegex(seed_demo.SeedError, "depot account did not show UNKNOWN"):
+    def test_cash_alone_is_not_the_depot_value(self):
+        with self.assertRaisesRegex(seed_demo.SeedError, "depot account did not have the expected balance"):
             self.check(depot=("25000", "CURRENT"))
 
     def test_members_must_see_the_same_values_and_only_the_demo_accounts(self):
