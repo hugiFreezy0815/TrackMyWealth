@@ -1,4 +1,5 @@
 import type { components } from '@/api/schema';
+import { formatInstantDate } from '@/format/date';
 
 export type Transaction = components['schemas']['TransactionResponse'];
 export type Category = components['schemas']['CategoryResponse'];
@@ -59,11 +60,12 @@ export function historyCategory(
 export function historyDescription(
   entry: HistoryEntry,
   categories: Category[],
-  german: boolean,
+  locale: string,
 ): {
   key: string;
   values: Record<string, string>;
 } {
+  const german = locale.toLowerCase().startsWith('de');
   const actor = entry.actorDisplayName?.trim() ?? '';
   const from = historyCategory(entry.fromCategoryId, categories, german);
   const to = historyCategory(entry.toCategoryId, categories, german);
@@ -73,7 +75,7 @@ export function historyDescription(
     to,
     reason: entry.reason ?? '',
     format: entry.importBatch?.fileFormat ?? '',
-    date: entry.importBatch?.uploadedAt.slice(0, 10) ?? '',
+    date: entry.importBatch ? formatInstantDate(entry.importBatch.uploadedAt, locale) : '',
   };
   const kinds: Record<string, string> = {
     IMPORTED: 'txn.history.imported',

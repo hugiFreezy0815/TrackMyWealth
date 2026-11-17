@@ -1082,7 +1082,7 @@ export function TransactionDetail({
         {history.data?.pages
           .flatMap((page) => page.content)
           .map((entry, index) => {
-            const message = historyDescription(entry, allCategories, german);
+            const message = historyDescription(entry, allCategories, intl.locale);
             const relatedId = entry.relatedTransactionId;
             return (
               <View

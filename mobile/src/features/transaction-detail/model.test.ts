@@ -67,7 +67,7 @@ describe('S4 transaction detail rules', () => {
       actorDisplayName: 'Anna',
       reason: null,
     } as HistoryEntry;
-    expect(historyDescription(entry, categories, false)).toEqual({
+    expect(historyDescription(entry, categories, 'en')).toEqual({
       key: 'txn.history.changed',
       values: {
         actor: 'Anna',
@@ -78,29 +78,35 @@ describe('S4 transaction detail rules', () => {
         date: '',
       },
     });
-    expect(historyDescription({ ...entry, kind: 'FUTURE_KIND' }, categories, true).key).toBe(
+    expect(historyDescription({ ...entry, kind: 'FUTURE_KIND' }, categories, 'de-CH').key).toBe(
       'txn.history.other',
     );
     expect(
-      historyDescription({ ...entry, kind: 'CORRECTED', actorDisplayName: null }, categories, true)
-        .key,
+      historyDescription(
+        { ...entry, kind: 'CORRECTED', actorDisplayName: null },
+        categories,
+        'de-CH',
+      ).key,
     ).toBe('txn.history.corrected.system');
     expect(
-      historyDescription({ ...entry, kind: 'RESTORED', actorDisplayName: null }, categories, true)
-        .key,
+      historyDescription(
+        { ...entry, kind: 'RESTORED', actorDisplayName: null },
+        categories,
+        'de-CH',
+      ).key,
     ).toBe('txn.history.restored.system');
     expect(
       historyDescription(
         { ...entry, kind: 'IMPORTED', importBatch: null, actorDisplayName: null },
         categories,
-        true,
+        'de-CH',
       ).key,
     ).toBe('txn.history.imported.unknown');
     expect(
-      historyDescription({ ...entry, kind: 'UNKNOWN', actorDisplayName: null }, categories, true)
+      historyDescription({ ...entry, kind: 'UNKNOWN', actorDisplayName: null }, categories, 'de-CH')
         .key,
     ).toBe('txn.history.other.system');
     const inactive = categories.map((category) => ({ ...category, active: false }));
-    expect(historyDescription(entry, inactive, true).values.from).toBe('Lebensmittel');
+    expect(historyDescription(entry, inactive, 'de-CH').values.from).toBe('Lebensmittel');
   });
 });

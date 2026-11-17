@@ -715,6 +715,52 @@ describe('S4 transaction detail', () => {
     );
   });
 
+  it.each([
+    ['en', '2026-11-16T18:22:00Z', 'Imported from CAMT statement on 16 Nov 2026'],
+    ['de', '2026-11-16T18:22:00Z', 'Aus CAMT-Auszug vom 16.11.2026 importiert'],
+    ['en', '2026-11-15T23:30:00Z', 'Imported from CAMT statement on 16 Nov 2026'],
+    ['en', 'invalid timestamp', 'Imported from CAMT statement on –'],
+    ['en', null, 'Imported transaction'],
+  ] as const)(
+    'renders imported history in %s for %s in Zurich',
+    async (locale, uploadedAt, line) => {
+      const dateTimeFormat = Intl.DateTimeFormat;
+      const dateTimeFormatSpy = jest
+        .spyOn(Intl, 'DateTimeFormat')
+        .mockImplementation((locales, options) =>
+          dateTimeFormat(locales, { ...options, timeZone: options?.timeZone ?? 'Europe/Zurich' }),
+        );
+      Object.assign(dateTimeFormatSpy, { supportedLocalesOf: dateTimeFormat.supportedLocalesOf });
+      const entry: components['schemas']['TransactionHistoryEntryResponse'] = {
+        occurredAt: '2026-11-16T18:22:00Z',
+        kind: 'IMPORTED',
+        fromCategoryId: null,
+        toCategoryId: null,
+        actorDisplayName: null,
+        relatedTransactionId: null,
+        reason: null,
+        importBatch: uploadedAt === null ? null : { id: 'batch-1', fileFormat: 'CAMT', uploadedAt },
+      };
+      jest.mocked(useTransactionHistory).mockReturnValue(
+        success({
+          pages: [
+            {
+              content: [entry],
+              page: { number: 0, size: 50, totalElements: 1, totalPages: 1 },
+            },
+          ],
+        }) as unknown as ReturnType<typeof useTransactionHistory>,
+      );
+
+      try {
+        await show(locale);
+        expect(screen.getByText(line)).toBeTruthy();
+      } finally {
+        dateTimeFormatSpy.mockRestore();
+      }
+    },
+  );
+
   it('keeps deactivated category labels in history without offering them for edits', async () => {
     const deactivated = categories.map((item) =>
       item.id === 'groceries' ? { ...item, active: false } : item,
