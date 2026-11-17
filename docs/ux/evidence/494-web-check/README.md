@@ -39,8 +39,10 @@ errors. Flows: "Showing 65 of 65" after Load more; Uncategorised 4 → 3 via `PU
 `If-Match: "1"`; archive `If-Match: "0"`, restore `If-Match: "1"`; Import disabled while archived;
 Escape returns focus to "Account actions". This run found two problems, both fixed in the PR. Enter
 did not follow "Open the previous transaction" (react-native-web ignores Enter on a
-`role="link"` div; fixed with `linkKeyProps`). `open()` waited for "Showing 50 of", but the phone
-list already loads every page on scroll. The screenshots above are from the original run.
+`role="link"` div; fixed with `linkKeyProps`). The phone-width web list loaded every page without
+scrolling, so `open()` timed out waiting for "Showing 50 of". #605 relaxed that wait, but the
+behaviour was a bug (spec S3 gives web "Load more"): #615 fixed it, and `open()` waits for
+"Showing 50 of" again. The screenshots above are from the original run.
 
 **Results**
 
