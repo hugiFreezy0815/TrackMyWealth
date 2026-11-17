@@ -1,5 +1,5 @@
 import { useIntl } from 'react-intl';
-import type { ReactNode } from 'react';
+import { memo, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useWindowDimensions } from 'react-native';
 
 import { Amount } from '@/components/shared';
@@ -8,7 +8,7 @@ import { layoutFor } from '@/features/shell/navigation';
 import { formatDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
 
-import { presentTransaction, type RowContext, type Transaction } from './model';
+import { presentTransaction, reversalOf, type RowContext, type Transaction } from './model';
 import { transactionElementId } from './row-focus';
 import { TransactionResults as PhoneResults } from './transaction-results.native';
 import { focusAdjacentTransaction, revealFocusedRow } from './transaction-keyboard.web';
@@ -50,12 +50,6 @@ function TransactionTable({
 }: TransactionResultsProps) {
   const intl = useIntl();
   const theme = useTheme();
-  const cellStyle = {
-    padding: '12px 8px',
-    verticalAlign: 'top',
-    overflowWrap: 'anywhere' as const,
-    borderBottom: `1px solid ${theme.borderDefault}`,
-  };
   const headerStyle = {
     padding: '8px',
     color: theme.textSecondary,
@@ -65,6 +59,13 @@ function TransactionTable({
   };
   // W06: the web category cell shows "{parent} › {name}".
   const webContext = { ...context, includeParent: true };
+  // Stable handlers, so appending a page re-renders only the new rows (memoised TableRow).
+  const handlers = useRef({ onOpen, onCategory });
+  useLayoutEffect(() => {
+    handlers.current = { onOpen, onCategory };
+  });
+  const [openRow] = useState(() => (id: string) => handlers.current.onOpen?.(id));
+  const [categoryRow] = useState(() => (row: Transaction) => handlers.current.onCategory(row));
   return (
     <div style={{ width: '100%', overflowX: 'auto' }}>
       <table
@@ -96,133 +97,180 @@ function TransactionTable({
           </tr>
         </thead>
         <tbody>
-          {transactions.map((transaction) => {
-            const view = presentTransaction(transaction, webContext, intl);
-            return (
-              <tr key={transaction.id} onFocus={revealFocusedRow}>
-                <td style={cellStyle}>{formatDate(transaction.bookingDate, intl.locale)}</td>
-                <td style={cellStyle}>
-                  <button
-                    type="button"
-                    id={transactionElementId(transaction.id)}
-                    data-transaction-open
-                    style={{
-                      border: 0,
-                      background: 'transparent',
-                      color: 'inherit',
-                      textAlign: 'left',
-                      cursor: onOpen ? 'pointer' : 'default',
-                      minHeight: 44,
-                      font: 'inherit',
-                      padding: 0,
-                    }}
-                    aria-current={selectedTransactionId === transaction.id ? 'true' : undefined}
-                    disabled={!onOpen}
-                    onKeyDown={focusAdjacentTransaction}
-                    onClick={
-                      onOpen
-                        ? (event) => {
-                            event.currentTarget.focus();
-                            onOpen(transaction.id);
-                          }
-                        : undefined
-                    }
-                  >
-                    {view.title}
-                  </button>
-                  <div style={{ color: theme.textSecondary }}>
-                    {[view.typeLabel, view.counterparty].filter(Boolean).join(' · ')}
-                  </div>
-                  {view.voided ? (
-                    <div style={{ color: theme.statusWarning }}>
-                      {intl.formatMessage({ id: 'account.voided' })}
-                      <span style={visuallyHidden}>
-                        {` (${intl.formatMessage({ id: 'account.voidedA11y' })})`}
-                      </span>
-                    </div>
-                  ) : null}
-                  {view.lifecycle.map((note) => (
-                    <div key={note} style={{ color: theme.textSecondary }}>
-                      {note}
-                    </div>
-                  ))}
-                  {view.warnings.map((warning) => (
-                    <div key={warning} style={{ color: theme.statusWarning }}>
-                      <span aria-hidden="true">⚠ </span>
-                      {warning}
-                    </div>
-                  ))}
-                </td>
-                <td style={cellStyle}>
-                  {view.categoryLabel ? (
-                    view.canCategorize ? (
-                      <button
-                        type="button"
-                        style={{
-                          minHeight: 44,
-                          padding: '4px 10px',
-                          font: 'inherit',
-                          cursor: 'pointer',
-                          color: view.uncategorized ? theme.statusWarning : theme.brandLink,
-                          background: 'transparent',
-                          border: '1px solid currentColor',
-                          borderRadius: 8,
-                        }}
-                        onClick={() => onCategory(transaction)}
-                        aria-label={intl.formatMessage(
-                          { id: 'account.changeCategoryOf' },
-                          { category: view.categoryLabel },
-                        )}
-                      >
-                        {view.uncategorized ? '⚠ ' : ''}
-                        {view.categoryLabel} ⌄
-                      </button>
-                    ) : (
-                      <span
-                        style={{
-                          color: view.uncategorized ? theme.statusWarning : theme.brandLink,
-                        }}
-                      >
-                        {view.uncategorized ? '⚠ ' : ''}
-                        {view.categoryLabel}
-                      </span>
-                    )
-                  ) : null}
-                </td>
-                <td style={{ ...cellStyle, textAlign: 'right' }}>
-                  <span
-                    style={{
-                      textDecoration: view.voided ? 'line-through' : undefined,
-                      whiteSpace: 'normal',
-                    }}
-                  >
-                    <Amount
-                      value={transaction.amount}
-                      currency={transaction.currency}
-                      signRole="change"
-                    />
-                  </span>
-                  {view.converted ? (
-                    <div style={{ color: theme.textSecondary }}>
-                      <Amount
-                        value={view.converted.value}
-                        currency={view.converted.currency}
-                        approx
-                      />
-                      {view.converted.estimated
-                        ? ` · ${intl.formatMessage({ id: 'account.estimated' })}`
-                        : ''}
-                    </div>
-                  ) : null}
-                </td>
-              </tr>
-            );
-          })}
+          {transactions.map((transaction) => (
+            <TableRow
+              key={transaction.id}
+              transaction={transaction}
+              context={webContext}
+              selected={selectedTransactionId === transaction.id}
+              onOpen={onOpen ? openRow : undefined}
+              onCategory={categoryRow}
+            />
+          ))}
         </tbody>
       </table>
     </div>
   );
 }
+
+type TableRowProps = {
+  transaction: Transaction;
+  context: RowContext;
+  selected: boolean;
+  onOpen?: (id: string) => void;
+  onCategory: (transaction: Transaction) => void;
+};
+
+/**
+ * Loaded rows keep their identity when a page is appended, so a row re-renders only when its own
+ * inputs change. `context.loaded` grows with every page but only matters to a reversal row (the
+ * original's date), so it is compared through that date alone (#494 "Load more" growth).
+ */
+export function sameRow(prev: TableRowProps, next: TableRowProps): boolean {
+  const a = prev.context;
+  const b = next.context;
+  return (
+    prev.transaction === next.transaction &&
+    prev.selected === next.selected &&
+    prev.onOpen === next.onOpen &&
+    prev.onCategory === next.onCategory &&
+    a.categories === b.categories &&
+    a.accountCurrency === b.accountCurrency &&
+    a.archived === b.archived &&
+    a.includeParent === b.includeParent &&
+    (!next.transaction.replacesTransactionId ||
+      reversalOf(next.transaction, a.loaded) === reversalOf(next.transaction, b.loaded))
+  );
+}
+
+const TableRow = memo(function TableRow({
+  transaction,
+  context,
+  selected,
+  onOpen,
+  onCategory,
+}: TableRowProps) {
+  const intl = useIntl();
+  const theme = useTheme();
+  const cellStyle = {
+    padding: '12px 8px',
+    verticalAlign: 'top',
+    overflowWrap: 'anywhere' as const,
+    borderBottom: `1px solid ${theme.borderDefault}`,
+  };
+  const view = presentTransaction(transaction, context, intl);
+  return (
+    <tr onFocus={revealFocusedRow}>
+      <td style={cellStyle}>{formatDate(transaction.bookingDate, intl.locale)}</td>
+      <td style={cellStyle}>
+        <button
+          type="button"
+          id={transactionElementId(transaction.id)}
+          data-transaction-open
+          style={{
+            border: 0,
+            background: 'transparent',
+            color: 'inherit',
+            textAlign: 'left',
+            cursor: onOpen ? 'pointer' : 'default',
+            minHeight: 44,
+            font: 'inherit',
+            padding: 0,
+          }}
+          aria-current={selected ? 'true' : undefined}
+          disabled={!onOpen}
+          onKeyDown={focusAdjacentTransaction}
+          onClick={
+            onOpen
+              ? (event) => {
+                  event.currentTarget.focus();
+                  onOpen(transaction.id);
+                }
+              : undefined
+          }
+        >
+          {view.title}
+        </button>
+        <div style={{ color: theme.textSecondary }}>
+          {[view.typeLabel, view.counterparty].filter(Boolean).join(' · ')}
+        </div>
+        {view.voided ? (
+          <div style={{ color: theme.statusWarning }}>
+            {intl.formatMessage({ id: 'account.voided' })}
+            <span style={visuallyHidden}>
+              {` (${intl.formatMessage({ id: 'account.voidedA11y' })})`}
+            </span>
+          </div>
+        ) : null}
+        {view.lifecycle.map((note) => (
+          <div key={note} style={{ color: theme.textSecondary }}>
+            {note}
+          </div>
+        ))}
+        {view.warnings.map((warning) => (
+          <div key={warning} style={{ color: theme.statusWarning }}>
+            <span aria-hidden="true">⚠ </span>
+            {warning}
+          </div>
+        ))}
+      </td>
+      <td style={cellStyle}>
+        {view.categoryLabel ? (
+          view.canCategorize ? (
+            <button
+              type="button"
+              style={{
+                minHeight: 44,
+                padding: '4px 10px',
+                font: 'inherit',
+                cursor: 'pointer',
+                color: view.uncategorized ? theme.statusWarning : theme.brandLink,
+                background: 'transparent',
+                border: '1px solid currentColor',
+                borderRadius: 8,
+              }}
+              onClick={() => onCategory(transaction)}
+              aria-label={intl.formatMessage(
+                { id: 'account.changeCategoryOf' },
+                { category: view.categoryLabel },
+              )}
+            >
+              {view.uncategorized ? '⚠ ' : ''}
+              {view.categoryLabel} ⌄
+            </button>
+          ) : (
+            <span
+              style={{
+                color: view.uncategorized ? theme.statusWarning : theme.brandLink,
+              }}
+            >
+              {view.uncategorized ? '⚠ ' : ''}
+              {view.categoryLabel}
+            </span>
+          )
+        ) : null}
+      </td>
+      <td style={{ ...cellStyle, textAlign: 'right' }}>
+        <span
+          style={{
+            textDecoration: view.voided ? 'line-through' : undefined,
+            whiteSpace: 'normal',
+          }}
+        >
+          <Amount value={transaction.amount} currency={transaction.currency} signRole="change" />
+        </span>
+        {view.converted ? (
+          <div style={{ color: theme.textSecondary }}>
+            <Amount value={view.converted.value} currency={view.converted.currency} approx />
+            {view.converted.estimated
+              ? ` · ${intl.formatMessage({ id: 'account.estimated' })}`
+              : ''}
+          </div>
+        ) : null}
+      </td>
+    </tr>
+  );
+}, sameRow);
 
 const visuallyHidden = {
   position: 'absolute' as const,
