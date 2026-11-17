@@ -31,7 +31,9 @@ export type TransactionResultsProps = {
 export function TransactionResults(props: TransactionResultsProps) {
   const { width } = useWindowDimensions();
   return layoutFor(width) === 'phone' ? (
-    <PhoneResults {...props} />
+    // Web pages with "Load more" only. Inside the page's scroll view this list is never
+    // height-bound, so every row counts as viewable and infinite scroll would load all pages.
+    <PhoneResults {...props} onEndReached={undefined} />
   ) : (
     <TransactionTable {...props} />
   );
