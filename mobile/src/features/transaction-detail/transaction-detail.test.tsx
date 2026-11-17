@@ -715,6 +715,49 @@ describe('S4 transaction detail', () => {
     );
   });
 
+  it.each([
+    ['en', '2026-11-16T18:22:00Z', 'Imported from CAMT statement on 16 Nov 2026'],
+    ['de', '2026-11-16T18:22:00Z', 'Aus CAMT-Auszug vom 16.11.2026 importiert'],
+    ['en', '2026-11-15T23:30:00Z', 'Imported from CAMT statement on 16 Nov 2026'],
+    ['en', 'not a timestamp', 'Imported from CAMT statement on –'],
+    ['en', null, 'Imported transaction'],
+  ] as const)('renders the import history in %s for %s', async (locale, uploadedAt, message) => {
+    const entry: components['schemas']['TransactionHistoryEntryResponse'] = {
+      kind: 'IMPORTED',
+      occurredAt: '2026-11-16T18:23:00Z',
+      actorDisplayName: null,
+      fromCategoryId: null,
+      toCategoryId: null,
+      reason: null,
+      relatedTransactionId: null,
+      importBatch: uploadedAt === null ? null : { id: 'batch-1', fileFormat: 'CAMT', uploadedAt },
+    };
+    jest.mocked(useTransactionHistory).mockReturnValue(
+      success({
+        pages: [
+          {
+            content: [entry],
+            page: { number: 0, size: 50, totalElements: 1, totalPages: 1 },
+          },
+        ],
+      }) as unknown as ReturnType<typeof useTransactionHistory>,
+    );
+
+    // Set a deterministic device default while respecting explicitly requested time zones.
+    const DateTimeFormat = Intl.DateTimeFormat;
+    Intl.DateTimeFormat = new Proxy(DateTimeFormat, {
+      construct(target, [locales, options]) {
+        return new target(locales, { ...options, timeZone: options?.timeZone ?? 'Europe/Zurich' });
+      },
+    });
+    try {
+      await show(locale);
+      expect(screen.getByText(message)).toBeTruthy();
+    } finally {
+      Intl.DateTimeFormat = DateTimeFormat;
+    }
+  });
+
   it('keeps deactivated category labels in history without offering them for edits', async () => {
     const deactivated = categories.map((item) =>
       item.id === 'groceries' ? { ...item, active: false } : item,
