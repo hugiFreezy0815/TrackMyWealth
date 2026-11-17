@@ -41,24 +41,40 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
 
   /**
    * Same holdings selection as the positions read, bounded by the valuation date. Read the cash and
-   * holdings in one statement so a concurrent snapshot replacement cannot mix revisions.
+   * holdings in one statement so a concurrent snapshot replacement cannot mix revisions. {@code
+   * unrecordedCash} says whether an import that contributed to the snapshot listed cash in another
+   * currency than the snapshot's: that cash is shown at import but not recorded (#273), so the
+   * snapshot alone cannot state the account's full value (#586, FR-PERF-018).
    */
   @Query(
       value =
           """
           WITH latest AS (
-            SELECT DISTINCT ON (s.account_id) s.id, s.account_id, s.snapshot_date, s.balance
+            SELECT DISTINCT ON (s.account_id) s.id, s.account_id, s.snapshot_date, s.balance,
+                   s.currency, s.balance_import_batch_id
             FROM account_snapshot s
             WHERE s.account_id IN (:accountIds)
               AND s.snapshot_date <= :asOf
               AND s.withdrawn_at IS NULL
               AND EXISTS (SELECT 1 FROM snapshot_holding h WHERE h.snapshot_id = s.id)
             ORDER BY s.account_id, s.snapshot_date DESC, s.created_at DESC, s.id DESC
+          ),
+          flagged AS (
+            SELECT l.*, EXISTS (
+                     SELECT 1 FROM import_holding_row r
+                     WHERE r.kind = 'CASH'
+                       AND r.currency IS DISTINCT FROM l.currency
+                       AND (r.import_batch_id = l.balance_import_batch_id
+                            OR r.import_batch_id IN (
+                              SELECT h.import_batch_id FROM snapshot_holding h
+                              WHERE h.snapshot_id = l.id))
+                   ) AS unrecorded_cash
+            FROM latest l
           )
           SELECT s.account_id AS "accountId", s.snapshot_date AS "snapshotDate",
-                 s.balance AS "cashBalance", h.reported_value AS "reportedValue",
-                 h.reported_currency AS "reportedCurrency"
-          FROM latest s
+                 s.balance AS "cashBalance", s.unrecorded_cash AS "unrecordedCash",
+                 h.reported_value AS "reportedValue", h.reported_currency AS "reportedCurrency"
+          FROM flagged s
           JOIN snapshot_holding h ON h.snapshot_id = s.id
           """,
       nativeQuery = true)

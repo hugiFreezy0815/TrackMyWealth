@@ -12,7 +12,10 @@ import static org.mockito.Mockito.when;
 import com.trackmywealth.backend.dto.AccountPositionResponse;
 import com.trackmywealth.backend.dto.AccountPositionsResponse;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
+import com.trackmywealth.backend.dto.NativeAccountValue;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
+import com.trackmywealth.backend.dto.ReportedHoldingValue;
+import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountSnapshot;
@@ -30,6 +33,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -237,6 +241,63 @@ class AccountPositionsServiceTest {
         .isGreaterThanOrEqualTo(manual);
   }
 
+  // --- #586: account value from the reported holdings ----------------------------------------
+
+  @Test
+  void aCompleteStatementIsWorthItsCashPlusEveryConvertedHolding() {
+    CurrencyConversionResult rate = rate("0.90", false);
+    when(fx.tryGetConversionRate("USD", "CHF", AS_OF, "ECB")).thenReturn(Optional.of(rate));
+    when(fx.applyRate(new BigDecimal("2000"), rate)).thenReturn(new BigDecimal("1800.0000"));
+    when(fx.applyRate(new BigDecimal("500"), rate)).thenReturn(new BigDecimal("450.0000"));
+    statement(
+        reported("1000", false, "5000", "CHF"),
+        reported("1000", false, "2000", "USD"),
+        reported("1000", false, "500", "USD"));
+
+    NativeAccountValue value = reportedValues().get(accountId);
+
+    assertThat(value.amount()).isEqualByComparingTo("8250");
+    assertThat(value.basis()).isEqualTo(ValueBasisValues.LATEST_SNAPSHOT);
+    assertThat(value.sourceDate()).isEqualTo(AS_OF);
+    assertThat(value.confirmedOn()).isEqualTo(AS_OF);
+    assertThat(value.sourceFxStale()).isFalse();
+    // One rate lookup per currency pair and statement date, not per holding.
+    verify(fx).tryGetConversionRate("USD", "CHF", AS_OF, "ECB");
+  }
+
+  @Test
+  void aStaleRateMarksTheValueStale() {
+    CurrencyConversionResult rate = rate("0.90", true);
+    when(fx.tryGetConversionRate("USD", "CHF", AS_OF, "ECB")).thenReturn(Optional.of(rate));
+    when(fx.applyRate(any(), eq(rate))).thenReturn(new BigDecimal("90.0000"));
+    statement(reported("0", false, "100", "USD"));
+
+    assertThat(reportedValues().get(accountId).sourceFxStale()).isTrue();
+  }
+
+  @Test
+  void aStatementMissingAnyFigureHasNoValueRatherThanAPartialSum() {
+    statement(reported(null, false, "5000", "CHF"));
+    assertThat(reportedValues()).as("no cash balance").isEmpty();
+
+    statement(reported("1000", true, "5000", "CHF"));
+    assertThat(reportedValues()).as("unrecorded foreign cash").isEmpty();
+
+    statement(reported("1000", false, "5000", "CHF"), reported("1000", false, null, null));
+    assertThat(reportedValues()).as("a holding without a value").isEmpty();
+
+    when(fx.tryGetConversionRate("USD", "CHF", AS_OF, "ECB")).thenReturn(Optional.empty());
+    statement(reported("1000", false, "5000", "CHF"), reported("1000", false, "10", "USD"));
+    assertThat(reportedValues()).as("no rate").isEmpty();
+  }
+
+  @Test
+  void anAccountWithoutAHoldingsStatementIsLeftOut() {
+    statement();
+
+    assertThat(reportedValues()).isEmpty();
+  }
+
   // --- Helpers ------------------------------------------------------------------------------
 
   private void allowedDepot(String currency) {
@@ -275,6 +336,66 @@ class AccountPositionsServiceTest {
     when(holdings.findBySnapshotId(snapshotId)).thenReturn(List.copyOf(rows));
     when(securities.findAllById(any())).thenReturn(List.copyOf(known));
     return service.get(accountId, actor);
+  }
+
+  private void statement(ReportedHoldingValue... lines) {
+    when(snapshots.findLatestReportedHoldings(List.of(accountId), AS_OF))
+        .thenReturn(List.of(lines));
+  }
+
+  private Map<UUID, NativeAccountValue> reportedValues() {
+    return service.reportedValuesFor(List.of(accountId), Map.of(accountId, "CHF"), AS_OF);
+  }
+
+  private ReportedHoldingValue reported(
+      String cash, boolean unrecordedCash, String value, String currency) {
+    return new Line(
+        accountId,
+        AS_OF,
+        cash == null ? null : new BigDecimal(cash),
+        unrecordedCash,
+        value == null ? null : new BigDecimal(value),
+        currency);
+  }
+
+  private record Line(
+      UUID accountId,
+      LocalDate snapshotDate,
+      BigDecimal cashBalance,
+      boolean unrecordedCash,
+      BigDecimal reportedValue,
+      String reportedCurrency)
+      implements ReportedHoldingValue {
+
+    @Override
+    public UUID getAccountId() {
+      return accountId;
+    }
+
+    @Override
+    public LocalDate getSnapshotDate() {
+      return snapshotDate;
+    }
+
+    @Override
+    public BigDecimal getCashBalance() {
+      return cashBalance;
+    }
+
+    @Override
+    public boolean isUnrecordedCash() {
+      return unrecordedCash;
+    }
+
+    @Override
+    public BigDecimal getReportedValue() {
+      return reportedValue;
+    }
+
+    @Override
+    public String getReportedCurrency() {
+      return reportedCurrency;
+    }
   }
 
   private static CurrencyConversionResult rate(String rate, boolean stale) {

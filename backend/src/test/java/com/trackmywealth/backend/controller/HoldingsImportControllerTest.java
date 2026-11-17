@@ -3,6 +3,7 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.groups.Tuple.tuple;
 
+import com.trackmywealth.backend.dto.AccountListItemResponse;
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
@@ -24,7 +25,10 @@ import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.SnapshotHoldingResponse;
+import com.trackmywealth.backend.dto.ValueStatus;
+import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.error.ProblemCode;
+import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.service.ShippedTemplateFixtures;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
@@ -105,6 +109,8 @@ class HoldingsImportControllerTest {
 
   // The invented statements are dated 2031: "today" comes after them.
   @Autowired MutableClock clock;
+
+  @Autowired FxRateRepository fxRateRepository;
 
   private String token;
   private UUID depot;
@@ -230,6 +236,35 @@ class HoldingsImportControllerTest {
     assertThat(rowsOf("SELECT import_batch_id FROM account_snapshot WHERE account_id = ?", depot))
         .singleElement()
         .satisfies(row -> assertThat(row.get("import_batch_id")).isEqualTo(preview.id()));
+  }
+
+  /**
+   * #586: the statement's USD cash is shown at import but not recorded, so its holdings alone would
+   * understate the depot (FR-PERF-018). Without that unrecorded cash line the same snapshot values
+   * the depot as cash plus every converted holding.
+   */
+  @Test
+  void unrecordedForeignCashKeepsAnImportedDepotUnknownUntilItIsGone() throws Exception {
+    createAllSecurities();
+    commit(upload(depot, ShippedTemplateFixtures.swissquoteHoldings(), null));
+    FxRate rate = new FxRate();
+    rate.setBaseCurrency("USD");
+    rate.setQuoteCurrency("CHF");
+    rate.setRateDate(STATEMENT_DATE);
+    rate.setRate(new BigDecimal("0.80"));
+    rate.setSource("ECB"); // app.fx.default-source
+    fxRateRepository.saveAndFlush(rate);
+
+    AccountListItemResponse unknown = listedDepot();
+    assertThat(unknown.balance()).isNull();
+    assertThat(unknown.valueStatus()).isEqualTo(ValueStatus.UNKNOWN);
+
+    execute("DELETE FROM import_holding_row WHERE kind = 'CASH' AND currency = 'USD'");
+
+    // 1204.35 cash + 39.27 + 2835.00 + 1174.31 in CHF + 5244.00 USD at 0.80
+    AccountListItemResponse valued = listedDepot();
+    assertThat(valued.balance()).isEqualByComparingTo("9448.13");
+    assertThat(valued.valueStatus()).isNotEqualTo(ValueStatus.UNKNOWN);
   }
 
   @Test
@@ -940,6 +975,28 @@ class HoldingsImportControllerTest {
 
   private static String etag(Object version) {
     return "\"" + version + "\"";
+  }
+
+  private AccountListItemResponse listedDepot() {
+    AccountListItemResponse[] accounts =
+        client()
+            .get()
+            .uri("/api/v1/accounts")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(AccountListItemResponse[].class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(accounts).singleElement().extracting(AccountListItemResponse::id).isEqualTo(depot);
+    return accounts[0];
+  }
+
+  private void execute(String sql) throws SQLException {
+    try (Connection connection = dataSource.getConnection();
+        Statement statement = connection.createStatement()) {
+      statement.executeUpdate(sql);
+    }
   }
 
   private long count(String sql, Object... parameters) {

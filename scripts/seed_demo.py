@@ -426,7 +426,6 @@ def valuation_fixture_ids(api, ids):
 
 EXPECTED_STATUSES = {
     "cash": "UNRECONCILED", "property": "STALE", "mortgage": "ESTIMATED",
-
 }
 # Opening balance plus the seeded ledger (cash: 4000 + 6 x (3500 - 125.50 - 300) - 28.50 - 50
 # - 38.25 imported); the manual cash snapshot of 22000 is the open reconciliation difference.
