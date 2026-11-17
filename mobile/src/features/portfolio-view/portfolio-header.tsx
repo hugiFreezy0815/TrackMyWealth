@@ -17,6 +17,7 @@ import { msg } from '@/features/overview/overview-text';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { formatDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
+import { countryName } from '@/i18n/iso';
 
 import { typeMessageKey, type PortfolioListItem, type PortfolioView } from './model';
 
@@ -155,7 +156,7 @@ export function PortfolioHeader({
         {data.institutionName
           ? msg(intl, data.country ? 'portfolio.subtitle' : 'portfolio.subtitleNoCountry', {
               institution: data.institutionName,
-              country: data.country ?? '',
+              country: data.country ? countryName(data.country, intl.locale) : '',
               currency: data.currency,
             })
           : msg(intl, 'portfolio.currencyOnly', { currency: data.currency })}

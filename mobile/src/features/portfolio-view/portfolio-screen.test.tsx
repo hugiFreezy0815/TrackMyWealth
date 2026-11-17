@@ -715,19 +715,60 @@ describe('S2 header, explanation and data source', () => {
     expect(screen.getByText('All available account values are included.')).toBeTruthy();
   });
 
-  it('shows the last import and opens the import flow', async () => {
-    setData(
-      view([], {
-        lastImport: {
-          fileFormat: 'CSV',
-          uploadedAt: '2026-10-18T08:00:00Z',
-          committedAt: '2026-10-18T08:05:00Z',
-          transactionCount: 41,
-        } as PortfolioView['lastImport'],
-      }),
-    );
+  it.each([
+    [
+      'en',
+      'Institution DKB · Germany · portfolio currency EUR',
+      'CSV: last import 17 Oct 2026 · 41 transactions',
+    ],
+    [
+      'de',
+      'Institut DKB · Deutschland · Portfoliowährung EUR',
+      'CSV: letzter Import 17.10.2026 · 41 Buchungen',
+    ],
+  ] as const)(
+    'localizes the country and uses the local commit day across UTC midnight in %s',
+    async (locale, subtitle, lastImport) => {
+      setData(
+        view([], {
+          institutionName: 'DKB',
+          lastImport: {
+            fileFormat: 'CSV',
+            uploadedAt: '2026-10-16T12:00:00Z',
+            committedAt: '2026-10-18T00:15:00Z',
+            transactionCount: 41,
+          },
+        }),
+        undefined,
+        [{ ...listItem, country: 'DE' }],
+      );
+      const DateTimeFormat = Intl.DateTimeFormat;
+      const formatInDeviceZone = (
+        locales?: Intl.LocalesArgument,
+        options?: Intl.DateTimeFormatOptions,
+      ) =>
+        new DateTimeFormat(locales, {
+          ...options,
+          timeZone: options?.timeZone ?? 'America/Los_Angeles',
+        });
+      Intl.DateTimeFormat = new Proxy(DateTimeFormat, {
+        apply: (_target, _thisArg, [locales, options]) => formatInDeviceZone(locales, options),
+        construct: (_target, [locales, options]) => formatInDeviceZone(locales, options),
+      });
+      try {
+        await mount(locale);
+        expect(screen.getByText(subtitle)).toBeTruthy();
+        expect(screen.getByText(lastImport)).toBeTruthy();
+      } finally {
+        Intl.DateTimeFormat = DateTimeFormat;
+      }
+    },
+  );
+
+  it('shows the empty import state and opens the import flow', async () => {
+    setData(view([]));
     const { onImport } = await mount();
-    expect(screen.getByText(/^CSV: last import .* · 41 transactions$/)).toBeTruthy();
+    expect(screen.getByText('No import yet')).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: 'Import statement' }));
     expect(onImport).toHaveBeenCalledTimes(1);
   });
