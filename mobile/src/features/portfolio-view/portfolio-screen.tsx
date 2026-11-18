@@ -70,23 +70,26 @@ function SectionCardView({
   const hidden = useAmountsHidden();
   const title = msg(intl, sectionMessageKey(section.section));
   const known = section.valueStatus !== 'UNKNOWN';
+  const subtotal = amountTexts(intl, {
+    value: section.subtotal,
+    currency,
+    valueKnown: known,
+    masked: hidden,
+  });
   return (
     <SectionCard title={title}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={msg(intl, 'portfolio.section.explain', {
+          displayAmount: subtotal.display,
           section: title,
-          amount: amountTexts(intl, {
-            value: section.subtotal,
-            currency,
-            valueKnown: known,
-            masked: hidden,
-          }).label,
+          amount: subtotal.label,
         })}
         onPress={onExplain}
         style={{ minHeight: 44, justifyContent: 'center', gap: Spacing.one }}
       >
         <Amount
+          testID="portfolio-section-subtotal"
           value={section.subtotal}
           currency={currency}
           valueKnown={known}
