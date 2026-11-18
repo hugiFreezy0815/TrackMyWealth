@@ -210,6 +210,8 @@ type DialogProps = {
   closeLabel?: string;
   /** Prevent dismissing a modal while a form submission is in flight. */
   closeDisabled?: boolean;
+  /** After the close animation, once the modal (and its web focus trap) is gone. */
+  onDismiss?: () => void;
 };
 
 export function Dialog({
@@ -219,6 +221,7 @@ export function Dialog({
   children,
   closeLabel,
   closeDisabled = false,
+  onDismiss,
   placement = 'center',
 }: DialogProps & { placement?: 'center' | 'bottom' }) {
   const theme = useTheme();
@@ -235,6 +238,7 @@ export function Dialog({
       visible={visible}
       animationType={bottom ? 'slide' : 'fade'}
       onRequestClose={requestClose}
+      onDismiss={onDismiss}
     >
       <View
         style={{

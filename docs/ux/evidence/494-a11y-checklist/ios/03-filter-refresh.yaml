@@ -1,0 +1,33 @@
+# #494 native check: back to the top, Uncategorised filter and back, then pull-to-refresh.
+appId: com.anonymous.trackmywealth
+---
+- scrollUntilVisible:
+    element:
+      text: "Uncategorised ${UNCAT}"
+    direction: UP
+    speed: 100
+    timeout: 240000
+- tapOn: "Uncategorised ${UNCAT}"
+- scrollUntilVisible:
+    element:
+      text: "Showing ${UNCAT} of ${UNCAT}"
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: ios-494-03-uncategorised
+- scrollUntilVisible:
+    element:
+      text: "All"
+    direction: UP
+    timeout: 30000
+- tapOn: "All"
+- extendedWaitUntil:
+    visible: "Newest first.*"
+    timeout: 30000
+- swipe:
+    start: 50%, 30%
+    end: 50%, 80%
+    duration: 800
+- extendedWaitUntil:
+    visible: "Uncategorised ${UNCAT}"
+    timeout: 30000
+- takeScreenshot: ios-494-04-after-refresh

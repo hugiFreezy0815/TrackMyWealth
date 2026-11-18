@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react';
 import { useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { ActivityIndicator, Platform, Pressable, Text, View } from 'react-native';
@@ -64,6 +64,7 @@ import {
   type AccountSummary,
   type Transaction,
 } from './model';
+import { useRowFocus } from './row-focus';
 import { TransactionResults } from './transaction-results';
 
 export type AccountDetailProps = {
@@ -184,6 +185,9 @@ export function AccountDetail({
     load: dialog === 'actions',
   });
   const records = uniqueTransactions(transactions.data?.pages ?? []);
+  const recordIds = records.map((record) => record.id);
+  const headingRef = useRef<ComponentRef<typeof Text>>(null);
+  const rowFocus = useRowFocus(recordIds, !transactions.isFetching, headingRef);
   const total = transactions.data?.pages[0]?.page.totalElements ?? 0;
   const countValue = count.data ?? 0;
   const locked =
@@ -208,6 +212,7 @@ export function AccountDetail({
 
   function changeActivityView(nextFilter: boolean, nextSort: TransactionSort) {
     if (nextFilter === uncategorized && nextSort === sort) return;
+    rowFocus.reset();
     void restartActivityQuery(nextFilter, nextSort);
     setUncategorized(nextFilter);
     setSort(nextSort);
@@ -290,6 +295,7 @@ export function AccountDetail({
     const target = categoryTarget;
     if (!target || locked) return;
     setPendingCategoryId(categoryId);
+    const shown = recordIds;
     void runWrite(async () => {
       const cached = client.getQueryData<{ version: number }>(
         queryKeys.transaction(accountId, target.id),
@@ -301,6 +307,8 @@ export function AccountDetail({
       );
       setCategoryTarget(null);
       setPendingCategoryId(null);
+      // The save resolves after the list reloaded; the row may have left it.
+      rowFocus.afterCategorySave(target.id, shown);
     }, queryKeys.accountTransactionScope(accountId));
   }
 
@@ -476,7 +484,9 @@ export function AccountDetail({
             )}
           </Text>
           <Text
+            ref={headingRef}
             accessibilityRole="header"
+            tabIndex={-1}
             style={{ ...TypeScale.headingLarge, color: theme.textPrimary }}
           >
             {summary.name}
@@ -666,7 +676,10 @@ export function AccountDetail({
         <ActionButton
           disabled={!canFetchNextPage}
           label={intl.formatMessage({ id: 'account.loadMore' })}
-          onPress={fetchNextPage}
+          onPress={() => {
+            if (canFetchNextPage) rowFocus.beforeLoadMore(recordIds);
+            fetchNextPage();
+          }}
         />
       ) : null}
       {transactions.isFetchingNextPage ? <ActivityIndicator /> : null}
@@ -751,6 +764,7 @@ export function AccountDetail({
           setCategoryTarget(null);
         }}
         onPick={changeCategory}
+        onDismiss={rowFocus.dialogDismissed}
       />
       <ArchiveDialog
         visible={dialog === 'archive'}

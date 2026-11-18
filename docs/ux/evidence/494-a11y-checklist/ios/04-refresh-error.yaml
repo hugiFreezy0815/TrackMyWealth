@@ -1,0 +1,28 @@
+# #494 native check: the backend is paused (run-494.sh); a pull-to-refresh fails. Error banners
+# with Retry show, the loaded first page stays (its footer is reachable) and no next page loads
+# while page 0 is stale. The script resumes the backend before 05.
+appId: com.anonymous.trackmywealth
+---
+- scrollUntilVisible:
+    element:
+      text: "Back to overview"
+    direction: UP
+    timeout: 60000
+- swipe:
+    start: 50%, 30%
+    end: 50%, 80%
+    duration: 800
+- extendedWaitUntil:
+    visible: "Try again"
+    timeout: 120000
+- takeScreenshot: ios-494-05-refresh-error
+- scrollUntilVisible:
+    element:
+      text: "Showing 50 of ${TOTAL}"
+    direction: DOWN
+    speed: 60
+    timeout: 120000
+- extendedWaitUntil:
+    visible: "Showing 50 of ${TOTAL}"
+    timeout: 5000
+- takeScreenshot: ios-494-06-rows-kept-paging-blocked

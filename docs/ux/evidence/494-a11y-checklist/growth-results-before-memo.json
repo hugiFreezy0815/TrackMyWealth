@@ -1,0 +1,45 @@
+{
+  "note": "Same script before the memoised rows (commit eefb70b5 reverted), in-page untrusted click timing",
+  "timeline": [
+    {
+      "shown": 1000,
+      "loadMoreMs": 69,
+      "rows": 1000,
+      "domNodes": 10616,
+      "heapMb": 70,
+      "slowestEventMs": 0
+    },
+    {
+      "shown": 2500,
+      "loadMoreMs": 180,
+      "rows": 2500,
+      "domNodes": 28616,
+      "heapMb": 204,
+      "slowestEventMs": 0
+    },
+    {
+      "shown": 5000,
+      "loadMoreMs": 385,
+      "rows": 5000,
+      "domNodes": 58616,
+      "heapMb": 337,
+      "slowestEventMs": 0
+    },
+    {
+      "shown": 7500,
+      "loadMoreMs": 574,
+      "rows": 7500,
+      "domNodes": 88616,
+      "heapMb": 239,
+      "slowestEventMs": 0
+    },
+    {
+      "shown": 10024,
+      "loadMoreMs": 899,
+      "rows": 10024,
+      "domNodes": 118902,
+      "heapMb": 455,
+      "slowestEventMs": 0
+    }
+  ]
+}

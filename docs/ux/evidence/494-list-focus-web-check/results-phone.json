@@ -1,0 +1,49 @@
+{
+  "layout": "phone",
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "loadMore": {
+    "before": 50,
+    "after": 65,
+    "focus": {
+      "id": "transaction-f9237914-3af9-4f98-95da-2ce29fb9354b",
+      "text": "Synthetic refund\nIncome\n+EUR 250.00",
+      "heading": false,
+      "visible": true
+    }
+  },
+  "order": [
+    "Coop",
+    "Migros",
+    "SBB",
+    "Amazon.de"
+  ],
+  "middle": {
+    "id": "transaction-1c4d6342-a3eb-475c-8f11-fd918cb010a8",
+    "text": "SBB\nExpense\n−EUR 118.00",
+    "heading": false,
+    "visible": true
+  },
+  "last": {
+    "id": "transaction-1c4d6342-a3eb-475c-8f11-fd918cb010a8",
+    "text": "SBB\nExpense\n−EUR 118.00",
+    "heading": false,
+    "visible": true
+  },
+  "first": {
+    "id": "transaction-1c4d6342-a3eb-475c-8f11-fd918cb010a8",
+    "text": "SBB\nExpense\n−EUR 118.00",
+    "heading": false,
+    "visible": true
+  },
+  "only": {
+    "id": null,
+    "text": "Girokonto",
+    "heading": true,
+    "visible": true
+  },
+  "filterAfterOnly": true,
+  "errors": []
+}

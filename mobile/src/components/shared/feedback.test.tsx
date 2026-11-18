@@ -216,4 +216,15 @@ describe('feedback states', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Schliessen' }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('Dialog reports when the modal has gone, for focus moves after closing', async () => {
+    const onDismiss = jest.fn();
+    await renderWithIntl(
+      <Dialog title="Sample" visible onClose={() => {}} onDismiss={onDismiss}>
+        <></>
+      </Dialog>,
+    );
+    await fireEvent(screen.getByTestId('shared-dialog-modal'), 'onDismiss');
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
 });

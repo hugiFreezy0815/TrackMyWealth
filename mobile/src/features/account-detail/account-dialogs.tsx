@@ -137,6 +137,7 @@ export function CategoryPickerDialog({
   selectedCategoryId,
   onClose,
   onPick,
+  onDismiss,
 }: {
   visible: boolean;
   categories: Category[];
@@ -144,6 +145,7 @@ export function CategoryPickerDialog({
   selectedCategoryId: string | null;
   onClose: () => void;
   onPick: (categoryId: string) => void;
+  onDismiss?: () => void;
 }) {
   const intl = useIntl();
   const theme = useTheme();
@@ -154,6 +156,7 @@ export function CategoryPickerDialog({
       visible={visible}
       title={intl.formatMessage({ id: 'account.changeCategory' })}
       onClose={onClose}
+      onDismiss={onDismiss}
     >
       {/* About 30 categories: the list scrolls so the title and Close stay on screen. */}
       <ScrollView testID="category-picker-list" style={{ maxHeight: Math.round(height * 0.6) }}>
