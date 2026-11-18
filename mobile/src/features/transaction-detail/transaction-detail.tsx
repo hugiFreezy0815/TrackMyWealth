@@ -8,15 +8,7 @@ import {
 } from 'react';
 import { onlineManager, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Platform, Pressable, Text, TextInput, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import { useConflict } from '@/api/queries/conflict';
@@ -61,6 +53,7 @@ import {
   transactionTitle,
   type Category,
 } from './model';
+import { CategoryOptions } from './category-options';
 
 export type TransactionDetailProps = {
   accountId: string;
@@ -97,28 +90,32 @@ function CategoryPicker({
   const intl = useIntl();
   const theme = useTheme();
   const [search, setSearch] = useState('');
+  const searchInput = useRef<ComponentRef<typeof TextInput>>(null);
   const german = intl.locale.startsWith('de');
   const validChoice = categories.some(
     (item) => item.id === selected && item.active && item.code !== 'UNCATEGORIZED',
   );
-  const choices = categories.filter((category) => {
-    if (!category.active || category.code === 'UNCATEGORIZED') return false;
-    const label = categoryLabel(
-      category,
-      categories.find((candidate) => candidate.id === category.parentId),
-      german,
-    );
-    return label
-      .toLocaleLowerCase(intl.locale)
-      .includes(search.trim().toLocaleLowerCase(intl.locale));
-  });
+  const searchTerm = search.trim().toLocaleLowerCase(intl.locale);
+  const choices = categories
+    .filter((category) => category.active && category.code !== 'UNCATEGORIZED')
+    .map((category) => ({
+      id: category.id,
+      label: categoryLabel(
+        category,
+        categories.find((candidate) => candidate.id === category.parentId),
+        german,
+      ),
+    }))
+    .filter(({ label }) => label.toLocaleLowerCase(intl.locale).includes(searchTerm));
   const web = Platform.OS === 'web';
   const PickerDialog = web ? Dialog : BottomSheet;
   return (
     <PickerDialog
       visible
       onClose={onClose}
+      focusOnOpen={web ? () => searchInput.current?.focus() : undefined}
       closeDisabled={closeDisabled}
+      scrollable={web}
       closeLabel={web ? intl.formatMessage({ id: 'txn.picker.cancel' }) : undefined}
       contentStyle={
         web ? { alignSelf: 'center', width: '100%', maxWidth: 480, maxHeight: '100%' } : undefined
@@ -126,6 +123,7 @@ function CategoryPicker({
       title={intl.formatMessage({ id: 'txn.picker.title' })}
     >
       <TextInput
+        ref={searchInput}
         accessibilityLabel={intl.formatMessage({ id: 'txn.picker.search' })}
         value={search}
         onChangeText={setSearch}
@@ -143,43 +141,19 @@ function CategoryPicker({
           minHeight: 44,
         }}
       />
-      <ScrollView
-        accessibilityRole="radiogroup"
-        accessibilityLabel={intl.formatMessage({ id: 'txn.picker.title' })}
-        keyboardShouldPersistTaps="handled"
-        style={{ maxHeight: 360 }}
-        contentContainerStyle={{ gap: Spacing.one }}
-      >
-        {choices.map((category) => (
-          <Pressable
-            key={category.id}
-            accessibilityRole="radio"
-            aria-checked={selected === category.id}
-            disabled={busy}
-            onPress={() => onSelect(category.id)}
-            accessibilityLabel={categoryLabel(
-              category,
-              categories.find((candidate) => candidate.id === category.parentId),
-              german,
-            )}
-            style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: Spacing.two }}
-          >
-            <Text style={{ color: theme.textPrimary }}>
-              {selected === category.id ? '✓ ' : ''}
-              {categoryLabel(
-                category,
-                categories.find((candidate) => candidate.id === category.parentId),
-                german,
-              )}
-            </Text>
-          </Pressable>
-        ))}
-        {!choices.length ? (
-          <Text style={{ color: theme.textSecondary }}>
-            {intl.formatMessage({ id: 'txn.picker.empty' })}
-          </Text>
-        ) : null}
-      </ScrollView>
+      {choices.length ? (
+        <CategoryOptions
+          label={intl.formatMessage({ id: 'txn.picker.title' })}
+          choices={choices}
+          selected={selected}
+          disabled={busy}
+          onSelect={onSelect}
+        />
+      ) : (
+        <Text style={{ color: theme.textSecondary }}>
+          {intl.formatMessage({ id: 'txn.picker.empty' })}
+        </Text>
+      )}
       {error ? (
         <Text accessibilityRole="alert" style={{ color: theme.statusLoss }}>
           {error}
@@ -239,6 +213,7 @@ export function TransactionDetail({
   const [serverArchived, setServerArchived] = useState(false);
   const categoryControl = useRef<ComponentRef<typeof Pressable>>(null);
   const detailHeading = useRef<ComponentRef<typeof Text>>(null);
+  const restoreDiscardFocus = useRef(false);
   const transaction = record.data;
   // Unknown/loading account status is not evidence that writes are permitted.
   const accountActive = !account.isError && account.data?.status === 'ACTIVE';
@@ -1151,7 +1126,15 @@ export function TransactionDetail({
         visible={conflict.conflicted}
         onClose={reviewConflict}
         onReview={reviewConflict}
+        onDismiss={() => {
+          if (!restoreDiscardFocus.current) return;
+          restoreDiscardFocus.current = false;
+          const control = locked ? null : categoryControl.current;
+          moveAccessibilityFocus(control ?? detailHeading.current);
+        }}
         onDiscard={() => {
+          if (Platform.OS === 'web') restoreDiscardFocus.current = true;
+          else focusCategory();
           conflict.dismiss();
           setPicker(false);
           setSelectedCategory(null);
@@ -1160,7 +1143,6 @@ export function TransactionDetail({
           setCategoryConflict(false);
           setReviewVersion(null);
           setConfirmRemove(false);
-          focusCategory();
         }}
       />
     </View>

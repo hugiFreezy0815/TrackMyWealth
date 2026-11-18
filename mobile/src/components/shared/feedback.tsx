@@ -5,6 +5,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   Text,
   View,
   type DimensionValue,
@@ -222,7 +223,9 @@ type DialogProps = {
   closeDisabled?: boolean;
   /** After the close animation, once the modal (and its web focus trap) is gone. */
   onDismiss?: () => void;
+  focusOnOpen?: () => void;
   contentStyle?: StyleProp<ViewStyle>;
+  scrollable?: boolean;
 };
 
 export function Dialog({
@@ -233,7 +236,9 @@ export function Dialog({
   closeLabel,
   closeDisabled = false,
   onDismiss,
+  focusOnOpen,
   contentStyle,
+  scrollable = false,
   placement = 'center',
 }: DialogProps & { placement?: 'center' | 'bottom' }) {
   const theme = useTheme();
@@ -243,6 +248,29 @@ export function Dialog({
     if (!closeDisabled) onClose();
   };
   useEscapeKey(visible, requestClose);
+  const contentLayout = { padding: Spacing.four, gap: Spacing.three };
+  const content = (
+    <>
+      <Text
+        accessibilityRole="header"
+        style={{ ...TypeScale.headingMedium, color: theme.textPrimary }}
+      >
+        {title}
+      </Text>
+      {children}
+      <Pressable
+        accessibilityRole="button"
+        disabled={closeDisabled}
+        aria-disabled={closeDisabled}
+        onPress={requestClose}
+        style={{ minHeight: 44, justifyContent: 'center', opacity: closeDisabled ? 0.5 : 1 }}
+      >
+        <Text style={{ ...TypeScale.labelMedium, color: theme.brandLink }}>
+          {closeLabel ?? intl.formatMessage({ id: 'ui.close' })}
+        </Text>
+      </Pressable>
+    </>
+  );
   return (
     <Modal
       testID="shared-dialog-modal"
@@ -252,6 +280,7 @@ export function Dialog({
       animationType={bottom ? 'slide' : 'fade'}
       onRequestClose={requestClose}
       onDismiss={onDismiss}
+      onShow={focusOnOpen}
     >
       <View
         style={{
@@ -269,30 +298,27 @@ export function Dialog({
               borderRadius: bottom ? 0 : Radii.card,
               borderTopLeftRadius: Radii.card,
               borderTopRightRadius: Radii.card,
-              padding: Spacing.four,
-              gap: Spacing.three,
             },
+            !scrollable && contentLayout,
             contentStyle,
           ]}
         >
-          <Text
-            accessibilityRole="header"
-            style={{ ...TypeScale.headingMedium, color: theme.textPrimary }}
-          >
-            {title}
-          </Text>
-          {children}
-          <Pressable
-            accessibilityRole="button"
-            disabled={closeDisabled}
-            aria-disabled={closeDisabled}
-            onPress={requestClose}
-            style={{ minHeight: 44, justifyContent: 'center', opacity: closeDisabled ? 0.5 : 1 }}
-          >
-            <Text style={{ ...TypeScale.labelMedium, color: theme.brandLink }}>
-              {closeLabel ?? intl.formatMessage({ id: 'ui.close' })}
-            </Text>
-          </Pressable>
+          {scrollable ? (
+            <ScrollView
+              tabIndex={-1}
+              onFocus={(event) => {
+                // The web modal attempts to focus each ancestor while wrapping Tab.
+                // Send that focus to the initial control so the trap can find the right boundary.
+                if (event.target === event.currentTarget) focusOnOpen?.();
+              }}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={contentLayout}
+            >
+              {content}
+            </ScrollView>
+          ) : (
+            content
+          )}
         </View>
       </View>
     </Modal>
@@ -308,11 +334,13 @@ export function ConflictDialog({
   onReview,
   onDiscard,
   onClose,
+  onDismiss,
 }: {
   visible: boolean;
   onReview: () => void;
   onDiscard: () => void;
   onClose: () => void;
+  onDismiss?: () => void;
 }) {
   const theme = useTheme();
   const intl = useIntl();
@@ -320,6 +348,7 @@ export function ConflictDialog({
     <Dialog
       visible={visible}
       onClose={onClose}
+      onDismiss={onDismiss}
       title={intl.formatMessage({ id: 'conflict.title' })}
     >
       <Text style={{ ...TypeScale.bodyMedium, color: theme.textSecondary }}>
