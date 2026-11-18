@@ -487,6 +487,36 @@ describe('S2 rows per section type', () => {
     expect(screen.getByText('Current account · DE12 •••• 4471')).toBeTruthy();
     expect(screen.getByText('✓ Reconciled')).toBeTruthy();
     expect(screen.getByText('≈EUR 46.00')).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: 'USD cash, 50.00 US dollars, Current account',
+      }),
+    ).toBeTruthy();
+  });
+
+  it.each([
+    { hidden: true, known: true, displayed: '••••', spoken: 'hidden' },
+    { hidden: false, known: false, displayed: '–', spoken: 'Value unknown' },
+  ])('keeps the spoken account balance private when the row shows $displayed', async (state) => {
+    setData(
+      view([
+        makeSection('CASH_AND_SAVINGS', [
+          makeAccount('USD cash', {
+            currency: 'USD',
+            balance: '50.00',
+            valueInPortfolioCurrency: '46.00',
+            valueKnown: state.known,
+          }),
+        ]),
+      ]),
+    );
+    jest.mocked(useAmountsHidden).mockReturnValue(state.hidden);
+    await mount();
+
+    const button = screen.getByRole('button', {
+      name: `USD cash, ${state.spoken}, Current account`,
+    });
+    expect(within(button).getAllByText(state.displayed)).toHaveLength(2);
   });
 
   it('shows the depot row with position count and date, and its total return', async () => {
@@ -686,12 +716,49 @@ describe('S2 header, explanation and data source', () => {
     );
   });
 
-  it('explains a subtotal with its server-converted workspace value', async () => {
-    setData(view([makeSection('CASH_AND_SAVINGS', [makeAccount('Girokonto')])]));
+  it.each([
+    ['en-GB', 'Cash & savings, 9876.54 euros. Show details'],
+    ['de-CH', 'Bargeld & Sparen, 9876.54 Euro. Details anzeigen'],
+    ['de-DE', 'Bargeld & Sparen, 9876,54 Euro. Details anzeigen'],
+  ])('names the visible subtotal and opens its explanation in %s', async (locale, explanation) => {
+    setData(
+      view([makeSection('CASH_AND_SAVINGS', [makeAccount('Girokonto')], { subtotal: '9876.54' })]),
+    );
+    await mount(locale);
+
+    const subtotal = screen.getByTestId('portfolio-section-subtotal');
+    const button = screen.getByRole('button', {
+      name: `${subtotal.props.children}. ${explanation}`,
+    });
+    expect(within(button).getByTestId('portfolio-section-subtotal')).toBe(subtotal);
+    await fireEvent.press(button);
+    expect(screen.getByTestId('portfolio-explanation-converted')).toHaveTextContent('≈CHF 95.00');
+  });
+
+  it.each([
+    { hidden: true, display: '••••', spoken: 'hidden', valueStatus: 'CURRENT' },
+    { hidden: false, display: '–', spoken: 'Value unknown', valueStatus: 'UNKNOWN' },
+  ] as const)('names the $display subtotal and opens its explanation', async (state) => {
+    // A numeric server payload must stay hidden when privacy mode or UNKNOWN applies.
+    setData(
+      view([
+        makeSection('CASH_AND_SAVINGS', [makeAccount('Girokonto')], {
+          subtotal: '9876.54',
+          valueStatus: state.valueStatus,
+        }),
+      ]),
+    );
+    jest.mocked(useAmountsHidden).mockReturnValue(state.hidden);
     await mount();
-    await fireEvent.press(screen.getByRole('button', { name: /^Cash & savings, 100.00 euros/ }));
-    expect(screen.getByTestId('portfolio-explanation-converted').props.children).toBe('≈CHF 95.00');
-    expect(screen.getByText('All available account values are included.')).toBeTruthy();
+
+    const button = screen.getByRole('button', {
+      name: `${state.display}. Cash & savings, ${state.spoken}. Show details`,
+    });
+    expect(within(button).getByTestId('portfolio-section-subtotal')).toHaveTextContent(
+      state.display,
+    );
+    await fireEvent.press(button);
+    expect(screen.getByTestId('portfolio-explanation-converted')).toHaveTextContent(state.display);
   });
 
   it.each([

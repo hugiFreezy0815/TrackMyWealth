@@ -1,5 +1,6 @@
+import { useId } from 'react';
 import { useIntl, type IntlShape } from 'react-intl';
-import { Pressable, Text, View } from 'react-native';
+import { Platform, Pressable, Text, View } from 'react-native';
 
 import { Amount, Figure, ValueStatusBadge, amountTexts } from '@/components/shared';
 import { Spacing, TypeScale } from '@/constants/theme';
@@ -92,14 +93,27 @@ export function PortfolioAccountRow({
   const intl = useIntl();
   const theme = useTheme();
   const hidden = useAmountsHidden();
+  const descriptionId = useId();
+  const web = Platform.OS === 'web';
   const known = account.valueKnown && account.valueStatus !== 'UNKNOWN';
   const detail = rowDetail(intl, account, section);
-  const spokenAmount = amountTexts(intl, {
+  const balance = {
     value: account.balance,
     currency: account.currency,
     valueKnown: known,
     masked: hidden,
-  }).label;
+  };
+  const conversion =
+    account.currency !== portfolioCurrency && account.valueInPortfolioCurrency !== null
+      ? {
+          ...balance,
+          value: account.valueInPortfolioCurrency,
+          currency: portfolioCurrency,
+          approx: true,
+        }
+      : null;
+  const balanceText = amountTexts(intl, balance);
+  const conversionDisplay = web && conversion ? amountTexts(intl, conversion).display : undefined;
   return (
     <View
       testID={rowTestId(account.accountId)}
@@ -112,7 +126,9 @@ export function PortfolioAccountRow({
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={[account.name, spokenAmount, detail].join(', ')}
+        // On web, the button name comes from the visible row content in reading order.
+        accessibilityLabel={web ? undefined : [account.name, balanceText.label, detail].join(', ')}
+        aria-describedby={web ? descriptionId : undefined}
         onPress={() => onAccount(account.accountId)}
         style={{ minHeight: 56, paddingVertical: Spacing.two, gap: Spacing.one }}
       >
@@ -133,9 +149,8 @@ export function PortfolioAccountRow({
           </View>
           <View style={{ alignItems: 'flex-end', gap: Spacing.one }}>
             <Amount
-              value={account.balance}
-              currency={account.currency}
-              valueKnown={known}
+              {...balance}
+              aria-label={web ? balanceText.display : undefined}
               style={{
                 ...TypeScale.numberLarge,
                 // With "Hide amounts" a red figure would reveal the sign (as ChangeChip).
@@ -145,18 +160,17 @@ export function PortfolioAccountRow({
                     : theme.textPrimary,
               }}
             />
-            {account.currency !== portfolioCurrency && account.valueInPortfolioCurrency !== null ? (
-              <Amount
-                approx
-                value={account.valueInPortfolioCurrency}
-                valueKnown={known}
-                currency={portfolioCurrency}
-                style={TypeScale.caption}
-              />
+            {conversion ? (
+              <Amount {...conversion} aria-label={conversionDisplay} style={TypeScale.caption} />
             ) : null}
           </View>
         </View>
       </Pressable>
+      {web ? (
+        <Text nativeID={descriptionId} style={{ display: 'none' }}>
+          {balanceText.label}
+        </Text>
+      ) : null}
       <View
         style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.two }}
       >

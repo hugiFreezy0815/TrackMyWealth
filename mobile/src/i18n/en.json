@@ -718,7 +718,7 @@
   "portfolio.details.type": "Type",
   "portfolio.details.currency": "Portfolio currency",
   "portfolio.details.accounts": "Accounts",
-  "portfolio.section.explain": "{section}, {amount}. Show details",
+  "portfolio.section.explain": "{displayAmount}. {section}, {amount}. Show details",
   "portfolio.refresh": "Refresh portfolio",
   "portfolio.refreshing": "Refreshing portfolio…",
   "portfolio.missing": "This portfolio no longer exists.",
