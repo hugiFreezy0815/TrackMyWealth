@@ -4,8 +4,10 @@ import { CategoryOptions } from './category-options.web';
 
 jest.mock('@/global.css', () => ({}));
 jest.mock('@/hooks/use-theme', () => ({
-  useTheme: () => ({ textPrimary: '#0B1C3F' }),
+  useTheme: () => ({ textPrimary: '#0B1C3F', brandPrimary: '#00857A' }),
 }));
+const mockScheme = jest.fn<'light' | 'dark' | null, []>(() => 'light');
+jest.mock('@/hooks/use-color-scheme', () => ({ useColorScheme: () => mockScheme() }));
 
 const choices = [
   { id: 'groceries', label: 'Food › Groceries' },
@@ -79,4 +81,28 @@ describe('CategoryOptions (web, native radios)', () => {
       );
     }
   });
+
+  it.each([
+    ['light', 'light'],
+    ['dark', 'dark'],
+    [null, 'light'],
+  ] as const)(
+    'themes the radios with the brand accent in the %s scheme',
+    async (scheme, colorScheme) => {
+      mockScheme.mockReturnValue(scheme);
+      await render(
+        <CategoryOptions
+          label="Choose a category"
+          choices={choices}
+          selected="groceries"
+          disabled={false}
+          onSelect={jest.fn()}
+        />,
+      );
+      expect(radioFor('Food › Groceries').props.style).toEqual({
+        accentColor: '#00857A',
+        colorScheme,
+      });
+    },
+  );
 });
