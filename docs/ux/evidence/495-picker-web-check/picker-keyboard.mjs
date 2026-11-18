@@ -106,7 +106,10 @@ const server = createServer(async (request, response) => {
 await new Promise((ready) => server.listen(0, "127.0.0.1", ready));
 const origin = "http://127.0.0.1:" + server.address().port;
 
-async function withPicker({ width, height, zoom = 1, saveStatus }, check) {
+async function withPicker(
+  { width, height, zoom = 1, saveStatus, hasTouch = false },
+  check,
+) {
   const browser = await chromium.launch({
     executablePath: process.env.CHROMIUM_EXECUTABLE,
     args: process.env.CHROMIUM_SINGLE_PROCESS
@@ -118,6 +121,7 @@ async function withPicker({ width, height, zoom = 1, saveStatus }, check) {
     const page = await browser.newPage({
       locale: "en-GB",
       viewport: { width, height },
+      hasTouch,
     });
     page.setDefaultTimeout(8000);
     let attemptedSave = false;
@@ -177,7 +181,13 @@ async function withPicker({ width, height, zoom = 1, saveStatus }, check) {
     await page.keyboard.press("Enter");
     const dialog = page.getByRole("dialog", { name: "Choose a category" });
     await dialog.waitFor();
-    await check({ page, dialog, trigger, releaseRefetch: refetch.resolve });
+    await check({
+      page,
+      dialog,
+      trigger,
+      hasTouch,
+      releaseRefetch: refetch.resolve,
+    });
   } finally {
     refetch.resolve();
     await browser.close();
@@ -280,7 +290,42 @@ async function checkDiscard({ page, dialog, trigger, releaseRefetch }) {
   releaseRefetch();
 }
 
+async function checkPointer({ page, dialog, hasTouch }) {
+  // A tap or click inside the dialog must not move focus to the search field
+  // (on a phone that opens the keyboard).
+  const dining = dialog.getByRole("radio", { name: "Food › Dining out" });
+  const press = hasTouch ? "tap" : "click";
+  await page.evaluate(() => {
+    window.searchFocusCount = 0;
+    document.addEventListener(
+      "focusin",
+      (event) => {
+        if (event.target.getAttribute?.("aria-label") === "Search categories")
+          window.searchFocusCount++;
+      },
+      true,
+    );
+  });
+  await page.keyboard.press("Tab");
+  await dialog.getByText("Food › Dining out", { exact: true })[press]();
+  await assertFocused(dining);
+  assert.equal(await dining.isChecked(), true);
+  await dialog.getByRole("heading", { name: "Choose a category" })[press]();
+  assert.equal(await page.evaluate(() => window.searchFocusCount), 0);
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "hidden" });
+}
+
 try {
+  for (const hasTouch of [false, true]) {
+    await withPicker(
+      { width: 390, height: 600, saveStatus: 500, hasTouch },
+      checkPointer,
+    );
+    console.log("Pointer presses kept focus off the search field", {
+      hasTouch,
+    });
+  }
   for (const size of [
     { width: 568, height: 240 },
     { width: 880, height: 480, zoom: 2 },

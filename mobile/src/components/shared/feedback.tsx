@@ -212,6 +212,20 @@ export function LoadingSkeleton({
     </View>
   );
 }
+
+/**
+ * Web: whether the browser treats the element's current focus as keyboard focus. A pointer press
+ * on a non-text element never matches `:focus-visible`; the modal's Tab wrap does.
+ */
+function keyboardFocus(target: unknown): boolean {
+  try {
+    return (target as Element).matches(':focus-visible');
+  } catch {
+    // Browsers without :focus-visible keep the previous behaviour.
+    return true;
+  }
+}
+
 type DialogProps = {
   title: string;
   visible: boolean;
@@ -305,11 +319,16 @@ export function Dialog({
         >
           {scrollable ? (
             <ScrollView
+              testID="shared-dialog-scroll"
               tabIndex={-1}
               onFocus={(event) => {
                 // The web modal attempts to focus each ancestor while wrapping Tab.
                 // Send that focus to the initial control so the trap can find the right boundary.
-                if (event.target === event.currentTarget) focusOnOpen?.();
+                // A pointer press inside the dialog focuses this container too; leave that focus
+                // alone so a tap does not jump to the initial control (and open a phone keyboard).
+                if (event.target === event.currentTarget && keyboardFocus(event.currentTarget)) {
+                  focusOnOpen?.();
+                }
               }}
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={contentLayout}

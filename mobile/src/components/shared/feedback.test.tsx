@@ -227,4 +227,57 @@ describe('feedback states', () => {
     await fireEvent(screen.getByTestId('shared-dialog-modal'), 'onDismiss');
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
+
+  it('Dialog moves focus to its initial control when shown', async () => {
+    const focusOnOpen = jest.fn();
+    await renderWithIntl(
+      <Dialog title="Sample" visible onClose={() => {}} focusOnOpen={focusOnOpen} scrollable>
+        <></>
+      </Dialog>,
+    );
+    await fireEvent(screen.getByTestId('shared-dialog-modal'), 'onShow');
+    expect(focusOnOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it('scrollable Dialog sends keyboard focus on its container to the initial control only', async () => {
+    const focusOnOpen = jest.fn();
+    await renderWithIntl(
+      <Dialog title="Sample" visible onClose={() => {}} focusOnOpen={focusOnOpen} scrollable>
+        <></>
+      </Dialog>,
+    );
+    const scroll = screen.getByTestId('shared-dialog-scroll');
+    const container = (focusVisible: boolean) => ({
+      matches: (selector: string) => selector === ':focus-visible' && focusVisible,
+    });
+    // The web modal's Tab wrap focuses the container: keyboard focus.
+    const wrapped = container(true);
+    await fireEvent(scroll, 'focus', { target: wrapped, currentTarget: wrapped });
+    expect(focusOnOpen).toHaveBeenCalledTimes(1);
+    // A pointer press inside the dialog focuses the container without :focus-visible.
+    const pressed = container(false);
+    await fireEvent(scroll, 'focus', { target: pressed, currentTarget: pressed });
+    // Focus on a control inside the container bubbles up and is left alone.
+    await fireEvent(scroll, 'focus', { target: container(true), currentTarget: wrapped });
+    expect(focusOnOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it('scrollable Dialog keeps the redirect where the browser lacks :focus-visible', async () => {
+    const focusOnOpen = jest.fn();
+    await renderWithIntl(
+      <Dialog title="Sample" visible onClose={() => {}} focusOnOpen={focusOnOpen} scrollable>
+        <></>
+      </Dialog>,
+    );
+    const legacy = {
+      matches: () => {
+        throw new SyntaxError('unsupported selector');
+      },
+    };
+    await fireEvent(screen.getByTestId('shared-dialog-scroll'), 'focus', {
+      target: legacy,
+      currentTarget: legacy,
+    });
+    expect(focusOnOpen).toHaveBeenCalledTimes(1);
+  });
 });
