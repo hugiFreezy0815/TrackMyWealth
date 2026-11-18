@@ -100,6 +100,16 @@ const isRecoverableAccountFailure = (error: unknown) =>
   error instanceof NetworkError ||
   (error instanceof ApiError && error.status >= 500 && error.status < 600);
 
+/** Keep resource-specific API problems inline, even when they use a 5xx status. */
+function isSharedReadFailure(error: unknown) {
+  if (error instanceof NetworkError) return true;
+  if (!(error instanceof ApiError) || !isRecoverableAccountFailure(error)) return false;
+  const problem = problemReaction(error);
+  return (
+    problem.reaction === 'REPORT' && (problem.code === undefined || problem.code === 'INTERNAL')
+  );
+}
+
 /** Pull-to-refresh: every financial query reloads, paged lists from page 0, filter and sort kept. */
 export function useAccountRefresh() {
   const client = useQueryClient();
@@ -240,8 +250,6 @@ export function AccountDetail({
     reloadedCategories.current = true;
     void reloadCategories();
   }, [unknownCategory, reloadCategories]);
-
-  const refresh = () => void invalidateFinancialData(client);
 
   // A targeted transaction read must not rely on a paged list: the row may move
   // outside the current filter, or past the loaded page.
@@ -429,6 +437,36 @@ export function AccountDetail({
   }
   if (!summary) return null;
 
+  const showingPositions = summary.holdsPositions && tab === 'positions';
+  const showingTransactions = hasLedger && !showingPositions;
+  const valueQueries = archived ? [archivedAccounts, activeAccounts] : [activeAccounts];
+  const firstPageFailed = transactions.isError && !transactions.isFetchNextPageError;
+  const sharedFailures = [
+    account,
+    ...valueQueries,
+    ...(showingPositions ? [positions] : []),
+    ...(showingTransactions ? [count, categories, ...(firstPageFailed ? [transactions] : [])] : []),
+  ].filter((query) => query.isEnabled && isSharedReadFailure(query.error));
+  const sharedError = sharedFailures.length > 1 ? sharedFailures[0].error : null;
+  const inlineError = (error: unknown) =>
+    sharedError && isSharedReadFailure(error) ? null : error;
+  const valueError = valueQueries.map((query) => inlineError(query.error)).find(Boolean);
+  const valuePending = (archived ? archivedAccounts : activeAccounts).isPending;
+  const valueFeedback =
+    valueError || (!value && !valuePending && valueQueries.every((query) => !query.isError)) ? (
+      <ErrorBanner
+        error={valueError}
+        onRetry={() => {
+          const failed = valueQueries.filter((query) => inlineError(query.error));
+          for (const query of failed.length
+            ? failed
+            : [archived ? archivedAccounts : activeAccounts]) {
+            void query.refetch({ cancelRefetch: false });
+          }
+        }}
+      />
+    ) : null;
+
   const context = {
     categories: categories.data ?? [],
     loaded: records,
@@ -458,7 +496,15 @@ export function AccountDetail({
           }
         />
       ) : null}
-      {account.isError ? (
+      {sharedError ? (
+        <ErrorBanner
+          error={sharedError}
+          onRetry={() => {
+            for (const query of sharedFailures) void query.refetch({ cancelRefetch: false });
+          }}
+        />
+      ) : null}
+      {inlineError(account.error) ? (
         <ErrorBanner error={account.error} onRetry={() => void account.refetch()} />
       ) : null}
       {writeError && dialog !== 'openingDate' ? (
@@ -504,9 +550,8 @@ export function AccountDetail({
       <AccountHeaderCard
         summary={summary}
         value={value}
-        valuePending={activeAccounts.isPending || (archived && archivedAccounts.isPending)}
-        valueError={activeAccounts.error ?? archivedAccounts.error}
-        onRetryValue={refresh}
+        valuePending={valuePending}
+        valueFeedback={valueFeedback}
         onExplainValue={() => setDialog('value')}
       />
       {summary.openedAt ? (
@@ -518,9 +563,7 @@ export function AccountDetail({
         </Text>
       ) : null}
       {pocket.currentLine}
-      {value && (activeAccounts.isError || archivedAccounts.isError) ? (
-        <ErrorBanner error={activeAccounts.error ?? archivedAccounts.error} onRetry={refresh} />
-      ) : null}
+      {value ? valueFeedback : null}
       {archived ? (
         <ArchivedBanner
           archivedAt={summary.archivedAt}
@@ -538,10 +581,10 @@ export function AccountDetail({
           onSelect={(next) => setTab(next === 'positions' ? 'positions' : 'activity')}
         />
       ) : null}
-      {summary.holdsPositions && tab === 'positions' ? (
+      {showingPositions ? (
         positions.isPending ? (
           <LoadingSkeleton count={3} />
-        ) : positions.isError ? (
+        ) : inlineError(positions.error) ? (
           <ErrorBanner error={positions.error} onRetry={() => void positions.refetch()} />
         ) : positions.data?.positions.length ? (
           <PositionView
@@ -549,9 +592,9 @@ export function AccountDetail({
             currency={positions.data.currency}
             accountName={summary.name}
           />
-        ) : (
+        ) : positions.data ? (
           <EmptyState title={intl.formatMessage({ id: 'account.noPositions' })} />
-        )
+        ) : null
       ) : !hasLedger ? (
         <EmptyState
           title={valueBasisExplanation(value?.valueBasis, intl)}
@@ -618,14 +661,14 @@ export function AccountDetail({
               {intl.formatMessage({ id: sortMessageId(sort) })} ⌄
             </Text>
           </Pressable>
-          {count.isError ? (
+          {inlineError(count.error) ? (
             <ErrorBanner error={count.error} onRetry={() => void count.refetch()} />
           ) : null}
-          {categories.isError ? (
+          {inlineError(categories.error) ? (
             <ErrorBanner error={categories.error} onRetry={() => void categories.refetch()} />
           ) : null}
           {transactions.isPending && !transactions.data ? <LoadingSkeleton count={5} /> : null}
-          {transactions.isError && !transactions.isFetchNextPageError ? (
+          {firstPageFailed && inlineError(transactions.error) ? (
             // Keep previously loaded rows visible, but do not silently hide a failed refresh.
             <ErrorBanner error={transactions.error} onRetry={() => void transactions.refetch()} />
           ) : null}
@@ -651,7 +694,6 @@ export function AccountDetail({
       )}
     </View>
   );
-  const showingTransactions = hasLedger && !(summary.holdsPositions && tab === 'positions');
   // A cached first page can remain visible after a paused or failed refresh.
   const canFetchNextPage =
     transactions.hasNextPage && transactions.fetchStatus === 'idle' && !transactions.isRefetchError;

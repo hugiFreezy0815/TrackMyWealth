@@ -11,7 +11,7 @@ import { amountTexts } from '@/components/shared';
 import { showToast } from '@/features/shell/toast';
 import en from '@/i18n/en.json';
 
-import { AccountDetail } from './account-detail';
+import { AccountDetail, useAccountRefresh, type AccountDetailProps } from './account-detail';
 import type { AccountListItem, AccountSummary, Category, Transaction } from './model';
 
 jest.mock('@/global.css', () => ({}));
@@ -102,9 +102,13 @@ const txn = (index: number, other: Partial<Transaction> = {}): Transaction =>
 
 /** An in-memory API behind the mocked typedApi: real hooks, real cache, real invalidation. */
 function fakeServer(account: AccountSummary, rows: Transaction[], holdings?: PositionsResponse) {
-  const state = { account, rows };
-  const counted = (row: Transaction) => row.categoryId === 'uncat' && !row.internalTransfer;
   type Options = { params?: Record<string, string>; query?: Record<string, unknown> };
+  const state: {
+    account: AccountSummary;
+    rows: Transaction[];
+    failure?: (path: string, options: Options) => Error | undefined;
+  } = { account, rows };
+  const counted = (row: Transaction) => row.categoryId === 'uncat' && !row.internalTransfer;
   const routes: Record<string, (options: Options) => unknown> = {
     '/api/v1/accounts/{accountId}': () => state.account,
     '/api/v1/accounts/{accountId}/positions': () => holdings,
@@ -127,8 +131,11 @@ function fakeServer(account: AccountSummary, rows: Transaction[], holdings?: Pos
       };
     },
   };
-  api.get.mockImplementation((async (path: string, options: Options = {}) =>
-    routes[path](options)) as never);
+  api.get.mockImplementation((async (path: string, options: Options = {}) => {
+    const failure = state.failure?.(path, options);
+    if (failure) throw failure;
+    return routes[path](options);
+  }) as never);
   api.put.mockImplementation((async (
     _path: string,
     options: { params: { transactionId: string }; version: number; body: { categoryId: string } },
@@ -158,6 +165,11 @@ const listCalls = () =>
     })
     .map(([, options]) => (options as { query: Record<string, unknown> }).query);
 
+function RefreshableAccountDetail(props: AccountDetailProps) {
+  const { refreshing, refresh } = useAccountRefresh();
+  return <AccountDetail {...props} refreshing={refreshing} onRefresh={() => void refresh()} />;
+}
+
 async function renderDetail(
   props: {
     onBack?: () => void;
@@ -177,7 +189,7 @@ async function renderDetail(
   await render(
     <QueryClientProvider client={client}>
       <IntlProvider locale="en" messages={en}>
-        <AccountDetail
+        <RefreshableAccountDetail
           accountId="acc"
           initialTab={props.initialTab}
           onBack={onBack}
@@ -507,6 +519,81 @@ describe('S3 account detail acceptance checks (#494)', () => {
         .slice(callsBeforeReturn)
         .map(({ page }) => page),
     ).toEqual([0, 0, 1]);
+  });
+
+  it.each([
+    { kind: 'network error', failure: new NetworkError('server unreachable') },
+    { kind: 'gateway timeout', failure: new ApiError('gateway timeout', 504) },
+  ])('uses one retry for a refresh outage ($kind)', async ({ failure }) => {
+    const server = fakeServer(
+      summary(),
+      Array.from({ length: 60 }, (_, index) => txn(index)),
+    );
+    await renderDetail();
+    expect(await screen.findByText('Girokonto')).toBeTruthy();
+    expect(await screen.findByText('Showing 50 of 60')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Load more' }));
+    expect(await screen.findByText('Showing 60 of 60')).toBeTruthy();
+
+    server.failure = () => failure;
+    await fireEvent(screen.getByTestId('account-transaction-list'), 'refresh');
+    await waitFor(() => {
+      expect(listCalls().map(({ page }) => page)).toEqual([0, 1, 0]);
+      expect(screen.getByRole('button', { name: 'Load more' })).toBeDisabled();
+      expect(screen.getAllByText(/^Something went wrong/)).toHaveLength(1);
+      expect(screen.getAllByRole('button', { name: 'Try again' })).toHaveLength(1);
+    });
+    expect(screen.getByText('Shop 000')).toBeTruthy();
+    expect(screen.getByTestId('account-value')).toBeTruthy();
+    expect(screen.getByText('Showing 50 of 60')).toBeTruthy();
+
+    server.failure = undefined;
+    api.get.mockClear();
+    await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => {
+      expect(screen.queryByText(/^Something went wrong/)).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Load more' })).toBeEnabled();
+    });
+    expect(api.get.mock.calls.map(([path]) => path).sort()).toEqual([
+      '/api/v1/accounts',
+      '/api/v1/accounts/{accountId}',
+      '/api/v1/accounts/{accountId}/transactions',
+      '/api/v1/accounts/{accountId}/transactions',
+    ]);
+    expect(listCalls().map(({ page }) => page)).toEqual([0]);
+  });
+
+  it('keeps a count-specific problem inline during and after recovery from a shared outage', async () => {
+    const server = fakeServer(summary(), [txn(0)]);
+    await renderDetail();
+    expect(await screen.findByText('Shop 000')).toBeTruthy();
+
+    const countProblem = new ApiError('forbidden', 403, {
+      code: 'FORBIDDEN',
+      status: 403,
+      title: 'Forbidden',
+    });
+    const countMessage = intl.formatMessage({ id: 'problem.FORBIDDEN' });
+    let offline = true;
+    server.failure = (path, { query }) => {
+      if (path === '/api/v1/accounts/{accountId}/transactions' && query?.size === 1) {
+        return countProblem;
+      }
+      if (offline) return new NetworkError('server unreachable');
+    };
+    await fireEvent(screen.getByTestId('account-transaction-list'), 'refresh');
+    expect(await screen.findByText(countMessage)).toBeTruthy();
+    expect(screen.getAllByText(/^Something went wrong/)).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Try again' })).toHaveLength(1);
+
+    offline = false;
+    await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull());
+    expect(screen.queryByText(/^Something went wrong/)).toBeNull();
+    expect(screen.getByText(countMessage)).toBeTruthy();
+    expect(screen.getByText('Shop 000')).toBeTruthy();
+    expect(screen.getByTestId('account-value')).toBeTruthy();
   });
 
   it('uses a virtualized SectionList with headers inside the scroll owner for 1,000+ rows', async () => {
