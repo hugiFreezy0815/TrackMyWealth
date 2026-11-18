@@ -2,7 +2,7 @@ import { useId } from 'react';
 import { useIntl, type IntlShape } from 'react-intl';
 import { Platform, Pressable, Text, View } from 'react-native';
 
-import { Amount, Figure, ValueStatusBadge, amountTexts } from '@/components/shared';
+import { Amount, Figure, ValueStatusBadge, amountTexts, isValueKnown } from '@/components/shared';
 import { Spacing, TypeScale } from '@/constants/theme';
 import { isNegativeAmount } from '@/features/overview/overview-model';
 import { msg } from '@/features/overview/overview-text';
@@ -95,7 +95,7 @@ export function PortfolioAccountRow({
   const hidden = useAmountsHidden();
   const descriptionId = useId();
   const web = Platform.OS === 'web';
-  const known = account.valueKnown && account.valueStatus !== 'UNKNOWN';
+  const known = account.valueKnown && isValueKnown(account.valueStatus);
   const detail = rowDetail(intl, account, section);
   const balance = {
     value: account.balance,
@@ -104,7 +104,7 @@ export function PortfolioAccountRow({
     masked: hidden,
   };
   const conversion =
-    account.currency !== portfolioCurrency && account.valueInPortfolioCurrency !== null
+    known && account.currency !== portfolioCurrency && account.valueInPortfolioCurrency !== null
       ? {
           ...balance,
           value: account.valueInPortfolioCurrency,
@@ -113,7 +113,10 @@ export function PortfolioAccountRow({
         }
       : null;
   const balanceText = amountTexts(intl, balance);
-  const conversionDisplay = web && conversion ? amountTexts(intl, conversion).display : undefined;
+  const conversionText = conversion ? amountTexts(intl, conversion) : null;
+  const spokenAmounts = [balanceText.label, hidden ? null : conversionText?.label]
+    .filter(Boolean)
+    .join(', ');
   return (
     <View
       testID={rowTestId(account.accountId)}
@@ -126,8 +129,9 @@ export function PortfolioAccountRow({
     >
       <Pressable
         accessibilityRole="button"
-        // On web, the button name comes from the visible row content in reading order.
-        accessibilityLabel={web ? undefined : [account.name, balanceText.label, detail].join(', ')}
+        // On web, the button name comes from the visible row content in reading order (WCAG 2.5.3)
+        // and the spoken amounts become its description.
+        accessibilityLabel={web ? undefined : [account.name, spokenAmounts, detail].join(', ')}
         aria-describedby={web ? descriptionId : undefined}
         onPress={() => onAccount(account.accountId)}
         style={{ minHeight: 56, paddingVertical: Spacing.two, gap: Spacing.one }}
@@ -155,20 +159,24 @@ export function PortfolioAccountRow({
                 ...TypeScale.numberLarge,
                 // With "Hide amounts" a red figure would reveal the sign (as ChangeChip).
                 color:
-                  !hidden && isNegativeAmount(account.balance)
+                  known && !hidden && isNegativeAmount(account.balance)
                     ? theme.statusLoss
                     : theme.textPrimary,
               }}
             />
             {conversion ? (
-              <Amount {...conversion} aria-label={conversionDisplay} style={TypeScale.caption} />
+              <Amount
+                {...conversion}
+                aria-label={web ? conversionText?.display : undefined}
+                style={TypeScale.caption}
+              />
             ) : null}
           </View>
         </View>
       </Pressable>
       {web ? (
         <Text nativeID={descriptionId} style={{ display: 'none' }}>
-          {balanceText.label}
+          {spokenAmounts}
         </Text>
       ) : null}
       <View

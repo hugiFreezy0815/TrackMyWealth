@@ -1,6 +1,6 @@
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import {
@@ -410,6 +410,59 @@ describe('S2 Portfolio View acceptance (#493)', () => {
     expect(screen.getByRole('button', { name: /Home total, minus/ })).toBeTruthy();
   });
 
+  it.each([
+    ['en', /approximately minus 91\.25/],
+    ['de', /ungefähr minus 91,25/],
+  ] as const)('announces the server-converted row balance in %s', async (locale, label) => {
+    setData(
+      view([
+        makeSection('CASH_AND_SAVINGS', [
+          makeAccount('Foreign account', {
+            currency: 'CHF',
+            balance: '-100.00',
+            valueInPortfolioCurrency: '-91.25',
+          }),
+          makeAccount('Same currency'),
+          makeAccount('Missing conversion', { currency: 'CHF', valueInPortfolioCurrency: null }),
+        ]),
+      ]),
+    );
+    await mount(locale);
+    const row = screen.getByRole('button', { name: /^Foreign account,/ });
+    expect(row.props.accessibilityLabel).toMatch(label);
+    for (const name of [/^Same currency,/, /^Missing conversion,/]) {
+      expect(screen.getByRole('button', { name }).props.accessibilityLabel).not.toMatch(
+        /approximately|ungefähr/,
+      );
+    }
+  });
+
+  it.each([
+    ['the value is flagged unknown', { valueKnown: false }],
+    ['the status is unrecognised', { valueStatus: 'FUTURE' as PortfolioAccount['valueStatus'] }],
+  ] as const)('shows a single neutral placeholder when %s', async (_reason, overrides) => {
+    setData(
+      view([
+        makeSection('CASH_AND_SAVINGS', [
+          makeAccount('Foreign account', {
+            currency: 'CHF',
+            balance: '-100.00',
+            valueInPortfolioCurrency: '-91.25',
+            ...overrides,
+          }),
+        ]),
+      ]),
+    );
+    await mount();
+    const row = within(screen.getByTestId('account-row-Foreign account'));
+    const button = row.getByRole('button', { name: /^Foreign account,/ });
+    expect(button.props.accessibilityLabel).toMatch(/^Foreign account, Value unknown, [^0-9]+$/);
+    const placeholders = row.getAllByText('–');
+    expect(placeholders).toHaveLength(1);
+    expect(color(placeholders[0])).not.toBe(LOSS);
+    expect(row.queryByText(/100\.00|91\.25/)).toBeNull();
+  });
+
   it('shows the stale source date, the due chip and no chip without a due date', async () => {
     const due = new Date();
     due.setDate(due.getDate() + 8);
@@ -489,14 +542,15 @@ describe('S2 rows per section type', () => {
     expect(screen.getByText('≈EUR 46.00')).toBeTruthy();
     expect(
       screen.getByRole('button', {
-        name: 'USD cash, 50.00 US dollars, Current account',
+        name: 'USD cash, 50.00 US dollars, approximately 46.00 euros, Current account',
       }),
     ).toBeTruthy();
   });
 
   it.each([
-    { hidden: true, known: true, displayed: '••••', spoken: 'hidden' },
-    { hidden: false, known: false, displayed: '–', spoken: 'Value unknown' },
+    // Hidden: balance and converted value are both masked. Unknown: one placeholder (#606).
+    { hidden: true, known: true, displayed: '••••', spoken: 'hidden', placeholders: 2 },
+    { hidden: false, known: false, displayed: '–', spoken: 'Value unknown', placeholders: 1 },
   ])('keeps the spoken account balance private when the row shows $displayed', async (state) => {
     setData(
       view([
@@ -516,7 +570,103 @@ describe('S2 rows per section type', () => {
     const button = screen.getByRole('button', {
       name: `USD cash, ${state.spoken}, Current account`,
     });
-    expect(within(button).getAllByText(state.displayed)).toHaveLength(2);
+    expect(within(button).getAllByText(state.displayed)).toHaveLength(state.placeholders);
+  });
+
+  describe('on web (#617, WCAG 2.5.3 Label in Name)', () => {
+    const originalOS = Platform.OS;
+    beforeEach(() => {
+      Platform.OS = 'web';
+    });
+    afterEach(() => {
+      Platform.OS = originalOS;
+    });
+
+    const usdCash = () =>
+      view([
+        makeSection('CASH_AND_SAVINGS', [
+          makeAccount('USD cash', {
+            currency: 'USD',
+            balance: '50.00',
+            valueInPortfolioCurrency: '46.00',
+          }),
+        ]),
+      ]);
+
+    /** Text of the hidden node the row button references through aria-describedby. */
+    function description(button: ReturnType<typeof screen.getByRole>): string {
+      const id = button.props['aria-describedby'] as string;
+      expect(id).toBeTruthy();
+      const found: string[] = [];
+      const walk = (node: unknown): void => {
+        if (node == null || typeof node !== 'object') return;
+        if (Array.isArray(node)) return node.forEach(walk);
+        const { props, children } = node as {
+          props?: Record<string, unknown>;
+          children?: unknown[];
+        };
+        if (props?.nativeID === id) found.push((children ?? []).join(''));
+        walk(children);
+      };
+      walk(screen.toJSON());
+      expect(found).toHaveLength(1);
+      return found[0];
+    }
+
+    /** Each amount in the row exposes exactly its visible text as its name. */
+    function expectAmountsNamedByText(button: ReturnType<typeof screen.getByRole>, count: number) {
+      const amounts = within(button)
+        .getAllByText(/./)
+        .filter((node) => 'aria-label' in node.props);
+      expect(amounts).toHaveLength(count);
+      for (const amount of amounts) {
+        expect(amount.props['aria-label']).toBe(amount.props.children);
+      }
+      return amounts.map((amount) => amount.props.children as string);
+    }
+
+    it('names the row by its visible content and describes it with the spoken amounts', async () => {
+      setData(usdCash());
+      await mount();
+
+      const button = screen.getByRole('button', {
+        name: /^USD cash.*Current account.*USD 50\.00.*≈EUR 46\.00$/,
+      });
+      expect(button.props.accessibilityLabel).toBeUndefined();
+      // The amounts expose their visible text, so the computed name matches what is shown.
+      expect(expectAmountsNamedByText(button, 2)).toEqual([
+        expect.stringMatching(/^USD\s50\.00$/),
+        expect.stringMatching(/^≈EUR\s46\.00$/),
+      ]);
+      expect(description(button)).toBe('50.00 US dollars, approximately 46.00 euros');
+    });
+
+    it.each([
+      { hidden: true, known: true, displayed: '••••', spoken: 'hidden' },
+      { hidden: false, known: false, displayed: '–', spoken: 'Value unknown' },
+    ])('exposes no private digits when the row shows $displayed', async (state) => {
+      setData(
+        view([
+          makeSection('CASH_AND_SAVINGS', [
+            makeAccount('USD cash', {
+              currency: 'USD',
+              balance: '50.00',
+              valueInPortfolioCurrency: '46.00',
+              valueKnown: state.known,
+            }),
+          ]),
+        ]),
+      );
+      jest.mocked(useAmountsHidden).mockReturnValue(state.hidden);
+      await mount();
+
+      const button = screen.getByRole('button', { name: /^USD cash/ });
+      expect(button.props.accessibilityLabel).toBeUndefined();
+      const amounts = expectAmountsNamedByText(button, state.hidden ? 2 : 1);
+      expect(amounts.every((text) => text.endsWith(state.displayed))).toBe(true);
+      expect(description(button)).toBe(state.spoken);
+      expect(renderedText()).not.toMatch(/50[.,]00|46[.,]00/);
+    });
   });
 
   it('shows the depot row with position count and date, and its total return', async () => {
@@ -857,20 +1007,34 @@ describe('S2 privacy ("Hide amounts", FR-CLI-005)', () => {
   it('masks amounts, units, percentages and the FX rate, without a revealing loss colour', async () => {
     jest.mocked(useAmountsHidden).mockReturnValue(true);
     setData(
-      view([depotSection({ totalReturn: '7.84', balance: '-5.00' })], {
-        conversionRate: '0.9362',
-        conversionRateDate: '2026-10-20',
-      }),
+      view(
+        [
+          depotSection({
+            totalReturn: '7.84',
+            balance: '-5.00',
+            currency: 'CHF',
+            valueInPortfolioCurrency: '-4.68',
+          }),
+        ],
+        {
+          conversionRate: '0.9362',
+          conversionRateDate: '2026-10-20',
+        },
+      ),
     );
     setPositions([position('1', { quantity: '310', unrealisedGainPercent: '-3.75' })]);
     await mount();
+    const accountButton = screen.getByRole('button', { name: /^DKB Depot,/ });
+    expect(accountButton.props.accessibilityLabel).toBe(
+      'DKB Depot, hidden, 3 positions · As of 30 Sep 2026',
+    );
     await fireEvent.press(screen.getByRole('button', { name: 'FX details' }));
     const total = screen.getByTestId('portfolio-total');
     expect(total.props.children).toBe('••••');
     expect(total.props.accessibilityLabel).toBe('hidden');
     expect(color(total)).not.toBe(LOSS);
     expect(screen.getByText('•••• units · IE000000001')).toBeTruthy();
-    expect(renderedText()).not.toMatch(/200\.00|190\.00|−5|3[.,]8|7[.,]8|310|9362/);
+    expect(renderedText()).not.toMatch(/200\.00|190\.00|−5|4[.,]68|3[.,]8|7[.,]8|310|9362/);
     expect(screen.getByRole('button', { name: /^Fund 1, hidden, hidden units/ })).toBeTruthy();
   });
 });
