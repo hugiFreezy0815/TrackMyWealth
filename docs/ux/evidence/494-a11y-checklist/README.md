@@ -104,7 +104,7 @@ hoc, the same stack (1,287 bookings, 5 uncategorised). All steps pass:
 | Sign in, open the account by deep link | Pass | `ios-494-01-account.png` |
 | Scroll only (no button): rows 500–599 appear, so at least ten pages loaded by infinite scroll | Pass | `ios-494-02-after-scroll-paging.png` |
 | Uncategorised filter ("Showing 5 of 5"), back to All, pull-to-refresh | Pass | `ios-494-03-uncategorised.png`, `ios-494-04-after-refresh.png` |
-| Backend paused, pull-to-refresh: error banners with Retry | Pass | `ios-494-05-refresh-error.png` |
+| Backend stopped, pull-to-refresh: error banner with Retry | Pass | `ios-494-05-refresh-error.png` |
 | …the first page stays ("Showing 50 of 1287") and "Load more" is disabled: no page 1 on a stale page 0 | Pass | `ios-494-06-rows-kept-paging-blocked.png` |
 | Backend back, Retry: every error clears, the list is back | Pass | `ios-494-07-after-retry.png` |
 

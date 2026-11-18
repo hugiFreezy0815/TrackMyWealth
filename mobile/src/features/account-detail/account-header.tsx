@@ -1,13 +1,8 @@
+import type { ReactNode } from 'react';
 import { useIntl } from 'react-intl';
 import { Pressable, Text, View } from 'react-native';
 
-import {
-  ActionButton,
-  Amount,
-  ErrorBanner,
-  LoadingSkeleton,
-  ValueStatusBadge,
-} from '@/components/shared';
+import { ActionButton, Amount, LoadingSkeleton, ValueStatusBadge } from '@/components/shared';
 import { Spacing, TypeScale } from '@/constants/theme';
 import { formatDate, formatInstantDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
@@ -18,8 +13,7 @@ type HeaderProps = {
   summary: AccountSummary;
   value: AccountListItem | undefined;
   valuePending: boolean;
-  valueError: unknown;
-  onRetryValue: () => void;
+  valueFeedback: ReactNode;
   onExplainValue: () => void;
 };
 
@@ -28,8 +22,7 @@ export function AccountHeaderCard({
   summary,
   value,
   valuePending,
-  valueError,
-  onRetryValue,
+  valueFeedback,
   onExplainValue,
 }: HeaderProps) {
   const intl = useIntl();
@@ -90,7 +83,7 @@ export function AccountHeaderCard({
       ) : valuePending ? (
         <LoadingSkeleton count={2} />
       ) : (
-        <ErrorBanner error={valueError} onRetry={onRetryValue} />
+        valueFeedback
       )}
       <ReconciliationText summary={summary} />
     </View>
