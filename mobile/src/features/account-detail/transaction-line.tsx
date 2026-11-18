@@ -8,6 +8,7 @@ import { formatDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
 
 import { presentTransaction, type RowContext, type Transaction } from './model';
+import { transactionElementId } from './row-focus';
 
 export type TransactionLineProps = {
   transaction: Transaction;
@@ -71,6 +72,7 @@ export function TransactionLine({
       }}
     >
       <Pressable
+        nativeID={transactionElementId(row.id)}
         accessibilityRole={onOpen ? 'button' : undefined}
         accessibilityLabel={label}
         disabled={!onOpen}

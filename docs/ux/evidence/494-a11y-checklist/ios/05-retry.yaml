@@ -1,0 +1,27 @@
+# #494 native check: backend back; every Retry clears its error and the list is back.
+appId: com.anonymous.trackmywealth
+---
+- scrollUntilVisible:
+    element:
+      text: "Back to overview"
+    direction: UP
+    timeout: 60000
+- repeat:
+    while:
+      visible: "Try again"
+    times: 5
+    commands:
+      - tapOn:
+          text: "Try again"
+          index: 0
+      - waitForAnimationToEnd:
+          timeout: 5000
+- extendedWaitUntil:
+    notVisible: "Try again"
+    timeout: 60000
+- scrollUntilVisible:
+    element:
+      text: "Newest first.*"
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: ios-494-07-after-retry
