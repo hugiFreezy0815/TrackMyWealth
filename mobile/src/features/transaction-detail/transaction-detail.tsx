@@ -77,24 +77,22 @@ function DetailLabel({ children }: { children: ReactNode }) {
 
 function CategoryPicker({
   categories,
-  visible,
   selected,
   busy,
   error,
   onClose,
   onSelect,
   onSave,
-  closeDisabled = false,
+  closeDisabled,
 }: {
   categories: Category[];
-  visible: boolean;
   selected: string | null;
   busy: boolean;
   error: string | null;
   onClose: () => void;
   onSelect: (id: string) => void;
   onSave: () => void;
-  closeDisabled?: boolean;
+  closeDisabled: boolean;
 }) {
   const intl = useIntl();
   const theme = useTheme();
@@ -114,8 +112,19 @@ function CategoryPicker({
       .toLocaleLowerCase(intl.locale)
       .includes(search.trim().toLocaleLowerCase(intl.locale));
   });
-  const content = (
-    <>
+  const web = Platform.OS === 'web';
+  const PickerDialog = web ? Dialog : BottomSheet;
+  return (
+    <PickerDialog
+      visible
+      onClose={onClose}
+      closeDisabled={closeDisabled}
+      closeLabel={web ? intl.formatMessage({ id: 'txn.picker.cancel' }) : undefined}
+      contentStyle={
+        web ? { alignSelf: 'center', width: '100%', maxWidth: 480, maxHeight: '100%' } : undefined
+      }
+      title={intl.formatMessage({ id: 'txn.picker.title' })}
+    >
       <TextInput
         accessibilityLabel={intl.formatMessage({ id: 'txn.picker.search' })}
         value={search}
@@ -182,47 +191,7 @@ function CategoryPicker({
         disabled={busy || !validChoice}
         onPress={onSave}
       />
-      {Platform.OS === 'web' ? (
-        <ActionButton
-          label={intl.formatMessage({ id: 'txn.picker.cancel' })}
-          onPress={onClose}
-          disabled={busy}
-        />
-      ) : null}
-    </>
-  );
-  if (Platform.OS === 'web') {
-    return (
-      <View
-        accessibilityRole="region"
-        accessibilityLabel={intl.formatMessage({ id: 'txn.picker.title' })}
-        style={{
-          borderWidth: 1,
-          borderColor: theme.borderDefault,
-          borderRadius: Radii.card,
-          padding: Spacing.two,
-          gap: Spacing.two,
-        }}
-      >
-        <Text
-          accessibilityRole="header"
-          style={{ ...TypeScale.headingMedium, color: theme.textPrimary }}
-        >
-          {intl.formatMessage({ id: 'txn.picker.title' })}
-        </Text>
-        {content}
-      </View>
-    );
-  }
-  return (
-    <BottomSheet
-      visible={visible}
-      onClose={onClose}
-      closeDisabled={closeDisabled}
-      title={intl.formatMessage({ id: 'txn.picker.title' })}
-    >
-      {content}
-    </BottomSheet>
+    </PickerDialog>
   );
 }
 
@@ -309,7 +278,7 @@ export function TransactionDetail({
     setSelectedCategory(null);
     setCategoryError(null);
     setReviewVersion(null);
-    focusCategory();
+    if (Platform.OS !== 'web') focusCategory();
   };
   const categoryIsValid = (id: string) =>
     !!categories.data?.some(
@@ -420,7 +389,7 @@ export function TransactionDetail({
       setPendingReview(false);
       setReviewVersion(null);
       setNotice('txn.saved');
-      focusCategory();
+      if (Platform.OS !== 'web' || !picker) focusCategory();
     } catch (failure) {
       if (handleTerminalWriteError(failure)) return;
       const code = failure instanceof ApiError ? problemReaction(failure).sentCode : null;
@@ -890,6 +859,8 @@ export function TransactionDetail({
                 aria-disabled={locked}
                 aria-expanded={picker}
                 onPress={() => {
+                  // The web modal restores the focus it captures on open, including after a mouse click.
+                  if (Platform.OS === 'web') focusCategory();
                   setSelectedCategory(transaction.categoryId);
                   setCategoryError(null);
                   setPendingReview(false);
@@ -902,18 +873,6 @@ export function TransactionDetail({
                   {intl.formatMessage({ id: 'txn.changeCategory' })}
                 </Text>
               </Pressable>
-            ) : null}
-            {Platform.OS === 'web' && picker ? (
-              <CategoryPicker
-                visible
-                categories={categories.data ?? []}
-                selected={selectedCategory}
-                busy={locked}
-                error={categoryError}
-                onClose={closePicker}
-                onSelect={chooseCategory}
-                onSave={saveSelectedCategory}
-              />
             ) : null}
             {reviewLoading ? <ActivityIndicator /> : null}
             {pendingReview ? (
@@ -1141,9 +1100,8 @@ export function TransactionDetail({
         </Text>
       ) : null}
 
-      {Platform.OS !== 'web' && picker ? (
+      {picker ? (
         <CategoryPicker
-          visible
           categories={categories.data ?? []}
           selected={selectedCategory}
           busy={locked}

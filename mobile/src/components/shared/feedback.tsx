@@ -1,6 +1,16 @@
 import { type ReactNode } from 'react';
 import { useIntl } from 'react-intl';
-import { ActivityIndicator, Modal, Pressable, Text, View, type DimensionValue } from 'react-native';
+import {
+  ActivityIndicator,
+  Modal,
+  Platform,
+  Pressable,
+  Text,
+  View,
+  type DimensionValue,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 
 import { ApiError } from '@/api/client';
 import { problemReaction, type ClientReaction, type ProblemReaction } from '@/api/problems';
@@ -212,6 +222,7 @@ type DialogProps = {
   closeDisabled?: boolean;
   /** After the close animation, once the modal (and its web focus trap) is gone. */
   onDismiss?: () => void;
+  contentStyle?: StyleProp<ViewStyle>;
 };
 
 export function Dialog({
@@ -222,6 +233,7 @@ export function Dialog({
   closeLabel,
   closeDisabled = false,
   onDismiss,
+  contentStyle,
   placement = 'center',
 }: DialogProps & { placement?: 'center' | 'bottom' }) {
   const theme = useTheme();
@@ -234,6 +246,7 @@ export function Dialog({
   return (
     <Modal
       testID="shared-dialog-modal"
+      accessibilityLabel={Platform.OS === 'web' ? title : undefined}
       transparent
       visible={visible}
       animationType={bottom ? 'slide' : 'fade'}
@@ -250,14 +263,17 @@ export function Dialog({
       >
         <View
           accessibilityViewIsModal
-          style={{
-            backgroundColor: theme.bgSurface,
-            borderRadius: bottom ? 0 : Radii.card,
-            borderTopLeftRadius: Radii.card,
-            borderTopRightRadius: Radii.card,
-            padding: Spacing.four,
-            gap: Spacing.three,
-          }}
+          style={[
+            {
+              backgroundColor: theme.bgSurface,
+              borderRadius: bottom ? 0 : Radii.card,
+              borderTopLeftRadius: Radii.card,
+              borderTopRightRadius: Radii.card,
+              padding: Spacing.four,
+              gap: Spacing.three,
+            },
+            contentStyle,
+          ]}
         >
           <Text
             accessibilityRole="header"

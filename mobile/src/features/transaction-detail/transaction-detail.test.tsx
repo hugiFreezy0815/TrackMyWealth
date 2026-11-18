@@ -853,6 +853,26 @@ describe('S4 transaction detail', () => {
     expect(setCategory).not.toHaveBeenCalled();
   });
 
+  it('opens a named web dialog with searchable categories and cancels without saving', async () => {
+    const platform = jest.replaceProperty(Platform, 'OS', 'web');
+    try {
+      await show();
+      await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+      expect(screen.getByTestId('shared-dialog-modal')).toHaveProp(
+        'accessibilityLabel',
+        'Choose a category',
+      );
+      await fireEvent.changeText(screen.getByLabelText('Search categories'), 'dining');
+      expect(screen.queryByRole('radio', { name: 'Food › Groceries' })).toBeNull();
+      await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+      expect(screen.queryByTestId('shared-dialog-modal')).toBeNull();
+      expect(setCategory).not.toHaveBeenCalled();
+    } finally {
+      platform.restore();
+    }
+  });
+
   it('keeps the category sheet visible when dismissal is attempted during a pending save', async () => {
     let rejectSave: ((error: Error) => void) | undefined;
     setCategory.mockImplementationOnce(
