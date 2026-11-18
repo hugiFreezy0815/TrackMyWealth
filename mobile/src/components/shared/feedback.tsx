@@ -1,6 +1,17 @@
 import { type ReactNode } from 'react';
 import { useIntl } from 'react-intl';
-import { ActivityIndicator, Modal, Pressable, Text, View, type DimensionValue } from 'react-native';
+import {
+  ActivityIndicator,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+  type DimensionValue,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 
 import { ApiError } from '@/api/client';
 import { problemReaction, type ClientReaction, type ProblemReaction } from '@/api/problems';
@@ -201,6 +212,20 @@ export function LoadingSkeleton({
     </View>
   );
 }
+
+/**
+ * Web: whether the browser treats the element's current focus as keyboard focus. A pointer press
+ * on a non-text element never matches `:focus-visible`; the modal's Tab wrap does.
+ */
+function keyboardFocus(target: unknown): boolean {
+  try {
+    return (target as Element).matches(':focus-visible');
+  } catch {
+    // Browsers without :focus-visible keep the previous behaviour.
+    return true;
+  }
+}
+
 type DialogProps = {
   title: string;
   visible: boolean;
@@ -212,6 +237,9 @@ type DialogProps = {
   closeDisabled?: boolean;
   /** After the close animation, once the modal (and its web focus trap) is gone. */
   onDismiss?: () => void;
+  focusOnOpen?: () => void;
+  contentStyle?: StyleProp<ViewStyle>;
+  scrollable?: boolean;
 };
 
 export function Dialog({
@@ -222,6 +250,9 @@ export function Dialog({
   closeLabel,
   closeDisabled = false,
   onDismiss,
+  focusOnOpen,
+  contentStyle,
+  scrollable = false,
   placement = 'center',
 }: DialogProps & { placement?: 'center' | 'bottom' }) {
   const theme = useTheme();
@@ -231,14 +262,39 @@ export function Dialog({
     if (!closeDisabled) onClose();
   };
   useEscapeKey(visible, requestClose);
+  const contentLayout = { padding: Spacing.four, gap: Spacing.three };
+  const content = (
+    <>
+      <Text
+        accessibilityRole="header"
+        style={{ ...TypeScale.headingMedium, color: theme.textPrimary }}
+      >
+        {title}
+      </Text>
+      {children}
+      <Pressable
+        accessibilityRole="button"
+        disabled={closeDisabled}
+        aria-disabled={closeDisabled}
+        onPress={requestClose}
+        style={{ minHeight: 44, justifyContent: 'center', opacity: closeDisabled ? 0.5 : 1 }}
+      >
+        <Text style={{ ...TypeScale.labelMedium, color: theme.brandLink }}>
+          {closeLabel ?? intl.formatMessage({ id: 'ui.close' })}
+        </Text>
+      </Pressable>
+    </>
+  );
   return (
     <Modal
       testID="shared-dialog-modal"
+      accessibilityLabel={Platform.OS === 'web' ? title : undefined}
       transparent
       visible={visible}
       animationType={bottom ? 'slide' : 'fade'}
       onRequestClose={requestClose}
       onDismiss={onDismiss}
+      onShow={focusOnOpen}
     >
       <View
         style={{
@@ -250,33 +306,38 @@ export function Dialog({
       >
         <View
           accessibilityViewIsModal
-          style={{
-            backgroundColor: theme.bgSurface,
-            borderRadius: bottom ? 0 : Radii.card,
-            borderTopLeftRadius: Radii.card,
-            borderTopRightRadius: Radii.card,
-            padding: Spacing.four,
-            gap: Spacing.three,
-          }}
+          style={[
+            {
+              backgroundColor: theme.bgSurface,
+              borderRadius: bottom ? 0 : Radii.card,
+              borderTopLeftRadius: Radii.card,
+              borderTopRightRadius: Radii.card,
+            },
+            !scrollable && contentLayout,
+            contentStyle,
+          ]}
         >
-          <Text
-            accessibilityRole="header"
-            style={{ ...TypeScale.headingMedium, color: theme.textPrimary }}
-          >
-            {title}
-          </Text>
-          {children}
-          <Pressable
-            accessibilityRole="button"
-            disabled={closeDisabled}
-            aria-disabled={closeDisabled}
-            onPress={requestClose}
-            style={{ minHeight: 44, justifyContent: 'center', opacity: closeDisabled ? 0.5 : 1 }}
-          >
-            <Text style={{ ...TypeScale.labelMedium, color: theme.brandLink }}>
-              {closeLabel ?? intl.formatMessage({ id: 'ui.close' })}
-            </Text>
-          </Pressable>
+          {scrollable ? (
+            <ScrollView
+              testID="shared-dialog-scroll"
+              tabIndex={-1}
+              onFocus={(event) => {
+                // The web modal attempts to focus each ancestor while wrapping Tab.
+                // Send that focus to the initial control so the trap can find the right boundary.
+                // A pointer press inside the dialog focuses this container too; leave that focus
+                // alone so a tap does not jump to the initial control (and open a phone keyboard).
+                if (event.target === event.currentTarget && keyboardFocus(event.currentTarget)) {
+                  focusOnOpen?.();
+                }
+              }}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={contentLayout}
+            >
+              {content}
+            </ScrollView>
+          ) : (
+            content
+          )}
         </View>
       </View>
     </Modal>
@@ -292,11 +353,13 @@ export function ConflictDialog({
   onReview,
   onDiscard,
   onClose,
+  onDismiss,
 }: {
   visible: boolean;
   onReview: () => void;
   onDiscard: () => void;
   onClose: () => void;
+  onDismiss?: () => void;
 }) {
   const theme = useTheme();
   const intl = useIntl();
@@ -304,6 +367,7 @@ export function ConflictDialog({
     <Dialog
       visible={visible}
       onClose={onClose}
+      onDismiss={onDismiss}
       title={intl.formatMessage({ id: 'conflict.title' })}
     >
       <Text style={{ ...TypeScale.bodyMedium, color: theme.textSecondary }}>

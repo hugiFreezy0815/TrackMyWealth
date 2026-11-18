@@ -20,6 +20,13 @@ import en from '@/i18n/en.json';
 import de from '@/i18n/de.json';
 import { TransactionDetail } from './transaction-detail';
 
+// TextInput.focus() in the jest preset mock (shared by every mocked native component).
+const searchFocus = (
+  jest.requireActual('@react-native/jest-preset/jest/MockNativeMethods') as {
+    default: { focus: jest.Mock };
+  }
+).default.focus;
+
 jest.mock('@/global.css', () => ({}));
 jest.mock('@/features/privacy/amount-visibility', () => ({
   useAmountsHidden: jest.fn(() => false),
@@ -852,6 +859,119 @@ describe('S4 transaction detail', () => {
     }
     expect(setCategory).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['web dialog', 'web', ['Search categories']],
+    ['phone bottom sheet', 'ios', []],
+  ] as const)(
+    'on show, the %s puts focus in category search only on web',
+    async (_kind, os, focused) => {
+      const platform = jest.replaceProperty(Platform, 'OS', os);
+      try {
+        await show();
+        await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+        searchFocus.mockClear();
+        await fireEvent(screen.getByTestId('shared-dialog-modal'), 'onShow');
+        // The preset's TextInput mock shares one focus mock; its `this` is the focused input.
+        const targets = searchFocus.mock.contexts.map(
+          (input) => (input as { props: { accessibilityLabel?: string } }).props.accessibilityLabel,
+        );
+        expect(targets).toEqual(focused);
+      } finally {
+        platform.restore();
+      }
+    },
+  );
+
+  it('opens a named web dialog with searchable categories and cancels without saving', async () => {
+    const platform = jest.replaceProperty(Platform, 'OS', 'web');
+    try {
+      await show();
+      await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+      expect(screen.getByTestId('shared-dialog-modal')).toHaveProp(
+        'accessibilityLabel',
+        'Choose a category',
+      );
+      await fireEvent.changeText(screen.getByLabelText('Search categories'), 'dining');
+      expect(screen.queryByRole('radio', { name: 'Food › Groceries' })).toBeNull();
+      await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+      expect(screen.queryByTestId('shared-dialog-modal')).toBeNull();
+      expect(setCategory).not.toHaveBeenCalled();
+    } finally {
+      platform.restore();
+    }
+  });
+
+  it.each([
+    ['the detail heading while the transaction reloads', true, 'Migros'],
+    ['Change category once the transaction has reloaded', false, 'Change category'],
+  ] as const)(
+    'on web, moves focus after a discarded conflict has closed to %s',
+    async (_target, reloading, focusLabel) => {
+      const { moveAccessibilityFocus } = jest.requireMock(
+        '@/components/shared/accessibility-focus',
+      ) as { moveAccessibilityFocus: jest.Mock };
+      const platform = jest.replaceProperty(Platform, 'OS', 'web');
+      try {
+        jest.mocked(useConflict).mockImplementation(useMockConflict);
+        setCategory.mockRejectedValueOnce(
+          new ApiError('conflict', 412, {
+            code: 'VERSION_CONFLICT',
+            status: 412,
+            title: 'Concurrent edit',
+          }),
+        );
+        const client = new QueryClient();
+        // A new element each time, so a rerender reaches the screen.
+        const tree = () => (
+          <QueryClientProvider client={client}>
+            <IntlProvider locale="en" messages={en}>
+              <TransactionDetail
+                accountId="account-1"
+                transactionId="transaction-1"
+                onBack={jest.fn()}
+              />
+            </IntlProvider>
+          </QueryClientProvider>
+        );
+        const view = await render(tree());
+        await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+        await fireEvent.press(screen.getByRole('radio', { name: 'Food › Dining out' }));
+        await fireEvent.press(screen.getByRole('button', { name: 'Save category' }));
+        await waitFor(() =>
+          expect(screen.getByText('This item was changed meanwhile')).toBeTruthy(),
+        );
+        jest.mocked(useTransaction).mockReturnValue({
+          ...success(base),
+          isFetching: reloading,
+        } as unknown as ReturnType<typeof useTransaction>);
+        await view.rerender(tree());
+        // The jest Modal is not rendered once hidden: keep the conflict modal's dismiss callback.
+        const { onDismiss } = screen
+          .getAllByTestId('shared-dialog-modal')
+          .find((modal) => modal.props.accessibilityLabel === 'This item was changed meanwhile')!
+          .props as { onDismiss: () => void };
+        moveAccessibilityFocus.mockClear();
+
+        await fireEvent.press(screen.getByRole('button', { name: 'Discard my edit' }));
+        // The closing modal still traps focus: nothing moves until it has gone.
+        expect(moveAccessibilityFocus).not.toHaveBeenCalled();
+        await act(() => onDismiss());
+
+        expect(moveAccessibilityFocus).toHaveBeenCalledTimes(1);
+        const [target] = moveAccessibilityFocus.mock.calls[0] as [
+          { props: Record<string, unknown> },
+        ];
+        expect(target.props.accessibilityLabel ?? target.props.children).toBe(focusLabel);
+        // A later close of the conflict dialog (Review) does not repeat the handoff.
+        await act(() => onDismiss());
+        expect(moveAccessibilityFocus).toHaveBeenCalledTimes(1);
+      } finally {
+        platform.restore();
+      }
+    },
+  );
 
   it('keeps the category sheet visible when dismissal is attempted during a pending save', async () => {
     let rejectSave: ((error: Error) => void) | undefined;

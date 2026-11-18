@@ -8,15 +8,7 @@ import {
 } from 'react';
 import { onlineManager, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Platform, Pressable, Text, TextInput, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import { useConflict } from '@/api/queries/conflict';
@@ -61,6 +53,7 @@ import {
   transactionTitle,
   type Category,
 } from './model';
+import { CategoryOptions } from './category-options';
 
 export type TransactionDetailProps = {
   accountId: string;
@@ -77,46 +70,60 @@ function DetailLabel({ children }: { children: ReactNode }) {
 
 function CategoryPicker({
   categories,
-  visible,
   selected,
   busy,
   error,
   onClose,
   onSelect,
   onSave,
-  closeDisabled = false,
+  closeDisabled,
 }: {
   categories: Category[];
-  visible: boolean;
   selected: string | null;
   busy: boolean;
   error: string | null;
   onClose: () => void;
   onSelect: (id: string) => void;
   onSave: () => void;
-  closeDisabled?: boolean;
+  closeDisabled: boolean;
 }) {
   const intl = useIntl();
   const theme = useTheme();
   const [search, setSearch] = useState('');
+  const searchInput = useRef<ComponentRef<typeof TextInput>>(null);
   const german = intl.locale.startsWith('de');
   const validChoice = categories.some(
     (item) => item.id === selected && item.active && item.code !== 'UNCATEGORIZED',
   );
-  const choices = categories.filter((category) => {
-    if (!category.active || category.code === 'UNCATEGORIZED') return false;
-    const label = categoryLabel(
-      category,
-      categories.find((candidate) => candidate.id === category.parentId),
-      german,
-    );
-    return label
-      .toLocaleLowerCase(intl.locale)
-      .includes(search.trim().toLocaleLowerCase(intl.locale));
-  });
-  const content = (
-    <>
+  const searchTerm = search.trim().toLocaleLowerCase(intl.locale);
+  const choices = categories
+    .filter((category) => category.active && category.code !== 'UNCATEGORIZED')
+    .map((category) => ({
+      id: category.id,
+      label: categoryLabel(
+        category,
+        categories.find((candidate) => candidate.id === category.parentId),
+        german,
+      ),
+    }))
+    .filter(({ label }) => label.toLocaleLowerCase(intl.locale).includes(searchTerm));
+  const web = Platform.OS === 'web';
+  const PickerDialog = web ? Dialog : BottomSheet;
+  return (
+    <PickerDialog
+      visible
+      onClose={onClose}
+      focusOnOpen={web ? () => searchInput.current?.focus() : undefined}
+      closeDisabled={closeDisabled}
+      scrollable={web}
+      closeLabel={web ? intl.formatMessage({ id: 'txn.picker.cancel' }) : undefined}
+      contentStyle={
+        web ? { alignSelf: 'center', width: '100%', maxWidth: 480, maxHeight: '100%' } : undefined
+      }
+      title={intl.formatMessage({ id: 'txn.picker.title' })}
+    >
       <TextInput
+        ref={searchInput}
         accessibilityLabel={intl.formatMessage({ id: 'txn.picker.search' })}
         value={search}
         onChangeText={setSearch}
@@ -134,43 +141,19 @@ function CategoryPicker({
           minHeight: 44,
         }}
       />
-      <ScrollView
-        accessibilityRole="radiogroup"
-        accessibilityLabel={intl.formatMessage({ id: 'txn.picker.title' })}
-        keyboardShouldPersistTaps="handled"
-        style={{ maxHeight: 360 }}
-        contentContainerStyle={{ gap: Spacing.one }}
-      >
-        {choices.map((category) => (
-          <Pressable
-            key={category.id}
-            accessibilityRole="radio"
-            aria-checked={selected === category.id}
-            disabled={busy}
-            onPress={() => onSelect(category.id)}
-            accessibilityLabel={categoryLabel(
-              category,
-              categories.find((candidate) => candidate.id === category.parentId),
-              german,
-            )}
-            style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: Spacing.two }}
-          >
-            <Text style={{ color: theme.textPrimary }}>
-              {selected === category.id ? '✓ ' : ''}
-              {categoryLabel(
-                category,
-                categories.find((candidate) => candidate.id === category.parentId),
-                german,
-              )}
-            </Text>
-          </Pressable>
-        ))}
-        {!choices.length ? (
-          <Text style={{ color: theme.textSecondary }}>
-            {intl.formatMessage({ id: 'txn.picker.empty' })}
-          </Text>
-        ) : null}
-      </ScrollView>
+      {choices.length ? (
+        <CategoryOptions
+          label={intl.formatMessage({ id: 'txn.picker.title' })}
+          choices={choices}
+          selected={selected}
+          disabled={busy}
+          onSelect={onSelect}
+        />
+      ) : (
+        <Text style={{ color: theme.textSecondary }}>
+          {intl.formatMessage({ id: 'txn.picker.empty' })}
+        </Text>
+      )}
       {error ? (
         <Text accessibilityRole="alert" style={{ color: theme.statusLoss }}>
           {error}
@@ -182,47 +165,7 @@ function CategoryPicker({
         disabled={busy || !validChoice}
         onPress={onSave}
       />
-      {Platform.OS === 'web' ? (
-        <ActionButton
-          label={intl.formatMessage({ id: 'txn.picker.cancel' })}
-          onPress={onClose}
-          disabled={busy}
-        />
-      ) : null}
-    </>
-  );
-  if (Platform.OS === 'web') {
-    return (
-      <View
-        accessibilityRole="region"
-        accessibilityLabel={intl.formatMessage({ id: 'txn.picker.title' })}
-        style={{
-          borderWidth: 1,
-          borderColor: theme.borderDefault,
-          borderRadius: Radii.card,
-          padding: Spacing.two,
-          gap: Spacing.two,
-        }}
-      >
-        <Text
-          accessibilityRole="header"
-          style={{ ...TypeScale.headingMedium, color: theme.textPrimary }}
-        >
-          {intl.formatMessage({ id: 'txn.picker.title' })}
-        </Text>
-        {content}
-      </View>
-    );
-  }
-  return (
-    <BottomSheet
-      visible={visible}
-      onClose={onClose}
-      closeDisabled={closeDisabled}
-      title={intl.formatMessage({ id: 'txn.picker.title' })}
-    >
-      {content}
-    </BottomSheet>
+    </PickerDialog>
   );
 }
 
@@ -270,6 +213,7 @@ export function TransactionDetail({
   const [serverArchived, setServerArchived] = useState(false);
   const categoryControl = useRef<ComponentRef<typeof Pressable>>(null);
   const detailHeading = useRef<ComponentRef<typeof Text>>(null);
+  const restoreDiscardFocus = useRef(false);
   const transaction = record.data;
   // Unknown/loading account status is not evidence that writes are permitted.
   const accountActive = !account.isError && account.data?.status === 'ACTIVE';
@@ -309,7 +253,7 @@ export function TransactionDetail({
     setSelectedCategory(null);
     setCategoryError(null);
     setReviewVersion(null);
-    focusCategory();
+    if (Platform.OS !== 'web') focusCategory();
   };
   const categoryIsValid = (id: string) =>
     !!categories.data?.some(
@@ -420,7 +364,7 @@ export function TransactionDetail({
       setPendingReview(false);
       setReviewVersion(null);
       setNotice('txn.saved');
-      focusCategory();
+      if (Platform.OS !== 'web' || !picker) focusCategory();
     } catch (failure) {
       if (handleTerminalWriteError(failure)) return;
       const code = failure instanceof ApiError ? problemReaction(failure).sentCode : null;
@@ -890,6 +834,8 @@ export function TransactionDetail({
                 aria-disabled={locked}
                 aria-expanded={picker}
                 onPress={() => {
+                  // The web modal restores the focus it captures on open, including after a mouse click.
+                  if (Platform.OS === 'web') focusCategory();
                   setSelectedCategory(transaction.categoryId);
                   setCategoryError(null);
                   setPendingReview(false);
@@ -902,18 +848,6 @@ export function TransactionDetail({
                   {intl.formatMessage({ id: 'txn.changeCategory' })}
                 </Text>
               </Pressable>
-            ) : null}
-            {Platform.OS === 'web' && picker ? (
-              <CategoryPicker
-                visible
-                categories={categories.data ?? []}
-                selected={selectedCategory}
-                busy={locked}
-                error={categoryError}
-                onClose={closePicker}
-                onSelect={chooseCategory}
-                onSave={saveSelectedCategory}
-              />
             ) : null}
             {reviewLoading ? <ActivityIndicator /> : null}
             {pendingReview ? (
@@ -1141,9 +1075,8 @@ export function TransactionDetail({
         </Text>
       ) : null}
 
-      {Platform.OS !== 'web' && picker ? (
+      {picker ? (
         <CategoryPicker
-          visible
           categories={categories.data ?? []}
           selected={selectedCategory}
           busy={locked}
@@ -1193,7 +1126,15 @@ export function TransactionDetail({
         visible={conflict.conflicted}
         onClose={reviewConflict}
         onReview={reviewConflict}
+        onDismiss={() => {
+          if (!restoreDiscardFocus.current) return;
+          restoreDiscardFocus.current = false;
+          const control = locked ? null : categoryControl.current;
+          moveAccessibilityFocus(control ?? detailHeading.current);
+        }}
         onDiscard={() => {
+          if (Platform.OS === 'web') restoreDiscardFocus.current = true;
+          else focusCategory();
           conflict.dismiss();
           setPicker(false);
           setSelectedCategory(null);
@@ -1202,7 +1143,6 @@ export function TransactionDetail({
           setCategoryConflict(false);
           setReviewVersion(null);
           setConfirmRemove(false);
-          focusCategory();
         }}
       />
     </View>

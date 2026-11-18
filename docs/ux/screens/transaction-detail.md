@@ -60,8 +60,8 @@ marked as voided.
 ### Web
 
 - The right panel (400 px) of S3, with the same blocks in the same order.
-- The category row is an inline `CategoryPicker` (W06 "Categorise" panel) with a **Save**
-  button.
+- **Change category** on the category row opens `CategoryPicker` as a dialog (see below)
+  with **Save** and **Cancel**.
 - "Always categorise …" and "Apply to n earlier transactions" are **not shown** in sprint 7.
 
 ## Requests
@@ -131,10 +131,16 @@ Change history rendering uses the catalogue keys and ICU arguments below.
 - Phone: a bottom sheet with search and the two-level tree from `/categories` (active only,
   in the user's language). The current category is marked; "Uncategorised" is not offered as a
   choice.
-- Web: a select with type-ahead, plus up to two "Suggested" chips. The chips are hidden in
-  sprint 7: there's no suggestion endpoint.
-- Accessibility: the picker is a dialog with a labelled search field, and focus returns to the
-  category row on close.
+- Web: a modal dialog (max. 480 px wide) named `txn.picker.title` "Choose a category", with the same search
+  field above a radio group of the matching categories, then **Save** and **Cancel**. The
+  whole dialog scrolls, so every control stays reachable in short viewports and at 200 % zoom.
+  Up to two "Suggested" chips belong above the list; they are hidden in sprint 7: there's no
+  suggestion endpoint.
+- Accessibility: the picker is a dialog with a labelled search field. On web, focus starts in
+  the search field; the categories are one radio group (one Tab stop, arrow keys, Space).
+  Focus returns to **Change category** on close (Escape, Cancel or Save), and after
+  "Discard" in the conflict dialog once that dialog has closed (the detail heading while the
+  transaction reloads).
 
 Errors:
 
@@ -165,6 +171,7 @@ Errors:
 | "Edit" button | Hidden in sprint 7 | The correction form (M18-based) is its own story |
 | "Delete" for every row | Only when `removal != null` and not a reconciliation adjustment | Server rules (US-07-02, US-25-03) |
 | W06 rule checkboxes and suggestions | Hidden | Not in sprint 7 |
+| W06 inline "Categorise" panel | Modal dialog with search and a radio group | Accessibility rule above: a labelled dialog with a focus trap, one radio Tab stop and focus return (#495, PR #624) |
 
 ## Acceptance checks for the UI story
 
