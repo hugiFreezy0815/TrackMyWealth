@@ -86,6 +86,12 @@ jobs:
       - name: Build web export
         run: npx expo export -p web
 
+      - name: Install Firefox for the locale hydration test
+        run: npx playwright install --with-deps firefox
+
+      - name: Check locale hydration in the web export
+        run: node scripts/check-web-hydration.mjs
+
       - name: Install nginx for the deployment smoke test
         run: |
           sudo apt-get update

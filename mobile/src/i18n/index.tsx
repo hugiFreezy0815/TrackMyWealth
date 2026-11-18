@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Platform } from 'react-native';
 import { IntlProvider } from 'react-intl';
 
@@ -34,8 +34,16 @@ export function AppIntlProvider({
   language?: string | null;
   children: ReactNode;
 }) {
-  const locale = resolveLocale(language);
+  const [hasMounted, setHasMounted] = useState(false);
+  // Match the English static HTML on the first web render. The browser locale is only
+  // available on the client and must not change the restoring-session text during hydration.
+  const locale = Platform.OS === 'web' && !hasMounted ? 'en' : resolveLocale(language);
   const messages = useMemo(() => messagesFor(locale), [locale]);
+  useEffect(() => {
+    // A second render applies the browser locale after the static HTML has hydrated.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (Platform.OS === 'web') setHasMounted(true);
+  }, []);
   useEffect(() => {
     // Expo's +html.tsx is rendered only once at build time. Reflect the member's chosen
     // BCP 47 locale after hydration and whenever the authenticated language changes.
