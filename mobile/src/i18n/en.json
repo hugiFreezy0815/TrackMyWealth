@@ -694,7 +694,7 @@
   "portfolio.subtitle": "Institution {institution} · {country} · portfolio currency {currency}",
   "portfolio.currencyOnly": "Portfolio currency {currency}",
   "portfolio.total": "Portfolio total",
-  "portfolio.totalExplain": "{name} total, {amount}. Show details",
+  "portfolio.totalExplain": "{displayAmount}. {name} total, {amount}. Show details",
   "portfolio.asOf": "As of {date}",
   "portfolio.fx.details": "FX details",
   "portfolio.fx.carried": "Carried-forward rate",

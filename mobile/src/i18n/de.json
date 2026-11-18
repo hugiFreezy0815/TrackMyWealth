@@ -694,7 +694,7 @@
   "portfolio.subtitle": "Institut {institution} · {country} · Portfoliowährung {currency}",
   "portfolio.currencyOnly": "Portfoliowährung {currency}",
   "portfolio.total": "Portfoliogesamtwert",
-  "portfolio.totalExplain": "Gesamtwert von {name}, {amount}. Details anzeigen",
+  "portfolio.totalExplain": "{displayAmount}. Gesamtwert von {name}, {amount}. Details anzeigen",
   "portfolio.asOf": "Stand {date}",
   "portfolio.fx.details": "Währungsdetails",
   "portfolio.fx.carried": "Übernommener Wechselkurs",

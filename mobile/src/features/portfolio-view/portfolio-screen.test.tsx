@@ -13,6 +13,7 @@ import { typedApi } from '@/api/typed-api';
 import type { components } from '@/api/schema';
 import { selectHistoryPeriod } from '@/features/value-history/period';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
+import type { AppLocale } from '@/i18n';
 import { renderWithIntl } from '@/i18n/test-utils';
 import type {
   PortfolioAccount,
@@ -216,7 +217,7 @@ function setData(
   } as unknown as ReturnType<typeof usePortfolioView>);
 }
 
-async function mount(locale: 'en' | 'de' = 'en', client = new QueryClient()) {
+async function mount(locale: AppLocale = 'en', client = new QueryClient()) {
   const handlers = {
     onAccount: jest.fn(),
     onPortfolio: jest.fn(),
@@ -626,6 +627,37 @@ describe('S2 header, explanation and data source', () => {
     await mount();
     await fireEvent.press(screen.getByRole('button', { name: 'FX details' }));
     expect(color(screen.getByText('Outdated rate'))).toBe('#8F5200');
+  });
+
+  it.each([
+    ['en-GB', 'Home total, 1234.56 euros. Show details'],
+    ['de-CH', 'Gesamtwert von Home, 1234.56 Euro. Details anzeigen'],
+    ['de-DE', 'Gesamtwert von Home, 1234,56 Euro. Details anzeigen'],
+  ])('starts the total button name with the visible amount in %s', async (locale, explanation) => {
+    setData(view([], { total: '1234.56' }));
+    await mount(locale);
+
+    const visibleAmount = screen.getByTestId('portfolio-total').props.children;
+    const button = screen.getByRole('button', { name: `${visibleAmount}. ${explanation}` });
+    expect(button).toHaveProp('testID', 'portfolio-total-action');
+  });
+
+  it.each([
+    { hidden: true, display: '••••', spoken: 'hidden', valueStatus: 'CURRENT' },
+    { hidden: false, display: '–', spoken: 'Value unknown', valueStatus: 'UNKNOWN' },
+  ] as const)('names the $display total and opens its explanation', async (state) => {
+    // Keep a numeric payload in both cases to check that the status and privacy setting win.
+    setData(view([], { total: '1234.56', valueStatus: state.valueStatus }));
+    jest.mocked(useAmountsHidden).mockReturnValue(state.hidden);
+    await mount();
+
+    expect(screen.getByTestId('portfolio-total')).toHaveTextContent(state.display);
+    const button = screen.getByRole('button', {
+      name: `${state.display}. Home total, ${state.spoken}. Show details`,
+    });
+    expect(button).toHaveProp('testID', 'portfolio-total-action');
+    await fireEvent.press(button);
+    expect(screen.getByText('Portfolio total')).toBeTruthy();
   });
 
   it('explains the total with warnings in plain words, unknown accounts and the ≈ value', async () => {

@@ -136,6 +136,13 @@ export function PortfolioHeader({
   const hidden = useAmountsHidden();
   const known = data.valueStatus !== 'UNKNOWN';
   const typeKey = typeMessageKey(data.type);
+  // Include the visible text for voice control and keep the spoken amount for screen readers.
+  const total = amountTexts(intl, {
+    value: data.total,
+    currency: data.currency,
+    masked: hidden,
+    valueKnown: known,
+  });
   return (
     <SectionCard title={data.name}>
       <View
@@ -165,13 +172,9 @@ export function PortfolioHeader({
         accessibilityRole="button"
         testID="portfolio-total-action"
         accessibilityLabel={msg(intl, 'portfolio.totalExplain', {
+          displayAmount: total.display,
           name: data.name,
-          amount: amountTexts(intl, {
-            value: data.total,
-            currency: data.currency,
-            masked: hidden,
-            valueKnown: known,
-          }).label,
+          amount: total.label,
         })}
         onPress={onExplain}
         style={{ minHeight: 48, justifyContent: 'center' }}
