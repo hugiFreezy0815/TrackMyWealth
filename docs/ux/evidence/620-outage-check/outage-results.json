@@ -1,0 +1,102 @@
+[
+  {
+    "name": "desktop: outage shows one error banner",
+    "pass": true,
+    "detail": "1"
+  },
+  {
+    "name": "desktop: outage shows one Try again",
+    "pass": true,
+    "detail": "1"
+  },
+  {
+    "name": "desktop: loaded rows stay",
+    "pass": true,
+    "detail": "Showing 100 of 120"
+  },
+  {
+    "name": "desktop: Load more disabled while page 0 is stale",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "desktop: axe in the outage state",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "desktop: one Try again clears every banner",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "desktop: Load more enabled again",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "desktop: retry refetched the shared reads",
+    "pass": true,
+    "detail": "/api/v1/accounts | /api/v1/accounts/{id} | /api/v1/accounts/{id}/transactions?size=1&page=0 | /api/v1/accounts/{id}/transactions?size=50&page=0 | /api/v1/accounts/{id}/transactions?size=50&page=1 | /api/v1/categories"
+  },
+  {
+    "name": "desktop: paging works after recovery",
+    "pass": true,
+    "detail": "Showing 120 of 120"
+  },
+  {
+    "name": "desktop: no page errors",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "phone: outage shows one error banner",
+    "pass": true,
+    "detail": "1"
+  },
+  {
+    "name": "phone: outage shows one Try again",
+    "pass": true,
+    "detail": "1"
+  },
+  {
+    "name": "phone: loaded rows stay",
+    "pass": true,
+    "detail": "Showing 100 of 120"
+  },
+  {
+    "name": "phone: Load more disabled while page 0 is stale",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "phone: axe in the outage state",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "phone: one Try again clears every banner",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "phone: Load more enabled again",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "phone: retry refetched the shared reads",
+    "pass": true,
+    "detail": "/api/v1/accounts | /api/v1/accounts/{id} | /api/v1/accounts/{id}/transactions?size=1&page=0 | /api/v1/accounts/{id}/transactions?size=50&page=0 | /api/v1/accounts/{id}/transactions?size=50&page=1 | /api/v1/categories"
+  },
+  {
+    "name": "phone: paging works after recovery",
+    "pass": true,
+    "detail": "Showing 120 of 120"
+  },
+  {
+    "name": "phone: no page errors",
+    "pass": true,
+    "detail": ""
+  }
+]

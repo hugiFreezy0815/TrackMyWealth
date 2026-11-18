@@ -1,11 +1,11 @@
-# #494 native check: the backend is paused (run-494.sh); a pull-to-refresh fails. Error banners
+# #494 native check: the backend is stopped (run-494.sh); a pull-to-refresh fails. Error banners
 # with Retry show, the loaded first page stays (its footer is reachable) and no next page loads
 # while page 0 is stale. The script resumes the backend before 05.
 appId: com.anonymous.trackmywealth
 ---
 - scrollUntilVisible:
     element:
-      text: "Back to overview"
+      text: ".*Back to overview"
     direction: UP
     timeout: 60000
 - swipe:
