@@ -20,6 +20,13 @@ import en from '@/i18n/en.json';
 import de from '@/i18n/de.json';
 import { TransactionDetail } from './transaction-detail';
 
+// TextInput.focus() in the jest preset mock (shared by every mocked native component).
+const searchFocus = (
+  jest.requireActual('@react-native/jest-preset/jest/MockNativeMethods') as {
+    default: { focus: jest.Mock };
+  }
+).default.focus;
+
 jest.mock('@/global.css', () => ({}));
 jest.mock('@/features/privacy/amount-visibility', () => ({
   useAmountsHidden: jest.fn(() => false),
@@ -852,6 +859,29 @@ describe('S4 transaction detail', () => {
     }
     expect(setCategory).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['web dialog', 'web', ['Search categories']],
+    ['phone bottom sheet', 'ios', []],
+  ] as const)(
+    'on show, the %s puts focus in category search only on web',
+    async (_kind, os, focused) => {
+      const platform = jest.replaceProperty(Platform, 'OS', os);
+      try {
+        await show();
+        await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+        searchFocus.mockClear();
+        await fireEvent(screen.getByTestId('shared-dialog-modal'), 'onShow');
+        // The preset's TextInput mock shares one focus mock; its `this` is the focused input.
+        const targets = searchFocus.mock.contexts.map(
+          (input) => (input as { props: { accessibilityLabel?: string } }).props.accessibilityLabel,
+        );
+        expect(targets).toEqual(focused);
+      } finally {
+        platform.restore();
+      }
+    },
+  );
 
   it('opens a named web dialog with searchable categories and cancels without saving', async () => {
     const platform = jest.replaceProperty(Platform, 'OS', 'web');
