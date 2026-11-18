@@ -1,4 +1,4 @@
-# #494 native check: backend back; every Retry clears its error and the list is back.
+# #620 native check: with the backend back, one retry clears the outage banner.
 appId: com.anonymous.trackmywealth
 ---
 - scrollUntilVisible:
@@ -6,19 +6,11 @@ appId: com.anonymous.trackmywealth
       text: "Back to overview"
     direction: UP
     timeout: 60000
-- repeat:
-    while:
-      visible: "Try again"
-    times: 5
-    commands:
-      - tapOn:
-          text: "Try again"
-          index: 0
-      - waitForAnimationToEnd:
-          timeout: 5000
+- tapOn: "Try again"
 - extendedWaitUntil:
     notVisible: "Try again"
     timeout: 60000
+- assertNotVisible: "Something went wrong.*"
 - scrollUntilVisible:
     element:
       text: "Newest first.*"

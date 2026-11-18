@@ -3,7 +3,7 @@ import { useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { ActivityIndicator, Platform, Pressable, Text, View } from 'react-native';
 
-import { ApiError, NetworkError } from '@/api/client';
+import { ApiError, NetworkError, SessionRefreshUnavailableError } from '@/api/client';
 import { typedApi } from '@/api/typed-api';
 import { problemReaction } from '@/api/problems';
 import { retryVersionRequired, useConflict } from '@/api/queries/conflict';
@@ -102,7 +102,7 @@ const isRecoverableAccountFailure = (error: unknown) =>
 
 /** Keep resource-specific API problems inline, even when they use a 5xx status. */
 function isSharedReadFailure(error: unknown) {
-  if (error instanceof NetworkError) return true;
+  if (error instanceof NetworkError || error instanceof SessionRefreshUnavailableError) return true;
   if (!(error instanceof ApiError) || !isRecoverableAccountFailure(error)) return false;
   const problem = problemReaction(error);
   return (
@@ -441,13 +441,20 @@ export function AccountDetail({
   const showingTransactions = hasLedger && !showingPositions;
   const valueQueries = archived ? [archivedAccounts, activeAccounts] : [activeAccounts];
   const firstPageFailed = transactions.isError && !transactions.isFetchNextPageError;
+  // Refresh also runs the enabled reads for the inactive depot tab.
   const sharedFailures = [
     account,
     ...valueQueries,
-    ...(showingPositions ? [positions] : []),
-    ...(showingTransactions ? [count, categories, ...(firstPageFailed ? [transactions] : [])] : []),
+    positions,
+    count,
+    categories,
+    ...(firstPageFailed ? [transactions] : []),
   ].filter((query) => query.isEnabled && isSharedReadFailure(query.error));
-  const sharedError = sharedFailures.length > 1 ? sharedFailures[0].error : null;
+  const renewalFailure = sharedFailures.find(
+    (query) => query.error instanceof SessionRefreshUnavailableError,
+  );
+  const sharedError =
+    sharedFailures.length > 1 ? (renewalFailure ?? sharedFailures[0]).error : null;
   const inlineError = (error: unknown) =>
     sharedError && isSharedReadFailure(error) ? null : error;
   const valueError = valueQueries.map((query) => inlineError(query.error)).find(Boolean);

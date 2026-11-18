@@ -3,11 +3,12 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { IntlProvider, createIntl, createIntlCache } from 'react-intl';
 import { StyleSheet } from 'react-native';
 
-import { ApiError, NetworkError } from '@/api/client';
+import { ApiError, NetworkError, setRefreshHandler } from '@/api/client';
 import { typedApi } from '@/api/typed-api';
 import { queryKeys } from '@/api/queries/keys';
 import type { Position, PositionsResponse } from '@/features/portfolio-view/model';
 import { amountTexts } from '@/components/shared';
+import { restoreSession, signIn, signOut } from '@/features/auth/session';
 import { showToast } from '@/features/shell/toast';
 import en from '@/i18n/en.json';
 
@@ -17,6 +18,11 @@ import type { AccountListItem, AccountSummary, Category, Transaction } from './m
 jest.mock('@/global.css', () => ({}));
 jest.mock('expo-image', () => ({ Image: 'Image' }));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
+jest.mock('expo-secure-store', () => ({
+  getItemAsync: jest.fn(async () => null),
+  setItemAsync: jest.fn(async () => {}),
+  deleteItemAsync: jest.fn(async () => {}),
+}));
 jest.mock('@/features/privacy/amount-visibility', () => ({
   useAmountsHidden: jest.fn(() => false),
 }));
@@ -77,6 +83,32 @@ const listItem: AccountListItem = {
   warnings: [],
 } as unknown as AccountListItem;
 
+const holding = (id: string, overrides: Partial<Position> = {}): Position => ({
+  securityId: id,
+  displayName: `Fund ${id}`,
+  isin: null,
+  quantity: '10.000000',
+  price: '10.00',
+  priceCurrency: 'EUR',
+  value: '100.00',
+  valueInAccountCurrency: '100.00',
+  costBasis: '90.00',
+  costBasisEstimated: false,
+  unrealisedGain: '10.00',
+  unrealisedGainPercent: '11.11',
+  valueStatus: 'CURRENT',
+  ...overrides,
+});
+
+const positionSnapshot = (...positions: Position[]): PositionsResponse => ({
+  accountId: 'acc',
+  currency: 'EUR',
+  asOf: '2026-10-20',
+  source: 'HOLDINGS_SNAPSHOT',
+  complete: true,
+  positions,
+});
+
 const txn = (index: number, other: Partial<Transaction> = {}): Transaction =>
   ({
     id: `t${String(index).padStart(3, '0')}`,
@@ -106,12 +138,13 @@ function fakeServer(account: AccountSummary, rows: Transaction[], holdings?: Pos
   const state: {
     account: AccountSummary;
     rows: Transaction[];
-    failure?: (path: string, options: Options) => Error | undefined;
-  } = { account, rows };
+    holdings?: PositionsResponse;
+    beforeRead?: (path: string, options: Options) => void | Promise<void>;
+  } = { account, rows, holdings };
   const counted = (row: Transaction) => row.categoryId === 'uncat' && !row.internalTransfer;
   const routes: Record<string, (options: Options) => unknown> = {
     '/api/v1/accounts/{accountId}': () => state.account,
-    '/api/v1/accounts/{accountId}/positions': () => holdings,
+    '/api/v1/accounts/{accountId}/positions': () => state.holdings,
     '/api/v1/accounts/{accountId}/transactions/{transactionId}': ({ params }) =>
       state.rows.find((row) => row.id === params?.transactionId) ?? null,
     '/api/v1/accounts': () => [listItem],
@@ -132,8 +165,7 @@ function fakeServer(account: AccountSummary, rows: Transaction[], holdings?: Pos
     },
   };
   api.get.mockImplementation((async (path: string, options: Options = {}) => {
-    const failure = state.failure?.(path, options);
-    if (failure) throw failure;
+    if (state.beforeRead) await state.beforeRead(path, options);
     return routes[path](options);
   }) as never);
   api.put.mockImplementation((async (
@@ -296,40 +328,17 @@ describe('S3 account detail acceptance checks (#494)', () => {
   });
 
   it('displays S2 position details for known, estimated, missing and foreign-cost holdings', async () => {
-    const holding = (id: string, overrides: Partial<Position> = {}): Position => ({
-      securityId: id,
-      displayName: `Fund ${id}`,
-      isin: null,
-      quantity: '10.000000',
-      price: '10.00',
-      priceCurrency: 'EUR',
-      value: '100.00',
-      valueInAccountCurrency: '100.00',
-      costBasis: '90.00',
-      costBasisEstimated: false,
-      unrealisedGain: '10.00',
-      unrealisedGainPercent: '11.11',
-      valueStatus: 'CURRENT',
-      ...overrides,
-    });
-    const positions: PositionsResponse = {
-      accountId: 'acc',
-      currency: 'EUR',
-      asOf: '2026-10-20',
-      source: 'HOLDINGS_SNAPSHOT',
-      complete: true,
-      positions: [
-        holding('regular'),
-        holding('estimated', { costBasisEstimated: true, valueStatus: 'ESTIMATED' }),
-        holding('missing', { costBasis: null, unrealisedGain: null, unrealisedGainPercent: null }),
-        holding('foreign', {
-          priceCurrency: 'USD',
-          costBasis: '90.00',
-          unrealisedGain: null,
-          unrealisedGainPercent: null,
-        }),
-      ],
-    };
+    const positions = positionSnapshot(
+      holding('regular'),
+      holding('estimated', { costBasisEstimated: true, valueStatus: 'ESTIMATED' }),
+      holding('missing', { costBasis: null, unrealisedGain: null, unrealisedGainPercent: null }),
+      holding('foreign', {
+        priceCurrency: 'USD',
+        costBasis: '90.00',
+        unrealisedGain: null,
+        unrealisedGainPercent: null,
+      }),
+    );
     fakeServer(summary({ holdsPositions: true }), [txn(0)], positions);
     await renderDetail({ initialTab: 'positions' });
     expect(await screen.findByText('Fund regular')).toBeTruthy();
@@ -535,7 +544,9 @@ describe('S3 account detail acceptance checks (#494)', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Load more' }));
     expect(await screen.findByText('Showing 60 of 60')).toBeTruthy();
 
-    server.failure = () => failure;
+    server.beforeRead = () => {
+      throw failure;
+    };
     await fireEvent(screen.getByTestId('account-transaction-list'), 'refresh');
     await waitFor(() => {
       expect(listCalls().map(({ page }) => page)).toEqual([0, 1, 0]);
@@ -547,7 +558,7 @@ describe('S3 account detail acceptance checks (#494)', () => {
     expect(screen.getByTestId('account-value')).toBeTruthy();
     expect(screen.getByText('Showing 50 of 60')).toBeTruthy();
 
-    server.failure = undefined;
+    server.beforeRead = undefined;
     api.get.mockClear();
     await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => {
@@ -564,6 +575,160 @@ describe('S3 account detail acceptance checks (#494)', () => {
     expect(listCalls().map(({ page }) => page)).toEqual([0]);
   });
 
+  it.each(['activity', 'positions'] as const)(
+    'recovers both depot tabs with one retry when refresh starts on %s',
+    async (initialTab) => {
+      const server = fakeServer(
+        summary({ accountType: 'DEPOT', holdsPositions: true }),
+        Array.from({ length: 60 }, (_, index) => txn(index)),
+        positionSnapshot(holding('original')),
+      );
+      const { client } = await renderDetail({ initialTab });
+      expect(await screen.findByText('Girokonto')).toBeTruthy();
+      await waitFor(() => {
+        expect(client.getQueryState(queryKeys.accountPositions('acc'))?.status).toBe('success');
+        expect(client.getQueryState(queryKeys.uncategorizedCount('acc'))?.status).toBe('success');
+        expect(listCalls().map(({ page }) => page)).toEqual([0]);
+        expect(client.isFetching()).toBe(0);
+      });
+
+      server.beforeRead = () => {
+        throw new NetworkError('server unreachable');
+      };
+      await fireEvent(screen.getByTestId('account-transaction-list'), 'refresh');
+      await waitFor(() => {
+        expect(client.getQueryState(queryKeys.accountPositions('acc'))?.status).toBe('error');
+        expect(client.getQueryState(queryKeys.uncategorizedCount('acc'))?.status).toBe('error');
+        expect(listCalls().map(({ page }) => page)).toEqual([0, 0]);
+        expect(client.isFetching()).toBe(0);
+        expect(screen.getAllByRole('button', { name: 'Try again' })).toHaveLength(1);
+      });
+
+      let finishPageZero: () => void = () => {};
+      const pageZero = new Promise<void>((resolve) => (finishPageZero = resolve));
+      server.beforeRead = (path, { query }) => {
+        if (path === '/api/v1/accounts/{accountId}/transactions' && query?.size === 50) {
+          return pageZero;
+        }
+      };
+      server.holdings = positionSnapshot(holding('recovered'));
+      server.rows[0] = txn(0, {
+        categoryId: 'uncat',
+        merchantDescription: 'Recovered transaction',
+      });
+      api.get.mockClear();
+
+      await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+      if (initialTab === 'activity') {
+        await fireEvent.press(screen.getByRole('radio', { name: 'Positions' }));
+        expect(await screen.findByText('Fund recovered')).toBeTruthy();
+      }
+      await fireEvent.press(screen.getByRole('radio', { name: 'Activity' }));
+      expect(await screen.findByRole('radio', { name: 'Uncategorised 1' })).toBeTruthy();
+      expect(screen.getByText('Shop 000')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Load more' })).toBeDisabled();
+      expect(listCalls().map(({ page }) => page)).toEqual([0]);
+      expect(api.get.mock.calls.map(([path]) => path).sort()).toEqual([
+        '/api/v1/accounts',
+        '/api/v1/accounts/{accountId}',
+        '/api/v1/accounts/{accountId}/positions',
+        '/api/v1/accounts/{accountId}/transactions',
+        '/api/v1/accounts/{accountId}/transactions',
+      ]);
+
+      await act(async () => finishPageZero());
+      expect(await screen.findByText('Recovered transaction')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Load more' })).toBeEnabled();
+      await fireEvent.press(screen.getByRole('button', { name: 'Load more' }));
+      expect(await screen.findByText('Showing 60 of 60')).toBeTruthy();
+      expect(listCalls().map(({ page }) => page)).toEqual([0, 1]);
+      await fireEvent.press(screen.getByRole('radio', { name: 'Positions' }));
+      expect(screen.getByText('Fund recovered')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+    },
+  );
+
+  it('uses one retry to recover concurrent reads after the session renewal cooldown', async () => {
+    const realApi =
+      jest.requireActual<typeof import('@/api/typed-api')>('@/api/typed-api').typedApi;
+    api.get.mockImplementation(realApi.get);
+    api.post.mockImplementation(realApi.post);
+    const tokens = (id: string) => ({ accessToken: `access-${id}`, refreshToken: `refresh-${id}` });
+    const realNow = Date.now.bind(Date);
+    let clockOffset = 0;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => realNow() + clockOffset);
+    let expired = false;
+    let renewalAvailable = false;
+    const renew = jest.fn(() =>
+      renewalAvailable
+        ? new Response(JSON.stringify(tokens('new')))
+        : new Response(null, { status: 503, headers: { 'Retry-After': '10' } }),
+    );
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = new URL(String(input));
+      const json = (data: unknown) => new Response(JSON.stringify(data));
+      if (url.pathname === '/api/v1/auth/login') return json({ tokens: tokens('old') });
+      if (url.pathname === '/api/v1/auth/refresh') return renew();
+      if (url.pathname === '/api/v1/users/me') return json({ sessionId: 'test-session' });
+      if (url.pathname === '/api/v1/sessions/test-session/revoke') {
+        return new Response(null, { status: 204 });
+      }
+      if (expired && new Headers(init?.headers).get('Authorization') !== 'Bearer access-new') {
+        return new Response(null, { status: 401 });
+      }
+      if (url.pathname === '/api/v1/accounts') return json([listItem]);
+      if (url.pathname === '/api/v1/accounts/acc') return json(summary());
+      if (url.pathname === '/api/v1/categories') return json(CATEGORIES);
+      if (url.pathname === '/api/v1/accounts/acc/transactions') {
+        const isCount = url.searchParams.get('size') === '1';
+        const row = txn(0, { merchantDescription: expired ? 'Recovered session row' : 'Shop 000' });
+        return json({
+          content: isCount ? [] : [row],
+          page: { number: 0, totalElements: isCount ? 0 : 1, totalPages: 1 },
+        });
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    try {
+      await restoreSession();
+      await signIn('member@example.test', 'test-password');
+      await renderDetail();
+      expect(await screen.findByText('Girokonto')).toBeTruthy();
+      expect(await screen.findByText('Shop 000')).toBeTruthy();
+
+      expired = true;
+      await fireEvent(screen.getByTestId('account-transaction-list'), 'refresh');
+      const message = intl.formatMessage({ id: 'problem.reaction.RETRY_LATER' });
+      await waitFor(() => {
+        expect(screen.getAllByText(message)).toHaveLength(1);
+        expect(screen.getAllByRole('button', { name: 'Try again' })).toHaveLength(1);
+        expect(renew).toHaveBeenCalledTimes(1);
+      });
+
+      renewalAvailable = true;
+      clockOffset = 10_001;
+      api.get.mockClear();
+      await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+      expect(await screen.findByText('Recovered session row')).toBeTruthy();
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull());
+      expect(screen.queryByText(message)).toBeNull();
+      expect(renew).toHaveBeenCalledTimes(2);
+      expect(api.get.mock.calls.map(([path]) => path).sort()).toEqual([
+        '/api/v1/accounts',
+        '/api/v1/accounts/{accountId}',
+        '/api/v1/accounts/{accountId}/transactions',
+        '/api/v1/accounts/{accountId}/transactions',
+        '/api/v1/users/me',
+      ]);
+    } finally {
+      await signOut();
+      setRefreshHandler(null);
+      fetchMock.mockRestore();
+      clock.mockRestore();
+    }
+  });
+
   it('keeps a count-specific problem inline during and after recovery from a shared outage', async () => {
     const server = fakeServer(summary(), [txn(0)]);
     await renderDetail();
@@ -576,11 +741,11 @@ describe('S3 account detail acceptance checks (#494)', () => {
     });
     const countMessage = intl.formatMessage({ id: 'problem.FORBIDDEN' });
     let offline = true;
-    server.failure = (path, { query }) => {
+    server.beforeRead = (path, { query }) => {
       if (path === '/api/v1/accounts/{accountId}/transactions' && query?.size === 1) {
-        return countProblem;
+        throw countProblem;
       }
-      if (offline) return new NetworkError('server unreachable');
+      if (offline) throw new NetworkError('server unreachable');
     };
     await fireEvent(screen.getByTestId('account-transaction-list'), 'refresh');
     expect(await screen.findByText(countMessage)).toBeTruthy();
