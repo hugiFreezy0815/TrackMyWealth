@@ -42,6 +42,27 @@ it.each(['de-DE', 'de-CH'])('hydrates in English before applying the %s locale',
   expect(result.getByText('Restoring session…')).toBeOnTheScreen();
 });
 
+it('applies a German member preference after hydrating in an English browser', async () => {
+  Platform.OS = 'web';
+  jest.replaceProperty(deviceIntl, 'DEVICE_LOCALE', 'en-GB');
+  const renders: string[] = [];
+
+  function RestoringLabel() {
+    const label = useIntl().formatMessage({ id: 'session.restoring' });
+    renders.push(label);
+    return <Text>{label}</Text>;
+  }
+
+  const result = await render(
+    <AppIntlProvider language="DE">
+      <RestoringLabel />
+    </AppIntlProvider>,
+  );
+
+  expect(renders[0]).toBe('Restoring session…');
+  expect(result.getByText('Sitzung wird wiederhergestellt …')).toBeOnTheScreen();
+});
+
 it('uses the member locale on the first native render', async () => {
   Platform.OS = 'ios';
   const locales: string[] = [];
