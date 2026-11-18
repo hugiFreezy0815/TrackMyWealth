@@ -233,7 +233,8 @@ for (const [locale, language, accountType] of [
     await page.waitForURL(`**/overview/${portfolioId}`);
     await page.getByText(accountType, { exact: true }).waitFor();
     await documentLanguage.waitFor({ state: 'attached' });
-    await page.getByRole('button', { name: new RegExp(`^${accountName},`) }).click();
+    // On web the row button is named by its visible content (#617), which starts with the name.
+    await page.getByRole('button', { name: new RegExp(`^${accountName}`) }).click();
 
     await page.waitForURL(`**/accounts/${accountId}`);
     await page

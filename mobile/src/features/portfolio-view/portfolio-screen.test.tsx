@@ -1,6 +1,6 @@
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import {
@@ -13,6 +13,7 @@ import { typedApi } from '@/api/typed-api';
 import type { components } from '@/api/schema';
 import { selectHistoryPeriod } from '@/features/value-history/period';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
+import type { AppLocale } from '@/i18n';
 import { renderWithIntl } from '@/i18n/test-utils';
 import type {
   PortfolioAccount,
@@ -216,7 +217,7 @@ function setData(
   } as unknown as ReturnType<typeof usePortfolioView>);
 }
 
-async function mount(locale: 'en' | 'de' = 'en', client = new QueryClient()) {
+async function mount(locale: AppLocale = 'en', client = new QueryClient()) {
   const handlers = {
     onAccount: jest.fn(),
     onPortfolio: jest.fn(),
@@ -539,6 +540,133 @@ describe('S2 rows per section type', () => {
     expect(screen.getByText('Current account · DE12 •••• 4471')).toBeTruthy();
     expect(screen.getByText('✓ Reconciled')).toBeTruthy();
     expect(screen.getByText('≈EUR 46.00')).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: 'USD cash, 50.00 US dollars, approximately 46.00 euros, Current account',
+      }),
+    ).toBeTruthy();
+  });
+
+  it.each([
+    // Hidden: balance and converted value are both masked. Unknown: one placeholder (#606).
+    { hidden: true, known: true, displayed: '••••', spoken: 'hidden', placeholders: 2 },
+    { hidden: false, known: false, displayed: '–', spoken: 'Value unknown', placeholders: 1 },
+  ])('keeps the spoken account balance private when the row shows $displayed', async (state) => {
+    setData(
+      view([
+        makeSection('CASH_AND_SAVINGS', [
+          makeAccount('USD cash', {
+            currency: 'USD',
+            balance: '50.00',
+            valueInPortfolioCurrency: '46.00',
+            valueKnown: state.known,
+          }),
+        ]),
+      ]),
+    );
+    jest.mocked(useAmountsHidden).mockReturnValue(state.hidden);
+    await mount();
+
+    const button = screen.getByRole('button', {
+      name: `USD cash, ${state.spoken}, Current account`,
+    });
+    expect(within(button).getAllByText(state.displayed)).toHaveLength(state.placeholders);
+  });
+
+  describe('on web (#617, WCAG 2.5.3 Label in Name)', () => {
+    const originalOS = Platform.OS;
+    beforeEach(() => {
+      Platform.OS = 'web';
+    });
+    afterEach(() => {
+      Platform.OS = originalOS;
+    });
+
+    const usdCash = () =>
+      view([
+        makeSection('CASH_AND_SAVINGS', [
+          makeAccount('USD cash', {
+            currency: 'USD',
+            balance: '50.00',
+            valueInPortfolioCurrency: '46.00',
+          }),
+        ]),
+      ]);
+
+    /** Text of the hidden node the row button references through aria-describedby. */
+    function description(button: ReturnType<typeof screen.getByRole>): string {
+      const id = button.props['aria-describedby'] as string;
+      expect(id).toBeTruthy();
+      const found: string[] = [];
+      const walk = (node: unknown): void => {
+        if (node == null || typeof node !== 'object') return;
+        if (Array.isArray(node)) return node.forEach(walk);
+        const { props, children } = node as {
+          props?: Record<string, unknown>;
+          children?: unknown[];
+        };
+        if (props?.nativeID === id) found.push((children ?? []).join(''));
+        walk(children);
+      };
+      walk(screen.toJSON());
+      expect(found).toHaveLength(1);
+      return found[0];
+    }
+
+    /** Each amount in the row exposes exactly its visible text as its name. */
+    function expectAmountsNamedByText(button: ReturnType<typeof screen.getByRole>, count: number) {
+      const amounts = within(button)
+        .getAllByText(/./)
+        .filter((node) => 'aria-label' in node.props);
+      expect(amounts).toHaveLength(count);
+      for (const amount of amounts) {
+        expect(amount.props['aria-label']).toBe(amount.props.children);
+      }
+      return amounts.map((amount) => amount.props.children as string);
+    }
+
+    it('names the row by its visible content and describes it with the spoken amounts', async () => {
+      setData(usdCash());
+      await mount();
+
+      const button = screen.getByRole('button', {
+        name: /^USD cash.*Current account.*USD 50\.00.*≈EUR 46\.00$/,
+      });
+      expect(button.props.accessibilityLabel).toBeUndefined();
+      // The amounts expose their visible text, so the computed name matches what is shown.
+      expect(expectAmountsNamedByText(button, 2)).toEqual([
+        expect.stringMatching(/^USD\s50\.00$/),
+        expect.stringMatching(/^≈EUR\s46\.00$/),
+      ]);
+      expect(description(button)).toBe('50.00 US dollars, approximately 46.00 euros');
+    });
+
+    it.each([
+      { hidden: true, known: true, displayed: '••••', spoken: 'hidden' },
+      { hidden: false, known: false, displayed: '–', spoken: 'Value unknown' },
+    ])('exposes no private digits when the row shows $displayed', async (state) => {
+      setData(
+        view([
+          makeSection('CASH_AND_SAVINGS', [
+            makeAccount('USD cash', {
+              currency: 'USD',
+              balance: '50.00',
+              valueInPortfolioCurrency: '46.00',
+              valueKnown: state.known,
+            }),
+          ]),
+        ]),
+      );
+      jest.mocked(useAmountsHidden).mockReturnValue(state.hidden);
+      await mount();
+
+      const button = screen.getByRole('button', { name: /^USD cash/ });
+      expect(button.props.accessibilityLabel).toBeUndefined();
+      const amounts = expectAmountsNamedByText(button, state.hidden ? 2 : 1);
+      expect(amounts.every((text) => text.endsWith(state.displayed))).toBe(true);
+      expect(description(button)).toBe(state.spoken);
+      expect(renderedText()).not.toMatch(/50[.,]00|46[.,]00/);
+    });
   });
 
   it('shows the depot row with position count and date, and its total return', async () => {
@@ -681,6 +809,37 @@ describe('S2 header, explanation and data source', () => {
     expect(color(screen.getByText('Outdated rate'))).toBe('#8F5200');
   });
 
+  it.each([
+    ['en-GB', 'Home total, 1234.56 euros. Show details'],
+    ['de-CH', 'Gesamtwert von Home, 1234.56 Euro. Details anzeigen'],
+    ['de-DE', 'Gesamtwert von Home, 1234,56 Euro. Details anzeigen'],
+  ])('starts the total button name with the visible amount in %s', async (locale, explanation) => {
+    setData(view([], { total: '1234.56' }));
+    await mount(locale);
+
+    const visibleAmount = screen.getByTestId('portfolio-total').props.children;
+    const button = screen.getByRole('button', { name: `${visibleAmount}. ${explanation}` });
+    expect(button).toHaveProp('testID', 'portfolio-total-action');
+  });
+
+  it.each([
+    { hidden: true, display: '••••', spoken: 'hidden', valueStatus: 'CURRENT' },
+    { hidden: false, display: '–', spoken: 'Value unknown', valueStatus: 'UNKNOWN' },
+  ] as const)('names the $display total and opens its explanation', async (state) => {
+    // Keep a numeric payload in both cases to check that the status and privacy setting win.
+    setData(view([], { total: '1234.56', valueStatus: state.valueStatus }));
+    jest.mocked(useAmountsHidden).mockReturnValue(state.hidden);
+    await mount();
+
+    expect(screen.getByTestId('portfolio-total')).toHaveTextContent(state.display);
+    const button = screen.getByRole('button', {
+      name: `${state.display}. Home total, ${state.spoken}. Show details`,
+    });
+    expect(button).toHaveProp('testID', 'portfolio-total-action');
+    await fireEvent.press(button);
+    expect(screen.getByText('Portfolio total')).toBeTruthy();
+  });
+
   it('explains the total with warnings in plain words, unknown accounts and the ≈ value', async () => {
     setData(
       view(
@@ -707,12 +866,49 @@ describe('S2 header, explanation and data source', () => {
     );
   });
 
-  it('explains a subtotal with its server-converted workspace value', async () => {
-    setData(view([makeSection('CASH_AND_SAVINGS', [makeAccount('Girokonto')])]));
+  it.each([
+    ['en-GB', 'Cash & savings, 9876.54 euros. Show details'],
+    ['de-CH', 'Bargeld & Sparen, 9876.54 Euro. Details anzeigen'],
+    ['de-DE', 'Bargeld & Sparen, 9876,54 Euro. Details anzeigen'],
+  ])('names the visible subtotal and opens its explanation in %s', async (locale, explanation) => {
+    setData(
+      view([makeSection('CASH_AND_SAVINGS', [makeAccount('Girokonto')], { subtotal: '9876.54' })]),
+    );
+    await mount(locale);
+
+    const subtotal = screen.getByTestId('portfolio-section-subtotal');
+    const button = screen.getByRole('button', {
+      name: `${subtotal.props.children}. ${explanation}`,
+    });
+    expect(within(button).getByTestId('portfolio-section-subtotal')).toBe(subtotal);
+    await fireEvent.press(button);
+    expect(screen.getByTestId('portfolio-explanation-converted')).toHaveTextContent('≈CHF 95.00');
+  });
+
+  it.each([
+    { hidden: true, display: '••••', spoken: 'hidden', valueStatus: 'CURRENT' },
+    { hidden: false, display: '–', spoken: 'Value unknown', valueStatus: 'UNKNOWN' },
+  ] as const)('names the $display subtotal and opens its explanation', async (state) => {
+    // A numeric server payload must stay hidden when privacy mode or UNKNOWN applies.
+    setData(
+      view([
+        makeSection('CASH_AND_SAVINGS', [makeAccount('Girokonto')], {
+          subtotal: '9876.54',
+          valueStatus: state.valueStatus,
+        }),
+      ]),
+    );
+    jest.mocked(useAmountsHidden).mockReturnValue(state.hidden);
     await mount();
-    await fireEvent.press(screen.getByRole('button', { name: /^Cash & savings, 100.00 euros/ }));
-    expect(screen.getByTestId('portfolio-explanation-converted').props.children).toBe('≈CHF 95.00');
-    expect(screen.getByText('All available account values are included.')).toBeTruthy();
+
+    const button = screen.getByRole('button', {
+      name: `${state.display}. Cash & savings, ${state.spoken}. Show details`,
+    });
+    expect(within(button).getByTestId('portfolio-section-subtotal')).toHaveTextContent(
+      state.display,
+    );
+    await fireEvent.press(button);
+    expect(screen.getByTestId('portfolio-explanation-converted')).toHaveTextContent(state.display);
   });
 
   it.each([

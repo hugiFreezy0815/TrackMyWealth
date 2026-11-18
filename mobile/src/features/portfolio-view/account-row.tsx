@@ -1,5 +1,6 @@
+import { useId } from 'react';
 import { useIntl, type IntlShape } from 'react-intl';
-import { Pressable, Text, View } from 'react-native';
+import { Platform, Pressable, Text, View } from 'react-native';
 
 import { Amount, Figure, ValueStatusBadge, amountTexts, isValueKnown } from '@/components/shared';
 import { Spacing, TypeScale } from '@/constants/theme';
@@ -92,19 +93,30 @@ export function PortfolioAccountRow({
   const intl = useIntl();
   const theme = useTheme();
   const hidden = useAmountsHidden();
+  const descriptionId = useId();
+  const web = Platform.OS === 'web';
   const known = account.valueKnown && isValueKnown(account.valueStatus);
   const detail = rowDetail(intl, account, section);
-  const spokenAmount = amountTexts(intl, {
+  const balance = {
     value: account.balance,
     currency: account.currency,
     valueKnown: known,
     masked: hidden,
-  }).label;
+  };
   const conversion =
     known && account.currency !== portfolioCurrency && account.valueInPortfolioCurrency !== null
-      ? { value: account.valueInPortfolioCurrency, currency: portfolioCurrency, approx: true }
+      ? {
+          ...balance,
+          value: account.valueInPortfolioCurrency,
+          currency: portfolioCurrency,
+          approx: true,
+        }
       : null;
-  const spokenConversion = conversion && !hidden ? amountTexts(intl, conversion).label : null;
+  const balanceText = amountTexts(intl, balance);
+  const conversionText = conversion ? amountTexts(intl, conversion) : null;
+  const spokenAmounts = [balanceText.label, hidden ? null : conversionText?.label]
+    .filter(Boolean)
+    .join(', ');
   return (
     <View
       testID={rowTestId(account.accountId)}
@@ -117,9 +129,10 @@ export function PortfolioAccountRow({
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={[account.name, spokenAmount, spokenConversion, detail]
-          .filter(Boolean)
-          .join(', ')}
+        // On web, the button name comes from the visible row content in reading order (WCAG 2.5.3)
+        // and the spoken amounts become its description.
+        accessibilityLabel={web ? undefined : [account.name, spokenAmounts, detail].join(', ')}
+        aria-describedby={web ? descriptionId : undefined}
         onPress={() => onAccount(account.accountId)}
         style={{ minHeight: 56, paddingVertical: Spacing.two, gap: Spacing.one }}
       >
@@ -140,9 +153,8 @@ export function PortfolioAccountRow({
           </View>
           <View style={{ alignItems: 'flex-end', gap: Spacing.one }}>
             <Amount
-              value={account.balance}
-              currency={account.currency}
-              valueKnown={known}
+              {...balance}
+              aria-label={web ? balanceText.display : undefined}
               style={{
                 ...TypeScale.numberLarge,
                 // With "Hide amounts" a red figure would reveal the sign (as ChangeChip).
@@ -152,10 +164,21 @@ export function PortfolioAccountRow({
                     : theme.textPrimary,
               }}
             />
-            {conversion ? <Amount {...conversion} style={TypeScale.caption} /> : null}
+            {conversion ? (
+              <Amount
+                {...conversion}
+                aria-label={web ? conversionText?.display : undefined}
+                style={TypeScale.caption}
+              />
+            ) : null}
           </View>
         </View>
       </Pressable>
+      {web ? (
+        <Text nativeID={descriptionId} style={{ display: 'none' }}>
+          {spokenAmounts}
+        </Text>
+      ) : null}
       <View
         style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.two }}
       >
