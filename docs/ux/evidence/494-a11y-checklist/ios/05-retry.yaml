@@ -3,7 +3,7 @@ appId: com.anonymous.trackmywealth
 ---
 - scrollUntilVisible:
     element:
-      text: "Back to overview"
+      text: ".*Back to overview"
     direction: UP
     timeout: 60000
 - tapOn: "Try again"
