@@ -4,8 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.groups.Tuple.tuple;
 
 import com.trackmywealth.backend.dto.AccountListItemResponse;
+import com.trackmywealth.backend.dto.AccountPositionsResponse;
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
+import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
@@ -20,11 +22,17 @@ import com.trackmywealth.backend.dto.ImportStatementBalanceResponse;
 import com.trackmywealth.backend.dto.ImportStatementBalanceRule;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
+import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.PageResponse;
+import com.trackmywealth.backend.dto.PortfolioViewResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
+import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
+import com.trackmywealth.backend.dto.SnapshotCashBalance;
+import com.trackmywealth.backend.dto.SnapshotHoldingRequest;
 import com.trackmywealth.backend.dto.SnapshotHoldingResponse;
+import com.trackmywealth.backend.dto.ValueHistoryResponse;
 import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.error.ProblemCode;
@@ -57,9 +65,11 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.client.RestTestClient;
@@ -122,6 +132,7 @@ class HoldingsImportControllerTest {
       for (String sql :
           List.of(
               "DELETE FROM import_row_raw",
+              "DELETE FROM fx_rate",
               LedgerCleanup.DELETE_ALL_TRANSACTIONS,
               "DELETE FROM reconciliation_result",
               "DELETE FROM snapshot_holding",
@@ -170,7 +181,7 @@ class HoldingsImportControllerTest {
     assertThat(holdings.balance()).isEqualByComparingTo("1204.35");
     assertThat(holdings.cashBalances())
         .extracting(ImportHoldingsResponse.Cash::currency, ImportHoldingsResponse.Cash::recorded)
-        .containsExactly(tuple("CHF", true), tuple("USD", false));
+        .containsExactly(tuple("CHF", true), tuple("USD", true));
     assertThat(holdings.positions())
         .extracting(ImportHoldingsResponse.Position::resolution)
         .containsOnly(ImportHoldingsValues.UNRESOLVED);
@@ -238,33 +249,280 @@ class HoldingsImportControllerTest {
         .satisfies(row -> assertThat(row.get("import_batch_id")).isEqualTo(preview.id()));
   }
 
-  /**
-   * #586: the statement's USD cash is shown at import but not recorded, so its holdings alone would
-   * understate the depot (FR-PERF-018). Without that unrecorded cash line the same snapshot values
-   * the depot as cash plus every converted holding.
-   */
   @Test
-  void unrecordedForeignCashKeepsAnImportedDepotUnknownUntilItIsGone() throws Exception {
+  void foreignCashAndHoldingsBothUseTheValuationDatesRate() throws Exception {
     createAllSecurities();
     commit(upload(depot, ShippedTemplateFixtures.swissquoteHoldings(), null));
+    assertThat(snapshots(depot).get(0).foreignCashBalances())
+        .containsExactly(new SnapshotCashBalance("USD", new BigDecimal("310.2000")));
+    assertThat(listedDepot().valueStatus()).isEqualTo(ValueStatus.UNKNOWN);
+    assertThat(netWorth().complete()).isFalse();
+
+    fx("USD", "CHF", STATEMENT_DATE, "0.80");
+    assertThat(balance(STATEMENT_DATE, "CHF")).isEqualByComparingTo("9696.29");
+    assertThat(listedDepot().valueStatus()).isEqualTo(ValueStatus.STALE);
+
+    LocalDate today = LocalDate.of(2032, 1, 15);
+    fx("USD", "CHF", today, "0.90");
+    assertThat(listedDepot().balance()).isEqualByComparingTo("10251.71");
+    assertThat(listedDepot().valueStatus()).isEqualTo(ValueStatus.CURRENT);
+    NetWorthResponse netWorth = netWorth();
+    assertThat(netWorth.complete()).isTrue();
+    assertThat(netWorth.netWorth()).isEqualByComparingTo("10251.71");
+    UUID portfolio = listedDepot().portfolioId();
+    PortfolioViewResponse view =
+        client()
+            .get()
+            .uri("/api/v1/portfolios/{id}/view", portfolio)
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(PortfolioViewResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(view.complete()).isTrue();
+    assertThat(view.totalInWorkspaceCurrency()).isEqualByComparingTo("10251.71");
+    ValueHistoryResponse history =
+        client()
+            .get()
+            .uri("/api/v1/net-worth/history?period=1M")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(ValueHistoryResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(history.points())
+        .anySatisfy(
+            point -> {
+              assertThat(point.date()).isEqualTo(STATEMENT_DATE);
+              assertThat(point.value()).isEqualByComparingTo("9696.29");
+            });
+    assertThat(history.points().get(history.points().size() - 1).value())
+        .isEqualByComparingTo("10251.71");
+    assertThat(positions().positions())
+        .anySatisfy(
+            position -> {
+              assertThat(position.value()).isEqualByComparingTo("5244");
+              assertThat(position.valueInAccountCurrency()).isEqualByComparingTo("4719.60");
+            });
+
+    fx("USD", "EUR", today, "0.70");
+    fx("CHF", "EUR", today, "1.10");
+    // 5252.93 CHF and 5554.20 USD; the USD amount takes the direct USD/EUR quote.
+    assertThat(balance(today, "EUR")).isEqualByComparingTo("9666.1630");
+  }
+
+  @Test
+  void laterCashImportAddsOnlyNewCurrenciesAndRollingItBackLeavesTheOriginalBalance()
+      throws Exception {
+    ImportBatchResponse original =
+        commit(
+            upload(
+                depot, ShippedTemplateFixtures.postfinanceCashWorkbook(true, false), EXPORT_DATE));
+    ImportBatchResponse preview =
+        upload(depot, ShippedTemplateFixtures.postfinanceCashWorkbook(), EXPORT_DATE);
+    assertThat(preview.holdings().snapshot()).isEqualTo(ImportSnapshotValues.COMPLETES);
+    ImportBatchResponse added = commit(preview);
+    AccountSnapshotResponse snapshot = snapshots(depot).get(0);
+    assertThat(snapshot.balance()).isEqualByComparingTo("1204.35");
+    assertThat(snapshot.foreignCashBalances())
+        .containsExactly(new SnapshotCashBalance("USD", new BigDecimal("310.2000")));
+    assertThat(
+            rowsOf(
+                "SELECT balance_import_batch_id FROM account_snapshot WHERE id = ?", snapshot.id()))
+        .singleElement()
+        .satisfies(row -> assertThat(row.get("balance_import_batch_id")).isEqualTo(original.id()));
+
+    rollback(get(depot, added.id()));
+    assertThat(snapshots(depot))
+        .singleElement()
+        .satisfies(
+            kept -> {
+              assertThat(kept.balance()).isEqualByComparingTo("1204.35");
+              assertThat(kept.foreignCashBalances()).isEmpty();
+            });
+  }
+
+  @Test
+  void aForeignOnlyImportPersistsTheCashWithoutAssumingAnOwnCurrencyBalance() throws Exception {
+    createWorkbookSecurities();
+    commit(upload(depot, ShippedTemplateFixtures.postfinancePositionsWorkbook(), EXPORT_DATE));
+    commit(
+        upload(depot, ShippedTemplateFixtures.postfinanceCashWorkbook(false, true), EXPORT_DATE));
+    fx("USD", "CHF", EXPORT_DATE, "0.80");
+
+    AccountSnapshotResponse snapshot = snapshots(depot).get(0);
+    assertThat(snapshot.balance()).isNull();
+    assertThat(snapshot.foreignCashBalances())
+        .containsExactly(new SnapshotCashBalance("USD", new BigDecimal("310.2000")));
+    assertThat(listedDepot().valueStatus()).isEqualTo(ValueStatus.UNKNOWN);
+  }
+
+  @Test
+  void theBackfillRestoresCashOnceAndTheSourceBatchCanRollItBack() throws Exception {
+    createWorkbookSecurities();
+    commit(upload(depot, ShippedTemplateFixtures.postfinancePositionsWorkbook(), EXPORT_DATE));
+    ImportBatchResponse cash =
+        commit(upload(depot, ShippedTemplateFixtures.postfinanceCashWorkbook(), EXPORT_DATE));
+    execute("DELETE FROM snapshot_foreign_cash");
+    assertThat(listedDepot().valueStatus()).isEqualTo(ValueStatus.UNKNOWN);
+
+    ResourceDatabasePopulator backfill =
+        new ResourceDatabasePopulator(
+            new ClassPathResource("db/migration/V123__restore_snapshot_foreign_cash.sql"));
+    backfill.execute(dataSource);
+    backfill.execute(dataSource);
+    assertThat(rowsOf("SELECT import_batch_id FROM snapshot_foreign_cash"))
+        .singleElement()
+        .satisfies(row -> assertThat(row.get("import_batch_id")).isEqualTo(cash.id()));
+    fx("USD", "CHF", EXPORT_DATE, "0.80");
+    assertThat(listedDepot().balance()).isNotNull();
+
+    rollback(get(depot, cash.id()));
+    assertThat(count("SELECT count(*) FROM snapshot_foreign_cash")).isZero();
+    assertThat(snapshots(depot).get(0).holdings()).hasSize(3);
+  }
+
+  @Test
+  void theBackfillLeavesConflictingLegacyCashSourcesUnknown() throws Exception {
+    createWorkbookSecurities();
+    ImportBatchResponse positions =
+        commit(upload(depot, ShippedTemplateFixtures.postfinancePositionsWorkbook(), EXPORT_DATE));
+    commit(upload(depot, ShippedTemplateFixtures.postfinanceCashWorkbook(), EXPORT_DATE));
+    execute("DELETE FROM snapshot_foreign_cash");
+    // Simulate a second contributing legacy batch that also declared its own USD cash amount.
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                """
+            INSERT INTO import_holding_row
+                (workspace_id, import_batch_id, row_number, kind, currency, amount)
+            SELECT workspace_id, id, 999, 'CASH', 'USD', 1 FROM import_batch WHERE id = ?
+            """)) {
+      statement.setObject(1, positions.id());
+      statement.executeUpdate();
+    }
+    new ResourceDatabasePopulator(
+            new ClassPathResource("db/migration/V123__restore_snapshot_foreign_cash.sql"))
+        .execute(dataSource);
+    fx("USD", "CHF", EXPORT_DATE, "0.80");
+
+    assertThat(count("SELECT count(*) FROM snapshot_foreign_cash")).isZero();
+    assertThat(listedDepot().valueStatus()).isEqualTo(ValueStatus.UNKNOWN);
+  }
+
+  @Test
+  void manualSnapshotAcceptsForeignCashAndRejectsAnInvalidCurrencyOrScale() {
+    UUID security = createSecurity("CH0038863350", null, "EQUITY", "CHF");
+    SnapshotHoldingRequest holding =
+        new SnapshotHoldingRequest(
+            security, BigDecimal.ONE, null, false, null, new BigDecimal("100"), "CHF");
+    fx("USD", "CHF", EXPORT_DATE, "0.80");
+
+    for (SnapshotCashBalance invalid :
+        List.of(
+            new SnapshotCashBalance("ZZZ", BigDecimal.ONE),
+            new SnapshotCashBalance("USD", new BigDecimal("1.00001")),
+            new SnapshotCashBalance("CHF", BigDecimal.ONE))) {
+      client()
+          .post()
+          .uri("/api/v1/accounts/{id}/snapshots", depot)
+          .body(
+              new RecordAccountSnapshotRequest(
+                  EXPORT_DATE, BigDecimal.ZERO, List.of(holding), List.of(invalid)))
+          .exchange()
+          .expectStatus()
+          .isEqualTo(422);
+    }
+
+    AccountSnapshotResponse snapshot =
+        client()
+            .post()
+            .uri("/api/v1/accounts/{id}/snapshots", depot)
+            .body(
+                new RecordAccountSnapshotRequest(
+                    EXPORT_DATE,
+                    BigDecimal.ZERO,
+                    List.of(holding),
+                    List.of(new SnapshotCashBalance("USD", new BigDecimal("25")))))
+            .exchange()
+            .expectStatus()
+            .isCreated()
+            .expectBody(AccountSnapshotResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(balance(EXPORT_DATE, "CHF")).isEqualByComparingTo("120");
+
+    AccountSnapshotResponse updated =
+        replaceSnapshot(
+            snapshot, new ReplaceAccountSnapshotRequest(BigDecimal.ONE, List.of(holding)));
+    assertThat(balance(EXPORT_DATE, "CHF")).isEqualByComparingTo("121");
+    replaceSnapshot(
+        updated, new ReplaceAccountSnapshotRequest(BigDecimal.ONE, List.of(holding), List.of()));
+    assertThat(balance(EXPORT_DATE, "CHF")).isEqualByComparingTo("101");
+  }
+
+  private AccountSnapshotResponse replaceSnapshot(
+      AccountSnapshotResponse snapshot, ReplaceAccountSnapshotRequest request) {
+    return client()
+        .put()
+        .uri("/api/v1/accounts/{id}/snapshots/{snapshotId}", depot, snapshot.id())
+        .header(HttpHeaders.IF_MATCH, etag(snapshot.version()))
+        .body(request)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(AccountSnapshotResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private void fx(String base, String quote, LocalDate date, String value) {
     FxRate rate = new FxRate();
-    rate.setBaseCurrency("USD");
-    rate.setQuoteCurrency("CHF");
-    rate.setRateDate(STATEMENT_DATE);
-    rate.setRate(new BigDecimal("0.80"));
-    rate.setSource("ECB"); // app.fx.default-source
+    rate.setBaseCurrency(base);
+    rate.setQuoteCurrency(quote);
+    rate.setRateDate(date);
+    rate.setRate(new BigDecimal(value));
+    rate.setSource("ECB");
     fxRateRepository.saveAndFlush(rate);
+  }
 
-    AccountListItemResponse unknown = listedDepot();
-    assertThat(unknown.balance()).isNull();
-    assertThat(unknown.valueStatus()).isEqualTo(ValueStatus.UNKNOWN);
+  private NetWorthResponse netWorth() {
+    return client()
+        .get()
+        .uri("/api/v1/net-worth")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(NetWorthResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
 
-    execute("DELETE FROM import_holding_row WHERE kind = 'CASH' AND currency = 'USD'");
+  private BigDecimal balance(LocalDate date, String currency) {
+    return client()
+        .get()
+        .uri("/api/v1/accounts/{id}/balance?asOf={date}&currency={currency}", depot, date, currency)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(AccountValuation.class)
+        .returnResult()
+        .getResponseBody()
+        .value();
+  }
 
-    // 1204.35 cash + 39.27 + 2835.00 + 1174.31 in CHF + 5244.00 USD at 0.80
-    AccountListItemResponse valued = listedDepot();
-    assertThat(valued.balance()).isEqualByComparingTo("9448.13");
-    assertThat(valued.valueStatus()).isNotEqualTo(ValueStatus.UNKNOWN);
+  private AccountPositionsResponse positions() {
+    return client()
+        .get()
+        .uri("/api/v1/accounts/{id}/positions", depot)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(AccountPositionsResponse.class)
+        .returnResult()
+        .getResponseBody();
   }
 
   @Test

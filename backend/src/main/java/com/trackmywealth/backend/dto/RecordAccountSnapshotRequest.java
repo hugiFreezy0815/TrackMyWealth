@@ -15,18 +15,26 @@ import java.util.List;
  * <p>No {@code currency} and no {@code source}: the currency is the account's own ({@code
  * native_currency}, or a credit card's {@code billing_currency}; V58 enforces it) and an
  * API-entered snapshot is always {@code MANUAL}. {@code balance} uses the same convention as {@code
- * GET /accounts/{id}/balance} (a liability's balance is the positive amount owed) and may be
- * omitted only when {@code holdings} are given. See {@code AccountSnapshotService} for the
- * remaining rules.
+ * GET /accounts/{id}/balance} (a liability's balance is the positive amount owed). An account
+ * holding positions may also report cash in other currencies in {@code foreignCashBalances}. One of
+ * balance, holdings or foreign cash is required.
  */
 public record RecordAccountSnapshotRequest(
     @NotNull LocalDate snapshotDate,
     @Digits(integer = 16, fraction = 4) BigDecimal balance,
-    @Size(max = 500) List<@Valid SnapshotHoldingRequest> holdings) {
+    @Size(max = 500) List<@Valid SnapshotHoldingRequest> holdings,
+    @Size(max = 200) List<SnapshotCashBalance> foreignCashBalances) {
 
   public RecordAccountSnapshotRequest {
     // List.copyOf (SpotBugs EI_EXPOSE_REP) rejects a null element while the body is bound, which
     // the caller sees as a 400 like any other malformed body.
     holdings = holdings == null ? List.of() : List.copyOf(holdings);
+    foreignCashBalances =
+        foreignCashBalances == null ? List.of() : List.copyOf(foreignCashBalances);
+  }
+
+  public RecordAccountSnapshotRequest(
+      LocalDate snapshotDate, BigDecimal balance, List<SnapshotHoldingRequest> holdings) {
+    this(snapshotDate, balance, holdings, List.of());
   }
 }

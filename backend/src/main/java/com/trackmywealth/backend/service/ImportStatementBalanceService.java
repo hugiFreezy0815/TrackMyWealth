@@ -10,11 +10,13 @@ import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountSnapshot;
 import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.entity.ReconciliationResult;
+import com.trackmywealth.backend.entity.SnapshotForeignCash;
 import com.trackmywealth.backend.entity.SnapshotHolding;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
+import com.trackmywealth.backend.repository.SnapshotForeignCashRepository;
 import com.trackmywealth.backend.repository.SnapshotHoldingRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -78,6 +80,7 @@ public class ImportStatementBalanceService {
 
   private final AccountSnapshotRepository snapshotRepository;
   private final SnapshotHoldingRepository holdingRepository;
+  private final SnapshotForeignCashRepository cashRepository;
   private final ImportSnapshotCompletionService completionService;
   private final ImportSnapshotExplanationService explanations;
   private final ReconciliationResultRepository resultRepository;
@@ -89,6 +92,7 @@ public class ImportStatementBalanceService {
   public ImportStatementBalanceService(
       AccountSnapshotRepository snapshotRepository,
       SnapshotHoldingRepository holdingRepository,
+      SnapshotForeignCashRepository cashRepository,
       ImportSnapshotCompletionService completionService,
       ImportSnapshotExplanationService explanations,
       ReconciliationResultRepository resultRepository,
@@ -98,6 +102,7 @@ public class ImportStatementBalanceService {
       Clock clock) {
     this.snapshotRepository = snapshotRepository;
     this.holdingRepository = holdingRepository;
+    this.cashRepository = cashRepository;
     this.completionService = completionService;
     this.explanations = explanations;
     this.resultRepository = resultRepository;
@@ -241,6 +246,7 @@ public class ImportStatementBalanceService {
             batch.getStatementBalanceCurrency(),
             plan,
             batch.getStatementBalance(),
+            Map.of(),
             List.of(),
             committedBy));
   }
@@ -248,7 +254,12 @@ public class ImportStatementBalanceService {
   // US-07-31: what the balance would do to the imported snapshot of its date.
   private ImportSnapshotPlan plan(ImportBatch batch, Account account) {
     return completionService.plan(
-        account, batch.getStatementBalanceDate(), batch.getStatementBalance(), Map.of(), true);
+        account,
+        batch.getStatementBalanceDate(),
+        batch.getStatementBalance(),
+        Map.of(),
+        Map.of(),
+        true);
   }
 
   /**
@@ -302,6 +313,7 @@ public class ImportStatementBalanceService {
     Set<UUID> others = contributors(snapshot);
     others.remove(batch.getId());
     if (others.isEmpty() && keptAsHistory) {
+      cashRepository.deleteBySnapshotIdAndImportBatchId(snapshot.getId(), batch.getId());
       withdraw(snapshot, results, rolledBackBy);
       recordRemoval(batch, ImportBatchValues.SNAPSHOT_WITHDRAWN);
     } else if (others.isEmpty()) {
@@ -314,7 +326,7 @@ public class ImportStatementBalanceService {
       snapshotRepository.flush();
       recordRemoval(batch, ImportBatchValues.SNAPSHOT_DELETED);
     } else if (keptAsHistory && batch.getId().equals(snapshot.getBalanceImportBatchId())) {
-      withdrawCarryingOver(batch, snapshot, results, rolledBackBy);
+      withdrawCarryingOver(batch, snapshot, results, rolledBackBy, others);
     } else {
       // Kept as history or not, a decision covers the balance only: holdings of this batch go.
       removeParts(batch, snapshot, results, others);
@@ -325,18 +337,27 @@ public class ImportStatementBalanceService {
   // US-07-31: this batch's balance is the one a final decision (or an adjusting entry) covered, so
   // the snapshot is withdrawn and kept as history, under this batch, as in US-07-12. The holdings
   // other imports added stay in effect: they move on to a new snapshot of the date, which the first
-  // of them records. The withdrawn snapshot keeps all of its holdings as history.
+  // of them records. The withdrawn snapshot keeps all of its holdings as history. Foreign cash from
+  // the
+  // withdrawn batch is removed.
   private void withdrawCarryingOver(
       ImportBatch batch,
       AccountSnapshot snapshot,
       List<ReconciliationResult> results,
-      UUID rolledBackBy) {
+      UUID rolledBackBy,
+      Set<UUID> otherContributors) {
     List<SnapshotHolding> carried =
         holdingRepository.findBySnapshotId(snapshot.getId()).stream()
             .filter(holding -> holding.getImportBatchId() != null)
             .filter(holding -> !batch.getId().equals(holding.getImportBatchId()))
             .toList();
-    if (carried.isEmpty()) {
+    List<SnapshotForeignCash> carriedCash =
+        cashRepository.findBySnapshotIdOrderByCurrency(snapshot.getId()).stream()
+            .filter(line -> line.getImportBatchId() != null)
+            .filter(line -> !batch.getId().equals(line.getImportBatchId()))
+            .toList();
+    cashRepository.deleteBySnapshotIdAndImportBatchId(snapshot.getId(), batch.getId());
+    if (carried.isEmpty() && carriedCash.isEmpty()) {
       withdraw(snapshot, results, rolledBackBy);
       recordRemoval(batch, ImportBatchValues.SNAPSHOT_WITHDRAWN);
       return;
@@ -352,7 +373,7 @@ public class ImportStatementBalanceService {
     successor.setSnapshotDate(snapshot.getSnapshotDate());
     successor.setCurrency(snapshot.getCurrency());
     successor.setSource(SOURCE_DOCUMENT);
-    successor.setImportBatchId(carried.get(0).getImportBatchId());
+    successor.setImportBatchId(otherContributors.iterator().next());
     successor.setCreatedBy(rolledBackBy);
     successor = snapshotRepository.saveAndFlush(successor);
     List<SnapshotHolding> copies = new ArrayList<>(carried.size());
@@ -367,6 +388,14 @@ public class ImportStatementBalanceService {
       copies.add(copy);
     }
     holdingRepository.saveAllAndFlush(copies);
+    AccountSnapshot to = successor;
+    cashRepository.saveAllAndFlush(
+        carriedCash.stream()
+            .map(
+                line ->
+                    new SnapshotForeignCash(
+                        to, line.getCurrency(), line.getAmount(), line.getImportBatchId()))
+            .toList());
   }
 
   // US-07-31: takes out only this batch's parts of a snapshot another batch completed; the snapshot
@@ -378,6 +407,7 @@ public class ImportStatementBalanceService {
       List<ReconciliationResult> results,
       Set<UUID> others) {
     holdingRepository.deleteBySnapshotIdAndImportBatchId(snapshot.getId(), batch.getId());
+    cashRepository.deleteBySnapshotIdAndImportBatchId(snapshot.getId(), batch.getId());
     if (batch.getId().equals(snapshot.getBalanceImportBatchId())) {
       resultRepository.deleteAll(results);
       resultRepository.flush();
@@ -404,6 +434,10 @@ public class ImportStatementBalanceService {
     }
     holdingRepository.findBySnapshotId(snapshot.getId()).stream()
         .map(SnapshotHolding::getImportBatchId)
+        .filter(Objects::nonNull)
+        .forEach(batches::add);
+    cashRepository.findBySnapshotIdOrderByCurrency(snapshot.getId()).stream()
+        .map(SnapshotForeignCash::getImportBatchId)
         .filter(Objects::nonNull)
         .forEach(batches::add);
     return batches;

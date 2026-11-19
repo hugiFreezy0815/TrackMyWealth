@@ -107,8 +107,8 @@ public class ImportHoldingsService {
    *
    * @throws ResponseStatusException 422 for positions on an account that holds none
    * @throws ImportFileRejectedException 422 {@code IMPORT_FILE_NO_DATA_ROWS} when the statement
-   *     holds neither a position, nor cash in the account's currency, nor an unreadable line: the
-   *     commit would have nothing to record
+   *     holds neither a position, nor cash, nor an unreadable line: the commit would have nothing
+   *     to record
    */
   public void stage(ImportBatch batch, Account account, ImportHoldingsStatement statement) {
     rowRepository.deleteByImportBatchId(batch.getId());
@@ -121,15 +121,12 @@ public class ImportHoldingsService {
       throw holdsNoPositions();
     }
     String currency = accountCurrencyService.ownCurrency(account);
-    boolean ownCash =
+    boolean hasCash =
         statement.linesOf(ImportHoldingsValues.KIND_CASH).stream()
-            .anyMatch(cash -> currency.equals(cash.currency()));
-    if (!positions && !ownCash && statement.linesOf(ImportHoldingsValues.KIND_ERROR).isEmpty()) {
+            .anyMatch(line -> account.isHoldsPositions() || currency.equals(line.currency()));
+    if (!positions && !hasCash && statement.linesOf(ImportHoldingsValues.KIND_ERROR).isEmpty()) {
       throw new ImportFileRejectedException(
-          ProblemCode.IMPORT_FILE_NO_DATA_ROWS,
-          "The statement holds no position and no cash in the account's currency ("
-              + currency
-              + ").");
+          ProblemCode.IMPORT_FILE_NO_DATA_ROWS, "The statement holds no position or cash.");
     }
     // A holdings batch states no balance of its own: its cash is part of the statement (V99).
     batch.recordStatementBalance(null, null, null, null, null, null);
@@ -153,7 +150,8 @@ public class ImportHoldingsService {
     List<ImportHoldingRow> positions = ofKind(rows, ImportHoldingsValues.KIND_POSITION);
     Map<Integer, UUID> resolved = resolve(account.getWorkspace().getId(), positions);
     String currency = accountCurrencyService.ownCurrency(account);
-    BigDecimal balance = ownCash(rows, currency);
+    Map<String, BigDecimal> cashByCurrency = cashByCurrency(rows);
+    BigDecimal balance = cashByCurrency.remove(currency);
     int unresolvedCount = positions.size() - resolved.size();
     List<String> duplicates = duplicateSecurities(positions, resolved);
     List<ImportHoldingRow> errors = ofKind(rows, ImportHoldingsValues.KIND_ERROR);
@@ -167,6 +165,7 @@ public class ImportHoldingsService {
               account,
               batch.getHoldingsSnapshotDate(),
               balance,
+              cashByCurrency,
               quantities(positions, resolved),
               unresolvedCount == 0 && duplicates.isEmpty());
       snapshot = plan.outcome();
@@ -194,10 +193,7 @@ public class ImportHoldingsService {
             .map(
                 row ->
                     new ImportHoldingsResponse.Cash(
-                        row.getRowNumber(),
-                        row.getCurrency(),
-                        row.getAmount(),
-                        currency.equals(row.getCurrency())))
+                        row.getRowNumber(), row.getCurrency(), row.getAmount(), true))
             .toList();
     List<ImportHoldingsResponse.Unreadable> unreadable =
         errors.stream()
@@ -276,9 +272,16 @@ public class ImportHoldingsService {
               + " are the same security; a snapshot holds it once.");
     }
     String currency = accountCurrencyService.ownCurrency(account);
-    BigDecimal balance = ownCash(rows, currency);
+    Map<String, BigDecimal> cashByCurrency = cashByCurrency(rows);
+    if (cashByCurrency.values().stream()
+        .anyMatch(amount -> amount.precision() - amount.scale() > 16)) {
+      throw new ResponseStatusException(
+          HttpStatus.UNPROCESSABLE_CONTENT, "A currency's total cash exceeds the supported range.");
+    }
+    BigDecimal balance = cashByCurrency.remove(currency);
     ImportSnapshotPlan plan =
-        completionService.plan(account, date, balance, quantities(positions, resolved), true);
+        completionService.plan(
+            account, date, balance, cashByCurrency, quantities(positions, resolved), true);
     if (ImportSnapshotValues.OUT_OF_RANGE.equals(plan.outcome())) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
@@ -305,7 +308,7 @@ public class ImportHoldingsService {
             .toList();
     batch.setHoldingsSnapshot(
         completionService.commit(
-            batch, account, date, currency, plan, balance, holdings, committedBy));
+            batch, account, date, currency, plan, balance, cashByCurrency, holdings, committedBy));
   }
 
   // Each resolved position's quantity by security (the statement lists a security once).
@@ -401,14 +404,13 @@ public class ImportHoldingsService {
         .toList();
   }
 
-  // The sum of the statement's cash in the account's currency, or null without any.
-  private static BigDecimal ownCash(List<ImportHoldingRow> rows, String currency) {
-    return ofKind(rows, ImportHoldingsValues.KIND_CASH).stream()
-        .filter(row -> currency.equals(row.getCurrency()))
-        .map(ImportHoldingRow::getAmount)
-        .reduce(BigDecimal::add)
-        .map(sum -> sum.setScale(FxRateService.MONEY_SCALE))
-        .orElse(null);
+  // A statement may include several cash lines in the same currency.
+  private static Map<String, BigDecimal> cashByCurrency(List<ImportHoldingRow> rows) {
+    Map<String, BigDecimal> cash = new LinkedHashMap<>();
+    for (ImportHoldingRow row : ofKind(rows, ImportHoldingsValues.KIND_CASH)) {
+      cash.merge(row.getCurrency(), row.getAmount(), BigDecimal::add);
+    }
+    return cash;
   }
 
   private ImportRowErrorResponse message(String code, Locale locale) {

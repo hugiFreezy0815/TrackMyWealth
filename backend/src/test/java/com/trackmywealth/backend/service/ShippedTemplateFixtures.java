@@ -596,6 +596,10 @@ public final class ShippedTemplateFixtures {
    * then the total in CHF, which names no currency code.
    */
   public static byte[] postfinanceCashWorkbook() throws IOException {
+    return postfinanceCashWorkbook(true, true);
+  }
+
+  public static byte[] postfinanceCashWorkbook(boolean chf, boolean usd) throws IOException {
     try (Workbook workbook = new HSSFWorkbook()) {
       Sheet sheet = workbook.createSheet("Liquiditaet");
       row(
@@ -608,9 +612,16 @@ public final class ShippedTemplateFixtures {
           "Totalwert",
           "Bewertung CHF",
           "Portfolio %");
-      row(sheet, 1, "CHF", 1.0, 1204.35, 4009.31, 5213.66, 5213.66, 0.62);
-      row(sheet, 2, "USD", 0.8, 310.2, 5244.0, 5554.2, 4443.36, 0.38);
-      row(sheet, 3, "Gesamt CHF", " ", 1452.51, 8204.51, 9657.02, 9657.02, 1.0);
+      int line = 1;
+      if (chf) {
+        row(sheet, line++, "CHF", 1.0, 1204.35, 4009.31, 5213.66, 5213.66, 0.62);
+      }
+      if (usd) {
+        row(sheet, line++, "USD", 0.8, 310.2, 5244.0, 5554.2, 4443.36, 0.38);
+      }
+      if (chf && usd) {
+        row(sheet, line, "Gesamt CHF", " ", 1452.51, 8204.51, 9657.02, 9657.02, 1.0);
+      }
       return bytes(workbook);
     }
   }

@@ -53,6 +53,7 @@ public class AccountPositionsService {
   private final SnapshotHoldingRepository holdingRepository;
   private final SecurityRepository securityRepository;
   private final FxRateService fxRateService;
+  private final BusinessDateService businessDates;
   private final String fxSource;
 
   public AccountPositionsService(
@@ -63,6 +64,7 @@ public class AccountPositionsService {
       SnapshotHoldingRepository holdingRepository,
       SecurityRepository securityRepository,
       FxRateService fxRateService,
+      BusinessDateService businessDates,
       @Value("${app.fx.default-source}") String fxSource) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
@@ -71,6 +73,7 @@ public class AccountPositionsService {
     this.holdingRepository = holdingRepository;
     this.securityRepository = securityRepository;
     this.fxRateService = fxRateService;
+    this.businessDates = businessDates;
     this.fxSource = fxSource;
   }
 
@@ -83,8 +86,9 @@ public class AccountPositionsService {
           ProblemCode.POSITIONS_NOT_APPLICABLE, "This account does not hold positions.");
     }
     String currency = accountCurrencyService.ownCurrency(account);
+    LocalDate today = businessDates.today();
     List<AccountSnapshot> newest =
-        snapshotRepository.findNewestWithHoldings(accountId, PageRequest.of(0, 1));
+        snapshotRepository.findNewestWithHoldings(accountId, today, PageRequest.of(0, 1));
     if (newest.isEmpty()) {
       return new AccountPositionsResponse(accountId, currency, null, SOURCE, true, List.of());
     }
@@ -97,13 +101,18 @@ public class AccountPositionsService {
             .stream()
             .collect(Collectors.toMap(Security::getId, Function.identity()));
 
+    Map<String, Optional<CurrencyConversionResult>> quotes = new HashMap<>();
+    Function<String, Optional<CurrencyConversionResult>> rates =
+        from ->
+            quotes.computeIfAbsent(
+                from, key -> fxRateService.tryGetConversionRate(key, currency, today, fxSource));
     List<AccountPositionResponse> positions = new ArrayList<>();
     for (SnapshotHolding holding : holdings) {
       Security security = securities.get(holding.getSecurityId());
       if (security == null) {
         throw new IllegalStateException("Snapshot holding refers to a missing security.");
       }
-      positions.add(toPosition(holding, security, currency, snapshot.getSnapshotDate()));
+      positions.add(toPosition(holding, security, currency, rates));
     }
     positions.sort(
         Comparator.comparing(
@@ -116,64 +125,46 @@ public class AccountPositionsService {
         accountId, currency, snapshot.getSnapshotDate(), SOURCE, complete, positions);
   }
 
-  /**
-   * Read complete reported values for accounts the caller has already authorized. A statement
-   * without cash, with cash in another currency that was not recorded, or without any converted
-   * holding value cannot establish the full account value (FR-PERF-018).
-   */
-  Map<UUID, NativeAccountValue> reportedValuesFor(
-      List<UUID> accountIds, Map<UUID, String> ownCurrencies, LocalDate asOf) {
-    Map<UUID, List<ReportedHoldingValue>> byAccount =
-        snapshotRepository.findLatestReportedHoldings(accountIds, asOf).stream()
-            .collect(Collectors.groupingBy(ReportedHoldingValue::getAccountId));
-    Map<String, Optional<CurrencyConversionResult>> rates = new HashMap<>();
-    Map<UUID, NativeAccountValue> result = new HashMap<>();
-    byAccount.forEach(
-        (accountId, holdings) ->
-            reportedValue(holdings, ownCurrencies.get(accountId), rates)
-                .ifPresent(value -> result.put(accountId, value)));
-    return result;
+  /** Read the statement components for accounts already authorized by the caller. */
+  Map<UUID, List<ReportedHoldingValue>> reportedHoldingsFor(List<UUID> accountIds, LocalDate asOf) {
+    return snapshotRepository.findLatestReportedHoldings(accountIds, asOf).stream()
+        .collect(Collectors.groupingBy(ReportedHoldingValue::getAccountId));
   }
 
-  private Optional<NativeAccountValue> reportedValue(
-      List<ReportedHoldingValue> holdings,
-      String currency,
-      Map<String, Optional<CurrencyConversionResult>> rates) {
-    ReportedHoldingValue statement = holdings.get(0);
-    BigDecimal total = statement.getCashBalance();
-    if (total == null || statement.isUnrecordedCash()) {
+  /** Convert each component directly to the target. An incomplete statement has no value. */
+  Optional<NativeAccountValue> reportedValue(
+      List<ReportedHoldingValue> components,
+      String targetCurrency,
+      Function<String, Optional<CurrencyConversionResult>> rates) {
+    if (components.isEmpty() || components.get(0).isUnrecordedCash()) {
       return Optional.empty();
     }
-    LocalDate date = statement.getSnapshotDate();
+    BigDecimal total = BigDecimal.ZERO;
     boolean stale = false;
-    for (ReportedHoldingValue holding : holdings) {
-      BigDecimal reported = holding.getReportedValue();
-      String from = holding.getReportedCurrency();
-      if (reported == null || from == null) {
-        return Optional.empty();
-      }
-      CurrencyConversionResult rate =
-          rates
-              .computeIfAbsent(
-                  from + "/" + currency + "/" + date,
-                  key -> Optional.ofNullable(rate(reported, from, currency, date)))
-              .orElse(null);
-      BigDecimal converted = inAccountCurrency(reported, from, currency, rate);
+    for (ReportedHoldingValue component : components) {
+      BigDecimal amount = component.getReportedValue();
+      String from = component.getReportedCurrency();
+      CurrencyConversionResult rate = rate(amount, from, targetCurrency, rates);
+      BigDecimal converted = inAccountCurrency(amount, from, targetCurrency, rate);
       if (converted == null) {
         return Optional.empty();
       }
       total = total.add(converted);
       stale |= rate != null && rate.stale();
     }
+    LocalDate date = components.get(0).getSnapshotDate();
     return Optional.of(
         new NativeAccountValue(total, ValueBasisValues.LATEST_SNAPSHOT, date, date, stale));
   }
 
   private AccountPositionResponse toPosition(
-      SnapshotHolding holding, Security security, String accountCurrency, LocalDate asOf) {
+      SnapshotHolding holding,
+      Security security,
+      String accountCurrency,
+      Function<String, Optional<CurrencyConversionResult>> rates) {
     BigDecimal reported = holding.getReportedValue();
     String reportedCurrency = holding.getReportedCurrency();
-    CurrencyConversionResult rate = rate(reported, reportedCurrency, accountCurrency, asOf);
+    CurrencyConversionResult rate = rate(reported, reportedCurrency, accountCurrency, rates);
     BigDecimal inAccountCurrency =
         inAccountCurrency(reported, reportedCurrency, accountCurrency, rate);
     BigDecimal costBasis = holding.getReportedCostBasis();
@@ -239,13 +230,16 @@ public class AccountPositionsService {
     return costBasisEstimated ? ValueStatus.ESTIMATED : ValueStatus.CURRENT;
   }
 
-  /** The rate at the snapshot date, or null when none is needed or none is known. */
-  private @Nullable CurrencyConversionResult rate(
-      @Nullable BigDecimal value, @Nullable String from, String to, LocalDate asOf) {
+  /** The rate at the valuation date, or null when none is needed or none is known. */
+  private static @Nullable CurrencyConversionResult rate(
+      @Nullable BigDecimal value,
+      @Nullable String from,
+      String to,
+      Function<String, Optional<CurrencyConversionResult>> rates) {
     if (value == null || from == null || from.equals(to)) {
       return null;
     }
-    return fxRateService.tryGetConversionRate(from, to, asOf, fxSource).orElse(null);
+    return rates.apply(from).orElse(null);
   }
 
   private @Nullable BigDecimal inAccountCurrency(

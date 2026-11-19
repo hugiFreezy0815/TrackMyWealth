@@ -26,7 +26,7 @@ import org.jspecify.annotations.Nullable;
  * @param value {@code null} when {@code valueKnown} is {@code false}
  * @param conversionRate the rate applied to convert {@code nativeCurrency} to {@code currency}
  *     (FR-INS-SUM-004) - {@code null} when no conversion was needed or when {@code valueKnown} is
- *     {@code false}
+ *     {@code false}, or when the statement has components in multiple reported currencies
  * @param conversionRateDate the date the conversion was requested for (today - FR-CUR-011's
  *     valuation-date convention, see {@code docs/architecture/calculation-methodology.md}), not
  *     necessarily the date the underlying stored rate is itself dated to - see {@code
@@ -57,9 +57,9 @@ import org.jspecify.annotations.Nullable;
  *     app.valuation.snapshot-stale-after} before the valuation date (#380): a snapshot or manual
  *     valuation by its own date; a loan statement by the latest payment on the loan since (an
  *     instalment, or a payment's interest on the paying account), else its own date, so regular
- *     payments keep it current (#445). Stale FX used to value any reported holding also makes the
- *     source stale (#586). {@link ValueStatus} then calls it {@code STALE}. Always {@code false}
- *     when {@code valueSourceDate} is {@code null}
+ *     payments keep it current (#445). Stale FX used to value any reported cash balance or holding
+ *     also makes the source stale (#586). {@link ValueStatus} then calls it {@code STALE}. Always
+ *     {@code false} when {@code valueSourceDate} is {@code null}
  * @param warnings the account's data-quality warnings ({@link DataQualityWarningValues}), empty
  *     when there are none - independent of {@code valueKnown}, a client shows them on the account
  *     (PR-011, FR-CON-007)

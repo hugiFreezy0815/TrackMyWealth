@@ -168,11 +168,16 @@ exact one:
 | `ORIGINAL_PRINCIPAL_LESS_REPAYMENTS` | a loan's/mortgage's original principal less the principal repaid on its ledger by the as-of date (US-10-02); repayments from before tracking began are missing | **no** - approximation |
 
 For accounts that hold positions, a newer cash-only snapshot does not replace the holdings
-statement. A missing cash balance, holding value or holding FX rate leaves the account value
-unknown. So does cash in another currency that an imported statement lists but the snapshot does
-not record (#273 keeps only cash in the account's own currency): adding it is a separate decision,
-and leaving it out would understate the value (FR-PERF-018). Convert each holding at the holdings snapshot date, using the same rounding as the
-positions endpoint. A stale holding rate makes the account value stale, as does an old snapshot.
+statement. The latest holdings snapshot needs an observed own-currency cash balance, which may
+be zero. The snapshot keeps every other cash balance in its reported currency. A missing balance,
+a missing reported holding value, an ambiguous historical cash source, or a missing FX rate
+leaves the account value unknown (FR-PERF-018).
+
+Cash and reported holding values convert directly from their reported currency to the requested
+currency at the valuation date (#614). Each history point uses its own date. The positions endpoint
+uses today's rate in the account currency. Prices and quantities still come from the statement,
+so a stale statement or a stale rate marks the valuation stale. A valuation from multiple reported
+currencies has no single conversion rate to display.
 
 `valueBasis` is `null` when `valueKnown` is `false`. `AccountValuation.valueSourceDate` is the date
 of the observation a `LATEST_SNAPSHOT`, `MANUAL_VALUATION` or `LEDGER_FROM_STATEMENT_BALANCE`

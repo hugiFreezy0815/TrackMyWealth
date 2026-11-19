@@ -39,6 +39,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -222,7 +223,7 @@ class AccountValuationServiceTest {
 
     service.valueIn(account, "CHF", TODAY);
 
-    verify(accountPositionsService, never()).reportedValuesFor(any(), any(), any());
+    verify(accountPositionsService, never()).reportedHoldingsFor(any(), any());
   }
 
   @Test
@@ -670,8 +671,8 @@ class AccountValuationServiceTest {
   }
 
   private void withReportedHoldings(NativeAccountValue value) {
-    when(accountPositionsService.reportedValuesFor(any(), any(), any()))
-        .thenReturn(Map.of(account.getId(), value));
+    when(accountPositionsService.reportedValue(any(), eq("CHF"), any()))
+        .thenReturn(Optional.of(value));
   }
 
   private void withOpeningBalance(String balance) {
