@@ -173,7 +173,8 @@ describe('authenticated multipart and CSV transport (#492)', () => {
     await reading;
     cancel.abort();
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
-    expect(fetchSignal?.aborted).toBe(true);
+    const receivedSignal = () => fetchSignal;
+    expect(receivedSignal()?.aborted).toBe(true);
   });
 
   it('keeps the upload deadline active after 201 headers have arrived', async () => {
@@ -206,7 +207,8 @@ describe('authenticated multipart and CSV transport (#492)', () => {
       await jest.advanceTimersByTimeAsync(UPLOAD_TIMEOUT_MS + 1);
       await expect(pending).rejects.toBeInstanceOf(NetworkError);
       await expect(pending).rejects.toThrow(/timed out/);
-      expect(fetchSignal?.aborted).toBe(true);
+      const receivedSignal = () => fetchSignal;
+    expect(receivedSignal()?.aborted).toBe(true);
     } finally {
       jest.useRealTimers();
     }
