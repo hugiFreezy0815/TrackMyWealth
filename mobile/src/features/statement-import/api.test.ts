@@ -199,10 +199,13 @@ describe('authenticated multipart and CSV transport (#492)', () => {
       }) as unknown as typeof fetch;
 
       const pending = uploadStatement('a-1', file, undefined, 'deadline-uuid');
+      // Observe the rejection before the fake timer fires, so Jest cannot treat it as unhandled.
+      const outcome = pending.catch((error: unknown) => error);
       await reading;
       await jest.advanceTimersByTimeAsync(UPLOAD_TIMEOUT_MS + 1);
-      await expect(pending).rejects.toBeInstanceOf(NetworkError);
-      await expect(pending).rejects.toThrow(/timed out/);
+      const failure = await outcome;
+      expect(failure).toBeInstanceOf(NetworkError);
+      expect(failure).toMatchObject({ message: expect.stringMatching(/timed out/) });
       const receivedSignal = () => fetchSignal;
       expect(receivedSignal()?.aborted).toBe(true);
     } finally {
