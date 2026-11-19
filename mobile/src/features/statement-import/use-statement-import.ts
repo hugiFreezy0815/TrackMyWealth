@@ -17,6 +17,7 @@ import {
   useOpenBatches,
 } from './api';
 import { deletePickedCopy, shareErrorsCsv } from './device-files';
+import { keyForUploadAttempt } from './upload-key';
 import {
   canCommit,
   importProblemCode,
@@ -57,6 +58,13 @@ type Options = {
 
 type Recovery = (failure: unknown) => Promise<void>;
 
+type UploadFailure = {
+  accountId: string;
+  file: StatementFile;
+  key: string;
+  error: unknown;
+};
+
 /**
  * S7's state and its writes. One batch, held in its query cache entry (the authoritative copy,
  * with the version every If-Match sends), and one write at a time: a second tap while a write
@@ -74,12 +82,15 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
   const [uploading, setUploading] = useState(false);
   const [slowUpload, setSlowUpload] = useState(false);
   const [retryAt, setRetryAt] = useState<number | null>(null);
+  const [uploadFailure, setUploadFailure] = useState<UploadFailure | null>(null);
   const [filter, setFilter] = useState<RowFilter>('ALL');
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [dialog, setDialog] = useState<'discard' | 'conflict' | null>(null);
   const [showOpen, setShowOpen] = useState(false);
   const lock = useRef(false);
   const uploadAbort = useRef<AbortController | null>(null);
+  // Retain the key only while the same selected file can be retried.
+  const uploadKey = useRef<string | null>(null);
   // The picker's cache copy of a statement, kept only while a Retry may still need it.
   const pickedCopy = useRef<string | null>(null);
 
@@ -89,6 +100,14 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
   const openBatches = useOpenBatches(accountId, showOpen);
   const cache = useImportCache(accountId);
   const canUpload = online && !busy && account.data?.hasTransactions === true;
+  const canRetryUpload =
+    online &&
+    !busy &&
+    !batchId &&
+    uploadFailure !== null &&
+    error === uploadFailure.error &&
+    accountId === uploadFailure.accountId &&
+    file === uploadFailure.file;
 
   useEffect(() => {
     if (!uploading) return;
@@ -111,6 +130,15 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
   function releasePickedCopy() {
     if (pickedCopy.current) deletePickedCopy(pickedCopy.current);
     pickedCopy.current = null;
+  }
+
+  function clearUploadRetry() {
+    uploadKey.current = null;
+    setUploadFailure(null);
+    setFile(null);
+    setFileError(null);
+    setRetryAt(null);
+    releasePickedCopy();
   }
 
   function show(next: Batch) {
@@ -149,6 +177,7 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
     lock.current = true;
     setBusy(true);
     setError(null);
+    setUploadFailure(null);
     try {
       await after(await action());
     } catch (failure) {
@@ -160,7 +189,9 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
     }
   }
 
-  async function upload(chosen: StatementFile) {
+  async function upload(chosen: StatementFile, retrying = false) {
+    if (lock.current) return;
+    setUploadFailure(null);
     if (pickedCopy.current !== chosen.uri) releasePickedCopy();
     pickedCopy.current = chosen.webFile ? null : chosen.uri;
     setFile(chosen);
@@ -169,15 +200,18 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
     const problem = statementFileError(chosen);
     setFileError(problem);
     if (problem || !accountId || !canUpload) {
+      uploadKey.current = null;
       releasePickedCopy();
       return;
     }
+    const key = keyForUploadAttempt(uploadKey.current, retrying);
+    uploadKey.current = key;
     const abort = new AbortController();
     uploadAbort.current = abort;
     setUploading(true);
     let keepForRetry = false;
     await write(
-      () => uploadStatement(accountId, chosen, abort.signal),
+      () => uploadStatement(accountId, chosen, abort.signal, key),
       (next) => {
         show(next);
         setFile(null);
@@ -190,13 +224,17 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
           return;
         }
         keepForRetry = isRetryableUploadError(failure);
+        setUploadFailure(keepForRetry ? { accountId, file: chosen, key, error: failure } : null);
         setRetryAt(retryAllowedAt(failure));
         await recoverBatch(failure);
       },
     );
     uploadAbort.current = null;
     setUploading(false);
-    if (!keepForRetry) releasePickedCopy();
+    if (!keepForRetry) {
+      uploadKey.current = null;
+      releasePickedCopy();
+    }
   }
 
   async function chooseFile() {
@@ -222,7 +260,15 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
   }
 
   function retryUpload() {
-    if (file && (retryAt === null || Date.now() >= retryAt)) void upload(file);
+    if (
+      canRetryUpload &&
+      uploadFailure &&
+      uploadKey.current === uploadFailure.key &&
+      file &&
+      (retryAt === null || Date.now() >= retryAt)
+    ) {
+      void upload(file, true);
+    }
   }
 
   function cancelUpload() {
@@ -264,11 +310,9 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
   }
 
   function startAgain() {
+    clearUploadRetry();
     setBatchId('');
-    setFile(null);
-    setFileError(null);
     setError(null);
-    setRetryAt(null);
     setFilter('ALL');
   }
 
@@ -304,6 +348,7 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
   }
 
   function resume(item: Batch) {
+    clearUploadRetry();
     show(item);
     setShowOpen(false);
     setError(null);
@@ -335,11 +380,16 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
     slowUpload,
     retryAt,
     canUpload,
+    canRetryUpload,
     filter,
     selectedTemplate,
     dialog,
     showOpen,
     selectAccount(id: string) {
+      if (id !== accountId) {
+        uploadAbort.current?.abort();
+        clearUploadRetry();
+      }
       setSelectedAccountId(id);
       setError(null);
       setShowOpen(false);

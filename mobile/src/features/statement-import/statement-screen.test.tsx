@@ -1,23 +1,28 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import * as DocumentPicker from 'expo-document-picker';
+import { randomUUID } from 'expo-crypto';
 import { IntlProvider } from 'react-intl';
 
 import { invalidateFinancialData } from '@/api/queries/invalidation';
 import { useAccount, useAccounts, usePortfolios } from '@/api/queries/resources';
 import { typedApi } from '@/api/typed-api';
+import { NetworkError } from '@/api/client';
 import en from '@/i18n/en.json';
 
 import { deletePickedCopy, shareErrorsCsv } from './device-files';
 import { FakeImportServer, problem, syntheticBatch, syntheticRow } from './fake-import-server';
 import type { Batch, ImportRow } from './model';
 import { StatementImportScreen } from './statement-screen';
+import { supportsUploadReplay } from './upload-replay';
 import { SLOW_UPLOAD_MS } from './use-statement-import';
 
 let mockHidden = false;
 
 jest.mock('@/global.css', () => ({}));
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
+jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'statement-upload-uuid') }));
+jest.mock('./upload-replay', () => ({ supportsUploadReplay: jest.fn(() => false) }));
 jest.mock('./device-files', () => ({
   deletePickedCopy: jest.fn(),
   shareErrorsCsv: jest.fn(async () => {}),
@@ -224,6 +229,7 @@ const commitButton = (count: number) =>
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(supportsUploadReplay).mockReturnValue(false);
   mockHidden = false;
   onlineManager.setOnline(true);
   client = new QueryClient({
@@ -368,7 +374,88 @@ describe('S7 step 1: file and account (#492)', () => {
       await screen.findByRole('button', { name: 'Try again' }, { timeout: 2500 }),
     );
     expect(await commitButton(41)).toBeTruthy();
-    expect(server.callsOf('upload', '/api/v1/accounts/{accountId}/imports')).toHaveLength(2);
+    const uploads = server.callsOf('upload', '/api/v1/accounts/{accountId}/imports');
+    expect(uploads).toHaveLength(2);
+    const keys = uploads.map(
+      (call) => (call.options.headers as Record<string, string>)['Idempotency-Key'],
+    );
+    expect(keys).toEqual(['statement-upload-uuid', 'statement-upload-uuid']);
+    expect(randomUUID).toHaveBeenCalledTimes(1);
+    expect(deletePickedCopy).toHaveBeenCalledWith('file:///cache/synthetic-dkb.csv');
+  });
+
+  it('keeps uncertain retries disabled until backend replay is supported', async () => {
+    pickFile();
+    serve(null).failNext(
+      'upload',
+      '/api/v1/accounts/{accountId}/imports',
+      new NetworkError('The upload response was lost'),
+    );
+    await mount();
+    await fireEvent.press(screen.getByRole('button', { name: 'Choose file' }));
+
+    expect(await screen.findByText('error')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+    expect(server.callsOf('upload', '/api/v1/accounts/{accountId}/imports')).toHaveLength(1);
+    // No Retry can use it, so the statement copy does not stay on the device.
+    expect(deletePickedCopy).toHaveBeenCalledWith('file:///cache/synthetic-dkb.csv');
+  });
+
+  it('reuses the original file and key after a lost body only when replay is supported', async () => {
+    jest.mocked(supportsUploadReplay).mockReturnValue(true);
+    pickFile();
+    serve(null).failNext(
+      'upload',
+      '/api/v1/accounts/{accountId}/imports',
+      new NetworkError('The 201 response body was lost'),
+    );
+    await mount();
+    await fireEvent.press(screen.getByRole('button', { name: 'Choose file' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Try again' }));
+
+    expect(await commitButton(41)).toBeTruthy();
+    const uploads = server.callsOf('upload', '/api/v1/accounts/{accountId}/imports');
+    expect(uploads).toHaveLength(2);
+    expect(uploads.map((call) => call.options.params)).toEqual([
+      { accountId: 'a-1' },
+      { accountId: 'a-1' },
+    ]);
+    const keys = uploads.map(
+      (call) => (call.options.headers as Record<string, string>)['Idempotency-Key'],
+    );
+    expect(keys).toEqual(['statement-upload-uuid', 'statement-upload-uuid']);
+    expect(randomUUID).toHaveBeenCalledTimes(1);
+    expect(deletePickedCopy).toHaveBeenCalledWith('file:///cache/synthetic-dkb.csv');
+  });
+
+  it('never retries an old file when committing a resumed batch fails', async () => {
+    pickFile();
+    const fake = serve(null);
+    fake.failNext(
+      'upload',
+      '/api/v1/accounts/{accountId}/imports',
+      problem('IMPORT_PDF_BUSY', 503),
+    );
+    fake.open = [syntheticBatch({ id: 'b-old', sourceFileName: 'older.csv' })];
+    fake.batch = fake.open[0];
+    await mount();
+    await fireEvent.press(screen.getByRole('button', { name: 'Choose file' }));
+    expect(await screen.findByText('PDF processing is busy. Try again in a moment.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Continue unfinished imports' }));
+    await screen.findByText('older.csv');
+    await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+    expect(await commitButton(41)).toBeTruthy();
+    fake.failNext(
+      'post',
+      '/api/v1/accounts/{accountId}/imports/{batchId}/commit',
+      new NetworkError('Commit did not answer'),
+    );
+    await fireEvent.press(screen.getByRole('button', { name: 'Import 41 transactions' }));
+    expect(await screen.findByText('error')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+    expect(fake.callsOf('upload', '/api/v1/accounts/{accountId}/imports')).toHaveLength(1);
     expect(deletePickedCopy).toHaveBeenCalledWith('file:///cache/synthetic-dkb.csv');
   });
 
@@ -425,6 +512,40 @@ describe('S7 step 1: file and account (#492)', () => {
 });
 
 describe('S7 web entry: account picker (#492)', () => {
+  it('clears the failed upload key and retry when switching accounts', async () => {
+    jest.mocked(useAccounts).mockReturnValue({
+      data: [
+        { id: 'a-1', name: 'Giro', portfolioName: 'DKB', archived: false, hasTransactions: true },
+        {
+          id: 'a-2',
+          name: 'Savings',
+          portfolioName: 'DKB',
+          archived: false,
+          hasTransactions: true,
+        },
+      ],
+      isPending: false,
+      isError: false,
+      isSuccess: true,
+    } as unknown as ReturnType<typeof useAccounts>);
+    pickFile();
+    const fake = serve(null);
+    fake.failNext(
+      'upload',
+      '/api/v1/accounts/{accountId}/imports',
+      problem('IMPORT_PDF_BUSY', 503),
+    );
+    await mount({ accountId: undefined });
+    await fireEvent.press(screen.getByRole('radio', { name: 'DKB · Giro' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Choose file' }));
+    expect(await screen.findByRole('button', { name: 'Try again' })).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'DKB · Savings' }));
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+    expect(fake.callsOf('upload', '/api/v1/accounts/{accountId}/imports')).toHaveLength(1);
+    expect(deletePickedCopy).toHaveBeenCalledWith('file:///cache/synthetic-dkb.csv');
+  });
+
   it('lists only active accounts that keep transactions', async () => {
     jest.mocked(useAccounts).mockReturnValue({
       data: [
