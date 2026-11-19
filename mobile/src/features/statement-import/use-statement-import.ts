@@ -110,7 +110,6 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
     error === uploadFailure.error &&
     accountId === uploadFailure.accountId &&
     file === uploadFailure.file &&
-    uploadKey.current === uploadFailure.key &&
     (!(error instanceof NetworkError) || supportsUploadReplay());
 
   useEffect(() => {
@@ -264,7 +263,13 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
   }
 
   function retryUpload() {
-    if (canRetryUpload && file && (retryAt === null || Date.now() >= retryAt)) {
+    if (
+      canRetryUpload &&
+      uploadFailure &&
+      uploadKey.current === uploadFailure.key &&
+      file &&
+      (retryAt === null || Date.now() >= retryAt)
+    ) {
       void upload(file, true);
     }
   }
