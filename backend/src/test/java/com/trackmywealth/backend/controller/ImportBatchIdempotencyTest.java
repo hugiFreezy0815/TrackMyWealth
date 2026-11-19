@@ -72,7 +72,7 @@ class ImportBatchIdempotencyTest {
   // Bound by RLS, unlike the application's own role in these tests (see RowLevelSecurityRole).
   private static final String RLS_ROLE = "idempotency_rls_test";
   private static final String PASSWORD = "correct-horse-battery-staple";
-  private static final String KEY = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+  private static final String UPLOAD_UUID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
   private static final byte[] STATEMENT = csv("2026-01-05;-12.50;CHF;Coffee shop;R-1;5814");
   private static final byte[] OTHER_STATEMENT = csv("2026-01-06;-80.00;CHF;Groceries;R-2;5411");
 
@@ -141,8 +141,10 @@ class ImportBatchIdempotencyTest {
   /** AC 1: the second upload answers the first one's 201 and creates no second batch. */
   @Test
   void aRetryOfAFinishedUploadAnswersTheFirstResponseAndCreatesNothing() {
-    EntityExchangeResult<ImportBatchResponse> first = created(upload(token, KEY, STATEMENT));
-    EntityExchangeResult<ImportBatchResponse> retry = created(upload(token, KEY, STATEMENT));
+    EntityExchangeResult<ImportBatchResponse> first =
+        created(upload(token, UPLOAD_UUID, STATEMENT));
+    EntityExchangeResult<ImportBatchResponse> retry =
+        created(upload(token, UPLOAD_UUID, STATEMENT));
 
     assertThat(retry.getResponseBody()).isEqualTo(first.getResponseBody());
     assertThat(retry.getResponseHeaders().getLocation())
@@ -156,10 +158,10 @@ class ImportBatchIdempotencyTest {
   /** A key differing only in letter case is the same key. */
   @Test
   void theKeyIsComparedIgnoringLetterCase() {
-    ImportBatchResponse first = created(upload(token, KEY, STATEMENT)).getResponseBody();
+    ImportBatchResponse first = created(upload(token, UPLOAD_UUID, STATEMENT)).getResponseBody();
 
     ImportBatchResponse retry =
-        created(upload(token, KEY.toUpperCase(Locale.ROOT), STATEMENT)).getResponseBody();
+        created(upload(token, UPLOAD_UUID.toUpperCase(Locale.ROOT), STATEMENT)).getResponseBody();
 
     assertThat(retry.id()).isEqualTo(first.id());
     assertThat(batchCount()).isEqualTo(1L);
@@ -168,16 +170,16 @@ class ImportBatchIdempotencyTest {
   /** AC 2: the same key with another file, or for another account, is a 422 with a stable code. */
   @Test
   void theSameKeyForADifferentRequestIsUnprocessable() {
-    created(upload(token, KEY, STATEMENT));
+    created(upload(token, UPLOAD_UUID, STATEMENT));
     UUID savings = createAccount(token, "Sparkonto");
 
-    upload(token, account, KEY, OTHER_STATEMENT)
+    upload(token, account, UPLOAD_UUID, OTHER_STATEMENT)
         .expectStatus()
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
         .expectBody()
         .jsonPath("$.code")
         .isEqualTo("IDEMPOTENCY_KEY_MISMATCH");
-    upload(token, savings, KEY, STATEMENT)
+    upload(token, savings, UPLOAD_UUID, STATEMENT)
         .expectStatus()
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
         .expectBody()
@@ -202,10 +204,10 @@ class ImportBatchIdempotencyTest {
       }
       first =
           CompletableFuture.supplyAsync(
-              () -> created(upload(token, KEY, STATEMENT)).getResponseBody());
+              () -> created(upload(token, UPLOAD_UUID, STATEMENT)).getResponseBody());
       awaitInProgressClaim();
 
-      upload(token, KEY, STATEMENT)
+      upload(token, UPLOAD_UUID, STATEMENT)
           .expectStatus()
           .isEqualTo(HttpStatus.CONFLICT)
           .expectHeader()
@@ -217,7 +219,7 @@ class ImportBatchIdempotencyTest {
     }
 
     ImportBatchResponse finished = first.get(30, TimeUnit.SECONDS);
-    assertThat(created(upload(token, KEY, STATEMENT)).getResponseBody().id())
+    assertThat(created(upload(token, UPLOAD_UUID, STATEMENT)).getResponseBody().id())
         .isEqualTo(finished.id());
     assertThat(batchCount()).isEqualTo(1L);
   }
@@ -225,10 +227,11 @@ class ImportBatchIdempotencyTest {
   /** AC 4: after 24 hours the key is a new request; the purge removes only expired keys. */
   @Test
   void aKeyOlderThan24HoursIsANewRequestAndIsPurged() {
-    ImportBatchResponse first = created(upload(token, KEY, STATEMENT)).getResponseBody();
+    ImportBatchResponse first = created(upload(token, UPLOAD_UUID, STATEMENT)).getResponseBody();
     update("UPDATE idempotency_key SET expires_at = now() - interval '1 second'");
 
-    ImportBatchResponse second = created(upload(token, KEY, OTHER_STATEMENT)).getResponseBody();
+    ImportBatchResponse second =
+        created(upload(token, UPLOAD_UUID, OTHER_STATEMENT)).getResponseBody();
 
     assertThat(second.id()).isNotEqualTo(first.id());
     assertThat(batchCount()).isEqualTo(2L);
@@ -237,7 +240,7 @@ class ImportBatchIdempotencyTest {
     update(
         "UPDATE idempotency_key SET expires_at = now() - interval '1 second' WHERE"
             + " idempotency_key = '"
-            + KEY
+            + UPLOAD_UUID
             + "'");
 
     idempotencyService.deleteExpiredKeys();
@@ -250,14 +253,14 @@ class ImportBatchIdempotencyTest {
   /** A server that stopped mid-request leaves a claim that the next request takes over. */
   @Test
   void anAbandonedClaimIsTakenOver() {
-    created(upload(token, KEY, STATEMENT));
+    created(upload(token, UPLOAD_UUID, STATEMENT));
     update("DELETE FROM import_file");
     update("DELETE FROM import_batch");
     update(
         "UPDATE idempotency_key SET status = 'IN_PROGRESS', response_status = NULL,"
             + " response_body = NULL, created_at = now() - interval '16 minutes'");
 
-    created(upload(token, KEY, STATEMENT));
+    created(upload(token, UPLOAD_UUID, STATEMENT));
 
     assertThat(batchCount()).isEqualTo(1L);
     assertThat(single("SELECT status FROM idempotency_key")).isEqualTo("COMPLETED");
@@ -267,7 +270,7 @@ class ImportBatchIdempotencyTest {
   @Test
   void aFailedUploadKeepsNoKey() {
     for (int attempt = 0; attempt < 2; attempt++) {
-      upload(token, KEY, new byte[0])
+      upload(token, UPLOAD_UUID, new byte[0])
           .expectStatus()
           .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
           .expectBody()
@@ -302,12 +305,12 @@ class ImportBatchIdempotencyTest {
   /** Business rule: a key of another user never replays a response. */
   @Test
   void anotherUsersKeyNeverReplays() {
-    ImportBatchResponse mine = created(upload(token, KEY, STATEMENT)).getResponseBody();
+    ImportBatchResponse mine = created(upload(token, UPLOAD_UUID, STATEMENT)).getResponseBody();
     String otherUser = createUserAndLogin("second@example.com");
     UUID theirAccount = createAccount(otherUser, "Giro");
 
     ImportBatchResponse theirs =
-        created(upload(otherUser, theirAccount, KEY, STATEMENT)).getResponseBody();
+        created(upload(otherUser, theirAccount, UPLOAD_UUID, STATEMENT)).getResponseBody();
 
     assertThat(theirs.id()).isNotEqualTo(mine.id());
     assertThat(theirs.accountId()).isEqualTo(theirAccount);
@@ -347,9 +350,17 @@ class ImportBatchIdempotencyTest {
                     () -> {
                       int inserted =
                           keys.insertIfAbsent(
-                              workspaceId, userId, "op", KEY, fingerprint, now, now.plusDays(1));
+                              workspaceId,
+                              userId,
+                              "op",
+                              UPLOAD_UUID,
+                              fingerprint,
+                              now,
+                              now.plusDays(1));
                       UUID id =
-                          keys.lockByScope(workspaceId, userId, "op", KEY).orElseThrow().getId();
+                          keys.lockByScope(workspaceId, userId, "op", UPLOAD_UUID)
+                              .orElseThrow()
+                              .getId();
                       return inserted == 1 && keys.complete(id, (short) 201, "{}") == 1;
                     }));
     assertThat(storedUnderRls).isTrue();
@@ -364,7 +375,7 @@ class ImportBatchIdempotencyTest {
                     transactionManager,
                     entityManager,
                     RLS_ROLE,
-                    () -> keys.lockByScope(workspaceId, userId, "op", KEY).isPresent()));
+                    () -> keys.lockByScope(workspaceId, userId, "op", UPLOAD_UUID).isPresent()));
     assertThat(visibleElsewhere).isFalse();
 
     update("UPDATE idempotency_key SET expires_at = now() - interval '1 second'");
