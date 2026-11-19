@@ -453,7 +453,9 @@ class ApiConventionsIntegrationTest {
         .uri("/api/v1/accounts/some-id")
         .header("Origin", "http://localhost:19006")
         .header("Access-Control-Request-Method", "PUT")
-        .header("Access-Control-Request-Headers", "X-Correlation-Id, If-Match, Idempotency-Key, traceparent")
+        .header(
+            "Access-Control-Request-Headers",
+            "X-Correlation-Id, If-Match, Idempotency-Key, traceparent")
         .exchange()
         .expectStatus()
         .isOk()
