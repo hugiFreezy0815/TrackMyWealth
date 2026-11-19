@@ -17,6 +17,7 @@ import {
   useOpenBatches,
 } from './api';
 import { deletePickedCopy, shareErrorsCsv } from './device-files';
+import { keyForUploadAttempt } from './upload-key';
 import {
   canCommit,
   importProblemCode,
@@ -80,6 +81,8 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
   const [showOpen, setShowOpen] = useState(false);
   const lock = useRef(false);
   const uploadAbort = useRef<AbortController | null>(null);
+  // Retain the key only while the same selected file can be retried.
+  const uploadKey = useRef<string | null>(null);
   // The picker's cache copy of a statement, kept only while a Retry may still need it.
   const pickedCopy = useRef<string | null>(null);
 
@@ -160,7 +163,8 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
     }
   }
 
-  async function upload(chosen: StatementFile) {
+  async function upload(chosen: StatementFile, retrying = false) {
+    if (lock.current) return;
     if (pickedCopy.current !== chosen.uri) releasePickedCopy();
     pickedCopy.current = chosen.webFile ? null : chosen.uri;
     setFile(chosen);
@@ -169,15 +173,18 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
     const problem = statementFileError(chosen);
     setFileError(problem);
     if (problem || !accountId || !canUpload) {
+      uploadKey.current = null;
       releasePickedCopy();
       return;
     }
+    const key = keyForUploadAttempt(uploadKey.current, retrying);
+    uploadKey.current = key;
     const abort = new AbortController();
     uploadAbort.current = abort;
     setUploading(true);
     let keepForRetry = false;
     await write(
-      () => uploadStatement(accountId, chosen, abort.signal),
+      () => uploadStatement(accountId, chosen, abort.signal, key),
       (next) => {
         show(next);
         setFile(null);
@@ -196,7 +203,10 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
     );
     uploadAbort.current = null;
     setUploading(false);
-    if (!keepForRetry) releasePickedCopy();
+    if (!keepForRetry) {
+      uploadKey.current = null;
+      releasePickedCopy();
+    }
   }
 
   async function chooseFile() {
@@ -222,7 +232,7 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
   }
 
   function retryUpload() {
-    if (file && (retryAt === null || Date.now() >= retryAt)) void upload(file);
+    if (file && (retryAt === null || Date.now() >= retryAt)) void upload(file, true);
   }
 
   function cancelUpload() {
@@ -264,6 +274,7 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
   }
 
   function startAgain() {
+    uploadKey.current = null;
     setBatchId('');
     setFile(null);
     setFileError(null);
