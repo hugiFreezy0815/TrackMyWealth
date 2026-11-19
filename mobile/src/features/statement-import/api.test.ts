@@ -208,7 +208,7 @@ describe('authenticated multipart and CSV transport (#492)', () => {
       await expect(pending).rejects.toBeInstanceOf(NetworkError);
       await expect(pending).rejects.toThrow(/timed out/);
       const receivedSignal = () => fetchSignal;
-    expect(receivedSignal()?.aborted).toBe(true);
+      expect(receivedSignal()?.aborted).toBe(true);
     } finally {
       jest.useRealTimers();
     }
