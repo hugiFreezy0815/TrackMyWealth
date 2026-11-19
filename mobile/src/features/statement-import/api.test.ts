@@ -127,7 +127,7 @@ describe('authenticated multipart and CSV transport (#492)', () => {
 
   it('turns a dropped 201 response body into an uncertain NetworkError', async () => {
     const broken = new Response(
-      new ReadableStream({
+      new ReadableStream<Uint8Array>({
         start(controller) {
           controller.error(new Error('Response stream disconnected'));
         },
@@ -159,10 +159,32 @@ describe('authenticated multipart and CSV transport (#492)', () => {
     globalThis.fetch = jest.fn(async () => response) as unknown as typeof fetch;
 
     const pending = uploadStatement('a-1', file, cancel.signal);
-    await Promise.resolve();
-    await Promise.resolve();
+    await jest.waitFor(() => expect(bodyRead).toHaveBeenCalledTimes(1));
     cancel.abort();
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('keeps the upload deadline active after 201 headers have arrived', async () => {
+    jest.useFakeTimers();
+    try {
+      globalThis.fetch = jest.fn(async (_url: string, init: RequestInit) => {
+        const response = new Response('{}', { status: 201 });
+        response.json = () =>
+          new Promise<never>((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () =>
+              reject(Object.assign(new Error('Aborted while reading body'), { name: 'AbortError' })),
+            );
+          });
+        return response;
+      }) as unknown as typeof fetch;
+
+      const pending = uploadStatement('a-1', file, undefined, 'deadline-uuid');
+      await jest.advanceTimersByTimeAsync(UPLOAD_TIMEOUT_MS + 1);
+      await expect(pending).rejects.toBeInstanceOf(NetworkError);
+      await expect(pending).rejects.toThrow(/timed out/);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('gives an upload the upload deadline, not the JSON one', async () => {
