@@ -112,6 +112,7 @@ const positionSnapshot = (...positions: Position[]): PositionsResponse => ({
 const txn = (index: number, other: Partial<Transaction> = {}): Transaction =>
   ({
     id: `t${String(index).padStart(3, '0')}`,
+    accountId: 'acc',
     // Newest first, as the server sorts: one booking per day going back from 1 Sep 2026.
     bookingDate: new Date(Date.UTC(2026, 8, 1) - index * 86_400_000).toISOString().slice(0, 10),
     transactionType: 'CREDIT_CARD_PURCHASE',
@@ -900,10 +901,168 @@ describe('S3 account detail acceptance checks (#494)', () => {
       StyleSheet.flatten(within(voided).getByText(amount.display).props.style).textDecorationLine,
     ).toBe('line-through');
     expect(screen.getByText('Reversal of 29 Aug 2026')).toBeTruthy();
+    expect(api.get).not.toHaveBeenCalledWith(
+      '/api/v1/accounts/{accountId}/transactions/{transactionId}',
+      expect.anything(),
+    );
 
     // Card payments read their type, never the API code.
     expect(screen.queryByText(/CREDIT_CARD_PURCHASE/)).toBeNull();
     expect(screen.getByText('Main · Current account · EUR')).toBeTruthy();
+  });
+
+  it('shows the original booking date before the original transaction page is loaded', async () => {
+    fakeServer(summary(), [
+      txn(0, {
+        merchantDescription: 'Reversed booking',
+        replacesTransactionId: 'original',
+        categoryId: null,
+      }),
+      ...Array.from({ length: 49 }, (_, index) => txn(index + 1)),
+      txn(50, {
+        id: 'original',
+        bookingDate: '2026-03-05',
+        voidedAt: '2026-09-01T08:00:00Z',
+      }),
+    ]);
+    await renderDetail();
+
+    expect(await screen.findByText('Reversal of 5 Mar 2026', {}, { timeout: 5000 })).toBeTruthy();
+    expect(screen.getByLabelText(/^Reversed booking,/).props.accessibilityLabel).toContain(
+      'Reversal of 5 Mar 2026',
+    );
+    expect(listCalls()).toHaveLength(1);
+    expect(api.get).toHaveBeenCalledWith(
+      '/api/v1/accounts/{accountId}/transactions/{transactionId}',
+      { params: { accountId: 'acc', transactionId: 'original' }, signal: expect.any(AbortSignal) },
+    );
+  });
+
+  it('retains the reversal row when the original cannot be read', async () => {
+    const state = fakeServer(summary(), [
+      txn(0, { merchantDescription: 'Reversed booking', replacesTransactionId: 'original' }),
+    ]);
+    const readOriginal = jest.fn(() => {
+      throw new ApiError('not found', 404);
+    });
+    state.beforeRead = (path) => {
+      if (path === '/api/v1/accounts/{accountId}/transactions/{transactionId}') readOriginal();
+    };
+    const { client } = await renderDetail();
+
+    await waitFor(() =>
+      expect(client.getQueryData(queryKeys.reversalDate('acc', 'original'))).toBeNull(),
+    );
+    expect(screen.getByText('Reversal')).toBeTruthy();
+    expect(screen.queryByText(/^Reversal of /)).toBeNull();
+    expect(readOriginal).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([404, 403, 410])(
+    'keeps a known reversal date on a temporary failure and clears it on HTTP %i',
+    async (status) => {
+      const state = fakeServer(summary(), [
+        txn(0, { replacesTransactionId: 'original' }),
+        ...Array.from({ length: 49 }, (_, index) => txn(index + 1)),
+        txn(50, { id: 'original', bookingDate: '2026-03-05' }),
+      ]);
+      const { client } = await renderDetail();
+      const key = queryKeys.reversalDate('acc', 'original');
+      const date = 'Reversal of 5 Mar 2026';
+      expect(await screen.findByText(date, {}, { timeout: 5000 })).toBeTruthy();
+
+      async function revalidateWith(failure: Error) {
+        state.beforeRead = (path) => {
+          if (path.endsWith('/{transactionId}')) throw failure;
+        };
+        await act(async () => {
+          await client.invalidateQueries({ queryKey: key, exact: true });
+        });
+      }
+
+      await revalidateWith(new NetworkError('lookup timed out'));
+      expect(client.getQueryState(key)?.status).toBe('error');
+      expect(screen.getByText(date)).toBeTruthy();
+      await revalidateWith(new ApiError('unavailable', status));
+      expect(await screen.findByText('Reversal')).toBeTruthy();
+      expect(screen.queryByText(date)).toBeNull();
+      await revalidateWith(new NetworkError('lookup timed out again'));
+      expect(screen.queryByText(date)).toBeNull();
+    },
+  );
+
+  it('finishes a refresh and closes the category picker while a reversal lookup is pending', async () => {
+    const state = fakeServer(summary(), [
+      txn(0, { replacesTransactionId: 'original', categoryId: null }),
+      txn(1),
+    ]);
+    let release = () => {};
+    const lookup = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    state.beforeRead = (path) => {
+      if (path.endsWith('/{transactionId}')) return lookup;
+    };
+    const { client } = await renderDetail();
+    const key = queryKeys.reversalDate('acc', 'original');
+    const list = () => screen.getByTestId('account-transaction-list');
+    try {
+      await waitFor(() => expect(client.getQueryState(key)?.fetchStatus).toBe('fetching'));
+      await fireEvent(list(), 'refresh');
+      await waitFor(() => {
+        expect(listCalls()).toHaveLength(2);
+        expect(list().props.refreshControl.props.refreshing).toBe(false);
+      });
+      expect(client.getQueryState(key)?.fetchStatus).toBe('fetching');
+
+      await changeCategory('Food', 'Food › Groceries');
+      await waitFor(() => {
+        expect(listCalls()).toHaveLength(3);
+        expect(screen.queryByTestId('category-picker-list')).toBeNull();
+      });
+      expect(client.getQueryState(key)?.fetchStatus).toBe('fetching');
+      expect(screen.getByLabelText('Change category: Groceries')).toBeTruthy();
+    } finally {
+      await act(async () => release());
+    }
+  });
+
+  it('limits a 50-reversal burst and pages while the original reads are held open', async () => {
+    const state = fakeServer(summary(), [
+      ...Array.from({ length: 50 }, (_, index) =>
+        txn(index, { replacesTransactionId: `original-${index}` }),
+      ),
+      ...Array.from({ length: 50 }, (_, index) => txn(index + 50)),
+      ...Array.from({ length: 50 }, (_, index) => txn(index + 100, { id: `original-${index}` })),
+    ]);
+    let release = () => {};
+    const lookup = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started = 0;
+    let active = 0;
+    let peak = 0;
+    state.beforeRead = async (path) => {
+      if (!path.endsWith('/{transactionId}')) return;
+      started += 1;
+      active += 1;
+      peak = Math.max(peak, active);
+      await lookup;
+      active -= 1;
+    };
+    await renderDetail();
+    try {
+      expect(await screen.findByText('Showing 50 of 150')).toBeTruthy();
+      await waitFor(() => expect(active).toBe(4));
+      await fireEvent(screen.getByTestId('account-transaction-list'), 'onEndReached');
+      expect(await screen.findByText('Showing 100 of 150')).toBeTruthy();
+      expect(started).toBe(4);
+      expect(listCalls().map(({ page }) => page)).toEqual([0, 1]);
+    } finally {
+      await act(async () => release());
+    }
+    await waitFor(() => expect(started).toBe(50));
+    expect(peak).toBe(4);
   });
 
   it('shows an open difference with an icon and text, not colour alone', async () => {

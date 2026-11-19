@@ -75,7 +75,7 @@ describe('S4 transaction queries', () => {
     expect(view.result.current.isPlaceholderData).toBe(false);
     expect(api.get).toHaveBeenCalledWith(
       '/api/v1/accounts/{accountId}/transactions/{transactionId}',
-      { params: { accountId: 'acc', transactionId: 'txn' } },
+      { params: { accountId: 'acc', transactionId: 'txn' }, signal: expect.any(AbortSignal) },
     );
   });
 

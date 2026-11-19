@@ -64,6 +64,8 @@ import {
   type AccountSummary,
   type Transaction,
 } from './model';
+import { isAccessFailure, isNotFound } from './access';
+import { useReversalDates } from './reversal-dates';
 import { useRowFocus } from './row-focus';
 import { TransactionResults } from './transaction-results';
 
@@ -81,19 +83,6 @@ export type AccountDetailProps = {
 };
 
 type OpenDialog = 'actions' | 'sort' | 'archive' | 'value' | 'openingDate' | null;
-
-const isNotFound = (error: unknown) =>
-  error instanceof ApiError &&
-  (error.status === 404 || problemReaction(error).sentCode === 'NOT_FOUND');
-
-/** An account error must not reveal a previously cached financial value after access was denied. */
-const isAccessFailure = (error: unknown) =>
-  error instanceof ApiError &&
-  (error.status === 401 ||
-    error.status === 403 ||
-    isNotFound(error) ||
-    problemReaction(error).sentCode === 'UNAUTHENTICATED' ||
-    problemReaction(error).sentCode === 'FORBIDDEN');
 
 /** A stale S1/S2 value is only safe as a fallback while the server is unreachable or failing. */
 const isRecoverableAccountFailure = (error: unknown) =>
@@ -163,6 +152,8 @@ export function AccountDetail({
   const summary = account.data;
   const archived = summary?.status === 'ARCHIVED';
   const hasLedger = !!summary?.hasTransactions;
+  const showingPositions = !!summary?.holdsPositions && tab === 'positions';
+  const showingTransactions = hasLedger && !showingPositions;
   const activeAccounts = useAccounts(summary?.portfolioId, {
     enabled: !!summary?.portfolioId,
   });
@@ -195,6 +186,11 @@ export function AccountDetail({
     load: dialog === 'actions',
   });
   const records = uniqueTransactions(transactions.data?.pages ?? []);
+  const reversalDates = useReversalDates(
+    accountId,
+    records,
+    showingTransactions && !isAccessFailure(account.error) && !isAccessFailure(transactions.error),
+  );
   const recordIds = records.map((record) => record.id);
   const headingRef = useRef<ComponentRef<typeof Text>>(null);
   const rowFocus = useRowFocus(recordIds, !transactions.isFetching, headingRef);
@@ -437,8 +433,6 @@ export function AccountDetail({
   }
   if (!summary) return null;
 
-  const showingPositions = summary.holdsPositions && tab === 'positions';
-  const showingTransactions = hasLedger && !showingPositions;
   const valueQueries = archived ? [archivedAccounts, activeAccounts] : [activeAccounts];
   const firstPageFailed = transactions.isError && !transactions.isFetchNextPageError;
   // Refresh also runs the enabled reads for the inactive depot tab.
@@ -476,7 +470,7 @@ export function AccountDetail({
 
   const context = {
     categories: categories.data ?? [],
-    loaded: records,
+    reversalDates,
     accountCurrency: summary.nativeCurrency,
     archived,
     includeParent: false,
