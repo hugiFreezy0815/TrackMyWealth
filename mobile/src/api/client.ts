@@ -196,6 +196,8 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
 export type MultipartOptions = Pick<RequestOptions, 'renewSession' | 'signal'> & {
   body: FormData;
+  /** Only application headers; the platform supplies the multipart Content-Type boundary. */
+  headers?: Record<string, string>;
   timeoutMs?: number;
 };
 
