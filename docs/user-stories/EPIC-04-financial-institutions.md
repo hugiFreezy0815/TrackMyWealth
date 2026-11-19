@@ -214,6 +214,8 @@ apart, and another workspace's portfolio answers the same audited 404 as an unkn
   why the gain is unavailable. The amount and percent follow the app's amount-visibility setting.
 - `PortfolioViewControllerTest` covers both account types, comparison with the positions API,
   missing cost basis, foreign currency, and missing or incomplete holdings statements.
-- There is no feature toggle: the backend sends the figures as soon as it is deployed. Release
-  the updated mobile client first or together with it, because older mobile builds read a
-  non-null `totalReturn` as a percentage.
+- The app shows the percentage with one decimal, like every other percentage, including the
+  position rows below the account (PO 2026-11-19); the API keeps two.
+- Backend and app ship from the same commit. No native build has been distributed, so no older
+  client reads `totalReturn` as a percentage. Once native builds are released, a change in a
+  field's meaning needs a new field instead.

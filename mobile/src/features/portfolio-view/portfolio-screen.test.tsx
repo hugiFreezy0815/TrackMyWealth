@@ -678,7 +678,8 @@ describe('S2 rows per section type', () => {
     expect(screen.getByText('3 positions · As of 30 Sep 2026')).toBeTruthy();
     expect(screen.getByText('Unrealised gain')).toBeTruthy();
     expect(screen.getByText(/3[,’']200[.]00/)).toBeTruthy();
-    expect(screen.getByText('+14.68%')).toBeTruthy();
+    // One decimal, like the position rows below it.
+    expect(screen.getByText('+14.7%')).toBeTruthy();
   });
 
   it('masks both unrealised gain figures when amounts are hidden', async () => {

@@ -95,7 +95,6 @@ function HoldingsReturn({ account }: { account: PortfolioAccount }) {
           <Figure
             value={account.totalReturnPercent}
             kind="percent"
-            percentFractionDigits={2}
             signRole="change"
             tone="gainLoss"
             style={TypeScale.caption}
