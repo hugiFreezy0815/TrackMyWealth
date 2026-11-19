@@ -319,8 +319,7 @@ public class AccountSnapshotService {
         throw unprocessable("A foreign cash currency must be a valid ISO 4217 currency code.");
       }
       BigDecimal amount = line.amount();
-      if (amount == null
-          || amount.scale() > FxRateService.MONEY_SCALE
+      if (amount.scale() > FxRateService.MONEY_SCALE
           || (long) amount.precision() - amount.scale() > 16) {
         throw unprocessable(
             "A foreign cash amount needs up to 16 integer and 4 fractional digits.");

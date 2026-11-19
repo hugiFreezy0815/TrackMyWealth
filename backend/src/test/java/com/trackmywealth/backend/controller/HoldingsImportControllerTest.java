@@ -345,7 +345,7 @@ class HoldingsImportControllerTest {
   }
 
   @Test
-  void aForeignOnlyImportPersistsTheCashWithoutAssumingAnOwnCurrencyBalance() throws Exception {
+  void aForeignOnlyCashImportMeansNoCashInTheAccountCurrency() throws Exception {
     createWorkbookSecurities();
     commit(upload(depot, ShippedTemplateFixtures.postfinancePositionsWorkbook(), EXPORT_DATE));
     commit(
@@ -356,6 +356,17 @@ class HoldingsImportControllerTest {
     assertThat(snapshot.balance()).isNull();
     assertThat(snapshot.foreignCashBalances())
         .containsExactly(new SnapshotCashBalance("USD", new BigDecimal("310.2000")));
+    // The cash statement lists no CHF, so the depot holds 0 CHF cash: holdings + 310.20 USD.
+    assertThat(balance(EXPORT_DATE, "CHF")).isEqualByComparingTo("8452.67");
+  }
+
+  // Positions alone state no cash at all: the depot stays unknown (FR-PERF-018).
+  @Test
+  void aPositionsOnlyImportLeavesTheDepotUnknown() throws Exception {
+    createWorkbookSecurities();
+    commit(upload(depot, ShippedTemplateFixtures.postfinancePositionsWorkbook(), EXPORT_DATE));
+    fx("USD", "CHF", EXPORT_DATE, "0.80");
+
     assertThat(listedDepot().valueStatus()).isEqualTo(ValueStatus.UNKNOWN);
   }
 
@@ -382,6 +393,37 @@ class HoldingsImportControllerTest {
     rollback(get(depot, cash.id()));
     assertThat(count("SELECT count(*) FROM snapshot_foreign_cash")).isZero();
     assertThat(snapshots(depot).get(0).holdings()).hasSize(3);
+  }
+
+  @Test
+  void theBackfillSkipsRolledBackBatchesAndWithdrawnSnapshots() throws Exception {
+    createWorkbookSecurities();
+    commit(upload(depot, ShippedTemplateFixtures.postfinancePositionsWorkbook(), EXPORT_DATE));
+    ImportBatchResponse cash =
+        commit(upload(depot, ShippedTemplateFixtures.postfinanceCashWorkbook(), EXPORT_DATE));
+    execute("DELETE FROM snapshot_foreign_cash");
+    ResourceDatabasePopulator backfill =
+        new ResourceDatabasePopulator(
+            new ClassPathResource("db/migration/V123__restore_snapshot_foreign_cash.sql"));
+
+    // Legacy state: the balance batch was rolled back without clearing the snapshot.
+    execute(
+        "UPDATE import_batch SET status = 'ROLLED_BACK', rolled_back_at = now(),"
+            + " rolled_back_by = (SELECT id FROM app_user LIMIT 1), rollback_reason = 'test'"
+            + " WHERE id = '"
+            + cash.id()
+            + "'");
+    backfill.execute(dataSource);
+    assertThat(count("SELECT count(*) FROM snapshot_foreign_cash")).isZero();
+
+    execute(
+        "UPDATE import_batch SET status = 'COMMITTED', rolled_back_at = NULL,"
+            + " rolled_back_by = NULL, rollback_reason = NULL WHERE id = '"
+            + cash.id()
+            + "'");
+    execute("UPDATE account_snapshot SET withdrawn_at = now()");
+    backfill.execute(dataSource);
+    assertThat(count("SELECT count(*) FROM snapshot_foreign_cash")).isZero();
   }
 
   @Test
@@ -423,8 +465,6 @@ class HoldingsImportControllerTest {
     for (SnapshotCashBalance invalid :
         List.of(
             new SnapshotCashBalance("ZZZ", BigDecimal.ONE),
-            new SnapshotCashBalance(null, BigDecimal.ONE),
-            new SnapshotCashBalance("USD", null),
             new SnapshotCashBalance("USD", new BigDecimal("1.00001")),
             new SnapshotCashBalance("CHF", BigDecimal.ONE))) {
       client()
@@ -436,6 +476,21 @@ class HoldingsImportControllerTest {
           .exchange()
           .expectStatus()
           .isEqualTo(422);
+    }
+    // A missing field is a malformed body, as for a holding (@Valid).
+    for (SnapshotCashBalance missing :
+        List.of(
+            new SnapshotCashBalance(null, BigDecimal.ONE), new SnapshotCashBalance("USD", null))) {
+      expectProblem(
+          client()
+              .post()
+              .uri("/api/v1/accounts/{id}/snapshots", depot)
+              .body(
+                  new RecordAccountSnapshotRequest(
+                      EXPORT_DATE, BigDecimal.ZERO, List.of(holding), List.of(missing)))
+              .exchange(),
+          400,
+          ProblemCode.VALIDATION_FAILED);
     }
 
     AccountSnapshotResponse snapshot =
@@ -460,9 +515,18 @@ class HoldingsImportControllerTest {
         replaceSnapshot(
             snapshot, new ReplaceAccountSnapshotRequest(BigDecimal.ONE, List.of(holding)));
     assertThat(balance(EXPORT_DATE, "CHF")).isEqualByComparingTo("121");
-    replaceSnapshot(
-        updated, new ReplaceAccountSnapshotRequest(BigDecimal.ONE, List.of(holding), List.of()));
+    updated =
+        replaceSnapshot(
+            updated,
+            new ReplaceAccountSnapshotRequest(BigDecimal.ONE, List.of(holding), List.of()));
     assertThat(balance(EXPORT_DATE, "CHF")).isEqualByComparingTo("101");
+
+    // Foreign cash without a balance: the depot holds no CHF cash.
+    replaceSnapshot(
+        updated,
+        new ReplaceAccountSnapshotRequest(
+            null, List.of(holding), List.of(new SnapshotCashBalance("USD", new BigDecimal("25")))));
+    assertThat(balance(EXPORT_DATE, "CHF")).isEqualByComparingTo("120");
   }
 
   private AccountSnapshotResponse replaceSnapshot(

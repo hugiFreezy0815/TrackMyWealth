@@ -23,7 +23,7 @@ public record RecordAccountSnapshotRequest(
     @NotNull LocalDate snapshotDate,
     @Digits(integer = 16, fraction = 4) BigDecimal balance,
     @Size(max = 500) List<@Valid SnapshotHoldingRequest> holdings,
-    @Size(max = 200) List<SnapshotCashBalance> foreignCashBalances) {
+    @Size(max = 200) List<@Valid SnapshotCashBalance> foreignCashBalances) {
 
   public RecordAccountSnapshotRequest {
     // List.copyOf (SpotBugs EI_EXPOSE_REP) rejects a null element while the body is bound, which

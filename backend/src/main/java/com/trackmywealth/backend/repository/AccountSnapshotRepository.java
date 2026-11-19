@@ -41,7 +41,9 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
 
   /**
    * Read the latest statement and all its components in one query. Older imported statements with
-   * cash that could not be safely backfilled remain incomplete.
+   * cash that could not be safely backfilled remain incomplete. A statement that reports cash lists
+   * every currency the depot holds, so a snapshot with foreign cash but no own-currency balance
+   * holds none of the account currency (0); one without any cash stays incomplete (#614).
    */
   @Query(
       value =
@@ -76,7 +78,10 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
                  parts.currency AS "reportedCurrency"
           FROM flagged s
           CROSS JOIN LATERAL (
-              SELECT s.balance AS amount, s.currency AS currency
+              SELECT coalesce(s.balance, CASE WHEN EXISTS (
+                         SELECT 1 FROM snapshot_foreign_cash fc WHERE fc.snapshot_id = s.id)
+                       THEN 0 END) AS amount,
+                     s.currency AS currency
               UNION ALL
               SELECT c.amount, c.currency FROM snapshot_foreign_cash c WHERE c.snapshot_id = s.id
               UNION ALL

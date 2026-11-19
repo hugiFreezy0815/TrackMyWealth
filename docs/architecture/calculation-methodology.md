@@ -168,10 +168,11 @@ exact one:
 | `ORIGINAL_PRINCIPAL_LESS_REPAYMENTS` | a loan's/mortgage's original principal less the principal repaid on its ledger by the as-of date (US-10-02); repayments from before tracking began are missing | **no** - approximation |
 
 For accounts that hold positions, a newer cash-only snapshot does not replace the holdings
-statement. The latest holdings snapshot needs an observed own-currency cash balance, which may
-be zero. The snapshot keeps every other cash balance in its reported currency. A missing balance,
-a missing reported holding value, an ambiguous historical cash source, or a missing FX rate
-leaves the account value unknown (FR-PERF-018).
+statement. The latest holdings snapshot needs observed cash. The snapshot keeps every other cash
+balance in its reported currency. A statement that reports cash lists every currency the depot
+holds, so a snapshot with foreign cash but no own-currency balance holds 0 in the account
+currency. A snapshot without any cash, a missing reported holding value, an ambiguous historical
+cash source, or a missing FX rate leaves the account value unknown (FR-PERF-018).
 
 Cash and reported holding values convert directly from their reported currency to the requested
 currency at the valuation date (#614). Each history point uses its own date. The positions endpoint
