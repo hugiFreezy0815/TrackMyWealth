@@ -522,7 +522,11 @@ describe('S7 web entry: account picker (#492)', () => {
     } as unknown as ReturnType<typeof useAccounts>);
     pickFile();
     const fake = serve(null);
-    fake.failNext('upload', '/api/v1/accounts/{accountId}/imports', problem('IMPORT_PDF_BUSY', 503));
+    fake.failNext(
+      'upload',
+      '/api/v1/accounts/{accountId}/imports',
+      problem('IMPORT_PDF_BUSY', 503),
+    );
     await mount({ accountId: undefined });
     await fireEvent.press(screen.getByRole('radio', { name: 'DKB · Giro' }));
     await fireEvent.press(screen.getByRole('button', { name: 'Choose file' }));
