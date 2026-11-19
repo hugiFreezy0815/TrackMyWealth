@@ -206,12 +206,42 @@ export type MultipartOptions = Pick<RequestOptions, 'renewSession' | 'signal'> &
  * runtime writes the multipart boundary into it.
  */
 export async function requestMultipart<T>(path: string, options: MultipartOptions): Promise<T> {
-  const response = await exchange(path, {
-    ...options,
-    method: 'POST',
-    timeoutMs: options.timeoutMs ?? UPLOAD_TIMEOUT_MS,
-  });
-  return (await response.json()) as T;
+  const timeoutMs = options.timeoutMs ?? UPLOAD_TIMEOUT_MS;
+  // fetch() resolves at the headers. Keep cancellation and the deadline alive while reading the
+  // JSON body too: losing a 201 response body does not mean the upload was not committed.
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  let timedOut = false;
+  if (options.signal?.aborted) controller.abort();
+  options.signal?.addEventListener('abort', cancel);
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  try {
+    const response = await exchange(path, {
+      ...options,
+      method: 'POST',
+      signal: controller.signal,
+      timeoutMs,
+    });
+    try {
+      return (await response.json()) as T;
+    } catch (failure) {
+      if (options.signal?.aborted) throw failure;
+      // The server may have created the batch even though we did not receive its response.
+      throw new NetworkError(
+        timedOut ? 'Statement upload response timed out' : 'Statement upload response was lost',
+      );
+    }
+  } catch (failure) {
+    if (options.signal?.aborted) throw failure;
+    if (timedOut) throw new NetworkError('Statement upload timed out');
+    throw failure;
+  } finally {
+    clearTimeout(timer);
+    options.signal?.removeEventListener('abort', cancel);
+  }
 }
 
 /** A download answered as text, such as a CSV export (typedApi.text). */
