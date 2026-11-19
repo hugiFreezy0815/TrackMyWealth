@@ -20359,11 +20359,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SnapshotHoldingResponse"
+        foreignCashBalances:
+          type: array
+          items:
+            $ref: "#/components/schemas/SnapshotCashBalanceResponse"
       required:
       - accountId
       - balance
       - createdAt
       - currency
+      - foreignCashBalances
       - holdings
       - id
       - openingBalance
@@ -21051,7 +21056,12 @@ components:
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
+        currency:
+          type:
+          - string
+          - "null"
       required:
+      - currency
       - existingValue
       - isin
       - part
@@ -24404,6 +24414,12 @@ components:
             $ref: "#/components/schemas/SnapshotHoldingRequest"
           maxItems: 500
           minItems: 0
+        foreignCashBalances:
+          type: array
+          items:
+            $ref: "#/components/schemas/SnapshotCashBalance"
+          maxItems: 200
+          minItems: 0
       required:
       - snapshotDate
     ReferenceDataResponse:
@@ -24456,6 +24472,12 @@ components:
           items:
             $ref: "#/components/schemas/SnapshotHoldingRequest"
           maxItems: 500
+          minItems: 0
+        foreignCashBalances:
+          type: array
+          items:
+            $ref: "#/components/schemas/SnapshotCashBalance"
+          maxItems: 200
           minItems: 0
     Section:
       type: object
@@ -24774,6 +24796,32 @@ components:
       - currencyCode
       - email
       - password
+    SnapshotCashBalance:
+      type: object
+      properties:
+        currency:
+          type: string
+        amount:
+          type: string
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+      required:
+      - amount
+      - currency
+    SnapshotCashBalanceResponse:
+      type: object
+      properties:
+        currency:
+          type: string
+        amount:
+          type: string
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+      required:
+      - amount
+      - currency
     SnapshotHoldingRequest:
       type: object
       description: "Omit reportedValue, reportedCurrency and reportedPrice together,\

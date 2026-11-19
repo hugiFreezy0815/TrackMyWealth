@@ -206,7 +206,7 @@ class AccountPositionsControllerTest {
   // AC 5. The cost basis has no currency of its own, so a USD holding in a CHF depot gets no
   // gain rather than one that mixes currencies (FR-PERF-018).
   @Test
-  void foreignCurrencyHoldingUsesSnapshotDateFxRateAndGetsNoGain() throws SQLException {
+  void foreignCurrencyHoldingUsesTodaysFxRateAndGetsNoGain() throws SQLException {
     String token = bootstrapAdministrator();
     AccountSummaryResponse depot = createAccount(token, "CHF Depot", "SECURITIES");
     SecurityResponse security = createSecurity(token, "US9220427424", "Vanguard Total World");
@@ -229,7 +229,7 @@ class AccountPositionsControllerTest {
     assertThat(position.priceCurrency()).isEqualTo("USD");
     assertThat(position.price()).isEqualByComparingTo("100");
     assertThat(position.value()).isEqualByComparingTo("100");
-    assertThat(position.valueInAccountCurrency()).isEqualByComparingTo("90");
+    assertThat(position.valueInAccountCurrency()).isEqualByComparingTo("50");
     assertThat(position.valueStatus()).isEqualTo(ValueStatus.CURRENT);
     assertThat(position.costBasis()).isEqualByComparingTo("75");
     assertThat(position.unrealisedGain()).isNull();
@@ -327,7 +327,7 @@ class AccountPositionsControllerTest {
   }
 
   @Test
-  void completeManualStatementValuesTheDepotEverywhereFromItsStatementDate() {
+  void completeManualStatementUsesEachValuationDatesRate() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse depot = createAccount(token, "Mixed Currency Depot", "SECURITIES");
     SecurityResponse domestic = createSecurity(token, "CH0038863350", "Nestle");
@@ -351,19 +351,19 @@ class AccountPositionsControllerTest {
             .map(AccountPositionResponse::valueInAccountCurrency)
             .reduce(BigDecimal.ZERO, BigDecimal::add);
     AccountListItemResponse account = listedDepot(token);
-    assertThat(account.balance()).isEqualByComparingTo("7800");
+    assertThat(account.balance()).isEqualByComparingTo("7000");
     assertThat(account.balance()).isEqualByComparingTo(positionsValue.add(new BigDecimal("1000")));
     assertThat(account.valueStatus()).isEqualTo(ValueStatus.CURRENT);
 
     NetWorthResponse netWorth = netWorth(token);
-    assertThat(netWorth.netWorth()).isEqualByComparingTo("7800");
+    assertThat(netWorth.netWorth()).isEqualByComparingTo("7000");
     assertThat(netWorth.complete()).isTrue();
     PortfolioViewResponse portfolio =
         get(
             token,
             "/api/v1/portfolios/" + depot.portfolioId() + "/view",
             PortfolioViewResponse.class);
-    assertThat(portfolio.total()).isEqualByComparingTo("7800");
+    assertThat(portfolio.total()).isEqualByComparingTo("7000");
     assertThat(portfolio.complete()).isTrue();
 
     ValueHistoryResponse history =
@@ -430,7 +430,7 @@ class AccountPositionsControllerTest {
   }
 
   @Test
-  void staleStatementFxMakesTheDepotValueStale() {
+  void staleValuationFxMakesTheDepotValueStale() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse depot = createAccount(token, "Stale Rate Depot", "SECURITIES");
     SecurityResponse security = createSecurity(token, "US9220427424", "Vanguard Total World");

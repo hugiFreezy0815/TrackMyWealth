@@ -17,7 +17,9 @@ import java.util.UUID;
  *     accounts were given
  * @param inOwnCurrency every account's valuation in its own currency (a card's billing currency),
  *     in the same order
- * @param reportedHoldings holdings details from the same statements used to value the accounts
+ * @param reportedHoldings per account holding positions with a holdings statement: its positions
+ *     count, value and unrealised gain from the same statement components as its valuation (#440);
+ *     like {@code inOwnCurrency}, empty unless own-currency valuations were requested
  */
 public record MultiCurrencyValuations(
     Map<String, List<AccountValuation>> byCurrency,

@@ -80,6 +80,7 @@ class CrossTenantIsolationTest {
           "transaction",
           "settlement_match",
           "account_snapshot",
+          "snapshot_foreign_cash",
           "reconciliation_result",
           "loan_payment",
           "savings_rate_methodology",
@@ -238,6 +239,23 @@ class CrossTenantIsolationTest {
   void accountSnapshotRowIsInvisibleAcrossWorkspaces() throws Exception {
     assertThat(rowVisibleUnderContext(workspaceAId, "account_snapshot", snapshotBId)).isFalse();
     assertThat(rowVisibleUnderContext(workspaceBId, "account_snapshot", snapshotAId)).isFalse();
+  }
+
+  @Test
+  void snapshotForeignCashIsVisibleOnlyInTheSnapshotsWorkspace() throws Exception {
+    UUID cashId = UUID.randomUUID();
+    rowsCommittedUnderContext(
+        workspaceAId,
+        """
+        INSERT INTO snapshot_foreign_cash (id, workspace_id, snapshot_id, currency, amount)
+        VALUES (?, ?, ?, 'USD', 300)
+        """,
+        cashId,
+        workspaceAId,
+        snapshotAId);
+
+    assertThat(rowVisibleUnderContext(workspaceAId, "snapshot_foreign_cash", cashId)).isTrue();
+    assertThat(rowVisibleUnderContext(workspaceBId, "snapshot_foreign_cash", cashId)).isFalse();
   }
 
   // US-25-02: reconciliation_result is financial data in its own right and carries workspace RLS.

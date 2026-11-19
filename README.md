@@ -516,6 +516,11 @@ partial run, running a single epic, and label/priority conventions.
 
 ## Status
 
+**Depot valuation update (#614).** Cash in every reported currency contributes to depot value.
+On upgrade, Flyway restores cash from committed imports with an identifiable source. Past net-worth
+points may change as that cash is included and reported holdings use the FX rate of each point's
+valuation date. Depots with ambiguous historical cash remain unknown.
+
 **Backend: implemented for the core personal-finance scope, in active development.** What exists
 today (closed stories on GitHub; details in `docs/architecture/database-schema.md`):
 

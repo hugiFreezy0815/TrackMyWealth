@@ -2,6 +2,7 @@ package com.trackmywealth.backend.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -19,7 +20,7 @@ import java.util.UUID;
  *     the newest snapshot with a balance on or before the valuation date
  * @param latestValuations for custom assets: the latest manual valuation on or before that date,
  *     already resolved to a value
- * @param reportedHoldings the value and holdings details from each reported statement
+ * @param reportedHoldings reported cash and holdings components from statement snapshots
  * @param unresolvedLoanRepayments the loans with a payment whose split is still unknown (US-10-02)
  * @param originalPrincipals the original principal of each mortgage or loan without a statement
  *     balance
@@ -36,7 +37,7 @@ public record AccountValueSources(
     Map<UUID, SnapshotBalance> openingBalances,
     Map<UUID, SnapshotBalance> latestSnapshots,
     Map<UUID, NativeAccountValue> latestValuations,
-    Map<UUID, ReportedAccountHoldings> reportedHoldings,
+    Map<UUID, List<ReportedHoldingValue>> reportedHoldings,
     Set<UUID> unresolvedLoanRepayments,
     Map<UUID, BigDecimal> originalPrincipals,
     Map<UUID, BigDecimal> ledgerSums,

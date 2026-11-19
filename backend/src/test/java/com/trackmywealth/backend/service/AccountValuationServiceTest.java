@@ -18,7 +18,6 @@ import com.trackmywealth.backend.dto.KeyedAmount;
 import com.trackmywealth.backend.dto.KeyedDate;
 import com.trackmywealth.backend.dto.MultiCurrencyValuations;
 import com.trackmywealth.backend.dto.NativeAccountValue;
-import com.trackmywealth.backend.dto.ReportedAccountHoldings;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountLoan;
@@ -40,6 +39,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -223,7 +223,7 @@ class AccountValuationServiceTest {
 
     service.valueIn(account, "CHF", TODAY);
 
-    verify(accountPositionsService, never()).reportedHoldingsFor(any(), any(), any());
+    verify(accountPositionsService, never()).reportedHoldingsFor(any(), any());
   }
 
   @Test
@@ -671,11 +671,8 @@ class AccountValuationServiceTest {
   }
 
   private void withReportedHoldings(NativeAccountValue value) {
-    when(accountPositionsService.reportedHoldingsFor(any(), any(), any()))
-        .thenReturn(
-            Map.of(
-                account.getId(),
-                new ReportedAccountHoldings(value.sourceDate(), 1, value, null, null, null, null)));
+    when(accountPositionsService.reportedValue(any(), eq("CHF"), any()))
+        .thenReturn(Optional.of(value));
   }
 
   private void withOpeningBalance(String balance) {

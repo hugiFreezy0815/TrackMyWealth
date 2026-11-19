@@ -54,6 +54,7 @@ public class AccountPositionsService {
   private final SnapshotHoldingRepository holdingRepository;
   private final SecurityRepository securityRepository;
   private final FxRateService fxRateService;
+  private final BusinessDateService businessDates;
   private final String fxSource;
 
   public AccountPositionsService(
@@ -64,6 +65,7 @@ public class AccountPositionsService {
       SnapshotHoldingRepository holdingRepository,
       SecurityRepository securityRepository,
       FxRateService fxRateService,
+      BusinessDateService businessDates,
       @Value("${app.fx.default-source}") String fxSource) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
@@ -72,6 +74,7 @@ public class AccountPositionsService {
     this.holdingRepository = holdingRepository;
     this.securityRepository = securityRepository;
     this.fxRateService = fxRateService;
+    this.businessDates = businessDates;
     this.fxSource = fxSource;
   }
 
@@ -84,8 +87,9 @@ public class AccountPositionsService {
           ProblemCode.POSITIONS_NOT_APPLICABLE, "This account does not hold positions.");
     }
     String currency = accountCurrencyService.ownCurrency(account);
+    LocalDate today = businessDates.today();
     List<AccountSnapshot> newest =
-        snapshotRepository.findNewestWithHoldings(accountId, PageRequest.of(0, 1));
+        snapshotRepository.findNewestWithHoldings(accountId, today, PageRequest.of(0, 1));
     if (newest.isEmpty()) {
       return new AccountPositionsResponse(accountId, currency, null, SOURCE, true, List.of());
     }
@@ -98,13 +102,18 @@ public class AccountPositionsService {
             .stream()
             .collect(Collectors.toMap(Security::getId, Function.identity()));
 
+    Map<String, Optional<CurrencyConversionResult>> quotes = new HashMap<>();
+    Function<String, Optional<CurrencyConversionResult>> rates =
+        from ->
+            quotes.computeIfAbsent(
+                from, key -> fxRateService.tryGetConversionRate(key, currency, today, fxSource));
     List<AccountPositionResponse> positions = new ArrayList<>();
     for (SnapshotHolding holding : holdings) {
       Security security = securities.get(holding.getSecurityId());
       if (security == null) {
         throw new IllegalStateException("Snapshot holding refers to a missing security.");
       }
-      positions.add(toPosition(holding, security, currency, snapshot.getSnapshotDate()));
+      positions.add(toPosition(holding, security, currency, rates));
     }
     positions.sort(
         Comparator.comparing(
@@ -117,80 +126,84 @@ public class AccountPositionsService {
         accountId, currency, snapshot.getSnapshotDate(), SOURCE, complete, positions);
   }
 
-  /**
-   * Read holdings details for accounts the caller has already authorized. A statement without cash,
-   * with cash in another currency that was not recorded, or without any converted holding value
-   * cannot establish the full account value (FR-PERF-018).
-   */
-  Map<UUID, ReportedAccountHoldings> reportedHoldingsFor(
-      List<UUID> accountIds, Map<UUID, String> ownCurrencies, LocalDate asOf) {
-    Map<UUID, List<ReportedHoldingValue>> byAccount =
-        snapshotRepository.findLatestReportedHoldings(accountIds, asOf).stream()
-            .collect(Collectors.groupingBy(ReportedHoldingValue::getAccountId));
-    Map<String, Optional<CurrencyConversionResult>> rates = new HashMap<>();
-    Map<UUID, ReportedAccountHoldings> result = new HashMap<>();
-    byAccount.forEach(
-        (accountId, holdings) ->
-            result.put(
-                accountId, summarizeHoldings(holdings, ownCurrencies.get(accountId), rates)));
-    return result;
+  /** Read the statement components for accounts already authorized by the caller. */
+  Map<UUID, List<ReportedHoldingValue>> reportedHoldingsFor(List<UUID> accountIds, LocalDate asOf) {
+    return snapshotRepository.findLatestReportedHoldings(accountIds, asOf).stream()
+        .collect(Collectors.groupingBy(ReportedHoldingValue::getAccountId));
   }
 
-  private ReportedAccountHoldings summarizeHoldings(
-      List<ReportedHoldingValue> holdings,
-      String currency,
-      Map<String, Optional<CurrencyConversionResult>> rates) {
-    ReportedHoldingValue statement = holdings.get(0);
-    LocalDate date = statement.getSnapshotDate();
-    int positionsCount = holdings.size();
-    BigDecimal total = statement.getCashBalance();
-    if (total == null || statement.isUnrecordedCash()) {
-      return new ReportedAccountHoldings(date, positionsCount);
+  /** Convert each component directly to the target. An incomplete statement has no value. */
+  Optional<NativeAccountValue> reportedValue(
+      List<ReportedHoldingValue> components,
+      String targetCurrency,
+      Function<String, Optional<CurrencyConversionResult>> rates) {
+    if (components.isEmpty() || components.get(0).isUnrecordedCash()) {
+      return Optional.empty();
     }
+    BigDecimal total = BigDecimal.ZERO;
     boolean stale = false;
+    for (ReportedHoldingValue component : components) {
+      BigDecimal amount = component.getReportedValue();
+      String from = component.getReportedCurrency();
+      CurrencyConversionResult rate = rate(amount, from, targetCurrency, rates);
+      BigDecimal converted = inAccountCurrency(amount, from, targetCurrency, rate);
+      if (converted == null) {
+        return Optional.empty();
+      }
+      total = total.add(converted);
+      stale |= rate != null && rate.stale();
+    }
+    LocalDate date = components.get(0).getSnapshotDate();
+    return Optional.of(
+        new NativeAccountValue(total, ValueBasisValues.LATEST_SNAPSHOT, date, date, stale));
+  }
+
+  /**
+   * #440: one statement's positions count, its value in the account currency and the unrealised
+   * gain of its positions (statement cash excluded), from the same components as {@link
+   * #reportedValue}. Without a value there is no gain; a position without a known gain (no cost
+   * basis, or a cost basis whose currency is uncertain) leaves both gain figures null rather than a
+   * partial sum (FR-PERF-018), and is counted by cause.
+   */
+  ReportedAccountHoldings summary(
+      List<ReportedHoldingValue> components,
+      String accountCurrency,
+      Function<String, Optional<CurrencyConversionResult>> rates) {
+    LocalDate date = components.get(0).getSnapshotDate();
+    List<ReportedHoldingValue> holdings =
+        components.stream().filter(ReportedHoldingValue::isHolding).toList();
+    Optional<NativeAccountValue> value = reportedValue(components, accountCurrency, rates);
+    if (value.isEmpty()) {
+      return new ReportedAccountHoldings(date, holdings.size());
+    }
     BigDecimal totalGain = BigDecimal.ZERO;
     BigDecimal totalCostBasis = BigDecimal.ZERO;
     int missingBasis = 0;
     int foreignBasis = 0;
     for (ReportedHoldingValue holding : holdings) {
-      BigDecimal reported = holding.getReportedValue();
-      String from = holding.getReportedCurrency();
-      if (reported == null || from == null) {
-        return new ReportedAccountHoldings(date, positionsCount);
-      }
-      CurrencyConversionResult rate =
-          rates
-              .computeIfAbsent(
-                  from + "/" + currency + "/" + date,
-                  key -> Optional.ofNullable(rate(reported, from, currency, date)))
-              .orElse(null);
-      BigDecimal converted = inAccountCurrency(reported, from, currency, rate);
-      if (converted == null) {
-        return new ReportedAccountHoldings(date, positionsCount);
-      }
-      total = total.add(converted);
-      stale |= rate != null && rate.stale();
-
       BigDecimal costBasis = holding.getReportedCostBasis();
+      // Only a position reported in the account currency has a certain gain, so its reported
+      // value is already the value in the account currency.
+      BigDecimal gain =
+          unrealisedGain(
+              holding.getReportedValue(),
+              holding.getReportedCurrency(),
+              accountCurrency,
+              costBasis);
       if (costBasis == null) {
         missingBasis++;
+      } else if (gain == null) {
+        foreignBasis++;
       } else {
-        BigDecimal gain = unrealisedGain(converted, from, currency, costBasis);
-        if (gain == null) {
-          foreignBasis++;
-        } else {
-          totalGain = totalGain.add(gain);
-          totalCostBasis = totalCostBasis.add(costBasis);
-        }
+        totalGain = totalGain.add(gain);
+        totalCostBasis = totalCostBasis.add(costBasis);
       }
     }
-    NativeAccountValue value =
-        new NativeAccountValue(total, ValueBasisValues.LATEST_SNAPSHOT, date, date, stale);
     boolean gainKnown = missingBasis == 0 && foreignBasis == 0;
     return new ReportedAccountHoldings(
         date,
-        positionsCount,
-        value,
+        holdings.size(),
+        value.get(),
         gainKnown ? totalGain : null,
         gainKnown ? gainPercent(totalGain, totalCostBasis) : null,
         missingBasis == 0 ? null : missingBasis,
@@ -198,10 +211,13 @@ public class AccountPositionsService {
   }
 
   private AccountPositionResponse toPosition(
-      SnapshotHolding holding, Security security, String accountCurrency, LocalDate asOf) {
+      SnapshotHolding holding,
+      Security security,
+      String accountCurrency,
+      Function<String, Optional<CurrencyConversionResult>> rates) {
     BigDecimal reported = holding.getReportedValue();
     String reportedCurrency = holding.getReportedCurrency();
-    CurrencyConversionResult rate = rate(reported, reportedCurrency, accountCurrency, asOf);
+    CurrencyConversionResult rate = rate(reported, reportedCurrency, accountCurrency, rates);
     BigDecimal inAccountCurrency =
         inAccountCurrency(reported, reportedCurrency, accountCurrency, rate);
     BigDecimal costBasis = holding.getReportedCostBasis();
@@ -270,13 +286,16 @@ public class AccountPositionsService {
     return costBasisEstimated ? ValueStatus.ESTIMATED : ValueStatus.CURRENT;
   }
 
-  /** The rate at the snapshot date, or null when none is needed or none is known. */
-  private @Nullable CurrencyConversionResult rate(
-      @Nullable BigDecimal value, @Nullable String from, String to, LocalDate asOf) {
+  /** The rate at the valuation date, or null when none is needed or none is known. */
+  private static @Nullable CurrencyConversionResult rate(
+      @Nullable BigDecimal value,
+      @Nullable String from,
+      String to,
+      Function<String, Optional<CurrencyConversionResult>> rates) {
     if (value == null || from == null || from.equals(to)) {
       return null;
     }
-    return fxRateService.tryGetConversionRate(from, to, asOf, fxSource).orElse(null);
+    return rates.apply(from).orElse(null);
   }
 
   private @Nullable BigDecimal inAccountCurrency(
