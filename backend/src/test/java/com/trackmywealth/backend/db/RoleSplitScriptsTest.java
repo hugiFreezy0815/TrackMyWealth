@@ -134,7 +134,7 @@ class RoleSplitScriptsTest {
   }
 
   @Test
-  void theRuntimeRoleMayOnlyReadAndWriteRowsAndCallTheAuthenticationLookups() throws Exception {
+  void theRuntimeRoleMayOnlyReadAndWriteRowsAndCallItsDefinerFunctions() throws Exception {
     for (String url : new String[] {existing(), fresh()}) {
       try (Connection runtime = connect(url, RUNTIME_ROLE, RUNTIME_PASSWORD);
           Statement statement = runtime.createStatement()) {
@@ -142,6 +142,10 @@ class RoleSplitScriptsTest {
             statement.executeQuery(
                 "SELECT public.auth_workspace_member_status('" + UUID.randomUUID() + "')")) {
           assertThat(result.next()).as("V81's lookup may be called, %s", url).isTrue();
+        }
+        try (ResultSet result =
+            statement.executeQuery("SELECT public.purge_expired_idempotency_keys(now(), 1)")) {
+          assertThat(result.next()).as("V124's purge may be called, %s", url).isTrue();
         }
         try (ResultSet result =
             statement.executeQuery("SELECT count(*) FROM flyway_schema_history")) {

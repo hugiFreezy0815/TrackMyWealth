@@ -123,6 +123,12 @@ BEGIN
         GRANT EXECUTE ON FUNCTION public.auth_workspace_member_status(UUID)
         TO trackmywealth_runtime;
     END IF;
+    -- V124's purge of expired Idempotency-Keys (#574), likewise.
+    IF to_regprocedure('public.purge_expired_idempotency_keys(timestamptz, integer)') IS NOT NULL
+        THEN
+        GRANT EXECUTE ON FUNCTION public.purge_expired_idempotency_keys(TIMESTAMPTZ, INTEGER)
+        TO trackmywealth_runtime;
+    END IF;
 END;
 $$;
 

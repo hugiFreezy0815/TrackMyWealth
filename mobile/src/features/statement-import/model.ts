@@ -38,6 +38,8 @@ export const RETRYABLE_UPLOAD_CODES = [
   'IMPORT_PDF_BUSY',
   'IMPORT_SPREADSHEET_BUSY',
   'IMPORT_OCR_UNAVAILABLE',
+  // The first request with this key still runs (#574): the retry with the same key gets its result.
+  'IDEMPOTENCY_KEY_IN_USE',
 ] as const;
 
 /** Unsupported and ambiguous uploads must never reach the server. */
@@ -102,7 +104,7 @@ export function importProblemCode(error: unknown): string | null {
 }
 export function isRetryableUploadError(error: unknown): boolean {
   // A lost response leaves the outcome open: the server may have created the batch. Resending is
-  // safe only once it replays the keyed response (#574); until then the file is not kept for it.
+  // safe because it replays the keyed response (#574); without replay the file is not kept for it.
   if (error instanceof NetworkError) return supportsUploadReplay();
   const code = importProblemCode(error);
   return code !== null && (RETRYABLE_UPLOAD_CODES as readonly string[]).includes(code);
@@ -161,6 +163,8 @@ export const IMPORT_UPLOAD_ERRORS: readonly string[] = [
   'IMPORT_SNAPSHOT_ALREADY_RECORDED',
   'IMPORT_SNAPSHOT_RECONCILIATION_DECIDED',
   'VERSION_CONFLICT',
+  'IDEMPOTENCY_KEY_IN_USE',
+  'IDEMPOTENCY_KEY_MISMATCH',
 ] as const;
 
 /** The response status counts, not client-side calculations, decide what gets imported. */

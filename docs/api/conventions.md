@@ -145,7 +145,7 @@ the response's `traceparent`. An absent or malformed header starts a new trace. 
 Three kinds of response can carry `Retry-After`; honor it when present:
 
 - `429 RATE_LIMITED` ([RFC 6585](https://www.rfc-editor.org/rfc/rfc6585)), on any operation;
-- a retryable 503 such as `IMPORT_PDF_BUSY`;
+- a retryable 503 such as `IMPORT_PDF_BUSY`, and `409 IDEMPOTENCY_KEY_IN_USE`;
 - `423 LOCKED` on sign-in (`POST /api/v1/auth/login`, `POST /api/v1/auth/mfa/verify`) and on
   the MFA settings operations under `/api/v1/users/me/mfa/`, while the user account is locked
   after failed sign-ins.
@@ -153,9 +153,34 @@ Three kinds of response can carry `Retry-After`; honor it when present:
 TrackMyWealth emits delay seconds. RFC 9110 also permits an HTTP date. Use the code's
 documented reaction when no header is present.
 
+## Idempotent creates
+
 A timeout on a creating POST can leave a resource committed even though the response was lost.
-Check the resulting state before resubmitting. ADR 0006 records the future `Idempotency-Key`
-contract; [#574](https://github.com/hugiFreezy0815/TrackMyWealth/issues/574) implements it.
+The operations below take an `Idempotency-Key` request header (ADR 0006,
+[#574](https://github.com/hugiFreezy0815/TrackMyWealth/issues/574)) so that a retry is safe:
+
+| Idempotent operation | Request that must match |
+| --- | --- |
+| `POST /api/v1/accounts/{accountId}/imports` (statement upload) | Account, file content, file name, media type, `templateId`, `snapshotDate` |
+
+- Send a fresh UUID for each logical create and the **same** UUID on every retry of it. Anything
+  other than a UUID is `400 VALIDATION_FAILED`.
+- A retry of a finished request answers the first request's success response again (status,
+  body, `Location`, `ETag`) and creates nothing. The stored response is the one from creation
+  time: read the resource for its current state.
+- The same key with a different request is `422 IDEMPOTENCY_KEY_MISMATCH`: the client reused a
+  key by mistake. Start the new create with a new key.
+- A retry while the first request still runs is `409 IDEMPOTENCY_KEY_IN_USE` with
+  `Retry-After`: retry with the same key after the delay to get the first request's result.
+- A failed request (any error response) keeps no key: nothing was created, so its retry runs as a
+  new request.
+- A key is scoped to the user, the workspace and the operation, and kept for 24 hours. After that
+  the same key is a new request.
+- Without the header, an operation behaves as before: every request creates.
+
+Every other creating POST does not take the header yet
+([#629](https://github.com/hugiFreezy0815/TrackMyWealth/issues/629)): check the resulting state
+before resubmitting one of them.
 
 ## Uploads
 
