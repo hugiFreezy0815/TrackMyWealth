@@ -1,4 +1,4 @@
-import { ApiError } from '@/api/client';
+import { ApiError, NetworkError } from '@/api/client';
 import { problemOf } from '@/api/problems';
 import type { components } from '@/api/schema';
 
@@ -99,6 +99,8 @@ export function importProblemCode(error: unknown): string | null {
   return error instanceof ApiError ? (problemOf(error)?.code ?? null) : null;
 }
 export function isRetryableUploadError(error: unknown): boolean {
+  // The server may have committed even if its response was lost.
+  if (error instanceof NetworkError) return true;
   const code = importProblemCode(error);
   return code !== null && (RETRYABLE_UPLOAD_CODES as readonly string[]).includes(code);
 }
