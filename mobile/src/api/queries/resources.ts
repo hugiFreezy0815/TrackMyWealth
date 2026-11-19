@@ -1,5 +1,4 @@
 import {
-  queryOptions,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -208,22 +207,20 @@ export function useChangeTransactionCategory(accountId: string) {
 
 type TransactionsPage = components['schemas']['PageResponseTransactionResponse'];
 
-export const transactionQueryOptions = (accountId: string, transactionId: string) =>
-  queryOptions({
-    queryKey: queryKeys.transaction(accountId, transactionId),
-    queryFn: ({ signal }) =>
-      typedApi.get('/api/v1/accounts/{accountId}/transactions/{transactionId}', {
-        params: { accountId, transactionId },
-        signal,
-      }),
-    enabled: !!accountId && !!transactionId,
+export function readTransaction(accountId: string, transactionId: string, signal: AbortSignal) {
+  return typedApi.get('/api/v1/accounts/{accountId}/transactions/{transactionId}', {
+    params: { accountId, transactionId },
+    signal,
   });
+}
 
 /** Display an S3 row instantly while fetching the authoritative single-row response. */
 export function useTransaction(accountId: string, transactionId: string) {
   const client = useQueryClient();
-  return useQuery({
-    ...transactionQueryOptions(accountId, transactionId),
+  return useQuery<components['schemas']['TransactionResponse']>({
+    queryKey: queryKeys.transaction(accountId, transactionId),
+    queryFn: ({ signal }) => readTransaction(accountId, transactionId, signal),
+    enabled: !!accountId && !!transactionId,
     refetchOnMount: 'always',
     // Placeholder data is never authoritative and must not enable editing.
     placeholderData: () => {

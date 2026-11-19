@@ -79,7 +79,9 @@ list as in S2's `PositionRow`) and **Activity** (the transaction list of this sp
 6. Depot: `GET /api/v1/accounts/{accountId}/positions` (delivered by #478).
 7. For each distinct original referenced by a loaded reversal, use its booking date from the
    loaded rows or read it via `GET /api/v1/accounts/{accountId}/transactions/{transactionId}`.
-   Show the generic reversal label while the date is unavailable.
+   Limit the background lookups to four concurrent reads. Refresh and saves complete after
+   their foreground reads. Keep the last verified date through temporary failures and show
+   the generic reversal label while the date is unavailable or access is denied.
 
 Request 3 needs `hasTransactions = true` from request 1. Without it, skip 3 and 4 (see States).
 
