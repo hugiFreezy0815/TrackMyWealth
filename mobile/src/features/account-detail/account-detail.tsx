@@ -64,6 +64,7 @@ import {
   type AccountSummary,
   type Transaction,
 } from './model';
+import { isAccessFailure, isNotFound } from './access';
 import { useReversalDates } from './reversal-dates';
 import { useRowFocus } from './row-focus';
 import { TransactionResults } from './transaction-results';
@@ -82,19 +83,6 @@ export type AccountDetailProps = {
 };
 
 type OpenDialog = 'actions' | 'sort' | 'archive' | 'value' | 'openingDate' | null;
-
-const isNotFound = (error: unknown) =>
-  error instanceof ApiError &&
-  (error.status === 404 || problemReaction(error).sentCode === 'NOT_FOUND');
-
-/** An account error must not reveal a previously cached financial value after access was denied. */
-const isAccessFailure = (error: unknown) =>
-  error instanceof ApiError &&
-  (error.status === 401 ||
-    error.status === 403 ||
-    isNotFound(error) ||
-    problemReaction(error).sentCode === 'UNAUTHENTICATED' ||
-    problemReaction(error).sentCode === 'FORBIDDEN');
 
 /** A stale S1/S2 value is only safe as a fallback while the server is unreachable or failing. */
 const isRecoverableAccountFailure = (error: unknown) =>

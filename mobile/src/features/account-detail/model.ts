@@ -218,6 +218,7 @@ export function reconciliationLine(reconciliation: Reconciliation): Reconciliati
   };
 }
 
+/** The reversed original's booking date, when it is known; otherwise the generic label shows. */
 export function reversalOf(
   transaction: Transaction,
   dates: RowContext['reversalDates'],
@@ -243,6 +244,7 @@ export function convertedAmount(
 
 export type RowContext = {
   categories: Category[];
+  /** Booking dates by transaction ID: loaded rows plus originals read for reversals on page. */
   reversalDates: ReadonlyMap<string, string>;
   accountCurrency: string;
   archived: boolean;

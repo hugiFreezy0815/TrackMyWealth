@@ -1,10 +1,10 @@
 import { useQueries } from '@tanstack/react-query';
 
 import { ApiError } from '@/api/client';
-import { problemReaction } from '@/api/problems';
 import { queryKeys } from '@/api/queries/keys';
 import { readTransaction } from '@/api/queries/resources';
 
+import { isAccessFailure } from './access';
 import type { Transaction } from './model';
 
 // A rollback can put 50 reversals on one page. Leave capacity for ledger and detail reads.
@@ -47,18 +47,8 @@ async function fetchOriginalDate(accountId: string, id: string, signal: AbortSig
       ? row.bookingDate
       : null;
   } catch (error) {
-    if (error instanceof ApiError) {
-      const code = problemReaction(error).sentCode;
-      if (
-        [401, 403, 404, 410].includes(error.status) ||
-        code === 'UNAUTHENTICATED' ||
-        code === 'FORBIDDEN' ||
-        code === 'NOT_FOUND'
-      ) {
-        // Store the authoritative absence so a later transient failure cannot restore the date.
-        return null;
-      }
-    }
+    // 410 Gone is final as well. Store the absence so a later transient failure cannot restore it.
+    if (isAccessFailure(error) || (error instanceof ApiError && error.status === 410)) return null;
     throw error;
   }
 }

@@ -958,7 +958,7 @@ describe('S3 account detail acceptance checks (#494)', () => {
     expect(readOriginal).toHaveBeenCalledTimes(1);
   });
 
-  it.each([404, 403])(
+  it.each([404, 403, 410])(
     'keeps a known reversal date on a temporary failure and clears it on HTTP %i',
     async (status) => {
       const state = fakeServer(summary(), [
