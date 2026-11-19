@@ -111,7 +111,7 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
     accountId === uploadFailure.accountId &&
     file === uploadFailure.file &&
     uploadKey.current === uploadFailure.key &&
-    ( !(error instanceof NetworkError) || supportsUploadReplay() );
+    (!(error instanceof NetworkError) || supportsUploadReplay());
 
   useEffect(() => {
     if (!uploading) return;
