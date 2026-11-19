@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import * as DocumentPicker from 'expo-document-picker';
+import { randomUUID } from 'expo-crypto';
 import { IntlProvider } from 'react-intl';
 
 import { invalidateFinancialData } from '@/api/queries/invalidation';
@@ -18,6 +19,7 @@ let mockHidden = false;
 
 jest.mock('@/global.css', () => ({}));
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
+jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'statement-upload-uuid') }));
 jest.mock('./device-files', () => ({
   deletePickedCopy: jest.fn(),
   shareErrorsCsv: jest.fn(async () => {}),
@@ -368,7 +370,13 @@ describe('S7 step 1: file and account (#492)', () => {
       await screen.findByRole('button', { name: 'Try again' }, { timeout: 2500 }),
     );
     expect(await commitButton(41)).toBeTruthy();
-    expect(server.callsOf('upload', '/api/v1/accounts/{accountId}/imports')).toHaveLength(2);
+    const uploads = server.callsOf('upload', '/api/v1/accounts/{accountId}/imports');
+    expect(uploads).toHaveLength(2);
+    const keys = uploads.map(
+      (call) => (call.options.headers as Record<string, string>)['Idempotency-Key'],
+    );
+    expect(keys).toEqual(['statement-upload-uuid', 'statement-upload-uuid']);
+    expect(randomUUID).toHaveBeenCalledTimes(1);
     expect(deletePickedCopy).toHaveBeenCalledWith('file:///cache/synthetic-dkb.csv');
   });
 
