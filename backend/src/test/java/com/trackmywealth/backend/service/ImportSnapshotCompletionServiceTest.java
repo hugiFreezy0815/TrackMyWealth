@@ -16,6 +16,7 @@ import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountSnapshot;
 import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.entity.ReconciliationResult;
+import com.trackmywealth.backend.entity.SnapshotForeignCash;
 import com.trackmywealth.backend.entity.SnapshotHolding;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ProblemCode;
@@ -23,6 +24,7 @@ import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
 import com.trackmywealth.backend.repository.SecurityRepository;
+import com.trackmywealth.backend.repository.SnapshotForeignCashRepository;
 import com.trackmywealth.backend.repository.SnapshotHoldingRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -49,6 +51,7 @@ class ImportSnapshotCompletionServiceTest {
   private static final UUID USD_SHARE = UUID.randomUUID();
 
   private final AccountSnapshotRepository snapshots = mock(AccountSnapshotRepository.class);
+  private final SnapshotForeignCashRepository cash = mock(SnapshotForeignCashRepository.class);
   private final SnapshotHoldingRepository holdings = mock(SnapshotHoldingRepository.class);
   private final ReconciliationResultRepository results = mock(ReconciliationResultRepository.class);
   private final ReconciliationService reconciliation = mock(ReconciliationService.class);
@@ -58,6 +61,7 @@ class ImportSnapshotCompletionServiceTest {
       new ImportSnapshotCompletionService(
           snapshots,
           holdings,
+          cash,
           results,
           mock(SecurityRepository.class),
           batches,
@@ -73,7 +77,8 @@ class ImportSnapshotCompletionServiceTest {
 
   @Test
   void withoutAnImportedSnapshotOfTheDateTheStatementRecordsANewOne() {
-    ImportSnapshotPlan plan = service.plan(account, DATE, new BigDecimal("1204.35"), held(), true);
+    ImportSnapshotPlan plan =
+        service.plan(account, DATE, new BigDecimal("1204.35"), Map.of(), held(), true);
 
     assertThat(plan.outcome()).isEqualTo(ImportSnapshotValues.NEW);
     assertThat(plan.adds())
@@ -86,7 +91,8 @@ class ImportSnapshotCompletionServiceTest {
   void theSamePositionsWithTheMissingCashCompleteTheSnapshot() {
     existing(null, holding(CHF_SHARE, "25.0000000000"), holding(USD_SHARE, "1200.0000000000"));
 
-    ImportSnapshotPlan plan = service.plan(account, DATE, new BigDecimal("1204.35"), held(), true);
+    ImportSnapshotPlan plan =
+        service.plan(account, DATE, new BigDecimal("1204.35"), Map.of(), held(), true);
 
     // 25 is 25.0000000000: quantities compare by value, not by scale.
     assertThat(plan.outcome()).isEqualTo(ImportSnapshotValues.COMPLETES);
@@ -99,7 +105,7 @@ class ImportSnapshotCompletionServiceTest {
   void anotherQuantityOrAnotherBalanceIsAConflictAndNothingTheSameIsADuplicate() {
     existing(new BigDecimal("1204.35"), holding(CHF_SHARE, "25"), holding(USD_SHARE, "1199"));
     ImportSnapshotPlan quantity =
-        service.plan(account, DATE, new BigDecimal("1204.35"), held(), true);
+        service.plan(account, DATE, new BigDecimal("1204.35"), Map.of(), held(), true);
     assertThat(quantity.outcome()).isEqualTo(ImportSnapshotValues.CONFLICTING);
     assertThat(quantity.conflicts())
         .singleElement()
@@ -112,12 +118,12 @@ class ImportSnapshotCompletionServiceTest {
             });
 
     ImportSnapshotPlan balance =
-        service.plan(account, DATE, new BigDecimal("99.00"), Map.of(), true);
+        service.plan(account, DATE, new BigDecimal("99.00"), Map.of(), Map.of(), true);
     assertThat(balance.outcome()).isEqualTo(ImportSnapshotValues.CONFLICTING);
     assertThat(balance.conflicts().get(0).part()).isEqualTo(ImportSnapshotValues.PART_BALANCE);
 
     ImportSnapshotPlan same =
-        service.plan(account, DATE, new BigDecimal("1204.3500"), Map.of(), true);
+        service.plan(account, DATE, new BigDecimal("1204.3500"), Map.of(), Map.of(), true);
     assertThat(same.outcome()).isEqualTo(ImportSnapshotValues.ALREADY_RECORDED);
     assertThat(same.committable()).isFalse();
   }
@@ -127,7 +133,8 @@ class ImportSnapshotCompletionServiceTest {
   void holdingsAreNotComparedWhilePositionsAreUnresolved() {
     existing(null, holding(CHF_SHARE, "25"), holding(USD_SHARE, "1199"));
 
-    ImportSnapshotPlan plan = service.plan(account, DATE, new BigDecimal("1.00"), held(), false);
+    ImportSnapshotPlan plan =
+        service.plan(account, DATE, new BigDecimal("1.00"), Map.of(), held(), false);
 
     assertThat(plan.conflicts()).isEmpty();
     assertThat(plan.outcome()).isEqualTo(ImportSnapshotValues.COMPLETES);
@@ -137,7 +144,7 @@ class ImportSnapshotCompletionServiceTest {
   void aDateTheAccountDoesNotAdmitIsOutOfRange() {
     when(account.getClosedAt()).thenReturn(DATE.minusDays(1));
 
-    assertThat(service.plan(account, DATE, BigDecimal.ONE, Map.of(), true).outcome())
+    assertThat(service.plan(account, DATE, BigDecimal.ONE, Map.of(), Map.of(), true).outcome())
         .isEqualTo(ImportSnapshotValues.OUT_OF_RANGE);
   }
 
@@ -149,7 +156,8 @@ class ImportSnapshotCompletionServiceTest {
         .thenReturn(Optional.of(snapshot));
     when(snapshots.findLatestObserved(account.getId())).thenReturn(Optional.of(snapshot));
     ReconciliationResult accepted = decided(snapshot);
-    ImportSnapshotPlan plan = service.plan(account, DATE, new BigDecimal("1204.35"), held(), true);
+    ImportSnapshotPlan plan =
+        service.plan(account, DATE, new BigDecimal("1204.35"), Map.of(), held(), true);
 
     // The preview says so beforehand.
     assertThat(plan.outcome()).isEqualTo(ImportSnapshotValues.COMPLETES);
@@ -180,7 +188,8 @@ class ImportSnapshotCompletionServiceTest {
     ReflectionTestUtils.setField(newer, "id", UUID.randomUUID());
     when(snapshots.findLatestObserved(account.getId())).thenReturn(Optional.of(newer));
     decided(snapshot);
-    ImportSnapshotPlan plan = service.plan(account, DATE, new BigDecimal("1204.35"), held(), true);
+    ImportSnapshotPlan plan =
+        service.plan(account, DATE, new BigDecimal("1204.35"), Map.of(), held(), true);
 
     assertThat(plan.decided()).isFalse();
     assertThat(plan.adds()).containsExactly(ImportSnapshotValues.PART_HOLDINGS);
@@ -191,7 +200,7 @@ class ImportSnapshotCompletionServiceTest {
   void aRefusedPlanCarriesTheSnapshotAndItsDifferences() {
     existing(new BigDecimal("1204.35"));
     ImportSnapshotPlan conflict =
-        service.plan(account, DATE, new BigDecimal("1.00"), Map.of(), true);
+        service.plan(account, DATE, new BigDecimal("1.00"), Map.of(), Map.of(), true);
 
     ApiException refused = ImportSnapshotCompletionService.refusal(conflict, "Differs.");
 
@@ -289,6 +298,48 @@ class ImportSnapshotCompletionServiceTest {
   // --- helpers -------------------------------------------------------------------------------
 
   // The statement's positions: 25 of the CHF share, 1200 of the USD one.
+  // #614: foreign cash is compared currency by currency, like the own-currency balance.
+  @Test
+  void foreignCashAddsANewCurrencyIsADuplicateWhenEqualAndAConflictWhenItDiffers() {
+    AccountSnapshot snapshot = existing(new BigDecimal("1204.35"));
+    SnapshotForeignCash usd = mock(SnapshotForeignCash.class);
+    when(usd.getCurrency()).thenReturn("USD");
+    when(usd.getAmount()).thenReturn(new BigDecimal("310.2000"));
+    when(cash.findBySnapshotIdOrderByCurrency(snapshot.getId())).thenReturn(List.of(usd));
+    BigDecimal balance = new BigDecimal("1204.35");
+
+    ImportSnapshotPlan same =
+        service.plan(
+            account, DATE, balance, Map.of("USD", new BigDecimal("310.20")), Map.of(), true);
+    assertThat(same.outcome()).isEqualTo(ImportSnapshotValues.ALREADY_RECORDED);
+    assertThat(same.committable()).isFalse();
+
+    ImportSnapshotPlan adds =
+        service.plan(
+            account,
+            DATE,
+            balance,
+            Map.of("USD", new BigDecimal("310.20"), "EUR", new BigDecimal("5")),
+            Map.of(),
+            true);
+    assertThat(adds.outcome()).isEqualTo(ImportSnapshotValues.COMPLETES);
+    assertThat(adds.adds()).containsExactly(ImportSnapshotValues.PART_BALANCE);
+    assertThat(adds.conflicts()).isEmpty();
+
+    ImportSnapshotPlan differs =
+        service.plan(account, DATE, balance, Map.of("USD", new BigDecimal("1")), Map.of(), true);
+    assertThat(differs.outcome()).isEqualTo(ImportSnapshotValues.CONFLICTING);
+    assertThat(differs.conflicts())
+        .singleElement()
+        .satisfies(
+            conflict -> {
+              assertThat(conflict.part()).isEqualTo(ImportSnapshotValues.PART_BALANCE);
+              assertThat(conflict.currency()).isEqualTo("USD");
+              assertThat(conflict.existingValue()).isEqualByComparingTo("310.20");
+              assertThat(conflict.statementValue()).isEqualByComparingTo("1");
+            });
+  }
+
   private static Map<UUID, BigDecimal> held() {
     Map<UUID, BigDecimal> held = new LinkedHashMap<>();
     held.put(CHF_SHARE, new BigDecimal("25"));
@@ -326,6 +377,7 @@ class ImportSnapshotCompletionServiceTest {
         "CHF",
         plan,
         new BigDecimal("1204.35"),
+        Map.of(),
         List.of(
             new ImportSnapshotHolding(
                 CHF_SHARE, new BigDecimal("25"), null, new BigDecimal("1000.00"), "CHF")),

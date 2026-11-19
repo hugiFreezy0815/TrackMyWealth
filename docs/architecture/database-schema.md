@@ -426,13 +426,16 @@ discoverable by another workspace. Rules that follow from the table being global
   `reported_cost_basis` is a total in that same currency.
 - **Holdings** reference existing security-master ids only (create first via `POST
   /api/v1/securities`), at most once per snapshot (`V33`'s `uq_snapshot_holding_security`). A
-  balance may be omitted only when holdings are given.
+  balance may be omitted when holdings or foreign cash are given.
+- **Foreign cash.** A position-holding account may record one entry per foreign currency
+  in `snapshot_foreign_cash`. The API preserves these entries on a replacement that omits
+  `foreignCashBalances`; an explicit empty list clears them.
 - **Duplicates and corrections.** A second `MANUAL` snapshot for the same account and date is a
   409 carrying `existingSnapshotId`; `PUT .../snapshots/{snapshotId}` replaces a `MANUAL`
   snapshot's balance and holdings and sets `updated_at`/`updated_by` (`V33`). Snapshots from any
   other source are never edited through the API.
-- **Isolation.** `account_snapshot` is RLS-protected; `snapshot_holding` is not and is only read
-  by the id of a snapshot already loaded under that policy.
+- **Isolation.** `account_snapshot` and `snapshot_foreign_cash` use workspace RLS.
+  Holdings inherit isolation through the parent snapshot.
 
 ### Opening balances (US-25-04)
 
@@ -1521,14 +1524,14 @@ resolved again on every read and at the commit; the import never creates a secur
 **Commit.** Refused while a line is unreadable (422 `IMPORT_HOLDINGS_UNREADABLE`, `rowNumbers`), a
 position resolves to nothing (422 `IMPORT_HOLDINGS_UNRESOLVED`, `unresolved`), two positions resolve
 to one security, or the date is not one the account admits. The snapshot's balance is the sum of
-the statement's cash in the account's currency (cash in other currencies is shown, not stored);
-each position becomes a `snapshot_holding` with its quantity and V98's reported price, value and
+the statement's cash in the account's currency; other cash is summed by currency and kept in
+`snapshot_foreign_cash` with its source batch (V122, #614). Each position becomes a `snapshot_holding` with its quantity and V98's reported price, value and
 currency; the account is then reconciled.
 
 **Completing a snapshot (US-07-31, V105).** An imported snapshot has two parts, its balance and its
 holdings. A statement of an account and date for which an imported (`DOCUMENT`) snapshot is in
 effect meets it part by part: a part the snapshot lacks is added, a part both hold and agree on is
-kept (a balance of the same amount; the same securities in the same quantities - reported prices
+kept (the same amount per cash currency; the same securities in the same quantities - reported prices
 and values may differ in rounding between a PDF and a spreadsheet, the snapshot's stay), a part
 both hold and disagree on is a conflict. The preview (`ImportHoldingsResponse`, and
 `statementBalance` of a cash statement) says beforehand: `NEW`, `COMPLETES` with `adds`,
@@ -1542,7 +1545,9 @@ committed either way. `MANUAL` snapshots are never met. Holdings are compared on
 position resolves.
 
 Each part records the batch that contributed it (`balance_import_batch_id`,
-`snapshot_holding.import_batch_id`); `import_batch_id` is the batch that recorded the snapshot.
+`snapshot_foreign_cash.import_batch_id`, `snapshot_holding.import_batch_id`). V123 restores
+foreign cash on active snapshots from the committed own-currency balance batch when the
+source is unambiguous. A rollback removes the cash contributed by that batch.
 While a member's reconciliation decision stands on the snapshot - it is the account's newest
 balance, so the decision can be reopened - it is not completed (409
 `IMPORT_SNAPSHOT_RECONCILIATION_DECIDED`); the preview names the result in

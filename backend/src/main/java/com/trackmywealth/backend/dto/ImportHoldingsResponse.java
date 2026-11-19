@@ -29,8 +29,8 @@ import org.jspecify.annotations.Nullable;
  * no duplicate verdict, {@code readyToCommit} is false and {@code explanation} names what is
  * missing. Once every position resolves, the preview compares them.
  *
- * <p>Only the cash in the account's own currency becomes the snapshot's balance ({@code recorded});
- * a statement's cash in other currencies is shown, not recorded.
+ * <p>The account-currency cash is the snapshot balance. On an account that holds positions, other
+ * cash is kept in its reported currency; otherwise it is shown, not recorded.
  */
 public record ImportHoldingsResponse(
     @Nullable LocalDate snapshotDate,
@@ -91,7 +91,10 @@ public record ImportHoldingsResponse(
     }
   }
 
-  /** A cash balance; {@code recorded} when it is in the account's currency. */
+  /**
+   * A cash balance; {@code recorded} when the snapshot keeps it: in its reported currency on an
+   * account that holds positions, else only in the account's own currency.
+   */
   public record Cash(int rowNumber, String currency, BigDecimal amount, boolean recorded) {}
 
   /** A line taken for a position or a cash balance whose values could not be read. */
