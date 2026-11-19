@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
 
-import { NetworkError } from '@/api/client';
 import { useAccount } from '@/api/queries/resources';
 import { useOnline } from '@/hooks/use-online';
 
@@ -19,7 +18,6 @@ import {
 } from './api';
 import { deletePickedCopy, shareErrorsCsv } from './device-files';
 import { keyForUploadAttempt } from './upload-key';
-import { supportsUploadReplay } from './upload-replay';
 import {
   canCommit,
   importProblemCode,
@@ -109,8 +107,7 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
     uploadFailure !== null &&
     error === uploadFailure.error &&
     accountId === uploadFailure.accountId &&
-    file === uploadFailure.file &&
-    (!(error instanceof NetworkError) || supportsUploadReplay());
+    file === uploadFailure.file;
 
   useEffect(() => {
     if (!uploading) return;

@@ -397,6 +397,8 @@ describe('S7 step 1: file and account (#492)', () => {
     expect(await screen.findByText('error')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
     expect(server.callsOf('upload', '/api/v1/accounts/{accountId}/imports')).toHaveLength(1);
+    // No Retry can use it, so the statement copy does not stay on the device.
+    expect(deletePickedCopy).toHaveBeenCalledWith('file:///cache/synthetic-dkb.csv');
   });
 
   it('reuses the original file and key after a lost body only when replay is supported', async () => {

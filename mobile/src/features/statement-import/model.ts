@@ -2,6 +2,8 @@ import { ApiError, NetworkError } from '@/api/client';
 import { problemOf } from '@/api/problems';
 import type { components } from '@/api/schema';
 
+import { supportsUploadReplay } from './upload-replay';
+
 export type Batch = components['schemas']['ImportBatchResponse'];
 export type ImportRow = components['schemas']['ImportRowResponse'];
 export type Account = components['schemas']['AccountSummaryResponse'];
@@ -99,8 +101,9 @@ export function importProblemCode(error: unknown): string | null {
   return error instanceof ApiError ? (problemOf(error)?.code ?? null) : null;
 }
 export function isRetryableUploadError(error: unknown): boolean {
-  // The server may have committed even if its response was lost.
-  if (error instanceof NetworkError) return true;
+  // A lost response leaves the outcome open: the server may have created the batch. Resending is
+  // safe only once it replays the keyed response (#574); until then the file is not kept for it.
+  if (error instanceof NetworkError) return supportsUploadReplay();
   const code = importProblemCode(error);
   return code !== null && (RETRYABLE_UPLOAD_CODES as readonly string[]).includes(code);
 }
