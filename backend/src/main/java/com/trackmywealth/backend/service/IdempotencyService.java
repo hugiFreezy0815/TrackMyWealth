@@ -12,6 +12,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -37,8 +38,10 @@ import tools.jackson.databind.ObjectMapper;
  * IDEMPOTENCY_KEY_IN_USE}. A key is kept {@link #RETENTION}; afterwards it is a new request. A
  * claim left {@code IN_PROGRESS} longer than {@link #ABANDONED_AFTER} belongs to a request whose
  * server stopped mid-way: its transaction rolled back, nothing was created, and the next request
- * with the key takes it over. Only successful responses are stored: a failed create created
- * nothing.
+ * with the key takes it over. A takeover starts a new claim generation ({@link
+ * IdempotencyClaim#claimedAt()}): should the old request still be running after all, it can neither
+ * store its response under the new request's key nor release it. Only successful responses are
+ * stored: a failed create created nothing.
  */
 @Service
 public class IdempotencyService {
@@ -113,7 +116,8 @@ public class IdempotencyService {
       String operation, String key, String fingerprint, AuthenticatedUserPrincipal actor) {
     return ownTransaction.execute(
         status -> {
-          OffsetDateTime now = OffsetDateTime.now(clock);
+          // PostgreSQL keeps microseconds: the claim's generation must compare equal once stored.
+          OffsetDateTime now = OffsetDateTime.now(clock).truncatedTo(ChronoUnit.MICROS);
           OffsetDateTime expiresAt = now.plus(RETENTION);
           int inserted =
               repository.insertIfAbsent(
@@ -123,7 +127,7 @@ public class IdempotencyService {
                   .lockByScope(actor.workspaceId(), actor.userId(), operation, key)
                   .orElseThrow(() -> new IllegalStateException("Claimed key is not visible."));
           if (inserted == ONE_ROW) {
-            return IdempotencyClaim.held(row.getId());
+            return IdempotencyClaim.held(row.getId(), now);
           }
           boolean expired = !row.getExpiresAt().isAfter(now);
           boolean abandoned =
@@ -131,7 +135,7 @@ public class IdempotencyService {
                   && !row.getCreatedAt().plus(ABANDONED_AFTER).isAfter(now);
           if (expired || abandoned) {
             repository.reclaim(row.getId(), fingerprint, now, expiresAt);
-            return IdempotencyClaim.held(row.getId());
+            return IdempotencyClaim.held(row.getId(), now);
           }
           if (!row.getRequestFingerprint().equals(fingerprint)) {
             throw new ApiException(
@@ -152,19 +156,25 @@ public class IdempotencyService {
    * Stores the response of the request that holds {@code claim}. Runs inside the transaction that
    * creates the resource, so both commit together or not at all.
    *
-   * @throws IllegalStateException when the claim is no longer held, which rolls the create back
+   * @throws IllegalStateException when the claim is no longer held (released, or taken over as
+   *     abandoned), which rolls the create back
    */
   @Transactional(propagation = Propagation.MANDATORY)
   public void complete(IdempotencyClaim claim, int responseStatus, Object response) {
     String body = objectMapper.writeValueAsString(response);
-    if (repository.complete(claim.id(), (short) responseStatus, body) != ONE_ROW) {
+    if (repository.complete(claim.id(), claim.claimedAt(), (short) responseStatus, body)
+        != ONE_ROW) {
       throw new IllegalStateException("The idempotency claim is no longer held.");
     }
   }
 
-  /** Gives the key up after a failed create, so a retry runs as a new request. */
+  /**
+   * Gives the key up after a failed create, so a retry runs as a new request. A claim taken over in
+   * the meantime belongs to another request and stays.
+   */
   public void release(IdempotencyClaim claim) {
-    ownTransaction.executeWithoutResult(status -> repository.release(claim.id()));
+    ownTransaction.executeWithoutResult(
+        status -> repository.release(claim.id(), claim.claimedAt()));
   }
 
   /** The stored response of a {@linkplain IdempotencyClaim#isReplay() replayed} claim. */

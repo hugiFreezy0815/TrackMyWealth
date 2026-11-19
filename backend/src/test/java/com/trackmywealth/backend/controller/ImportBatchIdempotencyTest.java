@@ -1,10 +1,12 @@
 package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateUserRequest;
+import com.trackmywealth.backend.dto.IdempotencyClaim;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
@@ -26,6 +28,7 @@ import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -53,6 +56,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.client.EntityExchangeResult;
 import org.springframework.test.web.servlet.client.RestTestClient;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -266,6 +270,49 @@ class ImportBatchIdempotencyTest {
     assertThat(single("SELECT status FROM idempotency_key")).isEqualTo("COMPLETED");
   }
 
+  /**
+   * Should the request whose claim was taken over as abandoned still be running after all, it can
+   * neither release the new request's claim nor store its own response under it.
+   */
+  @Test
+  void aClaimTakenOverIsNoLongerHeldByTheOldRequest() {
+    UUID userId = (UUID) single("SELECT id FROM app_user WHERE email = 'admin@example.com'");
+    UUID workspaceId = (UUID) single("SELECT workspace_id FROM account");
+    AuthenticatedUserPrincipal member =
+        new AuthenticatedUserPrincipal(userId, "SYSTEM_ADMINISTRATOR", workspaceId, null, "EN");
+    String oldRequest = "a".repeat(64);
+    String newRequest = "b".repeat(64);
+    IdempotencyClaim held =
+        as(member, () -> idempotencyService.claim("op", UPLOAD_UUID, oldRequest, member));
+    update("UPDATE idempotency_key SET created_at = created_at - interval '16 minutes'");
+    IdempotencyClaim stale =
+        new IdempotencyClaim(
+            held.id(), held.claimedAt().minus(Duration.ofMinutes(16)), held.replayBody());
+
+    IdempotencyClaim takenOver =
+        as(member, () -> idempotencyService.claim("op", UPLOAD_UUID, newRequest, member));
+    as(
+        member,
+        () -> {
+          idempotencyService.release(stale);
+          return null;
+        });
+
+    assertThat(takenOver.id()).isEqualTo(stale.id());
+    assertThat(takenOver.isReplay()).isFalse();
+    assertThat(single("SELECT request_fingerprint FROM idempotency_key")).isEqualTo(newRequest);
+    TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+    assertThat(
+            catchThrowable(
+                () ->
+                    transaction.executeWithoutResult(
+                        status -> idempotencyService.complete(stale, 201, Map.of("id", "old")))))
+        .isInstanceOf(IllegalStateException.class);
+    transaction.executeWithoutResult(
+        status -> idempotencyService.complete(takenOver, 201, Map.of("id", "new")));
+    assertThat(single("SELECT response_body FROM idempotency_key")).isEqualTo("{\"id\":\"new\"}");
+  }
+
   /** A failed upload created nothing: it keeps no key, and its retry runs again. */
   @Test
   void aFailedUploadKeepsNoKey() {
@@ -336,7 +383,7 @@ class ImportBatchIdempotencyTest {
     UUID workspaceId = (UUID) single("SELECT workspace_id FROM account");
     AuthenticatedUserPrincipal member =
         new AuthenticatedUserPrincipal(userId, "SYSTEM_ADMINISTRATOR", workspaceId, null, "EN");
-    OffsetDateTime now = OffsetDateTime.now();
+    OffsetDateTime now = OffsetDateTime.now().truncatedTo(ChronoUnit.MICROS);
     String fingerprint = "0".repeat(64);
 
     boolean storedUnderRls =
@@ -361,7 +408,7 @@ class ImportBatchIdempotencyTest {
                           keys.lockByScope(workspaceId, userId, "op", UPLOAD_UUID)
                               .orElseThrow()
                               .getId();
-                      return inserted == 1 && keys.complete(id, (short) 201, "{}") == 1;
+                      return inserted == 1 && keys.complete(id, now, (short) 201, "{}") == 1;
                     }));
     assertThat(storedUnderRls).isTrue();
 

@@ -71,25 +71,35 @@ public interface IdempotencyKeyRepository extends JpaRepository<IdempotencyKey, 
       @Param("now") OffsetDateTime now,
       @Param("expiresAt") OffsetDateTime expiresAt);
 
+  /**
+   * Stores the response of the claim of generation {@code claimedAt}; 0 when that claim is no
+   * longer held (released, completed, or taken over as abandoned, which resets {@code created_at}).
+   */
   @Modifying
   @Query(
       value =
           """
           UPDATE idempotency_key
           SET status = 'COMPLETED', response_status = :responseStatus, response_body = :body
-          WHERE id = :id AND status = 'IN_PROGRESS'
+          WHERE id = :id AND created_at = :claimedAt AND status = 'IN_PROGRESS'
           """,
       nativeQuery = true)
   int complete(
       @Param("id") UUID id,
+      @Param("claimedAt") OffsetDateTime claimedAt,
       @Param("responseStatus") short responseStatus,
       @Param("body") String body);
 
+  /** Deletes the claim of generation {@code claimedAt} while it is still held. */
   @Modifying
   @Query(
-      value = "DELETE FROM idempotency_key WHERE id = :id AND status = 'IN_PROGRESS'",
+      value =
+          """
+          DELETE FROM idempotency_key
+          WHERE id = :id AND created_at = :claimedAt AND status = 'IN_PROGRESS'
+          """,
       nativeQuery = true)
-  int release(@Param("id") UUID id);
+  int release(@Param("id") UUID id, @Param("claimedAt") OffsetDateTime claimedAt);
 
   /** V124's SECURITY DEFINER purge: at most {@code limit} expired rows of any workspace. */
   @Query(value = "SELECT purge_expired_idempotency_keys(:now, :limit)", nativeQuery = true)
