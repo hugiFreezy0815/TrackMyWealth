@@ -16,6 +16,8 @@ export type FigureKind = 'quantity' | 'percent' | 'rate';
 export type FigureOptions = {
   /** 'change' shows an explicit + on positive values (gains, returns). */
   signRole?: SignRole;
+  /** Precision for percentage displays that need both digits supplied by the API. */
+  percentFractionDigits?: 1 | 2;
   /** Privacy masking is on: percentages, units and rates are hidden like amounts (UX-02 §7). */
   masked?: boolean;
 };
@@ -26,8 +28,12 @@ const UNKNOWN = '–'; // U+2013 EN DASH
 // The largest fraction length Intl.NumberFormat accepts; no API quantity comes near it.
 const MAX_FRACTION = 100;
 
-function fractionFor(kind: FigureKind, value: DecimalString): FractionDigits {
-  if (kind === 'percent') return { min: 1, max: 1 };
+function fractionFor(
+  kind: FigureKind,
+  value: DecimalString,
+  percentFractionDigits = 1,
+): FractionDigits {
+  if (kind === 'percent') return { min: percentFractionDigits, max: percentFractionDigits };
   if (kind === 'rate') return { min: 4, max: 6 };
   const fraction = (value.split('.')[1] ?? '').replace(/0+$/, '').length;
   const exact = Math.min(fraction, MAX_FRACTION);
@@ -38,10 +44,10 @@ function parts(
   value: DecimalString,
   kind: FigureKind,
   locale: string,
-  signRole: SignRole | undefined,
+  { signRole, percentFractionDigits }: FigureOptions,
 ) {
   if (!isPlainDecimal(value)) throw new TypeError('Expected a plain DecimalString');
-  return decimalParts(value, fractionFor(kind, value), locale, signRole);
+  return decimalParts(value, fractionFor(kind, value, percentFractionDigits), locale, signRole);
 }
 
 export function formatFigure(
@@ -52,7 +58,7 @@ export function formatFigure(
 ): string {
   if (options.masked) return HIDDEN;
   if (value === null) return UNKNOWN;
-  const { sign, grouped } = parts(value, kind, locale, options.signRole);
+  const { sign, grouped } = parts(value, kind, locale, options);
   const signText = sign === 'minus' ? MINUS : sign === 'plus' ? '+' : '';
   return `${signText}${grouped}${kind === 'percent' ? '%' : ''}`;
 }
@@ -66,7 +72,7 @@ export function a11yFigure(
 ): string {
   if (options.masked) return intl.formatMessage({ id: 'value.hidden' });
   if (value === null) return intl.formatMessage({ id: 'value.unknown' });
-  const { sign, plain } = parts(value, kind, intl.locale, options.signRole);
+  const { sign, plain } = parts(value, kind, intl.locale, options);
   return intl.formatMessage(
     { id: 'figure.a11y' },
     { sign: sign || 'none', value: plain, percent: kind === 'percent' ? 'yes' : 'no' },

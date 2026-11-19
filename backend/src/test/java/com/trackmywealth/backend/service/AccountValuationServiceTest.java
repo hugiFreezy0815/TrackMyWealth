@@ -18,6 +18,7 @@ import com.trackmywealth.backend.dto.KeyedAmount;
 import com.trackmywealth.backend.dto.KeyedDate;
 import com.trackmywealth.backend.dto.MultiCurrencyValuations;
 import com.trackmywealth.backend.dto.NativeAccountValue;
+import com.trackmywealth.backend.dto.ReportedAccountHoldings;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountLoan;
@@ -222,7 +223,7 @@ class AccountValuationServiceTest {
 
     service.valueIn(account, "CHF", TODAY);
 
-    verify(accountPositionsService, never()).reportedValuesFor(any(), any(), any());
+    verify(accountPositionsService, never()).reportedHoldingsFor(any(), any(), any());
   }
 
   @Test
@@ -670,8 +671,11 @@ class AccountValuationServiceTest {
   }
 
   private void withReportedHoldings(NativeAccountValue value) {
-    when(accountPositionsService.reportedValuesFor(any(), any(), any()))
-        .thenReturn(Map.of(account.getId(), value));
+    when(accountPositionsService.reportedHoldingsFor(any(), any(), any()))
+        .thenReturn(
+            Map.of(
+                account.getId(),
+                new ReportedAccountHoldings(value.sourceDate(), 1, value, null, null, null, null)));
   }
 
   private void withOpeningBalance(String balance) {

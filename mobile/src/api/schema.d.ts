@@ -1852,6 +1852,15 @@ export interface components {
        * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
        */
       totalReturn: DecimalString | null;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      totalReturnPercent: DecimalString | null;
+      /** Format: int32 */
+      missingCostBasisCount: number | null;
+      /** Format: int32 */
+      foreignCurrencyCostBasisCount: number | null;
       /** Format: date */
       dueDate: string | null;
       /** Format: uuid */

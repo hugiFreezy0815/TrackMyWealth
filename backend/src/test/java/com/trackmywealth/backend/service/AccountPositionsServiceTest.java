@@ -14,6 +14,7 @@ import com.trackmywealth.backend.dto.AccountPositionsResponse;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
 import com.trackmywealth.backend.dto.NativeAccountValue;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
+import com.trackmywealth.backend.dto.ReportedAccountHoldings;
 import com.trackmywealth.backend.dto.ReportedHoldingValue;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.dto.ValueStatus;
@@ -254,7 +255,7 @@ class AccountPositionsServiceTest {
         reported("1000", false, "2000", "USD"),
         reported("1000", false, "500", "USD"));
 
-    NativeAccountValue value = reportedValues().get(accountId);
+    NativeAccountValue value = reportedHoldings().get(accountId).value();
 
     assertThat(value.amount()).isEqualByComparingTo("8250");
     assertThat(value.basis()).isEqualTo(ValueBasisValues.LATEST_SNAPSHOT);
@@ -272,30 +273,30 @@ class AccountPositionsServiceTest {
     when(fx.applyRate(any(), eq(rate))).thenReturn(new BigDecimal("90.0000"));
     statement(reported("0", false, "100", "USD"));
 
-    assertThat(reportedValues().get(accountId).sourceFxStale()).isTrue();
+    assertThat(reportedHoldings().get(accountId).value().sourceFxStale()).isTrue();
   }
 
   @Test
   void aStatementMissingAnyFigureHasNoValueRatherThanAPartialSum() {
     statement(reported(null, false, "5000", "CHF"));
-    assertThat(reportedValues()).as("no cash balance").isEmpty();
+    assertThat(reportedHoldings().get(accountId).value()).as("no cash balance").isNull();
 
     statement(reported("1000", true, "5000", "CHF"));
-    assertThat(reportedValues()).as("unrecorded foreign cash").isEmpty();
+    assertThat(reportedHoldings().get(accountId).value()).as("unrecorded foreign cash").isNull();
 
     statement(reported("1000", false, "5000", "CHF"), reported("1000", false, null, null));
-    assertThat(reportedValues()).as("a holding without a value").isEmpty();
+    assertThat(reportedHoldings().get(accountId).value()).as("a holding without a value").isNull();
 
     when(fx.tryGetConversionRate("USD", "CHF", AS_OF, "ECB")).thenReturn(Optional.empty());
     statement(reported("1000", false, "5000", "CHF"), reported("1000", false, "10", "USD"));
-    assertThat(reportedValues()).as("no rate").isEmpty();
+    assertThat(reportedHoldings().get(accountId).value()).as("no rate").isNull();
   }
 
   @Test
   void anAccountWithoutAHoldingsStatementIsLeftOut() {
     statement();
 
-    assertThat(reportedValues()).isEmpty();
+    assertThat(reportedHoldings()).isEmpty();
   }
 
   // --- Helpers ------------------------------------------------------------------------------
@@ -343,8 +344,8 @@ class AccountPositionsServiceTest {
         .thenReturn(List.of(lines));
   }
 
-  private Map<UUID, NativeAccountValue> reportedValues() {
-    return service.reportedValuesFor(List.of(accountId), Map.of(accountId, "CHF"), AS_OF);
+  private Map<UUID, ReportedAccountHoldings> reportedHoldings() {
+    return service.reportedHoldingsFor(List.of(accountId), Map.of(accountId, "CHF"), AS_OF);
   }
 
   private ReportedHoldingValue reported(
@@ -355,7 +356,8 @@ class AccountPositionsServiceTest {
         cash == null ? null : new BigDecimal(cash),
         unrecordedCash,
         value == null ? null : new BigDecimal(value),
-        currency);
+        currency,
+        null);
   }
 
   private record Line(
@@ -364,7 +366,8 @@ class AccountPositionsServiceTest {
       BigDecimal cashBalance,
       boolean unrecordedCash,
       BigDecimal reportedValue,
-      String reportedCurrency)
+      String reportedCurrency,
+      BigDecimal reportedCostBasis)
       implements ReportedHoldingValue {
 
     @Override
@@ -395,6 +398,11 @@ class AccountPositionsServiceTest {
     @Override
     public String getReportedCurrency() {
       return reportedCurrency;
+    }
+
+    @Override
+    public BigDecimal getReportedCostBasis() {
+      return reportedCostBasis;
     }
   }
 

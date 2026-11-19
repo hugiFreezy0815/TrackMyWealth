@@ -126,8 +126,7 @@ public record PortfolioViewResponse(
   }
 
   /**
-   * One account of a section. The last five fields apply to some kinds of account only and are
-   * {@code null} for every other.
+   * One account of a section, with fields specific to its account type where applicable.
    *
    * @param currency the account's own currency: its native currency, or a card's billing currency
    * @param balance the account's signed value in {@code currency}; {@code null} only when it has no
@@ -145,9 +144,13 @@ public record PortfolioViewResponse(
    *     holdings snapshot; {@code null} when it has none yet
    * @param positionsAsOf the date of that snapshot, so a client can show how old the count is: a
    *     later snapshot without holdings (a balance-only statement) does not replace it
-   * @param totalReturn for an account holding positions: its return. Always {@code null} until
-   *     performance is calculated (EPIC 15, PO decision on #390); part of the contract already so a
-   *     client can show it once it is
+   * @param totalReturn the full unrealised gain in the account currency, or {@code null} when the
+   *     statement cannot establish the account value or any holding has an unknown gain
+   * @param totalReturnPercent the gain as a percentage of the absolute total cost basis, or {@code
+   *     null} if the gain is unavailable or the total cost basis is zero
+   * @param missingCostBasisCount number of positions with no cost basis, if any and value is known
+   * @param foreignCurrencyCostBasisCount number of positions with a cost basis in an ambiguous
+   *     currency, if any and value is known
    * @param dueDate for a credit card: the due date of its current statement; {@code null} while its
    *     statement cycle is not configured
    * @param linkedPropertyAccountId for a mortgage: the property account it finances, if linked
@@ -170,6 +173,9 @@ public record PortfolioViewResponse(
       @Nullable Integer positionsCount,
       @Nullable LocalDate positionsAsOf,
       @Nullable BigDecimal totalReturn,
+      @Nullable BigDecimal totalReturnPercent,
+      @Nullable Integer missingCostBasisCount,
+      @Nullable Integer foreignCurrencyCostBasisCount,
       @Nullable LocalDate dueDate,
       @Nullable UUID linkedPropertyAccountId,
       @Nullable String maskedIdentifier,

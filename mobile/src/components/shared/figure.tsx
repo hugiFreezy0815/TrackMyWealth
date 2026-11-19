@@ -55,6 +55,7 @@ export function Figure({
   value,
   kind,
   signRole,
+  percentFractionDigits,
   masked,
   tone = 'neutral',
   style,
@@ -64,7 +65,13 @@ export function Figure({
   const theme = useTheme();
   const intl = useIntl();
   const hidden = useAmountsHidden() || masked === true;
-  const { display, label } = figureTexts(intl, { value, kind, signRole, masked: hidden });
+  const { display, label } = figureTexts(intl, {
+    value,
+    kind,
+    signRole,
+    percentFractionDigits,
+    masked: hidden,
+  });
   const direction = tone === 'gainLoss' && !hidden ? figureDirection(display) : 'flat';
   const color =
     direction === 'up'

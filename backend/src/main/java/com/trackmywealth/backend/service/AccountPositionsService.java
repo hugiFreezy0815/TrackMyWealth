@@ -5,6 +5,7 @@ import com.trackmywealth.backend.dto.AccountPositionsResponse;
 import com.trackmywealth.backend.dto.AccountPositionsSource;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
 import com.trackmywealth.backend.dto.NativeAccountValue;
+import com.trackmywealth.backend.dto.ReportedAccountHoldings;
 import com.trackmywealth.backend.dto.ReportedHoldingValue;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.dto.ValueStatus;
@@ -117,40 +118,45 @@ public class AccountPositionsService {
   }
 
   /**
-   * Read complete reported values for accounts the caller has already authorized. A statement
-   * without cash, with cash in another currency that was not recorded, or without any converted
-   * holding value cannot establish the full account value (FR-PERF-018).
+   * Read holdings details for accounts the caller has already authorized. A statement without cash,
+   * with cash in another currency that was not recorded, or without any converted holding value
+   * cannot establish the full account value (FR-PERF-018).
    */
-  Map<UUID, NativeAccountValue> reportedValuesFor(
+  Map<UUID, ReportedAccountHoldings> reportedHoldingsFor(
       List<UUID> accountIds, Map<UUID, String> ownCurrencies, LocalDate asOf) {
     Map<UUID, List<ReportedHoldingValue>> byAccount =
         snapshotRepository.findLatestReportedHoldings(accountIds, asOf).stream()
             .collect(Collectors.groupingBy(ReportedHoldingValue::getAccountId));
     Map<String, Optional<CurrencyConversionResult>> rates = new HashMap<>();
-    Map<UUID, NativeAccountValue> result = new HashMap<>();
+    Map<UUID, ReportedAccountHoldings> result = new HashMap<>();
     byAccount.forEach(
         (accountId, holdings) ->
-            reportedValue(holdings, ownCurrencies.get(accountId), rates)
-                .ifPresent(value -> result.put(accountId, value)));
+            result.put(
+                accountId, summarizeHoldings(holdings, ownCurrencies.get(accountId), rates)));
     return result;
   }
 
-  private Optional<NativeAccountValue> reportedValue(
+  private ReportedAccountHoldings summarizeHoldings(
       List<ReportedHoldingValue> holdings,
       String currency,
       Map<String, Optional<CurrencyConversionResult>> rates) {
     ReportedHoldingValue statement = holdings.get(0);
+    LocalDate date = statement.getSnapshotDate();
+    int positionsCount = holdings.size();
     BigDecimal total = statement.getCashBalance();
     if (total == null || statement.isUnrecordedCash()) {
-      return Optional.empty();
+      return new ReportedAccountHoldings(date, positionsCount);
     }
-    LocalDate date = statement.getSnapshotDate();
     boolean stale = false;
+    BigDecimal totalGain = BigDecimal.ZERO;
+    BigDecimal totalCostBasis = BigDecimal.ZERO;
+    int missingBasis = 0;
+    int foreignBasis = 0;
     for (ReportedHoldingValue holding : holdings) {
       BigDecimal reported = holding.getReportedValue();
       String from = holding.getReportedCurrency();
       if (reported == null || from == null) {
-        return Optional.empty();
+        return new ReportedAccountHoldings(date, positionsCount);
       }
       CurrencyConversionResult rate =
           rates
@@ -160,13 +166,35 @@ public class AccountPositionsService {
               .orElse(null);
       BigDecimal converted = inAccountCurrency(reported, from, currency, rate);
       if (converted == null) {
-        return Optional.empty();
+        return new ReportedAccountHoldings(date, positionsCount);
       }
       total = total.add(converted);
       stale |= rate != null && rate.stale();
+
+      BigDecimal costBasis = holding.getReportedCostBasis();
+      if (costBasis == null) {
+        missingBasis++;
+      } else {
+        BigDecimal gain = unrealisedGain(converted, from, currency, costBasis);
+        if (gain == null) {
+          foreignBasis++;
+        } else {
+          totalGain = totalGain.add(gain);
+          totalCostBasis = totalCostBasis.add(costBasis);
+        }
+      }
     }
-    return Optional.of(
-        new NativeAccountValue(total, ValueBasisValues.LATEST_SNAPSHOT, date, date, stale));
+    NativeAccountValue value =
+        new NativeAccountValue(total, ValueBasisValues.LATEST_SNAPSHOT, date, date, stale);
+    boolean gainKnown = missingBasis == 0 && foreignBasis == 0;
+    return new ReportedAccountHoldings(
+        date,
+        positionsCount,
+        value,
+        gainKnown ? totalGain : null,
+        gainKnown ? gainPercent(totalGain, totalCostBasis) : null,
+        missingBasis == 0 ? null : missingBasis,
+        foreignBasis == 0 ? null : foreignBasis);
   }
 
   private AccountPositionResponse toPosition(
@@ -180,10 +208,7 @@ public class AccountPositionsService {
     BigDecimal gain =
         unrealisedGain(inAccountCurrency, reportedCurrency, accountCurrency, costBasis);
     BigDecimal gainPercent =
-        gain == null || costBasis.signum() == 0
-            ? null
-            : gain.multiply(BigDecimal.valueOf(100))
-                .divide(costBasis.abs(), 2, RoundingMode.HALF_UP);
+        gain == null || costBasis == null ? null : gainPercent(gain, costBasis);
 
     ValueStatus status = status(inAccountCurrency, rate, holding.isCostBasisEstimated());
     return new AccountPositionResponse(
@@ -220,6 +245,12 @@ public class AccountPositionsService {
     return valueInAccountCurrency
         .subtract(costBasis)
         .setScale(FxRateService.MONEY_SCALE, RoundingMode.HALF_UP);
+  }
+
+  private static @Nullable BigDecimal gainPercent(BigDecimal gain, BigDecimal costBasis) {
+    return costBasis.signum() == 0
+        ? null
+        : gain.multiply(BigDecimal.valueOf(100)).divide(costBasis.abs(), 2, RoundingMode.HALF_UP);
   }
 
   /**

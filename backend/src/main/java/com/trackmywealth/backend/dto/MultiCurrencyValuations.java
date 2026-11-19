@@ -17,9 +17,12 @@ import java.util.UUID;
  *     accounts were given
  * @param inOwnCurrency every account's valuation in its own currency (a card's billing currency),
  *     in the same order
+ * @param reportedHoldings holdings details from the same statements used to value the accounts
  */
 public record MultiCurrencyValuations(
-    Map<String, List<AccountValuation>> byCurrency, List<AccountValuation> inOwnCurrency) {
+    Map<String, List<AccountValuation>> byCurrency,
+    List<AccountValuation> inOwnCurrency,
+    Map<UUID, ReportedAccountHoldings> reportedHoldings) {
 
   public MultiCurrencyValuations {
     // Defensive/immutable copies (SpotBugs EI_EXPOSE_REP).
@@ -27,6 +30,7 @@ public record MultiCurrencyValuations(
     byCurrency.forEach((currency, valuations) -> copy.put(currency, List.copyOf(valuations)));
     byCurrency = Map.copyOf(copy);
     inOwnCurrency = List.copyOf(inOwnCurrency);
+    reportedHoldings = Map.copyOf(reportedHoldings);
   }
 
   /** The valuations in {@code currency}, which must have been requested. */

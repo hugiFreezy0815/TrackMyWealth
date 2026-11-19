@@ -19,4 +19,6 @@ public interface ReportedHoldingValue {
   @Nullable BigDecimal getReportedValue();
 
   @Nullable String getReportedCurrency();
+
+  @Nullable BigDecimal getReportedCostBasis();
 }

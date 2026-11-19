@@ -73,7 +73,8 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
           )
           SELECT s.account_id AS "accountId", s.snapshot_date AS "snapshotDate",
                  s.balance AS "cashBalance", s.unrecorded_cash AS "unrecordedCash",
-                 h.reported_value AS "reportedValue", h.reported_currency AS "reportedCurrency"
+                 h.reported_value AS "reportedValue", h.reported_currency AS "reportedCurrency",
+                 h.reported_cost_basis AS "reportedCostBasis"
           FROM flagged s
           JOIN snapshot_holding h ON h.snapshot_id = s.id
           """,

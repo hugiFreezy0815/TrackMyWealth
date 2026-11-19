@@ -76,6 +76,62 @@ function DueChip({ dueDate }: { dueDate: string }) {
   );
 }
 
+function HoldingsReturn({ account }: { account: PortfolioAccount }) {
+  const intl = useIntl();
+  const theme = useTheme();
+  if (account.totalReturn != null) {
+    return (
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one }}>
+        <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
+          {msg(intl, 'portfolio.unrealisedGain')}
+        </Text>
+        <Amount
+          value={account.totalReturn}
+          currency={account.currency}
+          signRole="change"
+          style={TypeScale.caption}
+        />
+        {account.totalReturnPercent != null ? (
+          <Figure
+            value={account.totalReturnPercent}
+            kind="percent"
+            percentFractionDigits={2}
+            signRole="change"
+            tone="gainLoss"
+            style={TypeScale.caption}
+          />
+        ) : null}
+      </View>
+    );
+  }
+
+  const reasons: string[] = [];
+  if (account.balance == null) {
+    reasons.push(
+      msg(
+        intl,
+        account.positionsAsOf == null ? 'portfolio.gain.noHoldings' : 'portfolio.gain.missingValue',
+      ),
+    );
+  }
+  if (account.missingCostBasisCount != null) {
+    reasons.push(
+      msg(intl, 'portfolio.gain.missingBasis', { count: account.missingCostBasisCount }),
+    );
+  }
+  if (account.foreignCurrencyCostBasisCount != null) {
+    reasons.push(
+      msg(intl, 'portfolio.gain.foreignBasis', { count: account.foreignCurrencyCostBasisCount }),
+    );
+  }
+  if (reasons.length === 0) return null;
+  return (
+    <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
+      {msg(intl, 'portfolio.gain.unavailable', { reason: reasons.join(' · ') })}
+    </Text>
+  );
+}
+
 export function PortfolioAccountRow({
   account,
   section,
@@ -191,19 +247,8 @@ export function PortfolioAccountRow({
         {section.section === 'CARDS' && account.dueDate ? (
           <DueChip dueDate={account.dueDate} />
         ) : null}
-        {account.totalReturn != null ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.one }}>
-            <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
-              {msg(intl, 'portfolio.totalReturn')}
-            </Text>
-            <Figure
-              value={account.totalReturn}
-              kind="percent"
-              signRole="change"
-              tone="gainLoss"
-              style={TypeScale.caption}
-            />
-          </View>
+        {section.section === 'DEPOT' || section.section === 'CRYPTO' ? (
+          <HoldingsReturn account={account} />
         ) : null}
       </View>
       {hasPositions(account, section) ? (

@@ -7,6 +7,7 @@ import com.trackmywealth.backend.dto.KeyedAmount;
 import com.trackmywealth.backend.dto.KeyedDate;
 import com.trackmywealth.backend.dto.MultiCurrencyValuations;
 import com.trackmywealth.backend.dto.NativeAccountValue;
+import com.trackmywealth.backend.dto.ReportedAccountHoldings;
 import com.trackmywealth.backend.dto.SnapshotBalance;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.Account;
@@ -317,7 +318,7 @@ public class AccountValuationService {
     targetCurrencies.forEach(target -> byCurrency.put(target, new ArrayList<>()));
     if (accounts.isEmpty()) {
       // Nothing to value: no query at all, every list empty (#381 review).
-      return new MultiCurrencyValuations(byCurrency, List.of());
+      return new MultiCurrencyValuations(byCurrency, List.of(), Map.of());
     }
     AccountValueSources sources = sourcesFor(accounts, asOf);
     Map<UUID, LocalDate> openingDates = new HashMap<>();
@@ -367,7 +368,7 @@ public class AccountValuationService {
                 accountWarnings));
       }
     }
-    return new MultiCurrencyValuations(byCurrency, inOwnCurrency);
+    return new MultiCurrencyValuations(byCurrency, inOwnCurrency, sources.reportedHoldings());
   }
 
   /**
@@ -481,17 +482,17 @@ public class AccountValuationService {
 
     Map<UUID, String> ownCurrencies = accountCurrencyService.ownCurrencies(accounts);
     List<UUID> holdsPositions = idsOf(accounts, Account::isHoldsPositions);
-    Map<UUID, NativeAccountValue> reportedHoldingsValues =
+    Map<UUID, ReportedAccountHoldings> reportedHoldings =
         holdsPositions.isEmpty()
             ? Map.of()
-            : accountPositionsService.reportedValuesFor(holdsPositions, ownCurrencies, asOf);
+            : accountPositionsService.reportedHoldingsFor(holdsPositions, ownCurrencies, asOf);
 
     return new AccountValueSources(
         ownCurrencies,
         openingBalances,
         latestSnapshots,
         latestValuations,
-        reportedHoldingsValues,
+        reportedHoldings,
         unresolvedLoanRepayments,
         originalPrincipals,
         ledgerSums,
@@ -645,7 +646,8 @@ public class AccountValuationService {
           .map(principal -> loanValue(accountId, principal, sources));
     }
     if (account.isHoldsPositions()) {
-      return Optional.ofNullable(sources.reportedHoldingsValues().get(accountId));
+      return Optional.ofNullable(sources.reportedHoldings().get(accountId))
+          .map(ReportedAccountHoldings::value);
     }
     if (!account.isHasTransactions()) {
       return latestSnapshot(account, sources);
