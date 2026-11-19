@@ -71,7 +71,7 @@ const categories: Category[] = [
 
 const context = (other: Partial<RowContext> = {}): RowContext => ({
   categories,
-  loaded: [],
+  reversalDates: new Map(),
   accountCurrency: 'EUR',
   archived: false,
   includeParent: false,
@@ -227,12 +227,13 @@ describe('S3 account detail view model', () => {
     );
   });
 
-  it('finds the reversed original among the loaded rows only', () => {
+  it('uses the original booking date by ID', () => {
     const original = row('orig', '2026-10-01');
     const reversal = row('rev', '2026-10-05', { replacesTransactionId: 'orig' });
-    expect(reversalOf(reversal, [original, reversal])).toBe('2026-10-01');
-    expect(reversalOf(reversal, [reversal])).toBeNull();
-    expect(reversalOf(original, [original])).toBeNull();
+    const dates = new Map([[original.id, original.bookingDate]]);
+    expect(reversalOf(reversal, dates)).toBe('2026-10-01');
+    expect(reversalOf(reversal, new Map())).toBeNull();
+    expect(reversalOf(original, dates)).toBeNull();
   });
 
   it('converts only a booking in another currency', () => {
@@ -294,7 +295,7 @@ describe('S3 account detail view model', () => {
     it('marks a voided original and dates its reversal from the loaded rows', () => {
       const original = row('o', '2026-10-01', { voidedAt: '2026-10-05T08:00:00Z' });
       const reversal = row('r', '2026-10-05', { replacesTransactionId: 'o' });
-      const loaded = context({ loaded: [reversal, original] });
+      const loaded = context({ reversalDates: new Map([[original.id, original.bookingDate]]) });
       expect(presentTransaction(original, loaded, enIntl)).toMatchObject({
         voided: true,
         canCategorize: false,

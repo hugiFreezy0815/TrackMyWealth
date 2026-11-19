@@ -112,6 +112,7 @@ const positionSnapshot = (...positions: Position[]): PositionsResponse => ({
 const txn = (index: number, other: Partial<Transaction> = {}): Transaction =>
   ({
     id: `t${String(index).padStart(3, '0')}`,
+    accountId: 'acc',
     // Newest first, as the server sorts: one booking per day going back from 1 Sep 2026.
     bookingDate: new Date(Date.UTC(2026, 8, 1) - index * 86_400_000).toISOString().slice(0, 10),
     transactionType: 'CREDIT_CARD_PURCHASE',
@@ -900,10 +901,61 @@ describe('S3 account detail acceptance checks (#494)', () => {
       StyleSheet.flatten(within(voided).getByText(amount.display).props.style).textDecorationLine,
     ).toBe('line-through');
     expect(screen.getByText('Reversal of 29 Aug 2026')).toBeTruthy();
+    expect(api.get).not.toHaveBeenCalledWith(
+      '/api/v1/accounts/{accountId}/transactions/{transactionId}',
+      expect.anything(),
+    );
 
     // Card payments read their type, never the API code.
     expect(screen.queryByText(/CREDIT_CARD_PURCHASE/)).toBeNull();
     expect(screen.getByText('Main · Current account · EUR')).toBeTruthy();
+  });
+
+  it('shows the original booking date before the original transaction page is loaded', async () => {
+    fakeServer(summary(), [
+      txn(0, {
+        merchantDescription: 'Reversed booking',
+        replacesTransactionId: 'original',
+        categoryId: null,
+      }),
+      ...Array.from({ length: 49 }, (_, index) => txn(index + 1)),
+      txn(50, {
+        id: 'original',
+        bookingDate: '2026-03-05',
+        voidedAt: '2026-09-01T08:00:00Z',
+      }),
+    ]);
+    await renderDetail();
+
+    expect(await screen.findByText('Reversal of 5 Mar 2026')).toBeTruthy();
+    expect(screen.getByLabelText(/^Reversed booking,/).props.accessibilityLabel).toContain(
+      'Reversal of 5 Mar 2026',
+    );
+    expect(listCalls()).toHaveLength(1);
+    expect(api.get).toHaveBeenCalledWith(
+      '/api/v1/accounts/{accountId}/transactions/{transactionId}',
+      { params: { accountId: 'acc', transactionId: 'original' }, signal: expect.any(AbortSignal) },
+    );
+  });
+
+  it('retains the reversal row when the original cannot be read', async () => {
+    const state = fakeServer(summary(), [
+      txn(0, { merchantDescription: 'Reversed booking', replacesTransactionId: 'original' }),
+    ]);
+    const readOriginal = jest.fn(() => {
+      throw new ApiError('not found', 404);
+    });
+    state.beforeRead = (path) => {
+      if (path === '/api/v1/accounts/{accountId}/transactions/{transactionId}') readOriginal();
+    };
+    const { client } = await renderDetail();
+
+    await waitFor(() =>
+      expect(client.getQueryState(queryKeys.transaction('acc', 'original'))?.status).toBe('error'),
+    );
+    expect(screen.getByText('Reversal')).toBeTruthy();
+    expect(screen.queryByText(/^Reversal of /)).toBeNull();
+    expect(readOriginal).toHaveBeenCalledTimes(1);
   });
 
   it('shows an open difference with an icon and text, not colour alone', async () => {

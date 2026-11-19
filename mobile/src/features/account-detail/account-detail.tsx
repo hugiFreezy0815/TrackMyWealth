@@ -64,6 +64,7 @@ import {
   type AccountSummary,
   type Transaction,
 } from './model';
+import { useReversalDates } from './reversal-dates';
 import { useRowFocus } from './row-focus';
 import { TransactionResults } from './transaction-results';
 
@@ -163,6 +164,8 @@ export function AccountDetail({
   const summary = account.data;
   const archived = summary?.status === 'ARCHIVED';
   const hasLedger = !!summary?.hasTransactions;
+  const showingPositions = !!summary?.holdsPositions && tab === 'positions';
+  const showingTransactions = hasLedger && !showingPositions;
   const activeAccounts = useAccounts(summary?.portfolioId, {
     enabled: !!summary?.portfolioId,
   });
@@ -195,6 +198,11 @@ export function AccountDetail({
     load: dialog === 'actions',
   });
   const records = uniqueTransactions(transactions.data?.pages ?? []);
+  const reversalDates = useReversalDates(
+    accountId,
+    records,
+    showingTransactions && !isAccessFailure(account.error) && !isAccessFailure(transactions.error),
+  );
   const recordIds = records.map((record) => record.id);
   const headingRef = useRef<ComponentRef<typeof Text>>(null);
   const rowFocus = useRowFocus(recordIds, !transactions.isFetching, headingRef);
@@ -437,8 +445,6 @@ export function AccountDetail({
   }
   if (!summary) return null;
 
-  const showingPositions = summary.holdsPositions && tab === 'positions';
-  const showingTransactions = hasLedger && !showingPositions;
   const valueQueries = archived ? [archivedAccounts, activeAccounts] : [activeAccounts];
   const firstPageFailed = transactions.isError && !transactions.isFetchNextPageError;
   // Refresh also runs the enabled reads for the inactive depot tab.
@@ -476,7 +482,7 @@ export function AccountDetail({
 
   const context = {
     categories: categories.data ?? [],
-    loaded: records,
+    reversalDates,
     accountCurrency: summary.nativeCurrency,
     archived,
     includeParent: false,

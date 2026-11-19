@@ -218,10 +218,12 @@ export function reconciliationLine(reconciliation: Reconciliation): Reconciliati
   };
 }
 
-/** The original's booking date when it is among the loaded rows; otherwise none is shown. */
-export function reversalOf(transaction: Transaction, loaded: Transaction[]): string | null {
+export function reversalOf(
+  transaction: Transaction,
+  dates: RowContext['reversalDates'],
+): string | null {
   if (!transaction.replacesTransactionId) return null;
-  return loaded.find((row) => row.id === transaction.replacesTransactionId)?.bookingDate ?? null;
+  return dates.get(transaction.replacesTransactionId) ?? null;
 }
 
 /** "≈ {amount}" in the account currency, only for a booking in another currency (#479). */
@@ -241,8 +243,7 @@ export function convertedAmount(
 
 export type RowContext = {
   categories: Category[];
-  /** Every loaded row, to find the original of a reversal. */
-  loaded: Transaction[];
+  reversalDates: ReadonlyMap<string, string>;
   accountCurrency: string;
   archived: boolean;
   /** Web shows "{parent} › {name}". */
@@ -288,7 +289,7 @@ export function presentTransaction(
         : row.categoryId !== null
           ? intl.formatMessage({ id: 'account.categoryFallback' })
           : null;
-  const reversalDate = reversalOf(row, context.loaded);
+  const reversalDate = reversalOf(row, context.reversalDates);
   const lifecycle = [
     row.replacesTransactionId
       ? reversalDate

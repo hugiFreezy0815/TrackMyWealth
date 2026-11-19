@@ -58,7 +58,7 @@ const rows = Array.from(
 );
 const context: RowContext = {
   categories: [],
-  loaded: rows,
+  reversalDates: new Map(rows.map((item) => [item.id, item.bookingDate])),
   accountCurrency: 'EUR',
   archived: false,
   includeParent: false,
@@ -105,7 +105,10 @@ describe('S3 web table growth with Load more (#494)', () => {
   const pick = jest.fn();
   const props = (transaction: Transaction, loaded: Transaction[], other = {}) => ({
     transaction,
-    context: { ...context, loaded },
+    context: {
+      ...context,
+      reversalDates: new Map(loaded.map((item) => [item.id, item.bookingDate])),
+    },
     selected: false,
     onOpen: open,
     onCategory: pick,
@@ -118,7 +121,7 @@ describe('S3 web table growth with Load more (#494)', () => {
     expect(sameRow(props(page0[3], page0), props(page0[3], page1))).toBe(true);
   });
 
-  it("re-renders a reversal row once its original's page arrives", () => {
+  it("re-renders a reversal row when the original's date becomes available", () => {
     const reversal = row(0, { replacesTransactionId: 't60' });
     const withOriginal = [...page0, row(60, { bookingDate: '2026-10-01' })];
     expect(sameRow(props(reversal, page0), props(reversal, withOriginal))).toBe(false);

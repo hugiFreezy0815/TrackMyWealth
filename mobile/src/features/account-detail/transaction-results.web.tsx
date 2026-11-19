@@ -123,8 +123,7 @@ type TableRowProps = {
 
 /**
  * Loaded rows keep their identity when a page is appended, so a row re-renders only when its own
- * inputs change. `context.loaded` grows with every page but only matters to a reversal row (the
- * original's date), so it is compared through that date alone (#494 "Load more" growth).
+ * inputs change. Compare only the original's date for a reversal row (#494 "Load more" growth).
  */
 export function sameRow(prev: TableRowProps, next: TableRowProps): boolean {
   const a = prev.context;
@@ -138,8 +137,7 @@ export function sameRow(prev: TableRowProps, next: TableRowProps): boolean {
     a.accountCurrency === b.accountCurrency &&
     a.archived === b.archived &&
     a.includeParent === b.includeParent &&
-    (!next.transaction.replacesTransactionId ||
-      reversalOf(next.transaction, a.loaded) === reversalOf(next.transaction, b.loaded))
+    reversalOf(next.transaction, a.reversalDates) === reversalOf(next.transaction, b.reversalDates)
   );
 }
 
