@@ -81,7 +81,16 @@ export function setRefreshHandler(handler: (() => Promise<SessionRefreshResult>)
 // client that gives up early leaves the batch the server still creates as an open batch.
 export const UPLOAD_TIMEOUT_MS = 120_000;
 
-async function send(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+async function send(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+  deadlineManagedByCaller = false,
+): Promise<Response> {
+  // Multipart requests keep their own abort signal and deadline through the response body read.
+  // Do not replace that signal here or remove its forwarding listener when headers arrive.
+  if (deadlineManagedByCaller) return fetch(url, init);
+
   // One controller ends the request on the deadline or on the caller's own abort (an upload's
   // Cancel); AbortSignal.any is missing on Hermes.
   const controller = new AbortController();
@@ -134,6 +143,8 @@ type ExchangeOptions = Omit<RequestInit, 'body' | 'headers'> & {
   body?: BodyInit;
   renewSession?: boolean;
   timeoutMs?: number;
+  /** Internal: the caller owns the request's signal and deadline through body consumption. */
+  deadlineManagedByCaller?: boolean;
 };
 
 /**
@@ -142,13 +153,20 @@ type ExchangeOptions = Omit<RequestInit, 'body' | 'headers'> & {
  * NetworkError when the server was not reached in time.
  */
 async function exchange(path: string, options: ExchangeOptions): Promise<Response> {
-  const { headers, renewSession = true, timeoutMs = REQUEST_TIMEOUT_MS, ...init } = options;
+  const {
+    headers,
+    renewSession = true,
+    timeoutMs = REQUEST_TIMEOUT_MS,
+    deadlineManagedByCaller = false,
+    ...init
+  } = options;
   const url = `${apiBaseUrl}${path}`;
   const attempt = (token: string | null) =>
     send(
       url,
       { ...init, headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...headers } },
       timeoutMs,
+      deadlineManagedByCaller,
     );
   const sentToken = accessToken;
   let response = await attempt(sentToken);
@@ -224,20 +242,16 @@ export async function requestMultipart<T>(path: string, options: MultipartOption
       method: 'POST',
       signal: controller.signal,
       timeoutMs,
+      deadlineManagedByCaller: true,
     });
-    try {
-      return (await response.json()) as T;
-    } catch (failure) {
-      if (options.signal?.aborted) throw failure;
-      // The server may have created the batch even though we did not receive its response.
-      throw new NetworkError(
-        timedOut ? 'Statement upload response timed out' : 'Statement upload response was lost',
-      );
-    }
+    return (await response.json()) as T;
   } catch (failure) {
     if (options.signal?.aborted) throw failure;
     if (timedOut) throw new NetworkError('Statement upload timed out');
-    throw failure;
+    // Preserve a server problem response or a session-refresh failure. All other failures
+    // (including after a 201 header) leave the server outcome unknown.
+    if (failure instanceof ApiError || failure instanceof NetworkError) throw failure;
+    throw new NetworkError('Statement upload could not finish receiving its response');
   } finally {
     clearTimeout(timer);
     options.signal?.removeEventListener('abort', cancel);
