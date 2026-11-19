@@ -32,6 +32,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -52,9 +53,18 @@ class AccountPositionsServiceTest {
   private final SecurityRepository securities = mock(SecurityRepository.class);
   private final FxRateService fx = mock(FxRateService.class);
   private final AuthenticatedUserPrincipal actor = mock(AuthenticatedUserPrincipal.class);
+  private final BusinessDateService businessDates = mock(BusinessDateService.class);
   private final AccountPositionsService service =
       new AccountPositionsService(
-          accountLookup, access, currencies, snapshots, holdings, securities, fx, "ECB");
+          accountLookup,
+          access,
+          currencies,
+          snapshots,
+          holdings,
+          securities,
+          fx,
+          businessDates,
+          "ECB");
 
   private final UUID accountId = UUID.randomUUID();
   private final List<SnapshotHolding> rows = new ArrayList<>();
@@ -79,7 +89,7 @@ class AccountPositionsServiceTest {
   @Test
   void noSnapshotReturnsACompleteEmptyPositionsResponse() {
     allowedDepot("CHF");
-    when(snapshots.findNewestWithHoldings(eq(accountId), any(Pageable.class)))
+    when(snapshots.findNewestWithHoldings(eq(accountId), eq(AS_OF), any(Pageable.class)))
         .thenReturn(List.of());
 
     AccountPositionsResponse result = service.get(accountId, actor);
@@ -250,11 +260,12 @@ class AccountPositionsServiceTest {
     when(fx.applyRate(new BigDecimal("2000"), rate)).thenReturn(new BigDecimal("1800.0000"));
     when(fx.applyRate(new BigDecimal("500"), rate)).thenReturn(new BigDecimal("450.0000"));
     statement(
-        reported("1000", false, "5000", "CHF"),
-        reported("1000", false, "2000", "USD"),
-        reported("1000", false, "500", "USD"));
+        reported(false, "1000", "CHF"),
+        reported(false, "5000", "CHF"),
+        reported(false, "2000", "USD"),
+        reported(false, "500", "USD"));
 
-    NativeAccountValue value = reportedValues().get(accountId);
+    NativeAccountValue value = reportedValue().orElseThrow();
 
     assertThat(value.amount()).isEqualByComparingTo("8250");
     assertThat(value.basis()).isEqualTo(ValueBasisValues.LATEST_SNAPSHOT);
@@ -270,32 +281,32 @@ class AccountPositionsServiceTest {
     CurrencyConversionResult rate = rate("0.90", true);
     when(fx.tryGetConversionRate("USD", "CHF", AS_OF, "ECB")).thenReturn(Optional.of(rate));
     when(fx.applyRate(any(), eq(rate))).thenReturn(new BigDecimal("90.0000"));
-    statement(reported("0", false, "100", "USD"));
+    statement(reported(false, "0", "CHF"), reported(false, "100", "USD"));
 
-    assertThat(reportedValues().get(accountId).sourceFxStale()).isTrue();
+    assertThat(reportedValue().orElseThrow().sourceFxStale()).isTrue();
   }
 
   @Test
   void aStatementMissingAnyFigureHasNoValueRatherThanAPartialSum() {
-    statement(reported(null, false, "5000", "CHF"));
-    assertThat(reportedValues()).as("no cash balance").isEmpty();
+    statement(reported(false, null, "CHF"), reported(false, "5000", "CHF"));
+    assertThat(reportedValue()).as("no cash balance").isEmpty();
 
-    statement(reported("1000", true, "5000", "CHF"));
-    assertThat(reportedValues()).as("unrecorded foreign cash").isEmpty();
+    statement(reported(true, "1000", "CHF"), reported(true, "5000", "CHF"));
+    assertThat(reportedValue()).as("unrecorded foreign cash").isEmpty();
 
-    statement(reported("1000", false, "5000", "CHF"), reported("1000", false, null, null));
-    assertThat(reportedValues()).as("a holding without a value").isEmpty();
+    statement(reported(false, "5000", "CHF"), reported(false, null, null));
+    assertThat(reportedValue()).as("a holding without a value").isEmpty();
 
     when(fx.tryGetConversionRate("USD", "CHF", AS_OF, "ECB")).thenReturn(Optional.empty());
-    statement(reported("1000", false, "5000", "CHF"), reported("1000", false, "10", "USD"));
-    assertThat(reportedValues()).as("no rate").isEmpty();
+    statement(reported(false, "5000", "CHF"), reported(false, "10", "USD"));
+    assertThat(reportedValue()).as("no rate").isEmpty();
   }
 
   @Test
   void anAccountWithoutAHoldingsStatementIsLeftOut() {
     statement();
 
-    assertThat(reportedValues()).isEmpty();
+    assertThat(reportedValue()).isEmpty();
   }
 
   // --- Helpers ------------------------------------------------------------------------------
@@ -305,6 +316,7 @@ class AccountPositionsServiceTest {
     when(accountLookup.findAccountOrThrow(accountId, actor)).thenReturn(account);
     when(account.isHoldsPositions()).thenReturn(true);
     when(currencies.ownCurrency(account)).thenReturn(currency);
+    when(businessDates.today()).thenReturn(AS_OF);
   }
 
   private SnapshotHolding holding(String name, String value, String currency, String costBasis) {
@@ -331,7 +343,7 @@ class AccountPositionsServiceTest {
     AccountSnapshot snapshot = mock(AccountSnapshot.class);
     when(snapshot.getId()).thenReturn(snapshotId);
     when(snapshot.getSnapshotDate()).thenReturn(AS_OF);
-    when(snapshots.findNewestWithHoldings(eq(accountId), any(Pageable.class)))
+    when(snapshots.findNewestWithHoldings(eq(accountId), eq(AS_OF), any(Pageable.class)))
         .thenReturn(List.of(snapshot));
     when(holdings.findBySnapshotId(snapshotId)).thenReturn(List.copyOf(rows));
     when(securities.findAllById(any())).thenReturn(List.copyOf(known));
@@ -343,25 +355,24 @@ class AccountPositionsServiceTest {
         .thenReturn(List.of(lines));
   }
 
-  private Map<UUID, NativeAccountValue> reportedValues() {
-    return service.reportedValuesFor(List.of(accountId), Map.of(accountId, "CHF"), AS_OF);
+  private Optional<NativeAccountValue> reportedValue() {
+    Map<String, Optional<CurrencyConversionResult>> rates = new HashMap<>();
+    return service.reportedValue(
+        service.reportedHoldingsFor(List.of(accountId), AS_OF).getOrDefault(accountId, List.of()),
+        "CHF",
+        from ->
+            rates.computeIfAbsent(
+                from, currency -> fx.tryGetConversionRate(currency, "CHF", AS_OF, "ECB")));
   }
 
-  private ReportedHoldingValue reported(
-      String cash, boolean unrecordedCash, String value, String currency) {
+  private ReportedHoldingValue reported(boolean unrecordedCash, String value, String currency) {
     return new Line(
-        accountId,
-        AS_OF,
-        cash == null ? null : new BigDecimal(cash),
-        unrecordedCash,
-        value == null ? null : new BigDecimal(value),
-        currency);
+        accountId, AS_OF, unrecordedCash, value == null ? null : new BigDecimal(value), currency);
   }
 
   private record Line(
       UUID accountId,
       LocalDate snapshotDate,
-      BigDecimal cashBalance,
       boolean unrecordedCash,
       BigDecimal reportedValue,
       String reportedCurrency)
@@ -375,11 +386,6 @@ class AccountPositionsServiceTest {
     @Override
     public LocalDate getSnapshotDate() {
       return snapshotDate;
-    }
-
-    @Override
-    public BigDecimal getCashBalance() {
-      return cashBalance;
     }
 
     @Override

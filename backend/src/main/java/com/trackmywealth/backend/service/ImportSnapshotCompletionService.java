@@ -9,6 +9,7 @@ import com.trackmywealth.backend.entity.AccountSnapshot;
 import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.entity.ReconciliationResult;
 import com.trackmywealth.backend.entity.Security;
+import com.trackmywealth.backend.entity.SnapshotForeignCash;
 import com.trackmywealth.backend.entity.SnapshotHolding;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ProblemCode;
@@ -16,6 +17,7 @@ import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
 import com.trackmywealth.backend.repository.SecurityRepository;
+import com.trackmywealth.backend.repository.SnapshotForeignCashRepository;
 import com.trackmywealth.backend.repository.SnapshotHoldingRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -33,8 +35,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * US-07-31 (#366): an imported ({@code DOCUMENT}) snapshot is completed part by part. It has two
- * parts, its balance and its holdings; a statement of the same account and date meets it part by
- * part:
+ * parts, its cash balances and its holdings; a statement of the same account and date meets it part
+ * by part. Cash is compared currency by currency:
  *
  * <ul>
  *   <li>a part the snapshot lacks and the statement holds is <b>added</b>;
@@ -71,6 +73,7 @@ public class ImportSnapshotCompletionService {
 
   private final AccountSnapshotRepository snapshotRepository;
   private final SnapshotHoldingRepository holdingRepository;
+  private final SnapshotForeignCashRepository cashRepository;
   private final ReconciliationResultRepository resultRepository;
   private final SecurityRepository securityRepository;
   private final ImportBatchRepository batchRepository;
@@ -80,6 +83,7 @@ public class ImportSnapshotCompletionService {
   public ImportSnapshotCompletionService(
       AccountSnapshotRepository snapshotRepository,
       SnapshotHoldingRepository holdingRepository,
+      SnapshotForeignCashRepository cashRepository,
       ReconciliationResultRepository resultRepository,
       SecurityRepository securityRepository,
       ImportBatchRepository batchRepository,
@@ -87,6 +91,7 @@ public class ImportSnapshotCompletionService {
       BusinessDateService businessDates) {
     this.snapshotRepository = snapshotRepository;
     this.holdingRepository = holdingRepository;
+    this.cashRepository = cashRepository;
     this.resultRepository = resultRepository;
     this.securityRepository = securityRepository;
     this.batchRepository = batchRepository;
@@ -98,6 +103,7 @@ public class ImportSnapshotCompletionService {
    * What committing a statement of {@code date} would do now (see the class comment).
    *
    * @param balance the statement's balance in the account's currency, {@code null} for none
+   * @param foreignCash the statement's other cash balances, totalled by reported currency
    * @param holdings the statement's resolved positions by security, empty for none
    * @param holdingsKnown whether every position resolved: unless they all did, the holdings are not
    *     compared (a position resolving later may be the one the snapshot holds)
@@ -106,13 +112,14 @@ public class ImportSnapshotCompletionService {
       Account account,
       LocalDate date,
       BigDecimal balance,
+      Map<String, BigDecimal> foreignCash,
       Map<UUID, BigDecimal> holdings,
       boolean holdingsKnown) {
     if (!withinAccountDates(account, date)) {
       return new ImportSnapshotPlan(ImportSnapshotValues.OUT_OF_RANGE, null, List.of(), List.of());
     }
     List<String> parts = new ArrayList<>();
-    if (balance != null) {
+    if (balance != null || !foreignCash.isEmpty()) {
       parts.add(ImportSnapshotValues.PART_BALANCE);
     }
     if (!holdings.isEmpty()) {
@@ -138,6 +145,29 @@ public class ImportSnapshotCompletionService {
                 null,
                 snapshot.getBalance(),
                 balance));
+      }
+    }
+    if (!foreignCash.isEmpty()) {
+      Map<String, BigDecimal> existingCash = existingCash(snapshot);
+      boolean addsCash = false;
+      for (Map.Entry<String, BigDecimal> line : foreignCash.entrySet()) {
+        BigDecimal prior = existingCash.get(line.getKey());
+        if (prior == null) {
+          addsCash = true;
+        } else if (prior.compareTo(line.getValue()) != 0) {
+          conflicts.add(
+              new ImportSnapshotPlan.Conflict(
+                  ImportSnapshotValues.PART_BALANCE,
+                  null,
+                  null,
+                  null,
+                  prior,
+                  line.getValue(),
+                  line.getKey()));
+        }
+      }
+      if (addsCash && !adds.contains(ImportSnapshotValues.PART_BALANCE)) {
+        adds.add(ImportSnapshotValues.PART_BALANCE);
       }
     }
     if (!holdings.isEmpty()) {
@@ -188,6 +218,7 @@ public class ImportSnapshotCompletionService {
       String currency,
       ImportSnapshotPlan plan,
       BigDecimal balance,
+      Map<String, BigDecimal> foreignCash,
       List<ImportSnapshotHolding> holdings,
       UUID committedBy) {
     if (!plan.committable()) {
@@ -216,13 +247,16 @@ public class ImportSnapshotCompletionService {
               .findForUpdate(plan.existing().id(), account.getId())
               .orElseThrow(() -> new IllegalStateException("The planned snapshot is gone."));
       requireNoDecision(account, snapshot);
-      if (plan.adds().contains(ImportSnapshotValues.PART_BALANCE)) {
+      if (balance != null && snapshot.getBalance() == null) {
         snapshot.setImportedBalance(balance.setScale(FxRateService.MONEY_SCALE), batch.getId());
       }
       outcome = ImportSnapshotValues.COMPLETED;
     }
     // Flushed: a concurrent snapshot of the date surfaces here as the unique index's 409.
     snapshot = snapshotRepository.saveAndFlush(snapshot);
+    if (!foreignCash.isEmpty()) {
+      storeNewCash(snapshot, batch.getId(), foreignCash);
+    }
     boolean addsHoldings =
         ImportSnapshotValues.NEW.equals(plan.outcome())
             || plan.adds().contains(ImportSnapshotValues.PART_HOLDINGS);
@@ -244,6 +278,22 @@ public class ImportSnapshotCompletionService {
     }
     reconciliationService.reconcileLatest(account, committedBy);
     return outcome;
+  }
+
+  private Map<String, BigDecimal> existingCash(AccountSnapshot snapshot) {
+    return cashRepository.findBySnapshotIdOrderByCurrency(snapshot.getId()).stream()
+        .collect(
+            Collectors.toMap(SnapshotForeignCash::getCurrency, SnapshotForeignCash::getAmount));
+  }
+
+  private void storeNewCash(AccountSnapshot snapshot, UUID batchId, Map<String, BigDecimal> cash) {
+    Set<String> recordedCurrencies = existingCash(snapshot).keySet();
+    List<SnapshotForeignCash> rows =
+        cash.entrySet().stream()
+            .filter(line -> !recordedCurrencies.contains(line.getKey()))
+            .map(line -> new SnapshotForeignCash(snapshot, line.getKey(), line.getValue(), batchId))
+            .toList();
+    cashRepository.saveAllAndFlush(rows);
   }
 
   /**

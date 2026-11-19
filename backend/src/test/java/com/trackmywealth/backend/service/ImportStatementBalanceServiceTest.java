@@ -24,6 +24,7 @@ import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
 import com.trackmywealth.backend.repository.SecurityRepository;
+import com.trackmywealth.backend.repository.SnapshotForeignCashRepository;
 import com.trackmywealth.backend.repository.SnapshotHoldingRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -56,6 +57,7 @@ class ImportStatementBalanceServiceTest {
   private static final UUID MEMBER = UUID.randomUUID();
 
   private final AccountSnapshotRepository snapshots = mock(AccountSnapshotRepository.class);
+  private final SnapshotForeignCashRepository cash = mock(SnapshotForeignCashRepository.class);
   private final SnapshotHoldingRepository holdings = mock(SnapshotHoldingRepository.class);
   private final ReconciliationResultRepository results = mock(ReconciliationResultRepository.class);
   private final ReconciliationService reconciliation = mock(ReconciliationService.class);
@@ -67,6 +69,7 @@ class ImportStatementBalanceServiceTest {
       new ImportSnapshotCompletionService(
           snapshots,
           holdings,
+          cash,
           results,
           mock(SecurityRepository.class),
           batches,
@@ -76,6 +79,7 @@ class ImportStatementBalanceServiceTest {
       new ImportStatementBalanceService(
           snapshots,
           holdings,
+          cash,
           completion,
           new ImportSnapshotExplanationService(messages()),
           results,

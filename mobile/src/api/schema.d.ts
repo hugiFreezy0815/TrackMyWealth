@@ -1883,6 +1883,7 @@ export interface components {
       /** Format: int32 */
       version: number;
       holdings: components['schemas']['SnapshotHoldingResponse'][];
+      foreignCashBalances: components['schemas']['SnapshotCashBalanceResponse'][];
     };
     AccountSummaryResponse: {
       /** Format: uuid */
@@ -2162,6 +2163,7 @@ export interface components {
        * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
        */
       statementValue: DecimalString | null;
+      currency: string | null;
     };
     Contents: {
       /** Format: int64 */
@@ -3502,6 +3504,7 @@ export interface components {
        */
       balance?: DecimalString;
       holdings?: components['schemas']['SnapshotHoldingRequest'][];
+      foreignCashBalances?: components['schemas']['SnapshotCashBalance'][];
     };
     ReferenceDataResponse: {
       packageVersion: string;
@@ -3524,6 +3527,7 @@ export interface components {
        */
       balance?: DecimalString;
       holdings?: components['schemas']['SnapshotHoldingRequest'][];
+      foreignCashBalances?: components['schemas']['SnapshotCashBalance'][];
     };
     Section: {
       /** @enum {string} */
@@ -3670,6 +3674,22 @@ export interface components {
       password: string;
       workspaceName?: string;
       currencyCode: string;
+    };
+    SnapshotCashBalance: {
+      currency: string;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      amount: DecimalString;
+    };
+    SnapshotCashBalanceResponse: {
+      currency: string;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      amount: DecimalString;
     };
     /** @description Omit reportedValue, reportedCurrency and reportedPrice together, or supply reportedValue and reportedCurrency together. When supplying both, reportedPrice is optional. Other combinations return HTTP 422. */
     SnapshotHoldingRequest: {

@@ -65,8 +65,9 @@ public record ImportSnapshotPlan(
       @Nullable UUID reconciliationResultId) {}
 
   /**
-   * One difference. For {@code BALANCE}: the two balances. For {@code HOLDING}: one security's
-   * quantity in the snapshot and in the statement, either {@code null} when only one side holds it.
+   * One difference. For {@code BALANCE}: the two balances and the foreign currency, if any. For
+   * {@code HOLDING}: one security's quantity in the snapshot and in the statement, either {@code
+   * null} when only one side holds it.
    */
   public record Conflict(
       @Schema(allowableValues = {"BALANCE", "HOLDING"}) String part,
@@ -74,5 +75,17 @@ public record ImportSnapshotPlan(
       @Nullable String isin,
       @Nullable String securityName,
       @Nullable BigDecimal existingValue,
-      @Nullable BigDecimal statementValue) {}
+      @Nullable BigDecimal statementValue,
+      @Nullable String currency) {
+
+    public Conflict(
+        String part,
+        UUID securityId,
+        String isin,
+        String securityName,
+        BigDecimal existingValue,
+        BigDecimal statementValue) {
+      this(part, securityId, isin, securityName, existingValue, statementValue, null);
+    }
+  }
 }
