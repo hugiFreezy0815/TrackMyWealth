@@ -453,7 +453,9 @@ class ApiConventionsIntegrationTest {
         .uri("/api/v1/accounts/some-id")
         .header("Origin", "http://localhost:19006")
         .header("Access-Control-Request-Method", "PUT")
-        .header("Access-Control-Request-Headers", "X-Correlation-Id, If-Match, traceparent")
+        .header(
+            "Access-Control-Request-Headers",
+            "X-Correlation-Id, If-Match, Idempotency-Key, traceparent")
         .exchange()
         .expectStatus()
         .isOk()
@@ -462,7 +464,7 @@ class ApiConventionsIntegrationTest {
             "Access-Control-Allow-Headers",
             value ->
                 assertThat(value.toLowerCase())
-                    .contains("x-correlation-id", "if-match", "traceparent"));
+                    .contains("x-correlation-id", "if-match", "idempotency-key", "traceparent"));
 
     String token = bootstrapAdministrator();
     AccountSummaryResponse account = createAccount(token, "CASH");

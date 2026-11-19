@@ -168,6 +168,7 @@ public class SecurityConfig {
             "Content-Type",
             CorrelationIdFilter.HEADER,
             HttpHeaders.IF_MATCH,
+            "Idempotency-Key",
             TraceparentResponseFilter.HEADER));
     // Bearer tokens are sent via the Authorization header (see mobile/src/api/client.ts), not
     // cookies, so credentialed (cookie-carrying) CORS requests are not needed yet. Revisit
