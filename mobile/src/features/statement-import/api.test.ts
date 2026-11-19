@@ -89,13 +89,16 @@ describe('authenticated multipart and CSV transport (#492)', () => {
     globalThis.fetch = mock as unknown as typeof fetch;
     setAccessToken('token-123');
 
-    await expect(uploadStatement('a 1', file)).resolves.toEqual({ id: 'b-1' });
+    await expect(uploadStatement('a 1', file, undefined, 'upload-uuid')).resolves.toEqual({
+      id: 'b-1',
+    });
 
     const [url, init] = mock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toMatch(/\/api\/v1\/accounts\/a%201\/imports$/);
     expect(init.method).toBe('POST');
     expect(init.body).toBeInstanceOf(FormData);
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer token-123');
+    expect((init.headers as Record<string, string>)['Idempotency-Key']).toBe('upload-uuid');
     expect((init.headers as Record<string, string>)['Content-Type']).toBeUndefined();
   });
 
@@ -111,10 +114,13 @@ describe('authenticated multipart and CSV transport (#492)', () => {
       return 'new';
     });
 
-    await uploadStatement('a-1', file);
+    await uploadStatement('a-1', file, undefined, 'same-uuid');
 
     expect(mock).toHaveBeenCalledTimes(2);
+    const [, original] = mock.mock.calls[0] as [string, RequestInit];
     const [, retry] = mock.mock.calls[1] as [string, RequestInit];
+    expect((original.headers as Record<string, string>)['Idempotency-Key']).toBe('same-uuid');
+    expect((retry.headers as Record<string, string>)['Idempotency-Key']).toBe('same-uuid');
     expect((retry.headers as Record<string, string>).Authorization).toBe('Bearer new');
     expect(retry.body).toBeInstanceOf(FormData);
   });
