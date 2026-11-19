@@ -158,11 +158,8 @@ describe('authenticated multipart and CSV transport (#492)', () => {
       new Promise<never>((_resolve, reject) => {
         if (!fetchSignal) throw new Error('Fetch did not provide an abort signal');
         const signal = fetchSignal;
-        signal.addEventListener(
-          'abort',
-          () => reject(Object.assign(new Error('Cancelled'), { name: 'AbortError' })),
-          { once: true },
-        );
+        const cancelled = Object.assign(new Error('Cancelled'), { name: 'AbortError' });
+        signal.addEventListener('abort', () => reject(cancelled), { once: true });
         bodyStarted();
       });
     globalThis.fetch = jest.fn(async (_url: string, init: RequestInit) => {
@@ -194,12 +191,8 @@ describe('authenticated multipart and CSV transport (#492)', () => {
         response.json = () =>
           new Promise<never>((_resolve, reject) => {
             if (!fetchSignal) throw new Error('Fetch did not provide an abort signal');
-            fetchSignal.addEventListener(
-              'abort',
-              () =>
-                reject(Object.assign(new Error('Aborted while reading body'), { name: 'AbortError' })),
-              { once: true },
-            );
+            const cancelled = Object.assign(new Error('Aborted'), { name: 'AbortError' });
+            fetchSignal.addEventListener('abort', () => reject(cancelled), { once: true });
             bodyStarted();
           });
         return response;
