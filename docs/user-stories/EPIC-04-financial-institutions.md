@@ -194,7 +194,6 @@ crypto) are each shown the way their contents need.
 apart, and another workspace's portfolio answers the same audited 404 as an unknown id.
 **Priority:** MUST. **Size:** L.
 
-
 ## US-04-08 — Portfolio View: unrealised gain for depot and crypto accounts (#440)
 
 **Actor:** Workspace member. **Objective:** FR-INS-013, FR-PRF-06 and FR-PERF-018.
@@ -215,5 +214,6 @@ apart, and another workspace's portfolio answers the same audited 404 as an unkn
   why the gain is unavailable. The amount and percent follow the app's amount-visibility setting.
 - `PortfolioViewControllerTest` covers both account types, comparison with the positions API,
   missing cost basis, foreign currency, and missing or incomplete holdings statements.
-- Roll out the updated mobile client before enabling the backend response for those clients.
-  Older mobile builds assume a non-null `totalReturn` is a percentage.
+- There is no feature toggle: the backend sends the figures as soon as it is deployed. Release
+  the updated mobile client first or together with it, because older mobile builds read a
+  non-null `totalReturn` as a percentage.

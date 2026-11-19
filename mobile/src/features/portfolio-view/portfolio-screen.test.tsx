@@ -712,6 +712,24 @@ describe('S2 rows per section type', () => {
     ).toBeTruthy();
   });
 
+  it('explains a crypto account without any holdings statement the same way', async () => {
+    setData(
+      view([
+        makeSection('CRYPTO', [
+          makeAccount('crypto', {
+            name: 'Wallet',
+            accountType: 'CRYPTO',
+            balance: null,
+            valueKnown: false,
+            valueStatus: 'UNKNOWN',
+          }),
+        ]),
+      ]),
+    );
+    await mount();
+    expect(screen.getByText('Unrealised gain unavailable (no holdings statement)')).toBeTruthy();
+  });
+
   it('indents a mortgage only under a property that is in the section', async () => {
     setData(
       view([

@@ -292,6 +292,67 @@ class AccountPositionsServiceTest {
     assertThat(reportedHoldings().get(accountId).value()).as("no rate").isNull();
   }
 
+  // --- #440: unrealised gain from the same statement ------------------------------------------
+
+  @Test
+  void theGainSumsThePositionGainsWithoutCashAsAPercentOfTheirCostBasis() {
+    statement(
+        reported("700", false, "15000", "CHF", "11800"),
+        reported("700", false, "8000", "CHF", "10000"));
+
+    ReportedAccountHoldings summary = reportedHoldings().get(accountId);
+
+    assertThat(summary.positionsCount()).isEqualTo(2);
+    assertThat(summary.value().amount()).isEqualByComparingTo("23700");
+    // A gain and a loss net out: 3,200 - 2,000 = 1,200 of 21,800 cost basis = 5.5045 %.
+    assertThat(summary.totalReturn()).isEqualByComparingTo("1200");
+    assertThat(summary.totalReturnPercent()).isEqualByComparingTo("5.50");
+    assertThat(summary.missingCostBasisCount()).isNull();
+    assertThat(summary.foreignCurrencyCostBasisCount()).isNull();
+  }
+
+  @Test
+  void aZeroTotalCostBasisKeepsTheGainButHasNoPercentage() {
+    statement(reported("0", false, "50", "CHF", "0"));
+
+    ReportedAccountHoldings summary = reportedHoldings().get(accountId);
+
+    assertThat(summary.totalReturn()).isEqualByComparingTo("50");
+    assertThat(summary.totalReturnPercent()).isNull();
+  }
+
+  @Test
+  void anyPositionWithoutAKnownGainLeavesNoPartialSumButCountsEachCause() {
+    CurrencyConversionResult rate = rate("0.90", false);
+    when(fx.tryGetConversionRate("USD", "CHF", AS_OF, "ECB")).thenReturn(Optional.of(rate));
+    when(fx.applyRate(any(), eq(rate))).thenReturn(new BigDecimal("90.0000"));
+    statement(
+        reported("0", false, "500", "CHF", "410"),
+        reported("0", false, "600", "CHF", null),
+        reported("0", false, "100", "USD", "80"));
+
+    ReportedAccountHoldings summary = reportedHoldings().get(accountId);
+
+    assertThat(summary.value()).isNotNull();
+    assertThat(summary.totalReturn()).isNull();
+    assertThat(summary.totalReturnPercent()).isNull();
+    assertThat(summary.missingCostBasisCount()).isEqualTo(1);
+    assertThat(summary.foreignCurrencyCostBasisCount()).isEqualTo(1);
+  }
+
+  @Test
+  void anUnknownValueKeepsThePositionsCountButNoGainOrCauses() {
+    statement(reported(null, false, "500", "CHF", null));
+
+    ReportedAccountHoldings summary = reportedHoldings().get(accountId);
+
+    assertThat(summary.positionsCount()).isEqualTo(1);
+    assertThat(summary.snapshotDate()).isEqualTo(AS_OF);
+    assertThat(summary.value()).isNull();
+    assertThat(summary.totalReturn()).isNull();
+    assertThat(summary.missingCostBasisCount()).isNull();
+  }
+
   @Test
   void anAccountWithoutAHoldingsStatementIsLeftOut() {
     statement();
@@ -350,6 +411,11 @@ class AccountPositionsServiceTest {
 
   private ReportedHoldingValue reported(
       String cash, boolean unrecordedCash, String value, String currency) {
+    return reported(cash, unrecordedCash, value, currency, null);
+  }
+
+  private ReportedHoldingValue reported(
+      String cash, boolean unrecordedCash, String value, String currency, String costBasis) {
     return new Line(
         accountId,
         AS_OF,
@@ -357,7 +423,7 @@ class AccountPositionsServiceTest {
         unrecordedCash,
         value == null ? null : new BigDecimal(value),
         currency,
-        null);
+        costBasis == null ? null : new BigDecimal(costBasis));
   }
 
   private record Line(
