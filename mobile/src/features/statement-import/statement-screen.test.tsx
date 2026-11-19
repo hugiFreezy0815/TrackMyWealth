@@ -514,7 +514,13 @@ describe('S7 web entry: account picker (#492)', () => {
     jest.mocked(useAccounts).mockReturnValue({
       data: [
         { id: 'a-1', name: 'Giro', portfolioName: 'DKB', archived: false, hasTransactions: true },
-        { id: 'a-2', name: 'Savings', portfolioName: 'DKB', archived: false, hasTransactions: true },
+        {
+          id: 'a-2',
+          name: 'Savings',
+          portfolioName: 'DKB',
+          archived: false,
+          hasTransactions: true,
+        },
       ],
       isPending: false,
       isError: false,
