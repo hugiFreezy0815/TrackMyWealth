@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
 
+import { NetworkError } from '@/api/client';
 import { useAccount } from '@/api/queries/resources';
 import { useOnline } from '@/hooks/use-online';
 
@@ -18,6 +19,7 @@ import {
 } from './api';
 import { deletePickedCopy, shareErrorsCsv } from './device-files';
 import { keyForUploadAttempt } from './upload-key';
+import { supportsUploadReplay } from './upload-replay';
 import {
   canCommit,
   importProblemCode,
@@ -58,6 +60,13 @@ type Options = {
 
 type Recovery = (failure: unknown) => Promise<void>;
 
+type UploadFailure = {
+  accountId: string;
+  file: StatementFile;
+  key: string;
+  error: unknown;
+};
+
 /**
  * S7's state and its writes. One batch, held in its query cache entry (the authoritative copy,
  * with the version every If-Match sends), and one write at a time: a second tap while a write
@@ -75,6 +84,7 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
   const [uploading, setUploading] = useState(false);
   const [slowUpload, setSlowUpload] = useState(false);
   const [retryAt, setRetryAt] = useState<number | null>(null);
+  const [uploadFailure, setUploadFailure] = useState<UploadFailure | null>(null);
   const [filter, setFilter] = useState<RowFilter>('ALL');
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [dialog, setDialog] = useState<'discard' | 'conflict' | null>(null);
@@ -92,6 +102,16 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
   const openBatches = useOpenBatches(accountId, showOpen);
   const cache = useImportCache(accountId);
   const canUpload = online && !busy && account.data?.hasTransactions === true;
+  const canRetryUpload =
+    online &&
+    !busy &&
+    !batchId &&
+    uploadFailure !== null &&
+    error === uploadFailure.error &&
+    accountId === uploadFailure.accountId &&
+    file === uploadFailure.file &&
+    uploadKey.current === uploadFailure.key &&
+    ( !(error instanceof NetworkError) || supportsUploadReplay() );
 
   useEffect(() => {
     if (!uploading) return;
@@ -114,6 +134,15 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
   function releasePickedCopy() {
     if (pickedCopy.current) deletePickedCopy(pickedCopy.current);
     pickedCopy.current = null;
+  }
+
+  function clearUploadRetry() {
+    uploadKey.current = null;
+    setUploadFailure(null);
+    setFile(null);
+    setFileError(null);
+    setRetryAt(null);
+    releasePickedCopy();
   }
 
   function show(next: Batch) {
@@ -152,6 +181,7 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
     lock.current = true;
     setBusy(true);
     setError(null);
+    setUploadFailure(null);
     try {
       await after(await action());
     } catch (failure) {
@@ -165,6 +195,7 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
 
   async function upload(chosen: StatementFile, retrying = false) {
     if (lock.current) return;
+    setUploadFailure(null);
     if (pickedCopy.current !== chosen.uri) releasePickedCopy();
     pickedCopy.current = chosen.webFile ? null : chosen.uri;
     setFile(chosen);
@@ -197,6 +228,7 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
           return;
         }
         keepForRetry = isRetryableUploadError(failure);
+        setUploadFailure(keepForRetry ? { accountId, file: chosen, key, error: failure } : null);
         setRetryAt(retryAllowedAt(failure));
         await recoverBatch(failure);
       },
@@ -232,7 +264,9 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
   }
 
   function retryUpload() {
-    if (file && (retryAt === null || Date.now() >= retryAt)) void upload(file, true);
+    if (canRetryUpload && file && (retryAt === null || Date.now() >= retryAt)) {
+      void upload(file, true);
+    }
   }
 
   function cancelUpload() {
@@ -274,12 +308,9 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
   }
 
   function startAgain() {
-    uploadKey.current = null;
+    clearUploadRetry();
     setBatchId('');
-    setFile(null);
-    setFileError(null);
     setError(null);
-    setRetryAt(null);
     setFilter('ALL');
   }
 
@@ -315,6 +346,7 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
   }
 
   function resume(item: Batch) {
+    clearUploadRetry();
     show(item);
     setShowOpen(false);
     setError(null);
@@ -346,11 +378,16 @@ export function useStatementImport({ fixedAccountId, initialBatchId, onExit }: O
     slowUpload,
     retryAt,
     canUpload,
+    canRetryUpload,
     filter,
     selectedTemplate,
     dialog,
     showOpen,
     selectAccount(id: string) {
+      if (id !== accountId) {
+        uploadAbort.current?.abort();
+        clearUploadRetry();
+      }
       setSelectedAccountId(id);
       setError(null);
       setShowOpen(false);
