@@ -125,6 +125,46 @@ describe('authenticated multipart and CSV transport (#492)', () => {
     expect(retry.body).toBeInstanceOf(FormData);
   });
 
+  it('turns a dropped 201 response body into an uncertain NetworkError', async () => {
+    const broken = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.error(new Error('Response stream disconnected'));
+        },
+      }),
+      { status: 201 },
+    );
+    const fetchMock = jest.fn(async () => broken);
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(uploadStatement('a-1', file, undefined, 'body-lost-uuid')).rejects.toBeInstanceOf(
+      NetworkError,
+    );
+    const [, request] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect((request.headers as Record<string, string>)['Idempotency-Key']).toBe('body-lost-uuid');
+  });
+
+  it('keeps cancellation active after headers, while reading the multipart response', async () => {
+    const cancel = new AbortController();
+    const bodyRead = jest.fn(
+      () =>
+        new Promise<never>((_resolve, reject) => {
+          cancel.signal.addEventListener('abort', () =>
+            reject(Object.assign(new Error('Cancelled'), { name: 'AbortError' })),
+          );
+        }),
+    );
+    const response = new Response('{}', { status: 201 });
+    response.json = bodyRead;
+    globalThis.fetch = jest.fn(async () => response) as unknown as typeof fetch;
+
+    const pending = uploadStatement('a-1', file, cancel.signal);
+    await Promise.resolve();
+    await Promise.resolve();
+    cancel.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
   it('gives an upload the upload deadline, not the JSON one', async () => {
     jest.useFakeTimers();
     try {
