@@ -338,8 +338,7 @@ public class ImportStatementBalanceService {
   // the snapshot is withdrawn and kept as history, under this batch, as in US-07-12. The holdings
   // other imports added stay in effect: they move on to a new snapshot of the date, which the first
   // of them records. The withdrawn snapshot keeps all of its holdings as history. Foreign cash from
-  // the
-  // withdrawn batch is removed.
+  // the withdrawn batch is removed; other batches' foreign cash moves on with the holdings.
   private void withdrawCarryingOver(
       ImportBatch batch,
       AccountSnapshot snapshot,

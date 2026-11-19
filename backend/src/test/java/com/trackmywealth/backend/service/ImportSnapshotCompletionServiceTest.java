@@ -16,6 +16,7 @@ import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountSnapshot;
 import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.entity.ReconciliationResult;
+import com.trackmywealth.backend.entity.SnapshotForeignCash;
 import com.trackmywealth.backend.entity.SnapshotHolding;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ProblemCode;
@@ -297,6 +298,48 @@ class ImportSnapshotCompletionServiceTest {
   // --- helpers -------------------------------------------------------------------------------
 
   // The statement's positions: 25 of the CHF share, 1200 of the USD one.
+  // #614: foreign cash is compared currency by currency, like the own-currency balance.
+  @Test
+  void foreignCashAddsANewCurrencyIsADuplicateWhenEqualAndAConflictWhenItDiffers() {
+    AccountSnapshot snapshot = existing(new BigDecimal("1204.35"));
+    SnapshotForeignCash usd = mock(SnapshotForeignCash.class);
+    when(usd.getCurrency()).thenReturn("USD");
+    when(usd.getAmount()).thenReturn(new BigDecimal("310.2000"));
+    when(cash.findBySnapshotIdOrderByCurrency(snapshot.getId())).thenReturn(List.of(usd));
+    BigDecimal balance = new BigDecimal("1204.35");
+
+    ImportSnapshotPlan same =
+        service.plan(
+            account, DATE, balance, Map.of("USD", new BigDecimal("310.20")), Map.of(), true);
+    assertThat(same.outcome()).isEqualTo(ImportSnapshotValues.ALREADY_RECORDED);
+    assertThat(same.committable()).isFalse();
+
+    ImportSnapshotPlan adds =
+        service.plan(
+            account,
+            DATE,
+            balance,
+            Map.of("USD", new BigDecimal("310.20"), "EUR", new BigDecimal("5")),
+            Map.of(),
+            true);
+    assertThat(adds.outcome()).isEqualTo(ImportSnapshotValues.COMPLETES);
+    assertThat(adds.adds()).containsExactly(ImportSnapshotValues.PART_BALANCE);
+    assertThat(adds.conflicts()).isEmpty();
+
+    ImportSnapshotPlan differs =
+        service.plan(account, DATE, balance, Map.of("USD", new BigDecimal("1")), Map.of(), true);
+    assertThat(differs.outcome()).isEqualTo(ImportSnapshotValues.CONFLICTING);
+    assertThat(differs.conflicts())
+        .singleElement()
+        .satisfies(
+            conflict -> {
+              assertThat(conflict.part()).isEqualTo(ImportSnapshotValues.PART_BALANCE);
+              assertThat(conflict.currency()).isEqualTo("USD");
+              assertThat(conflict.existingValue()).isEqualByComparingTo("310.20");
+              assertThat(conflict.statementValue()).isEqualByComparingTo("1");
+            });
+  }
+
   private static Map<UUID, BigDecimal> held() {
     Map<UUID, BigDecimal> held = new LinkedHashMap<>();
     held.put(CHF_SHARE, new BigDecimal("25"));

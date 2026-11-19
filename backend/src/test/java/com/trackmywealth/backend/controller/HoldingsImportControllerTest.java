@@ -423,6 +423,8 @@ class HoldingsImportControllerTest {
     for (SnapshotCashBalance invalid :
         List.of(
             new SnapshotCashBalance("ZZZ", BigDecimal.ONE),
+            new SnapshotCashBalance(null, BigDecimal.ONE),
+            new SnapshotCashBalance("USD", null),
             new SnapshotCashBalance("USD", new BigDecimal("1.00001")),
             new SnapshotCashBalance("CHF", BigDecimal.ONE))) {
       client()
@@ -896,6 +898,23 @@ class HoldingsImportControllerTest {
         uploadRequest(depot, ShippedTemplateFixtures.swissquoteHoldings(), STATEMENT_DATE),
         400,
         null);
+  }
+
+  // #614: like the manual snapshot API, only an account that holds positions keeps foreign cash.
+  @Test
+  void anAccountWithoutPositionsRecordsOnlyItsOwnCurrencyCash() throws Exception {
+    UUID current = createAccount("Girokonto", false);
+    ImportBatchResponse preview =
+        upload(current, ShippedTemplateFixtures.postfinanceCashWorkbook(), EXPORT_DATE);
+    assertThat(preview.holdings().cashBalances())
+        .extracting(ImportHoldingsResponse.Cash::currency, ImportHoldingsResponse.Cash::recorded)
+        .containsExactly(tuple("CHF", true), tuple("USD", false));
+
+    commit(preview);
+    AccountSnapshotResponse snapshot = snapshots(current).get(0);
+    assertThat(snapshot.balance()).isEqualByComparingTo("1204.35");
+    assertThat(snapshot.foreignCashBalances()).isEmpty();
+    assertThat(count("SELECT count(*) FROM snapshot_foreign_cash")).isZero();
   }
 
   @Test

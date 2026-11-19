@@ -150,7 +150,7 @@ public class ImportHoldingsService {
     List<ImportHoldingRow> positions = ofKind(rows, ImportHoldingsValues.KIND_POSITION);
     Map<Integer, UUID> resolved = resolve(account.getWorkspace().getId(), positions);
     String currency = accountCurrencyService.ownCurrency(account);
-    Map<String, BigDecimal> cashByCurrency = cashByCurrency(rows);
+    Map<String, BigDecimal> cashByCurrency = recordableCash(rows, account, currency);
     BigDecimal balance = cashByCurrency.remove(currency);
     int unresolvedCount = positions.size() - resolved.size();
     List<String> duplicates = duplicateSecurities(positions, resolved);
@@ -193,7 +193,10 @@ public class ImportHoldingsService {
             .map(
                 row ->
                     new ImportHoldingsResponse.Cash(
-                        row.getRowNumber(), row.getCurrency(), row.getAmount(), true))
+                        row.getRowNumber(),
+                        row.getCurrency(),
+                        row.getAmount(),
+                        account.isHoldsPositions() || currency.equals(row.getCurrency())))
             .toList();
     List<ImportHoldingsResponse.Unreadable> unreadable =
         errors.stream()
@@ -272,7 +275,7 @@ public class ImportHoldingsService {
               + " are the same security; a snapshot holds it once.");
     }
     String currency = accountCurrencyService.ownCurrency(account);
-    Map<String, BigDecimal> cashByCurrency = cashByCurrency(rows);
+    Map<String, BigDecimal> cashByCurrency = recordableCash(rows, account, currency);
     if (cashByCurrency.values().stream()
         .anyMatch(amount -> amount.precision() - amount.scale() > 16)) {
       throw new ResponseStatusException(
@@ -404,11 +407,16 @@ public class ImportHoldingsService {
         .toList();
   }
 
-  // A statement may include several cash lines in the same currency.
-  private static Map<String, BigDecimal> cashByCurrency(List<ImportHoldingRow> rows) {
+  // The cash a snapshot records, totalled by currency (a statement may list a currency more than
+  // once): every currency on an account that holds positions, else only the account's own. The
+  // manual snapshot API has the same rule (#614).
+  private static Map<String, BigDecimal> recordableCash(
+      List<ImportHoldingRow> rows, Account account, String currency) {
     Map<String, BigDecimal> cash = new LinkedHashMap<>();
     for (ImportHoldingRow row : ofKind(rows, ImportHoldingsValues.KIND_CASH)) {
-      cash.merge(row.getCurrency(), row.getAmount(), BigDecimal::add);
+      if (account.isHoldsPositions() || currency.equals(row.getCurrency())) {
+        cash.merge(row.getCurrency(), row.getAmount(), BigDecimal::add);
+      }
     }
     return cash;
   }
