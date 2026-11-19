@@ -510,6 +510,30 @@ describe('S7 step 1: file and account (#492)', () => {
 });
 
 describe('S7 web entry: account picker (#492)', () => {
+  it('clears the failed upload key and retry when switching accounts', async () => {
+    jest.mocked(useAccounts).mockReturnValue({
+      data: [
+        { id: 'a-1', name: 'Giro', portfolioName: 'DKB', archived: false, hasTransactions: true },
+        { id: 'a-2', name: 'Savings', portfolioName: 'DKB', archived: false, hasTransactions: true },
+      ],
+      isPending: false,
+      isError: false,
+      isSuccess: true,
+    } as unknown as ReturnType<typeof useAccounts>);
+    pickFile();
+    const fake = serve(null);
+    fake.failNext('upload', '/api/v1/accounts/{accountId}/imports', problem('IMPORT_PDF_BUSY', 503));
+    await mount({ accountId: undefined });
+    await fireEvent.press(screen.getByRole('radio', { name: 'DKB · Giro' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Choose file' }));
+    expect(await screen.findByRole('button', { name: 'Try again' })).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'DKB · Savings' }));
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+    expect(fake.callsOf('upload', '/api/v1/accounts/{accountId}/imports')).toHaveLength(1);
+    expect(deletePickedCopy).toHaveBeenCalledWith('file:///cache/synthetic-dkb.csv');
+  });
+
   it('lists only active accounts that keep transactions', async () => {
     jest.mocked(useAccounts).mockReturnValue({
       data: [
