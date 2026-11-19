@@ -77,6 +77,11 @@ list as in S2's `PositionRow`) and **Activity** (the transaction list of this sp
    → `page.totalElements`.
 5. `GET /api/v1/categories` (once per session, cached): category names for the chips.
 6. Depot: `GET /api/v1/accounts/{accountId}/positions` (delivered by #478).
+7. For each distinct original referenced by a loaded reversal, use its booking date from the
+   loaded rows or read it via `GET /api/v1/accounts/{accountId}/transactions/{transactionId}`.
+   Limit the background lookups to four concurrent reads. Refresh and saves complete after
+   their foreground reads. Keep the last verified date through temporary failures and show
+   the generic reversal label while the date is unavailable or access is denied.
 
 Request 3 needs `hasTransactions = true` from request 1. Without it, skip 3 and 4 (see States).
 
@@ -196,7 +201,7 @@ Errors on these actions:
   category, it reads "Uncategorised 2" (from the reloaded count, not decremented on the client).
 - Given an internal transfer, it shows "Internal transfer · excluded" and no "Uncategorised".
 - Given a voided imported transaction, the original row shows struck through with "Voided", and
-  its reversal row shows "Reversal of {date}".
+  its reversal row shows "Reversal of {date}", even when the original is on an unloaded page.
 - Given a dividend (`categoryId = null`), no category chip shows and it isn't counted as
   uncategorised.
 - Given `reconciliation.status = OPEN_DIFFERENCE`, the line shows the difference with an icon and

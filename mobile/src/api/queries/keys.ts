@@ -8,6 +8,7 @@ export const queryRoots = {
   portfolios: 'portfolios',
   netWorth: 'net-worth',
   accounts: 'accounts',
+  reversalDates: 'reversal-dates',
   categories: 'categories',
   cashFlow: 'cash-flow',
 } as const;
@@ -34,6 +35,8 @@ export const queryKeys = {
   accountPositions: (accountId: string) => [queryRoots.accounts, accountId, 'positions'] as const,
   transaction: (accountId: string, transactionId: string) =>
     [queryRoots.accounts, accountId, 'transactions', transactionId] as const,
+  reversalDate: (accountId: string, transactionId: string) =>
+    [queryRoots.reversalDates, accountId, transactionId] as const,
   transactionHistory: (accountId: string, transactionId: string) =>
     [queryRoots.accounts, accountId, 'transactions', transactionId, 'history'] as const,
   security: (id: string) => ['securities', id] as const,

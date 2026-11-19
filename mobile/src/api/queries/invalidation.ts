@@ -45,5 +45,8 @@ export async function invalidateFromFirstPage(
 
 /** Marks all financial data stale and refetches what is on screen, paged lists from page 0. */
 export function invalidateFinancialData(client: QueryClient): Promise<void> {
-  return invalidateFromFirstPage(client, { predicate: isFinancial });
+  const foreground = invalidateFromFirstPage(client, { predicate: isFinancial });
+  // These dates annotate the list. They must not extend refresh or the lifetime of a save.
+  void client.invalidateQueries({ queryKey: [queryRoots.reversalDates] }, { cancelRefetch: false });
+  return foreground;
 }

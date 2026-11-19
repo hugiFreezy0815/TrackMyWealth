@@ -21,7 +21,6 @@ import {
   importErrorMessageKey,
   isKnownBatchStatus,
   isKnownRowStatus,
-  isRetryableUploadError,
   isUnsupportedHoldings,
   reviewableBatch,
 } from './model';
@@ -67,7 +66,7 @@ function FlowError({ flow }: { flow: StatementImport }) {
   const wait = useSecondsUntil(flow.retryAt);
   if (!flow.error) return null;
   const key = importErrorMessageKey(flow.error);
-  const retryable = isRetryableUploadError(flow.error) && flow.file !== null && flow.online;
+  const retryable = flow.canRetryUpload;
   return (
     <View>
       <ErrorBanner

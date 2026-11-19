@@ -115,11 +115,13 @@ export function uploadStatement(
   accountId: string,
   file: StatementFile,
   signal?: AbortSignal,
+  idempotencyKey?: string,
 ): Promise<Batch> {
   return typedApi.upload('/api/v1/accounts/{accountId}/imports', {
     params: { accountId },
     body: statementForm(file),
     signal,
+    ...(idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {}),
   });
 }
 
