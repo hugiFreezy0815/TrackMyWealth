@@ -33,18 +33,17 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
    */
   @Query(
       "SELECT s FROM AccountSnapshot s WHERE s.account.id = :accountId"
-          + " AND s.withdrawnAt IS NULL"
+          + " AND s.withdrawnAt IS NULL AND s.snapshotDate <= :asOf"
           + " AND EXISTS (SELECT h.id FROM SnapshotHolding h WHERE h.snapshotId = s.id)"
           + " ORDER BY s.snapshotDate DESC, s.createdAt DESC, s.id DESC")
   List<AccountSnapshot> findNewestWithHoldings(
-      @Param("accountId") UUID accountId, Pageable pageable);
+      @Param("accountId") UUID accountId, @Param("asOf") LocalDate asOf, Pageable pageable);
 
   /**
-   * Same holdings selection as the positions read, bounded by the valuation date. Read the cash and
-   * holdings in one statement so a concurrent snapshot replacement cannot mix revisions. {@code
-   * unrecordedCash} says whether an import that contributed to the snapshot listed cash in another
-   * currency than the snapshot's: that cash is shown at import but not recorded (#273), so the
-   * snapshot alone cannot state the account's full value (#586, FR-PERF-018).
+   * Read the latest statement and all its components in one query. Older imported statements with
+   * cash that could not be safely backfilled remain incomplete. A statement that reports cash lists
+   * every currency the depot holds, so a snapshot with foreign cash but no own-currency balance
+   * holds none of the account currency (0); one without any cash stays incomplete (#614).
    */
   @Query(
       value =
@@ -58,24 +57,37 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
               AND s.withdrawn_at IS NULL
               AND EXISTS (SELECT 1 FROM snapshot_holding h WHERE h.snapshot_id = s.id)
             ORDER BY s.account_id, s.snapshot_date DESC, s.created_at DESC, s.id DESC
-          ),
-          flagged AS (
+          ), flagged AS (
             SELECT l.*, EXISTS (
-                     SELECT 1 FROM import_holding_row r
-                     WHERE r.kind = 'CASH'
-                       AND r.currency IS DISTINCT FROM l.currency
-                       AND (r.import_batch_id = l.balance_import_batch_id
-                            OR r.import_batch_id IN (
-                              SELECT h.import_batch_id FROM snapshot_holding h
-                              WHERE h.snapshot_id = l.id))
-                   ) AS unrecorded_cash
+                SELECT 1
+                FROM import_holding_row r
+                LEFT JOIN snapshot_foreign_cash c
+                  ON c.snapshot_id = l.id AND c.currency = r.currency
+                WHERE r.kind = 'CASH' AND r.currency <> l.currency
+                  AND (r.import_batch_id = l.balance_import_batch_id
+                       OR r.import_batch_id IN (
+                           SELECT h.import_batch_id FROM snapshot_holding h
+                           WHERE h.snapshot_id = l.id))
+                GROUP BY r.import_batch_id, r.currency, c.amount
+                HAVING sum(r.amount) IS DISTINCT FROM c.amount
+            ) AS unrecorded_cash
             FROM latest l
           )
           SELECT s.account_id AS "accountId", s.snapshot_date AS "snapshotDate",
-                 s.balance AS "cashBalance", s.unrecorded_cash AS "unrecordedCash",
-                 h.reported_value AS "reportedValue", h.reported_currency AS "reportedCurrency"
+                 s.unrecorded_cash AS "unrecordedCash", parts.amount AS "reportedValue",
+                 parts.currency AS "reportedCurrency"
           FROM flagged s
-          JOIN snapshot_holding h ON h.snapshot_id = s.id
+          CROSS JOIN LATERAL (
+              SELECT coalesce(s.balance, CASE WHEN EXISTS (
+                         SELECT 1 FROM snapshot_foreign_cash fc WHERE fc.snapshot_id = s.id)
+                       THEN 0 END) AS amount,
+                     s.currency AS currency
+              UNION ALL
+              SELECT c.amount, c.currency FROM snapshot_foreign_cash c WHERE c.snapshot_id = s.id
+              UNION ALL
+              SELECT h.reported_value, h.reported_currency
+              FROM snapshot_holding h WHERE h.snapshot_id = s.id
+          ) parts
           """,
       nativeQuery = true)
   List<ReportedHoldingValue> findLatestReportedHoldings(
@@ -166,7 +178,9 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
   @Query(
       "SELECT s FROM AccountSnapshot s WHERE s.withdrawnAt IS NULL AND (s.importBatchId = :batchId"
           + " OR s.balanceImportBatchId = :batchId OR EXISTS (SELECT 1 FROM SnapshotHolding h"
-          + " WHERE h.snapshotId = s.id AND h.importBatchId = :batchId))")
+          + " WHERE h.snapshotId = s.id AND h.importBatchId = :batchId)"
+          + " OR EXISTS (SELECT c.id FROM SnapshotForeignCash c"
+          + " WHERE c.snapshotId = s.id AND c.importBatchId = :batchId))")
   Optional<AccountSnapshot> findContributedBy(@Param("batchId") UUID batchId);
 
   // Replacing a snapshot deletes and re-inserts its holdings; the row lock keeps two concurrent

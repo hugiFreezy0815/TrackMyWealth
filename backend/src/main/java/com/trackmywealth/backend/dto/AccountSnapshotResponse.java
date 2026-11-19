@@ -9,8 +9,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * An account snapshot and its holdings (US-25-01). {@code balance} is {@code null} for a snapshot
- * that reported positions only; {@code updatedAt} is {@code null} until a manual snapshot is first
- * replaced.
+ * without an observed own-currency balance; {@code updatedAt} is {@code null} until a manual
+ * snapshot is first replaced.
  */
 public record AccountSnapshotResponse(
     UUID id,
@@ -23,10 +23,13 @@ public record AccountSnapshotResponse(
     OffsetDateTime createdAt,
     @Nullable OffsetDateTime updatedAt,
     int version,
-    List<SnapshotHoldingResponse> holdings) {
+    List<SnapshotHoldingResponse> holdings,
+    List<SnapshotCashBalance> foreignCashBalances) {
 
   public AccountSnapshotResponse {
     // Defensive/immutable copy (SpotBugs EI_EXPOSE_REP), same as SecurityCreation.
     holdings = List.copyOf(holdings);
+    foreignCashBalances =
+        foreignCashBalances == null ? List.of() : List.copyOf(foreignCashBalances);
   }
 }

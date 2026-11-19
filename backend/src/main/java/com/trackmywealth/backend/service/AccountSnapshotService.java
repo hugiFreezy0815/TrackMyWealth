@@ -4,17 +4,21 @@ import com.trackmywealth.backend.dto.AccountSnapshotResponse;
 import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
+import com.trackmywealth.backend.dto.SnapshotCashBalance;
 import com.trackmywealth.backend.dto.SnapshotHoldingRequest;
 import com.trackmywealth.backend.dto.SnapshotHoldingResponse;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountSnapshot;
 import com.trackmywealth.backend.entity.Security;
+import com.trackmywealth.backend.entity.SnapshotForeignCash;
 import com.trackmywealth.backend.entity.SnapshotHolding;
 import com.trackmywealth.backend.error.ExistingResourceConflictException;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.SecurityRepository;
+import com.trackmywealth.backend.repository.SnapshotForeignCashRepository;
 import com.trackmywealth.backend.repository.SnapshotHoldingRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.validation.CurrencyCodes;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -79,6 +83,7 @@ public class AccountSnapshotService {
   private final BusinessDateService businessDateService;
   private final AccountSnapshotRepository snapshotRepository;
   private final SnapshotHoldingRepository holdingRepository;
+  private final SnapshotForeignCashRepository cashRepository;
   private final SecurityRepository securityRepository;
   private final VersionPreconditionService versionPreconditionService;
   private final AccountCurrencyService accountCurrencyService;
@@ -91,6 +96,7 @@ public class AccountSnapshotService {
       BusinessDateService businessDateService,
       AccountSnapshotRepository snapshotRepository,
       SnapshotHoldingRepository holdingRepository,
+      SnapshotForeignCashRepository cashRepository,
       SecurityRepository securityRepository,
       VersionPreconditionService versionPreconditionService,
       AccountCurrencyService accountCurrencyService,
@@ -101,6 +107,7 @@ public class AccountSnapshotService {
     this.businessDateService = businessDateService;
     this.snapshotRepository = snapshotRepository;
     this.holdingRepository = holdingRepository;
+    this.cashRepository = cashRepository;
     this.securityRepository = securityRepository;
     this.versionPreconditionService = versionPreconditionService;
     this.accountCurrencyService = accountCurrencyService;
@@ -113,8 +120,15 @@ public class AccountSnapshotService {
       UUID accountId, RecordAccountSnapshotRequest request, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account);
+    String currency = accountCurrencyService.ownCurrency(account);
     Map<UUID, Security> securities =
-        validate(account, request.snapshotDate(), request.balance(), request.holdings());
+        validate(
+            account,
+            request.snapshotDate(),
+            request.balance(),
+            request.holdings(),
+            request.foreignCashBalances(),
+            currency);
 
     snapshotRepository
         .findByAccountIdAndSnapshotDateAndSourceAndWithdrawnAtIsNull(
@@ -137,7 +151,7 @@ public class AccountSnapshotService {
     snapshot.setSnapshotDate(request.snapshotDate());
     snapshot.setBalance(atScale(request.balance(), FxRateService.MONEY_SCALE));
     // Not client-supplied: always the account's own currency (V58 guards it as well).
-    snapshot.setCurrency(accountCurrencyService.ownCurrency(account));
+    snapshot.setCurrency(currency);
     snapshot.setSource(MANUAL);
     snapshot.setCreatedBy(actor.userId());
     // flush, not a plain save: a concurrent duplicate's UNIQUE violation surfaces here, as a 409
@@ -145,8 +159,9 @@ public class AccountSnapshotService {
     snapshot = snapshotRepository.saveAndFlush(snapshot);
 
     List<SnapshotHolding> holdings = saveHoldings(snapshot.getId(), request.holdings());
+    List<SnapshotForeignCash> cash = saveCash(snapshot, request.foreignCashBalances());
     reconciliationService.reconcileLatest(account, actor.userId());
-    return toResponse(snapshot, holdings, securities);
+    return toResponse(snapshot, holdings, securities, cash);
   }
 
   @Transactional
@@ -177,8 +192,19 @@ public class AccountSnapshotService {
           "This snapshot is the account's opening balance. Update it through"
               + " /api/v1/accounts/{accountId}/opening-balance.");
     }
+    boolean replaceCash = request.foreignCashBalances() != null;
+    List<SnapshotForeignCash> existingCash =
+        replaceCash ? List.of() : cashRepository.findBySnapshotIdOrderByCurrency(snapshotId);
+    List<SnapshotCashBalance> cashBalances =
+        replaceCash ? request.foreignCashBalances() : cashBalances(existingCash);
     Map<UUID, Security> securities =
-        validate(account, snapshot.getSnapshotDate(), request.balance(), request.holdings());
+        validate(
+            account,
+            snapshot.getSnapshotDate(),
+            request.balance(),
+            request.holdings(),
+            cashBalances,
+            snapshot.getCurrency());
 
     snapshot.setBalance(atScale(request.balance(), FxRateService.MONEY_SCALE));
     // TIMESTAMPTZ keeps microseconds; a Linux clock has nanoseconds. Truncate so this response
@@ -189,8 +215,13 @@ public class AccountSnapshotService {
 
     holdingRepository.deleteBySnapshotId(snapshotId);
     List<SnapshotHolding> holdings = saveHoldings(snapshotId, request.holdings());
+    List<SnapshotForeignCash> cash = existingCash;
+    if (replaceCash) {
+      cashRepository.deleteBySnapshotId(snapshotId);
+      cash = saveCash(snapshot, cashBalances);
+    }
     reconciliationService.reconcileLatest(account, actor.userId());
-    return toResponse(snapshot, holdings, securities);
+    return toResponse(snapshot, holdings, securities, cash);
   }
 
   /**
@@ -207,9 +238,15 @@ public class AccountSnapshotService {
         snapshotRepository.findByAccountIdAndWithdrawnAtIsNull(
             accountId, PagingValues.requireBounded(pageable, "id"));
     if (snapshots.isEmpty()) {
-      return snapshots.map(snapshot -> toResponse(snapshot, List.of(), Map.of()));
+      return snapshots.map(snapshot -> toResponse(snapshot, List.of(), Map.of(), List.of()));
     }
-    // Two queries for the whole list, not two per snapshot.
+    // Batch child reads for the entire page.
+    Map<UUID, List<SnapshotForeignCash>> cashBySnapshot =
+        cashRepository
+            .findBySnapshotIdInOrderByCurrency(
+                snapshots.stream().map(AccountSnapshot::getId).toList())
+            .stream()
+            .collect(Collectors.groupingBy(SnapshotForeignCash::getSnapshotId));
     Map<UUID, List<SnapshotHolding>> holdingsBySnapshot =
         holdingRepository
             .findBySnapshotIdIn(snapshots.stream().map(AccountSnapshot::getId).toList())
@@ -226,7 +263,8 @@ public class AccountSnapshotService {
             toResponse(
                 snapshot,
                 holdingsBySnapshot.getOrDefault(snapshot.getId(), List.of()),
-                securities));
+                securities,
+                cashBySnapshot.getOrDefault(snapshot.getId(), List.of())));
   }
 
   @Transactional(readOnly = true)
@@ -244,7 +282,8 @@ public class AccountSnapshotService {
         snapshot,
         holdings,
         securitiesById(
-            holdings.stream().map(SnapshotHolding::getSecurityId).collect(Collectors.toSet())));
+            holdings.stream().map(SnapshotHolding::getSecurityId).collect(Collectors.toSet())),
+        cashRepository.findBySnapshotIdOrderByCurrency(snapshotId));
   }
 
   // Returns the referenced securities by id, for the response.
@@ -252,7 +291,9 @@ public class AccountSnapshotService {
       Account account,
       LocalDate snapshotDate,
       BigDecimal balance,
-      List<SnapshotHoldingRequest> holdings) {
+      List<SnapshotHoldingRequest> holdings,
+      List<SnapshotCashBalance> cash,
+      String currency) {
     if (snapshotDate.isAfter(businessDateService.today())) {
       throw unprocessable("snapshotDate cannot be in the future.");
     }
@@ -265,8 +306,28 @@ public class AccountSnapshotService {
     if (!holdings.isEmpty() && !account.isHoldsPositions()) {
       throw unprocessable("This account does not hold securities, so a snapshot has no holdings.");
     }
-    if (balance == null && holdings.isEmpty()) {
-      throw unprocessable("A snapshot needs a balance, holdings, or both.");
+    if (!cash.isEmpty() && !account.isHoldsPositions()) {
+      throw unprocessable(
+          "Foreign cash balances are only supported for accounts that hold positions.");
+    }
+    if (balance == null && holdings.isEmpty() && cash.isEmpty()) {
+      throw unprocessable("A snapshot needs a balance, foreign cash, or holdings.");
+    }
+    Set<String> cashCurrencies = new HashSet<>();
+    for (SnapshotCashBalance line : cash) {
+      if (!CurrencyCodes.isValid(line.currency())) {
+        throw unprocessable("A foreign cash currency must be a valid ISO 4217 currency code.");
+      }
+      BigDecimal amount = line.amount();
+      if (amount.scale() > FxRateService.MONEY_SCALE
+          || (long) amount.precision() - amount.scale() > 16) {
+        throw unprocessable(
+            "A foreign cash amount needs up to 16 integer and 4 fractional digits.");
+      }
+      if (currency.equals(line.currency()) || !cashCurrencies.add(line.currency())) {
+        throw unprocessable(
+            "List each foreign cash currency once; use balance for the account currency.");
+      }
     }
 
     Set<UUID> securityIds = new HashSet<>();
@@ -313,6 +374,20 @@ public class AccountSnapshotService {
     return holdingRepository.saveAllAndFlush(holdings);
   }
 
+  private List<SnapshotForeignCash> saveCash(
+      AccountSnapshot snapshot, List<SnapshotCashBalance> balances) {
+    return cashRepository.saveAllAndFlush(
+        balances.stream()
+            .map(
+                line ->
+                    new SnapshotForeignCash(
+                        snapshot,
+                        line.currency(),
+                        atScale(line.amount(), FxRateService.MONEY_SCALE),
+                        null))
+            .toList());
+  }
+
   private Map<UUID, Security> securitiesById(Set<UUID> ids) {
     if (ids.isEmpty()) {
       return Map.of();
@@ -322,7 +397,10 @@ public class AccountSnapshotService {
   }
 
   private AccountSnapshotResponse toResponse(
-      AccountSnapshot snapshot, List<SnapshotHolding> holdings, Map<UUID, Security> securities) {
+      AccountSnapshot snapshot,
+      List<SnapshotHolding> holdings,
+      Map<UUID, Security> securities,
+      List<SnapshotForeignCash> cash) {
     List<SnapshotHoldingResponse> holdingResponses =
         holdings.stream()
             .map(
@@ -357,7 +435,15 @@ public class AccountSnapshotService {
         snapshot.getCreatedAt(),
         snapshot.getUpdatedAt(),
         VersionPreconditionService.persistedVersion(snapshot.getVersion(), "account snapshot"),
-        holdingResponses);
+        holdingResponses,
+        cashBalances(cash));
+  }
+
+  private static List<SnapshotCashBalance> cashBalances(List<SnapshotForeignCash> cash) {
+    return cash.stream()
+        .map(line -> new SnapshotCashBalance(line.getCurrency(), line.getAmount()))
+        .sorted(Comparator.comparing(SnapshotCashBalance::currency))
+        .toList();
   }
 
   // The request's @Digits already caps the fraction at the column scale, so this never rounds.
