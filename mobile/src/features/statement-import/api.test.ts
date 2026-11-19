@@ -146,42 +146,67 @@ describe('authenticated multipart and CSV transport (#492)', () => {
 
   it('keeps cancellation active after headers, while reading the multipart response', async () => {
     const cancel = new AbortController();
-    const bodyRead = jest.fn(
-      () =>
-        new Promise<never>((_resolve, reject) => {
-          cancel.signal.addEventListener('abort', () =>
-            reject(Object.assign(new Error('Cancelled'), { name: 'AbortError' })),
-          );
-        }),
-    );
+    let bodyStarted: () => void = () => {
+      throw new Error('Body reader not set up');
+    };
+    const reading = new Promise<void>((resolve) => {
+      bodyStarted = resolve;
+    });
+    let fetchSignal: AbortSignal | null = null;
     const response = new Response('{}', { status: 201 });
-    response.json = bodyRead;
-    globalThis.fetch = jest.fn(async () => response) as unknown as typeof fetch;
+    response.json = () =>
+      new Promise<never>((_resolve, reject) => {
+        if (!fetchSignal) throw new Error('Fetch did not provide an abort signal');
+        const signal = fetchSignal;
+        signal.addEventListener('abort', () =>
+          reject(Object.assign(new Error('Cancelled'), { name: 'AbortError' })),
+          { once: true },
+        );
+        bodyStarted();
+      });
+    globalThis.fetch = jest.fn(async (_url: string, init: RequestInit) => {
+      fetchSignal = init.signal ?? null;
+      return response;
+    }) as unknown as typeof fetch;
 
     const pending = uploadStatement('a-1', file, cancel.signal);
-    await jest.waitFor(() => expect(bodyRead).toHaveBeenCalledTimes(1));
+    await reading;
     cancel.abort();
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(fetchSignal?.aborted).toBe(true);
   });
 
   it('keeps the upload deadline active after 201 headers have arrived', async () => {
     jest.useFakeTimers();
     try {
+      let fetchSignal: AbortSignal | null = null;
+      let bodyStarted: () => void = () => {
+        throw new Error('Body reader not set up');
+      };
+      const reading = new Promise<void>((resolve) => {
+        bodyStarted = resolve;
+      });
       globalThis.fetch = jest.fn(async (_url: string, init: RequestInit) => {
+        fetchSignal = init.signal ?? null;
         const response = new Response('{}', { status: 201 });
         response.json = () =>
           new Promise<never>((_resolve, reject) => {
-            init.signal?.addEventListener('abort', () =>
+            if (!fetchSignal) throw new Error('Fetch did not provide an abort signal');
+            fetchSignal.addEventListener('abort', () =>
               reject(Object.assign(new Error('Aborted while reading body'), { name: 'AbortError' })),
+              { once: true },
             );
+            bodyStarted();
           });
         return response;
       }) as unknown as typeof fetch;
 
       const pending = uploadStatement('a-1', file, undefined, 'deadline-uuid');
+      await reading;
       await jest.advanceTimersByTimeAsync(UPLOAD_TIMEOUT_MS + 1);
       await expect(pending).rejects.toBeInstanceOf(NetworkError);
       await expect(pending).rejects.toThrow(/timed out/);
+      expect(fetchSignal?.aborted).toBe(true);
     } finally {
       jest.useRealTimers();
     }
