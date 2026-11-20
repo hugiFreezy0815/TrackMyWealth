@@ -394,7 +394,7 @@ describe('S7 step 1: file and account (#492)', () => {
     await mount();
     await fireEvent.press(screen.getByRole('button', { name: 'Choose file' }));
 
-    expect(await screen.findByText('error')).toBeTruthy();
+    expect(await screen.findByText(en['statement.error.connection'])).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
     expect(server.callsOf('upload', '/api/v1/accounts/{accountId}/imports')).toHaveLength(1);
     // No Retry can use it, so the statement copy does not stay on the device.
@@ -411,6 +411,8 @@ describe('S7 step 1: file and account (#492)', () => {
     );
     await mount();
     await fireEvent.press(screen.getByRole('button', { name: 'Choose file' }));
+    // The member is told the retry cannot import the statement twice (#574).
+    expect(await screen.findByText(en['statement.error.uploadConnection'])).toBeTruthy();
     await fireEvent.press(await screen.findByRole('button', { name: 'Try again' }));
 
     expect(await commitButton(41)).toBeTruthy();
@@ -453,7 +455,7 @@ describe('S7 step 1: file and account (#492)', () => {
       new NetworkError('Commit did not answer'),
     );
     await fireEvent.press(screen.getByRole('button', { name: 'Import 41 transactions' }));
-    expect(await screen.findByText('error')).toBeTruthy();
+    expect(await screen.findByText(en['statement.error.connection'])).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
     expect(fake.callsOf('upload', '/api/v1/accounts/{accountId}/imports')).toHaveLength(1);
     expect(deletePickedCopy).toHaveBeenCalledWith('file:///cache/synthetic-dkb.csv');

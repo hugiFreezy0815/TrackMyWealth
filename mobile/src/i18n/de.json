@@ -458,6 +458,8 @@
   "statement.error.VERSION_CONFLICT": "Der Import hat sich auf dem Server geändert. Prüfe die neueste Version.",
   "statement.error.IDEMPOTENCY_KEY_IN_USE": "Dein Upload wird noch verarbeitet. Versuche es gleich noch einmal.",
   "statement.error.IDEMPOTENCY_KEY_MISMATCH": "Dieser Upload passt nicht zum vorherigen. Wähle die Datei erneut.",
+  "statement.error.uploadConnection": "Die Verbindung ist abgebrochen, bevor der Server geantwortet hat. Versuche es erneut: Dein Kontoauszug wird nicht doppelt importiert.",
+  "statement.error.connection": "Die Verbindung ist abgebrochen. Prüfe deine Verbindung und versuche es erneut.",
   "statement.account.notSupported": "Für dieses Konto kannst du keine Buchungsauszüge importieren.",
   "statement.file.slow": "Gescannte Auszüge brauchen länger.",
   "statement.file.cancelUpload": "Hochladen abbrechen",

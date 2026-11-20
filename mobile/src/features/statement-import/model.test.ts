@@ -1,4 +1,4 @@
-import { ApiError } from '@/api/client';
+import { ApiError, NetworkError } from '@/api/client';
 import {
   canCommit,
   canToggleRow,
@@ -143,6 +143,10 @@ describe('statement import acceptance rules (#492)', () => {
       'statement.error.IMPORT_FILE_MALFORMED',
     );
     expect(importErrorMessageKey(problem('UNKNOWN'))).toBeNull();
+    // A dropped connection: only an upload's Retry can promise no second import (#574).
+    const dropped = new NetworkError('connection reset');
+    expect(importErrorMessageKey(dropped, true)).toBe('statement.error.uploadConnection');
+    expect(importErrorMessageKey(dropped)).toBe('statement.error.connection');
     expect(isRetryableUploadError(problem('IMPORT_PDF_BUSY'))).toBe(true);
     expect(isRetryableUploadError(problem('IMPORT_OCR_UNAVAILABLE'))).toBe(true);
     expect(isRetryableUploadError(problem('IMPORT_FILE_MALFORMED'))).toBe(false);
