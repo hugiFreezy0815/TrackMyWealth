@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 // FR-CLI-007: the build's default, replaced by the server a user configured (see server-url.ts).
 let apiBaseUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
 
@@ -236,6 +238,7 @@ export async function requestMultipart<T>(path: string, options: MultipartOption
     timedOut = true;
     controller.abort();
   }, timeoutMs);
+  let answered = false;
   try {
     const response = await exchange(path, {
       ...options,
@@ -244,18 +247,37 @@ export async function requestMultipart<T>(path: string, options: MultipartOption
       timeoutMs,
       deadlineManagedByCaller: true,
     });
+    answered = true;
     return (await response.json()) as T;
   } catch (failure) {
     if (options.signal?.aborted) throw failure;
     if (timedOut) throw new NetworkError('Statement upload timed out');
-    // Preserve a server problem response or a session-refresh failure. All other failures
-    // (including after a 201 header) leave the server outcome unknown.
+    // Preserve a server problem response or a session-refresh failure.
     if (failure instanceof ApiError || failure instanceof NetworkError) throw failure;
-    throw new NetworkError('Statement upload could not finish receiving its response');
+    // Once the server answered, a lost body leaves the outcome unknown: the upload may be committed.
+    if (answered)
+      throw new NetworkError('Statement upload could not finish receiving its response');
+    if (isNetworkFailure(failure))
+      throw new NetworkError('Statement upload could not reach the server');
+    // Anything else happened in the app before the request left (#640): no connection problem, so
+    // no retry promise; the member sees the generic error and the cause stays visible in the log.
+    console.warn('Statement upload failed in the app:', (failure as Error)?.message ?? failure);
+    throw failure;
   } finally {
     clearTimeout(timer);
     options.signal?.removeEventListener('abort', cancel);
   }
+}
+
+/**
+ * Whether fetch itself reports a failed connection, before any answer arrived: a TypeError on the
+ * web, and Expo's FetchError ("fetch failed: …") on iOS and Android, where Expo SDK 58 installs its
+ * own fetch. Expo does not export that class, so its fixed message prefix identifies it. An error
+ * thrown while preparing the request (e.g. a body Expo cannot encode, #636) is neither.
+ */
+function isNetworkFailure(failure: unknown): boolean {
+  if (Platform.OS === 'web') return failure instanceof TypeError;
+  return failure instanceof Error && failure.message.startsWith('fetch failed: ');
 }
 
 /** A download answered as text, such as a CSV export (typedApi.text). */
