@@ -4113,6 +4113,8 @@ export interface components {
     };
   };
   parameters: {
+    /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+    AppVersion: string;
     /** @description W3C trace context. Invalid or absent values start a trace. */
     Traceparent: string;
   };
@@ -4145,6 +4147,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -4211,6 +4215,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -4237,6 +4256,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -4341,6 +4362,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -4365,6 +4401,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -4433,6 +4471,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -4459,6 +4512,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -4561,6 +4616,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -4607,6 +4677,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -4690,6 +4762,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -4716,6 +4803,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -4823,6 +4912,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -4849,6 +4953,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -4967,6 +5073,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -5008,6 +5129,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -5119,6 +5242,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -5160,6 +5298,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -5258,6 +5398,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -5300,6 +5455,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -5382,6 +5539,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -5406,6 +5578,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -5474,6 +5648,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -5500,6 +5689,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -5617,6 +5808,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -5675,6 +5881,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -5773,6 +5981,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -5814,6 +6037,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -5944,6 +6169,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -6009,6 +6249,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -6077,6 +6319,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -6106,6 +6363,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -6249,6 +6508,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -6293,6 +6567,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -6362,6 +6638,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -6386,6 +6677,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -6496,6 +6789,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -6540,6 +6848,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -6662,6 +6972,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -6703,6 +7028,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -6806,6 +7133,21 @@ export interface operations {
        *     - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
        */
       422: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
@@ -6859,6 +7201,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -6974,6 +7318,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -7013,6 +7372,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -7081,6 +7442,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -7107,6 +7483,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -7242,6 +7620,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -7303,6 +7696,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -7423,6 +7818,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -7470,6 +7880,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -7539,6 +7951,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -7565,6 +7992,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -7686,6 +8115,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -7725,6 +8169,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -7794,6 +8240,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -7820,6 +8281,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -7939,6 +8402,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -7980,6 +8458,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -8089,6 +8569,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -8115,6 +8610,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -8196,6 +8693,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -8235,6 +8747,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -8317,6 +8831,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -8343,6 +8872,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -8445,6 +8976,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -8491,6 +9037,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -8559,6 +9107,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -8583,6 +9146,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -8652,6 +9217,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -8678,6 +9258,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -8770,6 +9352,21 @@ export interface operations {
        *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
        */
       412: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
@@ -8823,6 +9420,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -8927,6 +9526,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -8968,6 +9582,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -9056,6 +9672,21 @@ export interface operations {
        *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
        */
       412: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
@@ -9114,6 +9745,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -9182,6 +9815,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -9208,6 +9856,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -9315,6 +9965,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -9341,6 +10006,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -9439,6 +10106,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -9480,6 +10162,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -9599,6 +10283,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -9645,6 +10344,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -9713,6 +10414,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -9739,6 +10455,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -9847,6 +10565,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -9871,6 +10604,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -9940,6 +10675,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -9966,6 +10716,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -10084,6 +10836,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -10138,6 +10905,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -10206,6 +10975,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -10232,6 +11016,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -10341,6 +11127,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -10370,6 +11171,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -10438,6 +11241,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -10462,6 +11280,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -10531,6 +11351,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -10557,6 +11392,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -10677,6 +11514,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -10720,6 +11572,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -10835,6 +11689,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -10876,6 +11745,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -10995,6 +11866,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -11036,6 +11922,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -11136,6 +12024,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -11182,6 +12085,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -11251,6 +12156,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -11277,6 +12197,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -11392,6 +12314,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -11433,6 +12370,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -11535,6 +12474,21 @@ export interface operations {
        *     - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
        */
       422: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
@@ -11588,6 +12542,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -11690,6 +12646,21 @@ export interface operations {
        *     - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
        */
       422: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
@@ -11748,6 +12719,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -11816,6 +12789,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -11842,6 +12830,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         accountId: string;
@@ -11947,6 +12937,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -11971,6 +12976,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         cardAccountId: string;
@@ -12068,6 +13075,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -12092,6 +13114,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         cardAccountId: string;
@@ -12175,6 +13199,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -12201,6 +13240,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         cardAccountId: string;
@@ -12318,6 +13359,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -12357,6 +13413,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         cardAccountId: string;
@@ -12439,6 +13497,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -12463,6 +13536,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         cardAccountId: string;
@@ -12546,6 +13621,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -12572,6 +13662,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         cardAccountId: string;
@@ -12674,6 +13766,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -12713,6 +13820,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -12730,6 +13839,21 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['FxImportSettingsResponse'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       */
+      400: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
         };
       };
       /**
@@ -12752,6 +13876,21 @@ export interface operations {
        *     - `FORBIDDEN`: Signed in, but not allowed to do this (e.g. an administration endpoint).
        */
       403: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
@@ -12790,6 +13929,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -12905,6 +14046,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -12944,6 +14100,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -12960,6 +14118,21 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ReferenceDataResponse'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       */
+      400: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
         };
       };
       /**
@@ -12982,6 +14155,21 @@ export interface operations {
        *     - `FORBIDDEN`: Signed in, but not allowed to do this (e.g. an administration endpoint).
        */
       403: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
@@ -13018,6 +14206,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -13104,6 +14294,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -13128,6 +14333,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         id: string;
@@ -13211,6 +14418,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -13237,6 +14459,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         id: string;
@@ -13354,6 +14578,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -13395,6 +14634,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         id: string;
@@ -13508,6 +14749,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -13549,6 +14805,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         id: string;
@@ -13647,6 +14905,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -13687,6 +14960,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -13773,6 +15048,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `RATE_LIMITED`: Too many requests; honour Retry-After.
        */
       429: {
@@ -13815,6 +15105,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -13901,6 +15193,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `RATE_LIMITED`: Too many requests; honour Retry-After.
        */
       429: {
@@ -13942,6 +15249,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -14011,6 +15320,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `RATE_LIMITED`: Too many requests; honour Retry-After.
        */
       429: {
@@ -14055,6 +15379,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -14120,6 +15446,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -14150,6 +15491,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -14216,6 +15559,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -14242,6 +15600,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -14348,6 +15708,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -14372,6 +15747,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         id: string;
@@ -14440,6 +15817,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -14466,6 +15858,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         id: string;
@@ -14584,6 +15978,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -14625,6 +16034,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         id: string;
@@ -14720,6 +16131,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -14761,6 +16187,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         id: string;
@@ -14847,6 +16275,21 @@ export interface operations {
        *     - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
        */
       422: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
@@ -14900,6 +16343,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         id: string;
@@ -14986,6 +16431,21 @@ export interface operations {
        *     - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
        */
       422: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
@@ -15043,6 +16503,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -15109,6 +16571,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -15135,6 +16612,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -15239,6 +16718,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -15265,6 +16759,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         id: string;
@@ -15348,6 +16844,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -15394,6 +16905,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -15460,6 +16973,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -15486,6 +17014,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -15592,6 +17122,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -15621,6 +17166,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -15751,6 +17298,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -15796,6 +17358,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -15925,6 +17489,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -15967,6 +17546,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         id: string;
@@ -16035,6 +17616,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -16061,6 +17657,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         id: string;
@@ -16179,6 +17777,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -16220,6 +17833,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         id: string;
@@ -16330,6 +17945,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -16371,6 +18001,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         id: string;
@@ -16457,6 +18089,21 @@ export interface operations {
        *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
        */
       412: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
@@ -16510,6 +18157,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         id: string;
@@ -16608,6 +18257,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -16649,6 +18313,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         id: string;
@@ -16779,6 +18445,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -16821,6 +18502,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         templateId: string;
@@ -16951,6 +18634,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -17003,6 +18701,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -17054,6 +18754,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -17080,6 +18795,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -17145,6 +18862,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -17173,6 +18905,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -17238,6 +18972,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -17267,6 +19016,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -17333,6 +19084,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -17359,6 +19125,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -17464,6 +19232,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -17488,6 +19271,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         portfolioId: string;
@@ -17556,6 +19341,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -17582,6 +19382,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         portfolioId: string;
@@ -17684,6 +19486,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -17726,6 +19543,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         portfolioId: string;
@@ -17793,6 +19612,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -17819,6 +19653,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         portfolioId: string;
@@ -17886,6 +19722,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -17910,6 +19761,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         portfolioId: string;
@@ -17977,6 +19830,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -18003,6 +19871,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -18068,6 +19938,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `RATE_LIMITED`: Too many requests; honour Retry-After.
        */
       429: {
@@ -18109,6 +19994,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -18220,6 +20107,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `RATE_LIMITED`: Too many requests; honour Retry-After.
        */
       429: {
@@ -18261,6 +20163,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         id: string;
@@ -18328,6 +20232,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -18357,6 +20276,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -18408,6 +20329,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -18432,6 +20368,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         id: string;
@@ -18514,6 +20452,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `RATE_LIMITED`: Too many requests; honour Retry-After.
        */
       429: {
@@ -18568,6 +20521,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -18634,6 +20589,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -18660,6 +20630,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         matchId: string;
@@ -18746,6 +20718,21 @@ export interface operations {
        *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
        */
       412: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
@@ -18799,6 +20786,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         matchId: string;
@@ -18897,6 +20886,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -18937,6 +20941,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -18980,6 +20986,21 @@ export interface operations {
        *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
        */
       409: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
@@ -19057,6 +21078,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -19123,6 +21146,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -19147,6 +21185,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -19167,9 +21207,39 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       */
+      400: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `UNAUTHENTICATED`: No valid access token, or a sign-in was refused.
        */
       401: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
@@ -19206,6 +21276,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -19291,6 +21363,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `RATE_LIMITED`: Too many requests; honour Retry-After.
        */
       429: {
@@ -19332,6 +21419,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -19416,6 +21505,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -19440,6 +21544,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -19527,6 +21633,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -19551,6 +21672,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -19568,6 +21691,21 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['WorkspaceResponse'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       */
+      400: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
         };
       };
       /**
@@ -19590,6 +21728,21 @@ export interface operations {
        *     - `NOT_FOUND`: Not found, or not visible to the caller; the two are never told apart.
        */
       404: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
@@ -19631,6 +21784,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -19697,6 +21852,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -19721,6 +21891,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         memberId: string;
@@ -19789,6 +21961,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
        */
       500: {
@@ -19815,6 +22002,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path: {
         memberId: string;
@@ -19913,6 +22102,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -19954,6 +22158,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -20039,6 +22245,21 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
@@ -20080,6 +22301,8 @@ export interface operations {
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
         traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
       };
       path?: never;
       cookie?: never;
@@ -20153,6 +22376,21 @@ export interface operations {
        *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
        */
       412: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;

@@ -89,6 +89,8 @@ services:
       # https://app.example.com; without it here every sign-in from that origin is refused (CORS
       # 403). The default only covers local development (`expo start --web`).
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:*}
+      # #576: the oldest app version this server serves; empty serves every version.
+      MINIMUM_APP_VERSION: ${MINIMUM_APP_VERSION:-}
       # If you put a reverse proxy in front of this stack, see the root README's "Running behind
       # a reverse proxy" section before setting this:
       #   TRUSTED_PROXIES: ${TRUSTED_PROXIES}

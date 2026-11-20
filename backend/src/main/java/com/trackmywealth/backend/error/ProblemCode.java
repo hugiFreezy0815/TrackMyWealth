@@ -7,6 +7,7 @@ import static com.trackmywealth.backend.error.ClientReaction.RELOAD_AND_RETRY;
 import static com.trackmywealth.backend.error.ClientReaction.REPORT;
 import static com.trackmywealth.backend.error.ClientReaction.RETRY_LATER;
 import static com.trackmywealth.backend.error.ClientReaction.SHOW;
+import static com.trackmywealth.backend.error.ClientReaction.UPDATE_APP;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -289,6 +290,10 @@ public enum ProblemCode {
       "The user account is temporarily locked after failed sign-ins.",
       HttpStatus.LOCKED),
   RATE_LIMITED(RETRY_LATER, "Too many requests; honour Retry-After.", HttpStatus.TOO_MANY_REQUESTS),
+  APP_UPDATE_REQUIRED(
+      UPDATE_APP,
+      "The X-App-Version sent is older than the oldest app version this server serves (#576).",
+      HttpStatus.UPGRADE_REQUIRED),
   INTERNAL(
       REPORT,
       "Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code"
@@ -385,6 +390,7 @@ public enum ProblemCode {
       case 412 -> VERSION_CONFLICT;
       case 422 -> UNPROCESSABLE;
       case 423 -> LOCKED;
+      case 426 -> APP_UPDATE_REQUIRED;
       case 428 -> VERSION_REQUIRED;
       case 429 -> RATE_LIMITED;
       default -> status.is4xxClientError() ? VALIDATION_FAILED : INTERNAL;

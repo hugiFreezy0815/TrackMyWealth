@@ -1,0 +1,24 @@
+[en-phone-light] login request X-App-Version: 1.0.0
+[en-phone-light] responses: POST 426 http://localhost:8096/api/v1/auth/login
+[en-phone-light] heading shown: true
+[en-phone-light] body: true
+[en-phone-light] version line: true
+[en-phone-light] reload button: true
+[en-phone-light] sign-in form hidden: true
+[en-phone-light] after reload, sign-in form back: true
+[en-desktop-dark] login request X-App-Version: 1.0.0
+[en-desktop-dark] responses: POST 426 http://localhost:8096/api/v1/auth/login
+[en-desktop-dark] heading shown: true
+[en-desktop-dark] body: true
+[en-desktop-dark] version line: true
+[en-desktop-dark] reload button: true
+[en-desktop-dark] sign-in form hidden: true
+[en-desktop-dark] after reload, sign-in form back: true
+[de-phone-light] login request X-App-Version: 1.0.0
+[de-phone-light] responses: POST 426 http://localhost:8096/api/v1/auth/login
+[de-phone-light] heading shown: true
+[de-phone-light] body: true
+[de-phone-light] version line: true
+[de-phone-light] reload button: true
+[de-phone-light] sign-in form hidden: true
+[de-phone-light] after reload, sign-in form back: true

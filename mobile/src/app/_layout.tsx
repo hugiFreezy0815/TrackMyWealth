@@ -1,7 +1,7 @@
 // First import: the Hermes Intl polyfills (and the device locale read before them), ADR 0008.
 import '@/i18n/polyfills';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 
 import { configureQueryEnvironment, queryClient } from '@/api/queries/client';
@@ -12,8 +12,14 @@ import { View, useColorScheme } from 'react-native';
 import { useIntl } from 'react-intl';
 
 import { loadServerUrl } from '@/api/server-url';
+import {
+  dismissUpdateRequired,
+  subscribeUpdateRequired,
+  updateRequiredSnapshot,
+} from '@/api/update-required';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { AppShell } from '@/features/shell/app-shell';
+import { UpdateRequiredScreen } from '@/features/shell/update-required-screen';
 import { ThemedText } from '@/components/themed-text';
 import { AuthScreen } from '@/features/auth/auth-screen';
 import { installBackForwardGuard } from '@/features/auth/web-document';
@@ -25,6 +31,12 @@ export default function TabLayout() {
   const colorScheme = useColorScheme();
   const [session, setSession] = useState(sessionSnapshot);
   const [restoring, setRestoring] = useState(true);
+  // #576: the server refused this app version; nothing else can work until it is updated.
+  const updateRequired = useSyncExternalStore(
+    subscribeUpdateRequired,
+    updateRequiredSnapshot,
+    updateRequiredSnapshot,
+  );
 
   useEffect(() => {
     const stopQueryEnvironment = configureQueryEnvironment();
@@ -52,7 +64,9 @@ export default function TabLayout() {
       <AppIntlProvider language={session.identity?.language}>
         <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
           <AnimatedSplashOverlay />
-          {restoring ? (
+          {updateRequired ? (
+            <UpdateRequiredScreen onRetry={retryAfterUpdateRequired} />
+          ) : restoring ? (
             <RestoringSession />
           ) : session.signedIn ? (
             <AppShell identity={session.identity} verifyingIdentity={session.verifyingIdentity} />
@@ -63,6 +77,13 @@ export default function TabLayout() {
       </AppIntlProvider>
     </QueryClientProvider>
   );
+}
+
+// Shows the app again and refetches what failed; a server that still refuses shows the update
+// screen again on its next 426.
+function retryAfterUpdateRequired() {
+  dismissUpdateRequired();
+  void queryClient.invalidateQueries();
 }
 
 function RestoringSession() {
