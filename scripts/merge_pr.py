@@ -41,6 +41,7 @@ MOBILE_NATIVE_PATHS = (
     "mobile/.npmrc",
     "mobile/app.json",
     "mobile/scripts/native-smoke.sh",
+    "mobile/scripts/gradle-retry.sh",
     ".github/workflows/mobile-native-ci.yml",
 )
 
@@ -97,6 +98,7 @@ REQUIRED_CHECKS: Dict[str, Tuple[str, Optional[Tuple[str, ...]]]] = {
             "deploy/postgres/",
             ".env.example",
             ".github/workflows/",
+            "mobile/scripts/gradle-retry.sh",
         ),
     ),
     # #378: contrast and amount-format checks of the UX-03 visual foundations.

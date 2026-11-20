@@ -14,6 +14,17 @@ on:
       - "mobile/.npmrc"
       - "mobile/app.json"
       - "mobile/scripts/native-smoke.sh"
+      - "mobile/scripts/gradle-retry.sh"
+      - ".github/workflows/mobile-native-ci.yml"
+  # #643: on main only to fill the Gradle cache the pull requests restore (Android only, see `ios`).
+  # A cache saved by a pull request is visible to that pull request alone, and at about 1.2 GB per
+  # copy it would push the other workflows' caches out of the 10 GB repository limit.
+  push:
+    branches: [main]
+    paths:
+      - "mobile/package-lock.json"
+      - "mobile/app.json"
+      - "mobile/scripts/gradle-retry.sh"
       - ".github/workflows/mobile-native-ci.yml"
   workflow_dispatch:
 
@@ -49,10 +60,42 @@ jobs:
       - name: Generate native project
         run: npx expo prebuild --platform android --no-install
 
+      # #643: the downloaded dependencies and the Gradle distribution, keyed on what pins their
+      # versions (the Expo, React Native and Gradle plugin versions come from the lockfile, config
+      # plugins from app.json). Pull requests only restore; main saves (below).
+      - name: Restore Gradle cache
+        id: gradle-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper/dists
+          key: gradle-v1-${{ runner.os }}-${{ hashFiles('mobile/package-lock.json', 'mobile/app.json') }}
+          restore-keys: gradle-v1-${{ runner.os }}-
+
       # x86_64 only: the emulator's ABI, and a quarter of the native compile time.
+      # #643: Gradle retries a failed request itself (5 tries, from a 1 s back-off), and
+      # gradle-retry.sh repeats the build when it still failed on a download.
       - name: Build release APK
         working-directory: mobile/android
-        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=x86_64
+        run: >
+          ../scripts/gradle-retry.sh assembleRelease --no-daemon -PreactNativeArchitectures=x86_64
+          -Dorg.gradle.internal.repository.max.tentatives=5
+          -Dorg.gradle.internal.repository.initial.backoff=1000
+
+      # Saved after a successful build only, so it holds everything the build needs. Gradle's lock
+      # and GC bookkeeping files are left out, as the cache restores into a fresh home.
+      - name: Prepare Gradle cache for saving
+        if: github.ref == 'refs/heads/main' && steps.gradle-cache.outputs.cache-hit != 'true'
+        run: rm -f ~/.gradle/caches/modules-2/modules-2.lock ~/.gradle/caches/modules-2/gc.properties
+      - name: Save Gradle cache
+        if: github.ref == 'refs/heads/main' && steps.gradle-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper/dists
+          key: ${{ steps.gradle-cache.outputs.cache-primary-key }}
 
       - name: Enable KVM for the emulator
         run: |
@@ -78,6 +121,8 @@ jobs:
           if-no-files-found: ignore
 
   ios:
+    # A push to main runs only to fill the Gradle cache (#643): no iOS build there.
+    if: github.event_name != 'push'
     # Expo SDK 58's ExpoModulesJSI needs Swift 6.2, i.e. Xcode 26; macos-15 ships Xcode 16.4.
     runs-on: macos-26
     timeout-minutes: 60

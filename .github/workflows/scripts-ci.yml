@@ -16,6 +16,8 @@ on:
       - "deploy/postgres/**"
       - ".env.example"
       - ".github/workflows/**"
+      # #643: tested by scripts/tests/test_gradle_retry.py.
+      - "mobile/scripts/gradle-retry.sh"
   pull_request:
     paths:
       - "scripts/**"
@@ -25,6 +27,8 @@ on:
       - "deploy/postgres/**"
       - ".env.example"
       - ".github/workflows/**"
+      # #643: tested by scripts/tests/test_gradle_retry.py.
+      - "mobile/scripts/gradle-retry.sh"
 
 permissions:
   contents: read
