@@ -390,6 +390,25 @@ describe('S7 step 1: file and account (#492)', () => {
     expect(deletePickedCopy).toHaveBeenCalledWith('file:///cache/synthetic-dkb.csv');
   });
 
+  it('shows an app error before sending as the generic error, with no retry promise (#640)', async () => {
+    jest.mocked(supportsUploadReplay).mockReturnValue(true);
+    pickFile();
+    serve(null).failNext(
+      'upload',
+      '/api/v1/accounts/{accountId}/imports',
+      new Error('Unsupported FormDataPart implementation'),
+    );
+    await mount();
+    await fireEvent.press(screen.getByRole('button', { name: 'Choose file' }));
+
+    // The banner gets no import-specific text: the generic error, not the connection message.
+    expect(await screen.findByText('error')).toBeTruthy();
+    expect(screen.queryByText(en['statement.error.uploadConnection'])).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+    // Nothing can retry it, so the statement copy does not stay on the device.
+    expect(deletePickedCopy).toHaveBeenCalledWith('file:///cache/synthetic-dkb.csv');
+  });
+
   it('keeps uncertain retries disabled until backend replay is supported', async () => {
     pickFile();
     serve(null).failNext(
