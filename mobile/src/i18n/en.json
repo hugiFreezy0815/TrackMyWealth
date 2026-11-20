@@ -458,6 +458,8 @@
   "statement.error.VERSION_CONFLICT": "The import changed on the server. Review the latest version.",
   "statement.error.IDEMPOTENCY_KEY_IN_USE": "Your upload is still being processed. Try again in a moment.",
   "statement.error.IDEMPOTENCY_KEY_MISMATCH": "This upload could not be matched to the earlier one. Choose the file again.",
+  "statement.error.uploadConnection": "The connection dropped before the server answered. Try again: your statement won't be imported twice.",
+  "statement.error.connection": "The connection dropped. Check your connection and try again.",
   "statement.account.notSupported": "This account cannot import transaction statements.",
   "statement.file.slow": "Scanned statements take longer.",
   "statement.file.cancelUpload": "Cancel upload",

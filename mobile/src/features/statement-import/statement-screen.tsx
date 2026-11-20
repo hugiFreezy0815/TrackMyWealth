@@ -65,8 +65,8 @@ function FlowError({ flow }: { flow: StatementImport }) {
   const theme = useTheme();
   const wait = useSecondsUntil(flow.retryAt);
   if (!flow.error) return null;
-  const key = importErrorMessageKey(flow.error);
   const retryable = flow.canRetryUpload;
+  const key = importErrorMessageKey(flow.error, retryable);
   return (
     <View>
       <ErrorBanner
