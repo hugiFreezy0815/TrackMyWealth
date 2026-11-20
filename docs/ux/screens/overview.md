@@ -97,7 +97,7 @@ workspace currency (`GET /api/v1/workspace` → `currency`).
 | 5 | Data status banner | `overview.dataStatus.unreconciled` (`count`) + `overview.warning.review` | | `GET /api/v1/accounts` → count of items with `valueStatus = UNRECONCILED` (a count of rows, not a money figure). Hidden when 0 |
 | 6 | Net worth | `overview.netWorth` "Net worth" / "Nettovermögen" | `Amount`, large | `/net-worth` → `netWorth`, `currency` |
 | 7 | Net worth status | `ValueStatusBadge` | | `/net-worth` → `approximate` ⇒ Estimated; `complete=false` ⇒ "Not all values are included"; `warnings[]` listed in the explanation sheet |
-| 8 | Change chip + period label | `history.chipRange.*` "past month" right of the chip; `history.changeUncertain` below it when flagged | `ChangeChip`: sign, amount, %. Neutral and without % when `warningCodes` has `VALUE_UNKNOWN`, `INCEPTION_UNCERTAIN` or `LIFECYCLE_UNVERIFIED` (the change itself may be off, not only its split) | `GET /api/v1/net-worth/history?period=1M&currency=Cur` → `change.amount`, `change.percent` for the selected period |
+| 8 | Change chip + period label | `history.return` "Return {percent}" inside the chip; `history.chipRange.*` "past month" right of the chip, or `history.chipSince` "since {date}" when `change.returnFrom` is after `from`; `history.changeUncertain` below it when flagged | `ChangeChip`: sign, amount, then "· Return 0.0 %" (#607). Colour and arrow follow the return when one is shown, else the amount. The amount is neutral (no colour from it) when `warningCodes` has `VALUE_UNKNOWN`, `INCEPTION_UNCERTAIN` or `LIFECYCLE_UNVERIFIED` (the wealth change itself may be off); those codes no longer hide the return. No return when `change.returnPercent` is null or amounts are hidden | `GET /api/v1/net-worth/history?period=1M&currency=Cur` → `change.amount`, `change.returnPercent`, `change.returnFrom` for the selected period. `change.percent` (the wealth change) is not shown |
 | 9 | Change split | `history.saving`, `history.capitalMovements`, `history.marketAndFx` | one wrapping line, parts separated by "·"; a null part is left out | `GET /api/v1/net-worth/history?period=1M&currency=Cur` → `change.contributions`, `change.marketAndFx`, `change.capitalMovements` |
 | 10 | Value chart | text alternative `history.chartSummary` with dates, values and change | line chart, estimated stretches dashed | `GET /api/v1/net-worth/history?period=1M&currency=Cur` → `points[]` (`date`, `value`, `estimated`) |
 | 11 | Period switch | `history.period.*` | segmented control; default 1M; the choice is remembered on the device | `GET /api/v1/net-worth/history` → `period` parameter |
@@ -250,6 +250,15 @@ Pending-review transfers, unresolved settlements or loan repayments, missing his
 unknown valuations, and migrated accounts without reconstructable earlier lifecycle events must
 be explained through `complete=false` and `warningCodes[]`; never display a missing attribution
 as zero or label it a market gain.
+
+`change.returnPercent` (#607) is the period return, Modified Dietz over each account's tracked
+history (`docs/architecture/calculation-methodology.md`, "Period return"). Net saving and the
+first balance of an account that starts being tracked inside the period are flows, never gain.
+`change.returnFrom` is the date the return starts: the period start, or the scope's earliest
+tracking start when that is later; the chip then reads "since {date}". `returnPercent` is null
+when a tracked value or a flow is unknown, or the denominator is 0 or less; the chip then shows
+the amount only. `change.percent` stays the wealth change (`amount / |value at from|`) and is
+not displayed. `sections[].change` carries the same fields per section.
 
 For historical values, an account is included according to its effective state at each
 business-date sample. Data from before lifecycle-event tracking may be restated by the account's

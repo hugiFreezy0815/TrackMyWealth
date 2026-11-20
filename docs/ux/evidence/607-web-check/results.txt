@@ -1,0 +1,17 @@
+1-ac1-without-opening-date: amount=1000.0000 percent=50.00 returnPercent=0.00 returnFrom=2025-11-20 from=2025-11-20 warningCodes=["INCEPTION_UNCERTAIN"]
+  UI: s of 20 Nov 2026 | Net worth | CHF 3'000.00 | → | +CHF 1'000.00 | · | Return 0.0% | past year | This change in value may be of
+2-ac1-opened-before-period: amount=1000.0000 percent=50.00 returnPercent=0.00 returnFrom=2025-11-20 from=2025-11-20 warningCodes=["VALUE_UNKNOWN"]
+  UI: s of 20 Nov 2026 | Net worth | CHF 3'000.00 | → | +CHF 1'000.00 | · | Return 0.0% | past year | This change in value may be of
+3-ac1-opened-on-first-balance: amount=1000.0000 percent=50.00 returnPercent=0.00 returnFrom=2025-11-20 from=2025-11-20 warningCodes=[]
+  UI: s of 20 Nov 2026 | Net worth | CHF 3'000.00 | → | +CHF 1'000.00 | · | Return 0.0% | past year | Net saving | CHF 0.00 | · | Capital 
+4-ac2-gold-grows: amount=1100.0000 percent=27.50 returnPercent=2.45 returnFrom=2025-11-20 from=2025-11-20 warningCodes=[]
+  UI:  of 20 Nov 2026 | Net worth | CHF 5'100.00 | ↗ | +CHF 1'100.00 | · | Return +2.5% | past year | Net saving | CHF 0.00 | · | Capital 
+desktop-5-ac3-portfolio-since: amount=5000.0000 returnPercent=0.00 returnFrom=2026-10-17 from=2025-11-20
+  UI: ank | Portfolio currency CHF | CHF 5'000.00 | → | +CHF 5'000.00 | · | Return 0.0% | since 17 Oct 2026 | This change in value m
+axe: 0 violation(s)
+desktop-6-de-portfolio-seit: amount=5000.0000 returnPercent=0.00 returnFrom=2026-10-17 from=2025-11-20
+  UI: Bank | Portfoliowährung CHF | CHF 5'000.00 | → | +CHF 5'000.00 | · | Rendite 0.0% | seit 17.10.2026 | Diese Wertveränderung ka
+phone 390: horizontal overflow 0px
+console errors (desktop): none
+console errors (de): none
+console errors (phone): none

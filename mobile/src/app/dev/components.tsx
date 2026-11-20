@@ -97,8 +97,22 @@ export default function ComponentGallery() {
           <Amount value="1234.5" currency="NOT-A-CODE" />
           <Amount value="1200" currency="CHF" approx />
           <ChangeChip amount="-0.001" currency="CHF" />
-          <ChangeChip amount="-312.4" currency="EUR" percentage="−0.8%" />
-          <ChangeChip amount="6842.1" currency="CHF" percentage="+1.45%" />
+          <ChangeChip
+            amount="-312.4"
+            currency="EUR"
+            figure={{ text: 'Return −0.8%', label: 'Return minus 0.8 percent', direction: 'down' }}
+          />
+          <ChangeChip
+            amount="6842.1"
+            currency="CHF"
+            figure={{ text: 'Return +0.7%', label: 'Return plus 0.7 percent', direction: 'up' }}
+          />
+          <ChangeChip
+            amount="5000"
+            currency="CHF"
+            uncertain
+            figure={{ text: 'Return 0.0%', label: 'Return 0.0 percent', direction: 'flat' }}
+          />
         </SectionCard>
         <SectionCard title="Value status (all states)">
           {(

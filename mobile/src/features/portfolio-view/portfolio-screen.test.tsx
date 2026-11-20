@@ -298,6 +298,8 @@ describe('S2 Portfolio View acceptance (#493)', () => {
           percent: '9.24',
           contributions: null,
           capitalMovements: null,
+          returnPercent: null,
+          returnFrom: null,
           marketAndFx: null,
         },
         sections: [],
@@ -339,6 +341,8 @@ describe('S2 Portfolio View acceptance (#493)', () => {
       percent: null,
       contributions: null,
       capitalMovements: null,
+      returnPercent: null,
+      returnFrom: null,
       marketAndFx: null,
     };
     const monthly: components['schemas']['ValueHistoryResponse'] = {

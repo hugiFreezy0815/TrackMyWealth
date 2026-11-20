@@ -48,6 +48,9 @@ function history(overrides: Partial<ValueHistory> = {}): ValueHistory {
       contributions: '60.00',
       marketAndFx: '40.00',
       capitalMovements: null,
+      // 40 / (1,000 + w × 60): the net saving is a flow, not part of the return.
+      returnPercent: '3.94',
+      returnFrom: '2026-10-13',
     },
     sections: [],
     complete: true,
@@ -113,11 +116,13 @@ describe('HistoryPanel', () => {
     const order = texts();
     const at = (text: string | RegExp) =>
       order.findIndex((value) => (typeof text === 'string' ? value === text : text.test(value)));
-    expect(at('+10.0%')).toBeGreaterThan(-1);
-    expect(at('past month')).toBeGreaterThan(at('+10.0%'));
+    // #607: the chip shows the return, never the wealth change percent (`percent`).
+    expect(at('Return +3.9%')).toBeGreaterThan(-1);
+    expect(at('+10.0%')).toBe(-1);
+    expect(at('past month')).toBeGreaterThan(at('Return +3.9%'));
     expect(at('Net saving')).toBeGreaterThan(at('past month'));
     expect(at('Market & FX')).toBeGreaterThan(at('Net saving'));
-    expect(at('·')).toBeGreaterThan(at('Net saving'));
+    expect(order.lastIndexOf('·')).toBeGreaterThan(at('Net saving'));
     expect(at('Capital movements')).toBe(-1);
     // The chart's date labels, then the period chips as the card's last row.
     expect(at('13 Oct 2026')).toBeGreaterThan(at('Market & FX'));
@@ -126,19 +131,75 @@ describe('HistoryPanel', () => {
     expect(screen.getByRole('radio', { name: '1M, Past month' })).toBeChecked();
   });
 
-  it('shows a possibly distorted change neutral, without a percentage, and says why', async () => {
+  it('shows a possibly distorted change neutral, without a return, and says why', async () => {
     await renderPanel({
-      data: history({ complete: false, warningCodes: ['VALUE_UNKNOWN'] }),
+      data: history({
+        complete: false,
+        change: { ...history().change, returnPercent: null },
+        warningCodes: ['VALUE_UNKNOWN'],
+      }),
     });
-    expect(screen.queryByText('+10.0%')).toBeNull();
+    expect(screen.queryByText(/Return/)).toBeNull();
     expect(screen.getByText(/This change may be off/)).toBeTruthy();
+    // The arrow still follows the amount; only the colour turns neutral.
+    expect(screen.getByText('↗', { includeHiddenElements: true }).props.style.color).toBe(
+      '#53627A',
+    );
     expect(
       screen.getByText('A historical value is unavailable for at least one account.'),
     ).toBeTruthy();
     expect(screen.getByLabelText('plus 100.00 Swiss francs')).toBeTruthy();
   });
 
-  it('keeps the percentage when only the split is incomplete', async () => {
+  it('keeps the return when only the start level is uncertain, coloured by the return', async () => {
+    await renderPanel({
+      data: history({
+        complete: false,
+        change: { ...history().change, amount: '1000.00', returnPercent: '-1.25' },
+        warningCodes: ['INCEPTION_UNCERTAIN'],
+      }),
+    });
+    expect(screen.getByText('Return −1.3%')).toBeTruthy();
+    expect(screen.getByLabelText('Return minus 1.3 percent')).toBeTruthy();
+    // The amount still reads +1,000, but the arrow and colour follow the return.
+    expect(screen.getByLabelText('plus 1000.00 Swiss francs')).toBeTruthy();
+    expect(screen.getByText('↘', { includeHiddenElements: true }).props.style.color).toBe(
+      '#C42F37',
+    );
+    expect(screen.getByText(/The return covers tracked history only/)).toBeTruthy();
+    expect(screen.getByText(/may be missing that account's earlier balance/)).toBeTruthy();
+  });
+
+  it('labels the chip "since" when the return starts after the period', async () => {
+    const later = history({
+      period: '1Y',
+      from: '2025-11-13',
+      change: { ...history().change, returnPercent: '0.00', returnFrom: '2026-10-17' },
+    });
+    await renderPanel({ data: later, period: '1Y' });
+    expect(screen.getByText('since 17 Oct 2026')).toBeTruthy();
+    expect(screen.queryByText('past year')).toBeNull();
+    expect(screen.getByText('Return 0.0%')).toBeTruthy();
+    expect(screen.getByText('→', { includeHiddenElements: true }).props.style.color).toBe(
+      '#53627A',
+    );
+
+    await renderPanel({ data: later, period: '1Y', locale: 'de' });
+    expect(screen.getByText(/^seit 17/)).toBeTruthy();
+    expect(screen.getByText('Rendite 0.0%')).toBeTruthy();
+  });
+
+  it('keeps the period label when the server sends no return', async () => {
+    await renderPanel({
+      data: history({
+        change: { ...history().change, returnPercent: null, returnFrom: '2026-10-20' },
+      }),
+    });
+    expect(screen.getByText('past month')).toBeTruthy();
+    expect(screen.queryByText(/since/)).toBeNull();
+  });
+
+  it('keeps the return when only the split is incomplete', async () => {
     await renderPanel({
       data: history({
         complete: false,
@@ -146,7 +207,7 @@ describe('HistoryPanel', () => {
         warningCodes: ['ATTRIBUTION_PENDING_REVIEW'],
       }),
     });
-    expect(screen.getByText('+10.0%')).toBeTruthy();
+    expect(screen.getByText('Return +3.9%')).toBeTruthy();
     expect(screen.queryByText(/This change may be off/)).toBeNull();
     expect(screen.queryByText('Net saving')).toBeNull();
     expect(screen.getByText(/Some transactions still need review/)).toBeTruthy();
@@ -157,7 +218,7 @@ describe('HistoryPanel', () => {
     mockHidden = true;
     await renderPanel({ hidden: true });
     const visible = texts().join(' ');
-    expect(visible).not.toMatch(/100\.00|60\.00|40\.00|10\.0%|Oct 2026/);
+    expect(visible).not.toMatch(/100\.00|60\.00|40\.00|10\.0%|3\.9%|Return|Oct 2026/);
     expect(visible).toMatch(/Net saving/);
     expect(
       screen.getByRole('image', { name: 'Value history. Amounts and dates are hidden.' }),
@@ -194,6 +255,7 @@ describe('HistoryPanel', () => {
       data: history({ complete: false, warningCodes: ['ATTRIBUTION_FX_UNAVAILABLE'] }),
     });
     expect(screen.getByText('letzter Monat')).toBeTruthy();
+    expect(screen.getByText('Rendite +3.9%')).toBeTruthy();
     expect(screen.getByText('Nettoersparnis')).toBeTruthy();
     expect(screen.getByText('Einige historische Wechselkurse sind nicht verfügbar.')).toBeTruthy();
     expect(screen.getByRole('radio', { name: '1J, Letztes Jahr' })).toBeTruthy();

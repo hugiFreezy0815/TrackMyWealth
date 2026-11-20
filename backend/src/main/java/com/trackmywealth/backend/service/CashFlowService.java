@@ -4,6 +4,7 @@ import com.trackmywealth.backend.dto.CashFlowContribution;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse.CurrencyAmount;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
+import com.trackmywealth.backend.dto.DatedCashFlows;
 import com.trackmywealth.backend.dto.HistoryWarning;
 import com.trackmywealth.backend.dto.PortfolioCapitalFlows;
 import com.trackmywealth.backend.dto.ValueHistoryWarningValues;
@@ -292,6 +293,54 @@ public class CashFlowService {
               "Currency conversion unavailable for portfolio capital flows."));
     }
     return new PortfolioCapitalFlows(contributions, movements, !hasPending && known, warnings);
+  }
+
+  /**
+   * #607: the period return's flows (see {@link DatedCashFlows}), with the same classification as
+   * {@link #portfolioCapitalFlows}: external income and spending, internal-transfer legs, and the
+   * rows pending review. Each account, date and currency is converted once, at that day's rate. The
+   * caller has already authorized the accounts and decides which account days count.
+   */
+  @Transactional(readOnly = true)
+  public DatedCashFlows datedFlows(
+      List<UUID> accountIds, LocalDate from, LocalDate to, String currency) {
+    if (accountIds.isEmpty() || from.isAfter(to)) {
+      return new DatedCashFlows(List.of(), List.of());
+    }
+    List<Object[]> rows =
+        Stream.of(
+                transactionRepository.sumHistoryIncomeByAccountDateCurrency(
+                    accountIds, INCOME_TYPES, from, to),
+                transactionRepository.sumHistorySpendingByAccountDateCurrency(
+                    accountIds, SPENDING_TYPES, from, to),
+                transactionRepository.sumHistoryInternalByAccountDateCurrency(accountIds, from, to))
+            .flatMap(List::stream)
+            .toList();
+    Map<LocalDate, Map<String, Optional<CurrencyConversionResult>>> rates = new HashMap<>();
+    List<DatedCashFlows.Flow> flows = new ArrayList<>(rows.size());
+    for (Object[] row : rows) {
+      LocalDate bookingDate = (LocalDate) row[1];
+      Optional<CurrencyConversionResult> conversion =
+          rates
+              .computeIfAbsent(bookingDate, date -> new HashMap<>())
+              .computeIfAbsent(
+                  (String) row[2],
+                  source ->
+                      fxRateService.tryGetConversionRate(
+                          source, currency, bookingDate, fxDefaultSource));
+      flows.add(
+          new DatedCashFlows.Flow(
+              (UUID) row[0],
+              bookingDate,
+              conversion
+                  .map(rate -> fxRateService.applyRate((BigDecimal) row[3], rate))
+                  .orElse(null)));
+    }
+    List<DatedCashFlows.Flow> pending =
+        transactionRepository.sumHistoryPendingByAccountDateCurrency(accountIds, from, to).stream()
+            .map(row -> new DatedCashFlows.Flow((UUID) row[0], (LocalDate) row[1], null))
+            .toList();
+    return new DatedCashFlows(flows, pending);
   }
 
   private static Object[] withoutAccountId(Object... row) {

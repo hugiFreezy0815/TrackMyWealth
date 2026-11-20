@@ -342,6 +342,14 @@ class NetWorthControllerTest {
     ValueHistoryResponse uncertain = history(token, "1Y");
     assertThat(uncertain.warningCodes()).contains(ValueHistoryWarningValues.INCEPTION_UNCERTAIN);
     assertThat(uncertain.points().get(0).value()).isEqualByComparingTo("2000");
+    // #607 AC 1: Recent enters the tracked history with its first balance - a capital movement,
+    // no gain. The uncertain start level no longer hides the return.
+    assertThat(uncertain.change().capitalMovements()).isEqualByComparingTo("1000");
+    assertThat(uncertain.change().returnPercent()).isEqualByComparingTo("0.00");
+    assertThat(uncertain.change().returnFrom()).isEqualTo(yearStart);
+    assertThat(uncertain.sections())
+        .singleElement()
+        .satisfies(section -> assertThat(section.change().returnPercent()).isZero());
 
     for (LocalDate openedAt : List.of(yearStart.plusDays(1), evidence.plusDays(14))) {
       recent =
@@ -362,6 +370,10 @@ class NetWorthControllerTest {
           .doesNotContain(ValueHistoryWarningValues.INCEPTION_UNCERTAIN);
       assertThat(known.points().get(0).value()).isEqualByComparingTo("2000");
       assertThat(known.change().percent()).isEqualByComparingTo("50");
+      // An opening date before the first balance (VALUE_UNKNOWN until then) or after it does not
+      // move the tracking start: the return stays 0 %.
+      assertThat(known.change().returnPercent()).isEqualByComparingTo("0.00");
+      assertThat(known.change().returnFrom()).isEqualTo(yearStart);
       LocalDate lastEvidenceDay = evidence.plusDays(13);
       assertThat(known.points())
           .filteredOn(point -> !point.date().isBefore(evidence))
@@ -369,6 +381,74 @@ class NetWorthControllerTest {
           .extracting(ValueHistoryResponse.Point::value)
           .anyMatch(value -> value.compareTo(new BigDecimal("3000")) == 0);
     }
+  }
+
+  // #607 AC 2: 100 / (2,000 + 30/365 × 1,000) = 4.80 %; the gold section alone gained 5 %.
+  @Test
+  void periodReturnWeightsAnAccountEnteringTrackingByTheTimeItWasHeld() throws Exception {
+    String token = bootstrapAdministrator();
+    LocalDate yearStart = today().minusYears(1);
+    UUID gold = createAccount(token, customAsset("Gold", "PRECIOUS_METAL")).id();
+    recordValuation(token, gold, yearStart.minusDays(10), "2000.00");
+    recordValuation(token, gold, today(), "2100.00");
+    UUID cash = createAccount(token, AccountRequests.account("Cash", "CASH", "CHF").build()).id();
+    seedOpeningBalance(cash, "1000", today().minusDays(30));
+
+    ValueHistoryResponse history = history(token, "1Y");
+
+    assertThat(history.change().amount()).isEqualByComparingTo("1100");
+    assertThat(history.change().returnPercent()).isEqualByComparingTo("4.80");
+    assertThat(history.change().returnFrom()).isEqualTo(yearStart);
+    assertThat(history.change().percent()).isEqualByComparingTo("55");
+    assertThat(history.sections())
+        .extracting(section -> section.change().returnPercent())
+        .usingElementComparator(BigDecimal::compareTo)
+        .containsExactlyInAnyOrder(new BigDecimal("0.00"), new BigDecimal("5.00"));
+  }
+
+  // #607 AC 3: the workspace is tracked only since its first balance, so the return starts there.
+  @Test
+  void periodReturnStartsAtTheEarliestTrackingStartWhenThatIsInsideThePeriod() throws Exception {
+    String token = bootstrapAdministrator();
+    LocalDate firstBalance = today().minusDays(34);
+    UUID cash = createAccount(token, AccountRequests.account("Cash", "CASH", "CHF").build()).id();
+    seedOpeningBalance(cash, "5000", firstBalance);
+
+    ValueHistoryResponse history = history(token, "1Y");
+
+    assertThat(history.from()).isEqualTo(today().minusYears(1));
+    assertThat(history.change().returnFrom()).isEqualTo(firstBalance);
+    assertThat(history.change().returnPercent()).isEqualByComparingTo("0.00");
+  }
+
+  // #607 AC 4: salary and spending are net saving, a flow - the wealth change is +2,000, the
+  // return 0 %.
+  @Test
+  void netSavingChangesWealthButNotTheReturn() throws Exception {
+    String token = bootstrapAdministrator();
+    UUID cash = createAccount(token, AccountRequests.account("Cash", "CASH", "CHF").build()).id();
+    seedOpeningBalance(cash, "10000", today().minusYears(1).minusDays(5));
+    seedBooking(cash, "INCOME", today().minusDays(200), "5000");
+    seedBooking(cash, "EXPENSE", today().minusDays(100), "-3000");
+
+    ValueHistoryResponse history = history(token, "1Y");
+
+    assertThat(history.change().amount()).isEqualByComparingTo("2000");
+    assertThat(history.change().contributions()).isEqualByComparingTo("2000");
+    assertThat(history.change().returnPercent()).isEqualByComparingTo("0.00");
+  }
+
+  // #607 AC 7: an account that starts at an opening balance of 0 has nothing to earn a return on.
+  @Test
+  void periodReturnIsUnknownForADenominatorOfZero() throws Exception {
+    String token = bootstrapAdministrator();
+    UUID cash = createAccount(token, AccountRequests.account("Cash", "CASH", "CHF").build()).id();
+    seedOpeningBalance(cash, "0", today().minusDays(3));
+
+    ValueHistoryResponse history = history(token, "1W");
+
+    assertThat(history.change().returnPercent()).isNull();
+    assertThat(history.change().returnFrom()).isEqualTo(today().minusDays(3));
   }
 
   @Test
@@ -415,6 +495,9 @@ class NetWorthControllerTest {
     assertThat(history.warningCodes())
         .contains(ValueHistoryWarningValues.VALUE_UNKNOWN)
         .noneMatch(code -> code.contains("Private"));
+    // #607 AC 6: a value unknown inside the tracked history leaves the return unknown.
+    assertThat(history.change().returnPercent()).isNull();
+    assertThat(history.change().returnFrom()).isNotNull();
   }
 
   @Test
@@ -701,6 +784,8 @@ class NetWorthControllerTest {
     assertThat(valueOn(history, today().minusDays(1))).isEqualByComparingTo("0");
     assertThat(valueOn(history, today())).isEqualByComparingTo("5000");
     assertThat(history.change().marketAndFx()).isEqualByComparingTo("0");
+    // Archiving takes the account's value out of the portfolio and restoring brings it back.
+    assertThat(history.change().returnPercent()).isEqualByComparingTo("0.00");
   }
 
   @Test
@@ -731,6 +816,11 @@ class NetWorthControllerTest {
     assertThat(valueOn(workspaceHistory, today().minusDays(2)))
         .isEqualByComparingTo(valueOn(workspaceHistory, today()));
     assertThat(workspaceHistory.change().marketAndFx()).isEqualByComparingTo("0");
+    // #607 AC 5: both legs are inside the workspace, so the transfer is no flow there; each
+    // portfolio sees it as money leaving or entering. No return either way.
+    assertThat(workspaceHistory.change().returnPercent()).isEqualByComparingTo("0.00");
+    assertThat(sourceHistory.change().returnPercent()).isEqualByComparingTo("0.00");
+    assertThat(destHistory.change().returnPercent()).isEqualByComparingTo("0.00");
   }
 
   @Test
@@ -974,6 +1064,23 @@ class NetWorthControllerTest {
       statement.setObject(1, today().minusDays(1));
       statement.setBigDecimal(2, new BigDecimal(amount));
       statement.setObject(3, counterparty);
+      statement.setObject(4, accountId);
+      assertThat(statement.executeUpdate()).isEqualTo(1);
+    }
+  }
+
+  private void seedBooking(UUID accountId, String type, LocalDate date, String amount)
+      throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency, is_internal_transfer)"
+                    + " SELECT workspace_id, id, ?, ?, ?, native_currency, FALSE"
+                    + " FROM account WHERE id = ?")) {
+      statement.setString(1, type);
+      statement.setObject(2, date);
+      statement.setBigDecimal(3, new BigDecimal(amount));
       statement.setObject(4, accountId);
       assertThat(statement.executeUpdate()).isEqualTo(1);
     }

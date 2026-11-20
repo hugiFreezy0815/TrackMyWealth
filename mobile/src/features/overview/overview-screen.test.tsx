@@ -259,6 +259,8 @@ describe('Overview S1 (#489)', () => {
       percent: '3.2',
       contributions: '1.50',
       capitalMovements: null,
+      returnPercent: '3.24',
+      returnFrom: '2026-10-08',
       marketAndFx: null,
     };
     const history: components['schemas']['ValueHistoryResponse'] = {
@@ -296,7 +298,7 @@ describe('Overview S1 (#489)', () => {
     await renderOverview();
     expect(useNetWorthHistory).toHaveBeenLastCalledWith('CHF', '1M', true);
     expect(screen.getByRole('image', { name: /8 Oct 2026.*plus 42.75.*estimated/i })).toBeTruthy();
-    expect(screen.getByText('+3.2%')).toBeTruthy();
+    expect(screen.getByText('Return +3.2%')).toBeTruthy();
     expect(screen.getByText('+0.5%')).toBeTruthy();
     expect(screen.getByLabelText('plus 17.12 Swiss francs')).toBeTruthy();
     // The chip and the section tile both name the period of their change (M03).
@@ -328,6 +330,8 @@ describe('Overview S1 (#489)', () => {
       percent: null,
       contributions: null,
       capitalMovements: null,
+      returnPercent: null,
+      returnFrom: null,
       marketAndFx: null,
     };
     const monthly: components['schemas']['ValueHistoryResponse'] = {
