@@ -1,0 +1,4 @@
+# Written by run-ios.sh / run-android.sh and lossy-proxy.mjs during a check run.
+DROP
+out-*/
+*.log

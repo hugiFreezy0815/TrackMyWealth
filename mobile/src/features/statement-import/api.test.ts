@@ -19,6 +19,8 @@ import {
 } from './api';
 import type { Batch } from './model';
 import { File } from 'expo-file-system';
+// Expo's internal encoder, on purpose: it is the code that rejected the old part on the phone, and
+// no public export reaches it. If an Expo upgrade moves it, move this import with it.
 import { convertFormDataAsync } from 'expo/src/winter/fetch/convertFormData';
 
 // The JSON calls are checked for their options; upload and text run the real transport on fetch.
@@ -140,6 +142,24 @@ describe('native statement part (#636)', () => {
     expect(text).toContain('content-type: text/csv');
     expect(text).toContain('Date;Amount');
     expect(text.trimEnd()).toMatch(new RegExp(`--${boundary}--$`));
+  });
+});
+
+describe('web statement part (#636)', () => {
+  it("appends the browser File as it is, with the statement's name", () => {
+    jest.mocked(File).mockClear();
+    const webFile = new globalThis.File(['Date;Amount\n'], 'synthetic-dkb.csv', {
+      type: 'text/csv',
+    });
+
+    const form = statementForm({ ...file, webFile });
+    const sent = form.get('file');
+
+    expect(form.getAll('file')).toHaveLength(1);
+    expect(sent).toBeInstanceOf(globalThis.File);
+    expect((sent as globalThis.File).name).toBe('synthetic-dkb.csv');
+    expect((sent as globalThis.File).type).toBe('text/csv');
+    expect(File).not.toHaveBeenCalled();
   });
 });
 

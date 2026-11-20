@@ -15,6 +15,14 @@ iOS reads it from Files › On My iPhone, Android from Downloads (`adb push`). M
 `run-ios.sh` and `run-android.sh` (sign-in, then A, B, C, each followed by Discard). Credentials
 come from the environment.
 
+Start the proxy from this folder before a run script, so that the scripts' `touch DROP` reaches it:
+
+```sh
+node lossy-proxy.mjs 8095 8093 proxy.log DROP
+```
+
+`DROP`, `proxy.log` and the Maestro output folders `out-*/` are run outputs and are gitignored here.
+
 ## Found by this check
 
 1. **No native upload at all (#636).** Expo SDK 58 replaces the global `fetch` on iOS and Android.

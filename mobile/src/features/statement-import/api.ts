@@ -95,10 +95,6 @@ export function useImportTemplate(templateId: string | null | undefined) {
 }
 
 /**
- * Builds the multipart body: the web picker hands over a browser File; React Native's FormData
- * takes a `{ uri, name, type }` part instead of a Blob.
- */
-/**
  * The picked copy as a multipart part for Expo's native fetch (SDK 58 installs it as the global
  * fetch): it sends parts that expose `bytes()`, `name` and `type`, and rejects React Native's
  * `{ uri, name, type }` part before anything is sent. The statement's own name and media type are
@@ -112,6 +108,10 @@ function nativeFilePart(file: StatementFile): Blob {
   } as unknown as Blob;
 }
 
+/**
+ * Builds the multipart body: the web picker hands over a browser File, sent as it is; on iOS and
+ * Android the picked copy goes as a `bytes()` part (`nativeFilePart`).
+ */
 export function statementForm(file: StatementFile): FormData {
   const form = new FormData();
   if (file.webFile) {
