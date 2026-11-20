@@ -1,19 +1,21 @@
 package com.trackmywealth.backend.controller;
 
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.WorkspaceMemberListItemResponse;
 import com.trackmywealth.backend.dto.WorkspaceMemberSummaryResponse;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.WorkspaceMemberService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.ResponseHeader;
 import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -36,11 +38,12 @@ public class WorkspaceMemberController {
   }
 
   @Operation(operationId = "listWorkspaceMembers", summary = "List the workspace's members")
-  @ProblemCodes({ProblemCode.NOT_FOUND, ProblemCode.UNPROCESSABLE})
+  @ProblemCodes({ProblemCode.NOT_FOUND})
   @GetMapping
-  public List<WorkspaceMemberListItemResponse> listWorkspaceMembers(
+  public PageResponse<WorkspaceMemberListItemResponse> listWorkspaceMembers(
+      @Paged(fixedOrder = "displayName ascending, then memberId ascending") Pageable pageable,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return workspaceMemberService.listWorkspaceMembers(actor);
+    return PageResponse.of(workspaceMemberService.listWorkspaceMembers(pageable, actor));
   }
 
   @Operation(operationId = "getWorkspaceMember", summary = "Read a workspace member")

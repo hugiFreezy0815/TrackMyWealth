@@ -6,6 +6,7 @@ import {
   type InfiniteData,
 } from '@tanstack/react-query';
 
+import { readAllPages } from '@/api/pages';
 import type { components } from '@/api/schema';
 import { typedApi } from '@/api/typed-api';
 import { ifMatch } from './conflict';
@@ -25,7 +26,8 @@ export const useCurrentUser = () =>
 export const usePortfolios = () =>
   useQuery({
     queryKey: queryKeys.portfolios,
-    queryFn: () => typedApi.get('/api/v1/portfolios'),
+    queryFn: ({ signal }) =>
+      readAllPages((page) => typedApi.get('/api/v1/portfolios', { query: { page }, signal })),
   });
 export const usePortfolioView = (portfolioId: string) =>
   useQuery({
@@ -76,7 +78,10 @@ export const usePortfolioHistory = (portfolioId: string, period: HistoryPeriod, 
 export const useAccounts = (portfolioId?: string, { enabled = true }: QueryGate = {}) =>
   useQuery({
     queryKey: queryKeys.accounts({ portfolioId }),
-    queryFn: () => typedApi.get('/api/v1/accounts', { query: portfolioId ? { portfolioId } : {} }),
+    queryFn: ({ signal }) =>
+      readAllPages((page) =>
+        typedApi.get('/api/v1/accounts', { query: { page, portfolioId }, signal }),
+      ),
     enabled,
   });
 export const useAccount = (accountId: string) =>
@@ -124,10 +129,10 @@ export const useUncategorizedCount = (accountId: string, enabled = true) =>
 export const useArchivedAccounts = (portfolioId: string, enabled = true) =>
   useQuery({
     queryKey: queryKeys.accounts({ portfolioId, archived: true }),
-    queryFn: () =>
-      typedApi.get('/api/v1/accounts', {
-        query: { portfolioId, archived: true },
-      }),
+    queryFn: ({ signal }) =>
+      readAllPages((page) =>
+        typedApi.get('/api/v1/accounts', { query: { page, portfolioId, archived: true }, signal }),
+      ),
     enabled: !!portfolioId && enabled,
   });
 
@@ -298,7 +303,10 @@ export function useTransactionDetailActions(accountId: string, transactionId: st
 export const useCategories = (includeInactive = false) =>
   useQuery({
     queryKey: queryKeys.categories(includeInactive),
-    queryFn: () => typedApi.get('/api/v1/categories', { query: { includeInactive } }),
+    queryFn: ({ signal }) =>
+      readAllPages((page) =>
+        typedApi.get('/api/v1/categories', { query: { page, includeInactive }, signal }),
+      ),
   });
 export const useCashFlow = (month: string, currency?: string, { enabled = true }: QueryGate = {}) =>
   useQuery({

@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.PortfolioListItemResponse;
 import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
@@ -13,6 +14,7 @@ import com.trackmywealth.backend.service.PortfolioService;
 import com.trackmywealth.backend.service.PortfolioViewService;
 import com.trackmywealth.backend.service.ValueHistoryService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.ResponseHeader;
 import com.trackmywealth.backend.web.SendsHeaders;
@@ -22,8 +24,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -61,26 +63,22 @@ public class PortfolioController {
     this.historyService = historyService;
   }
 
-  /**
-   * US-04-05 (#381): every active portfolio of the workspace with its totals, in tab order. Not
-   * paged: a workspace is expected to hold a handful of portfolios. Nothing enforces that bound
-   * yet, so the list is a known exception in docs/api/conventions.md until #570 decides between
-   * paging and an enforced bound.
-   */
+  /** US-04-05 (#381): the active workspace portfolios with their totals, in tab order. */
   @ProblemCodes({ProblemCode.VALIDATION_FAILED, ProblemCode.NOT_FOUND})
   @Operation(
       operationId = "listPortfolios",
       summary = "List the workspace's portfolios with their totals",
       description =
           "Every active portfolio of the workspace, the Personal Assets default included, in"
-              + " creation order. Not paged: a workspace holds a handful of portfolios. Each row"
+              + " creation order. Each row"
               + " has the number of active accounts and their signed total (assets positive,"
               + " liabilities negative) in the portfolio's and the workspace's currency, from the"
               + " same valuation as the Portfolio View and net worth.")
   @GetMapping
-  public List<PortfolioListItemResponse> listPortfolios(
+  public PageResponse<PortfolioListItemResponse> listPortfolios(
+      @Paged(fixedOrder = "createdAt ascending, then id ascending") Pageable pageable,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return portfolioService.listPortfolios(actor);
+    return PageResponse.of(portfolioService.listPortfolios(pageable, actor));
   }
 
   @SuccessStatus(HttpStatus.CREATED)

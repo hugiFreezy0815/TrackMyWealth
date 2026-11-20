@@ -82,6 +82,18 @@ const history = (query) => ({
   change,
   sections: [],
 });
+function collectionPage(content) {
+  return {
+    content,
+    page: {
+      number: 0,
+      size: 50,
+      totalElements: content.length,
+      totalPages: content.length ? 1 : 0,
+    },
+  };
+}
+
 const endpoints = new Map([
   [
     'POST /api/v1/auth/login',
@@ -103,7 +115,7 @@ const endpoints = new Map([
     'GET /api/v1/workspace',
     () => ({ id: 'fixture-workspace', name: 'Fixture Wealth', currency: 'EUR', version: 1 }),
   ],
-  ['GET /api/v1/portfolios', () => [portfolio]],
+  ['GET /api/v1/portfolios', () => collectionPage([portfolio])],
   [
     'GET /api/v1/net-worth',
     () => ({
@@ -143,7 +155,7 @@ const endpoints = new Map([
     }),
   ],
   [`GET /api/v1/portfolios/${portfolioId}/history`, history],
-  ['GET /api/v1/accounts', () => [account]],
+  ['GET /api/v1/accounts', () => collectionPage([account])],
   [`GET /api/v1/accounts/${accountId}`, () => account],
   [
     `GET /api/v1/accounts/${accountId}/transactions`,
@@ -152,7 +164,7 @@ const endpoints = new Map([
       page: { number: 0, size: Number(query.get('size')), totalElements: 0, totalPages: 0 },
     }),
   ],
-  ['GET /api/v1/categories', () => []],
+  ['GET /api/v1/categories', () => collectionPage([])],
 ]);
 
 function exportedFile(pathname) {

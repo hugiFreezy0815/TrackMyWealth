@@ -7,6 +7,7 @@ import { ApiError } from '@/api/client';
 import { problemReaction } from '@/api/problems';
 import { ifMatch } from '@/api/queries/conflict';
 import { queryKeys } from '@/api/queries/keys';
+import { readAllPages } from '@/api/pages';
 import type { components } from '@/api/schema';
 import { typedApi } from '@/api/typed-api';
 import { ActionButton, Dialog, ErrorBanner, LoadingSkeleton } from '@/components/shared';
@@ -55,8 +56,10 @@ function usablePocket(source: Account, accounts: readonly AccountRow[]) {
 
 async function readDirectory(signal: AbortSignal) {
   const [active, archived] = await Promise.all([
-    typedApi.get('/api/v1/accounts', { signal }),
-    typedApi.get('/api/v1/accounts', { query: { archived: true }, signal }),
+    readAllPages((page) => typedApi.get('/api/v1/accounts', { query: { page }, signal })),
+    readAllPages((page) =>
+      typedApi.get('/api/v1/accounts', { query: { page, archived: true }, signal }),
+    ),
   ]);
   return [...active, ...archived];
 }

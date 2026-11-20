@@ -3,7 +3,8 @@ package com.trackmywealth.backend.repository;
 import com.trackmywealth.backend.entity.WorkspaceMember;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -16,8 +17,13 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
   // Workspace scoping is explicit here and independently enforced by PostgreSQL RLS.
   @Query(
       "SELECT m FROM WorkspaceMember m WHERE m.workspace.id = :workspaceId"
+          + " AND EXISTS (SELECT u.id FROM AppUser u WHERE u.workspaceMember = m"
+          + " AND u.role <> :excludedRole)"
           + " ORDER BY m.displayName ASC, m.id ASC")
-  List<WorkspaceMember> findMembersForListing(@Param("workspaceId") UUID workspaceId, Limit limit);
+  Page<WorkspaceMember> findMembersForListing(
+      @Param("workspaceId") UUID workspaceId,
+      @Param("excludedRole") String excludedRole,
+      Pageable pageable);
 
   // AccessControlService's interim administrator rule (FR-TEN-007): a SYSTEM_ADMINISTRATOR linked
   // to a member keeps that member's access only while it is the workspace's sole active member.

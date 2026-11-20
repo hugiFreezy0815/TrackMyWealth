@@ -5,6 +5,7 @@ import com.trackmywealth.backend.dto.AccountListItemResponse;
 import com.trackmywealth.backend.dto.AccountTypeValues;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.MultiCurrencyValuations;
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.PortfolioPlacement;
 import com.trackmywealth.backend.dto.SignedAmounts;
 import com.trackmywealth.backend.dto.ValueStatus;
@@ -16,6 +17,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -28,10 +33,9 @@ import org.springframework.web.server.ResponseStatusException;
  *
  * <p>No second calculation path: each value is an {@link AccountValuation} from {@link
  * AccountValuationService#valueAllIn}, the one net worth and the Portfolio View use, in the
- * workspace's currency and in the account's own. The list is unpaged by design (ADR 0006's bounded
- * lists, #373): a workspace holds tens of accounts, not thousands. The number of queries does not
- * grow with the number of accounts: the accounts with their portfolios, their placements and each
- * kind of value source are one query each.
+ * workspace's currency and in the account's own. The number of queries does not grow with the
+ * number of accounts: the accounts with their portfolios, their placements and each kind of value
+ * source are one query each.
  */
 @Service
 public class AccountListService {
@@ -60,17 +64,20 @@ public class AccountListService {
   }
 
   @Transactional(readOnly = true)
-  public List<AccountListItemResponse> listAccounts(
-      AccountListFilter filter, AuthenticatedUserPrincipal actor) {
+  public Page<AccountListItemResponse> listAccounts(
+      AccountListFilter filter, Pageable pageable, AuthenticatedUserPrincipal actor) {
     // Authorization first: a non-member gets the same 404 whatever filters it sends.
     accessControlService.requireWorkspaceAccess(actor, actor.workspaceId());
     requireValid(filter);
-    List<Account> accounts =
+    PagingValues.requireBoundedFixedOrder(pageable);
+    Page<Account> page =
         accountRepository.findAll(
-            AccountRepository.listedBy(actor.workspaceId(), filter), LIST_ORDER);
-    if (accounts.isEmpty()) {
-      return List.of();
+            AccountRepository.listedBy(actor.workspaceId(), filter),
+            PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), LIST_ORDER));
+    if (page.isEmpty()) {
+      return new PageImpl<>(List.of(), pageable, page.getTotalElements());
     }
+    List<Account> accounts = page.getContent();
 
     // Fetched with the accounts, the same workspace for all of them.
     String workspaceCurrency = accounts.get(0).getWorkspace().getCurrency();
@@ -94,7 +101,7 @@ public class AccountListService {
               workspaceCurrency,
               asOf));
     }
-    return rows;
+    return new PageImpl<>(rows, pageable, page.getTotalElements());
   }
 
   // A filter that cannot match anything by construction is the client's mistake, said as a 400

@@ -1,3 +1,4 @@
+import { collectionPage } from '@/api/collection-page.fixture';
 import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { IntlProvider } from 'react-intl';
@@ -190,7 +191,7 @@ describe('first-run gate when the workspace or portfolios request fails (#567)',
     jest.mocked(usePortfolios).mockImplementation(actual.usePortfolios);
     respond = {
       [WORKSPACE]: async () => workspace,
-      [PORTFOLIOS]: async () => [portfolio({})],
+      [PORTFOLIOS]: async () => collectionPage([portfolio({})]),
     };
     // The overview's other figures never answer, so every banner belongs to a gate query.
     jest
@@ -237,9 +238,10 @@ describe('first-run gate when the workspace or portfolios request fails (#567)',
       if (workspaceFails) throw unavailable();
       return workspace;
     };
-    respond[PORTFOLIOS] = async () => [
-      portfolio({ name: 'Euro Bank', personalAssetsDefault: false, activeAccountCount: 1 }),
-    ];
+    respond[PORTFOLIOS] = async () =>
+      collectionPage([
+        portfolio({ name: 'Euro Bank', personalAssetsDefault: false, activeAccountCount: 1 }),
+      ]);
     await mounted(overview);
     const retry = await screen.findByRole('button', { name: 'Try again' });
     await settle();
@@ -265,7 +267,7 @@ describe('first-run gate when the workspace or portfolios request fails (#567)',
       finishAutomaticRefetch = resolve;
     });
     respond[PORTFOLIOS] = async () => {
-      if (!portfoliosFail) return [portfolio({})];
+      if (!portfoliosFail) return collectionPage([portfolio({})]);
       if (calls(PORTFOLIOS).length === 2) await automaticRefetch;
       throw unavailable();
     };

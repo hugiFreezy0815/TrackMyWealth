@@ -4,10 +4,12 @@ import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateTestResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.ImportTemplateService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.ResponseHeader;
 import com.trackmywealth.backend.web.SendsHeaders;
@@ -19,8 +21,8 @@ import jakarta.validation.Valid;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
-import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -61,11 +63,13 @@ public class ImportTemplateController {
   @Operation(operationId = "listImportTemplates", summary = "List the import templates")
   @ProblemCodes({ProblemCode.NOT_FOUND})
   @GetMapping
-  public List<ImportTemplateResponse> list(
+  public PageResponse<ImportTemplateResponse> list(
       @RequestParam(required = false) UUID institutionCatalogueId,
       @RequestParam(defaultValue = "false") boolean includeInactive,
+      @Paged(fixedOrder = "name ascending, then id ascending") Pageable pageable,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return importTemplateService.list(institutionCatalogueId, includeInactive, actor);
+    return PageResponse.of(
+        importTemplateService.list(institutionCatalogueId, includeInactive, pageable, actor));
   }
 
   /** Any version, current or retired. */
@@ -191,10 +195,14 @@ public class ImportTemplateController {
     ProblemCode.IMPORT_OCR_UNAVAILABLE
   })
   @PostMapping(path = "/detect", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-  public List<ImportTemplateCandidateResponse> detect(
+  public PageResponse<ImportTemplateCandidateResponse> detect(
       @RequestPart("file") MultipartFile file,
+      @Paged(
+              fixedOrder =
+                  "exact header matches first, workspace templates first within a match tier, then name and template id ascending")
+          Pageable pageable,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return importTemplateService.detect(bytesOf(file), actor);
+    return PageResponse.of(importTemplateService.detect(bytesOf(file), pageable, actor));
   }
 
   /**

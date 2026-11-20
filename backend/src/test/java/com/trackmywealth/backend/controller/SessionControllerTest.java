@@ -6,6 +6,7 @@ import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.RefreshTokenRequest;
 import com.trackmywealth.backend.dto.SessionSummaryResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
@@ -82,6 +83,26 @@ class SessionControllerTest {
                   + " app_user, workspace_member, portfolio, workspace RESTART IDENTITY"
                   + " CASCADE"));
     }
+  }
+
+  @Test
+  void equallyRecentSessionsAreOrderedAcrossPages() throws Exception {
+    bootstrapAdministrator("laptop");
+    String token = login("admin@example.com", "phone").accessToken();
+    try (Connection connection = dataSource.getConnection();
+        Statement statement = connection.createStatement()) {
+      statement.executeUpdate("UPDATE user_session SET last_seen_at = '2026-01-01T00:00:00Z'");
+    }
+    var expected =
+        listSessions(token).stream()
+            .map(SessionSummaryResponse::id)
+            .sorted(java.util.Comparator.comparing(UUID::toString))
+            .toList();
+    var page0 = sessionPage(token, "?size=1");
+    var page1 = sessionPage(token, "?page=1&size=1");
+    assertThat(page0.page().totalElements()).isEqualTo(2);
+    assertThat(List.of(page0.content().get(0).id(), page1.content().get(0).id()))
+        .containsExactlyElementsOf(expected);
   }
 
   @Test
@@ -361,10 +382,14 @@ class SessionControllerTest {
   }
 
   private List<SessionSummaryResponse> listSessions(String accessToken) {
-    return listSessionsRaw(accessToken)
+    return sessionPage(accessToken, "").content();
+  }
+
+  private PageResponse<SessionSummaryResponse> sessionPage(String accessToken, String query) {
+    return listSessionsRaw(accessToken, query)
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<SessionSummaryResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<SessionSummaryResponse>>() {})
         .returnResult()
         .getResponseBody();
   }
@@ -377,7 +402,11 @@ class SessionControllerTest {
   }
 
   private RestTestClient.ResponseSpec listSessionsRaw(String accessToken) {
-    RestTestClient.RequestHeadersSpec<?> request = client().get().uri("/api/v1/sessions");
+    return listSessionsRaw(accessToken, "");
+  }
+
+  private RestTestClient.ResponseSpec listSessionsRaw(String accessToken, String query) {
+    RestTestClient.RequestHeadersSpec<?> request = client().get().uri("/api/v1/sessions" + query);
     if (accessToken != null) {
       request = request.header("Authorization", "Bearer " + accessToken);
     }

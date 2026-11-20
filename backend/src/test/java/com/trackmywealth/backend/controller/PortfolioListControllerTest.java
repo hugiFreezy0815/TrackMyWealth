@@ -10,6 +10,7 @@ import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.PortfolioListItemResponse;
 import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.PortfolioType;
@@ -63,7 +64,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class PortfolioListControllerTest {
 
   private static final String PASSWORD = "correct-horse-battery-staple";
-  private static final ParameterizedTypeReference<List<PortfolioListItemResponse>> ROWS =
+  private static final ParameterizedTypeReference<PageResponse<PortfolioListItemResponse>> ROWS =
       new ParameterizedTypeReference<>() {};
 
   @Container
@@ -122,6 +123,30 @@ class PortfolioListControllerTest {
   }
 
   // --- Acceptance criteria -----------------------------------------------------------------
+
+  @Test
+  void equallyOldPortfoliosAppearOnceAcrossPages() throws Exception {
+    String token = bootstrapAdministrator();
+    createPortfolio(token, "First", "CHF");
+    createPortfolio(token, "Second", "CHF");
+    execute("UPDATE portfolio SET created_at = '2026-01-01T00:00:00Z'");
+    var expected =
+        list(token).stream()
+            .map(PortfolioListItemResponse::id)
+            .sorted(java.util.Comparator.comparing(UUID::toString))
+            .toList();
+
+    var first = page(token, "?size=2");
+    var second = page(token, "?page=1&size=2");
+    assertThat(first.page().totalElements()).isEqualTo(3);
+    assertThat(first.content()).hasSize(2);
+    assertThat(second.content()).hasSize(1);
+    assertThat(
+            java.util.stream.Stream.concat(first.content().stream(), second.content().stream())
+                .map(PortfolioListItemResponse::id)
+                .toList())
+        .containsExactlyElementsOf(expected);
+  }
 
   @Test
   void eachPortfolioShowsTheCountAndTotalOfItsActiveAccountsToEveryMember() throws Exception {
@@ -528,9 +553,13 @@ class PortfolioListControllerTest {
   }
 
   private List<PortfolioListItemResponse> list(String token) {
+    return page(token, "").content();
+  }
+
+  private PageResponse<PortfolioListItemResponse> page(String token, String query) {
     return client(token)
         .get()
-        .uri("/api/v1/portfolios")
+        .uri("/api/v1/portfolios" + query)
         .exchange()
         .expectStatus()
         .isOk()

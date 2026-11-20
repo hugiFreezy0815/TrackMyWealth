@@ -14,6 +14,7 @@ import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.PortfolioViewResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.SecurityResponse;
@@ -41,6 +42,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -486,7 +488,17 @@ class AccountPositionsControllerTest {
 
   private AccountListItemResponse listedDepot(String token) {
     AccountListItemResponse[] accounts =
-        get(token, "/api/v1/accounts", AccountListItemResponse[].class);
+        client(token)
+            .get()
+            .uri("/api/v1/accounts")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(new ParameterizedTypeReference<PageResponse<AccountListItemResponse>>() {})
+            .returnResult()
+            .getResponseBody()
+            .content()
+            .toArray(AccountListItemResponse[]::new);
     assertThat(accounts).hasSize(1);
     return accounts[0];
   }

@@ -2,11 +2,13 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.CategoryResponse;
 import com.trackmywealth.backend.dto.CreateCategoryRequest;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.UpdateCategoryRequest;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CategoryService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.ResponseHeader;
 import com.trackmywealth.backend.web.SendsHeaders;
@@ -14,8 +16,8 @@ import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -46,10 +48,14 @@ public class CategoryController {
   @Operation(operationId = "listCategories", summary = "List the categories")
   @ProblemCodes({ProblemCode.NOT_FOUND})
   @GetMapping
-  public List<CategoryResponse> list(
+  public PageResponse<CategoryResponse> list(
       @RequestParam(defaultValue = "false") boolean includeInactive,
+      @Paged(
+              fixedOrder =
+                  "Parent before descendants, siblings by English name ignoring case, then id ascending")
+          Pageable pageable,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return categoryService.list(includeInactive, actor);
+    return PageResponse.of(categoryService.list(includeInactive, pageable, actor));
   }
 
   @Operation(operationId = "getCategory", summary = "Read a category")

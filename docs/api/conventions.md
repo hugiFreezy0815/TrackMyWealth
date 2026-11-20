@@ -205,7 +205,7 @@ the [error catalogue](error-codes.md).
 ### Which collections are paged?
 
 Paged collections expose `page` and `size`, with `sort` where supported, and return the same
-`PageResponse<T>` envelope; the thirteen paged operations are listed under [Sorting](#sorting).
+`PageResponse<T>` envelope; the paged operations are listed under [Sorting](#sorting).
 The committed OpenAPI contract identifies which operation is paged and defines its response
 schema.
 
@@ -217,27 +217,29 @@ The rule covers operations whose response body is the collection. An array insid
 resource or report, such as an account's `positions` or the `accounts` of the net-worth report,
 is not assessed here.
 
-The following operations currently return arrays and do not offer paging parameters.
+### Migrating collection consumers (#570)
 
-| Operation | Current scope or limit | Follow-up |
-| --- | --- | --- |
-| `GET /api/v1/accounts` | Workspace accounts. No published hard count bound. | [#570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570) |
-| `GET /api/v1/portfolios` | Workspace portfolios. No published hard count bound. | [#570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570) |
-| `GET /api/v1/categories` | Workspace categories. Depth is capped at three; breadth has no published count bound. | [#570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570) |
-| `GET /api/v1/categorization-rules` | Workspace rules. No published hard count bound. | [#570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570) |
-| `GET /api/v1/import-templates` | Shipped and workspace templates. No published hard count bound. | [#570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570) |
-| `GET /api/v1/workspace-members` | Returns the complete list up to 200 rows. An over-limit workspace gets 422. | [#570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570) |
-| `GET /api/v1/sessions` | The caller's own active sessions. No published hard count bound. | [#570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570) |
-| `POST /api/v1/import-templates/detect` | At most one candidate per available template, with no published bound on the number of templates. | [#570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570) |
+The eight operations below now return `{ content, page }` at their existing URLs. Each item has
+the same fields. Read page zero, then request successive pages while the next page number is
+less than `page.totalPages`. Send the same filters on every request.
 
-These are current exceptions: each returns the complete result today, but no count bound is
-enforced or published. The Sprint 6 plan treated accounts, portfolios and categories as small
-bounded lists; [#570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570)
-decides for each of the eight operations between paging and an enforced, documented bound
-([ADR 0006](../architecture/adr/0006-api-contract-conventions.md#collection-paging)). Any
-migration of their response shapes must follow the breaking-change policy.
-[#473](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473) migrated the
-historical collections below.
+- `GET /api/v1/accounts`
+- `GET /api/v1/portfolios`
+- `GET /api/v1/categories`
+- `GET /api/v1/categorization-rules`
+- `GET /api/v1/import-templates`
+- `GET /api/v1/workspace-members`
+- `GET /api/v1/sessions`
+- `POST /api/v1/import-templates/detect`
+
+Categories retain parent IDs and depth across pages. Assemble the pages in order before building
+the complete tree. Workspace members include inactive memberships visible to the caller. Detection
+ranks all visible matches before returning a page. Resend the same file as multipart for each
+detection page. If templates change, restart detection at page zero.
+
+Release the backend and the migrated web and mobile consumers together. The demo seed script
+reads all pages. External consumers must deploy the new contract as part of the cutover. The PR
+requires the `api-breaking` label and a `## API breaking change` section in its description.
 
 ### Pagination of formerly unbounded lists (#473)
 
@@ -310,7 +312,7 @@ their own documented behavior.
 
 ### Sorting
 
-Each paged endpoint except the deleted-transactions restore list declares a whitelist of
+Paged endpoints with configurable sorting declare a whitelist of
 **response field names**. Use `sort=<field>`, `sort=<field>,asc` or `sort=<field>,desc`, with
 lower-case direction and no extra spaces.
 Omitting the direction means ascending; omitting `sort` entirely uses the endpoint default.
@@ -332,6 +334,14 @@ only once. The field names and spellings must match the published OpenAPI `sort`
 | `GET /api/v1/accounts/{accountId}/amortisation-schedule` | `dueDate` | `dueDate,asc` | `id` |
 | `GET /api/v1/settlement-matches` | `createdAt` | `createdAt,desc` | `id` |
 | `GET /api/v1/accounts/{accountId}/transactions/deleted` | **None: fixed order** | Most recently removed first (`deletedAt`, or `voidedAt` for a voided row, descending) | `id`, descending |
+| `GET /api/v1/accounts` | **None: fixed order** | Creation time ascending | `id`, ascending |
+| `GET /api/v1/portfolios` | **None: fixed order** | Creation time ascending | `id`, ascending |
+| `GET /api/v1/categories` | **None: fixed order** | Parent before descendants, siblings by English name ignoring case | `id`, ascending |
+| `GET /api/v1/categorization-rules` | **None: fixed order** | Priority, then creation time ascending | `id`, ascending |
+| `GET /api/v1/import-templates` | **None: fixed order** | Name ascending | `id`, ascending |
+| `GET /api/v1/workspace-members` | **None: fixed order** | Display name ascending | `id`, ascending |
+| `GET /api/v1/sessions` | **None: fixed order** | Last seen descending | `id`, ascending |
+| `POST /api/v1/import-templates/detect` | **None: fixed order** | Exact header matches first, then workspace templates first within each tier, then name ascending | `template id`, ascending |
 
 `bookingDate` sorts first by booking date and then by creation time before the final `id`
 tie-breaker. `amount` sorts by the transaction's value in the **account currency**, not
@@ -347,10 +357,8 @@ An unknown field (including an entity property not present in the response white
 field, blank, malformed direction or otherwise malformed `sort` returns HTTP 400 with
 `code: "INVALID_SORT"`; it is **not silently ignored**. The problem `detail` names the allowed
 fields. Clients should handle the stable `code`, not parse the human-readable `detail`.
-The deleted-transactions restore list has a **fixed order**: its OpenAPI operation documents no
-`sort` parameter, and any `sort` value returns `INVALID_SORT` with a `detail` naming that order.
-The order runs over two fields (a deleted row's `deletedAt`, a voided row's `voidedAt`), so no
-single response field could be offered as a sort field.
+Fixed-order operations publish their order in OpenAPI. Sending `sort` to one returns
+`INVALID_SORT` and the problem detail names the order.
 
 ### Offset paging and refresh after imports
 

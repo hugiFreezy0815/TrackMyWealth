@@ -28,8 +28,10 @@ public interface AccountRepository
    */
   static Specification<Account> listedBy(UUID workspaceId, AccountListFilter filter) {
     return (root, query, builder) -> {
-      root.fetch("portfolio");
-      root.fetch("workspace");
+      if (query != null && query.getResultType() != Long.class) {
+        root.fetch("portfolio");
+        root.fetch("workspace");
+      }
       List<Predicate> where = new ArrayList<>();
       where.add(builder.equal(root.get("workspace").get("id"), workspaceId));
       where.add(builder.equal(root.get("status"), filter.archived() ? "ARCHIVED" : "ACTIVE"));
@@ -91,8 +93,7 @@ public interface AccountRepository
   // archived account is excluded from current totals (though still included in a historical
   // figure covering a period it was active in, not this story's concern). Explicit ordering
   // (oldest-created first), matching this codebase's own precedent for list-returning derived
-  // queries (CustomAssetValuationRepository.findByAccountIdOrderByValuationDateDesc,
-  // UserSessionRepository.findByUser_IdAndStatusOrderByLastSeenAtDesc) - without it, row order
+  // queries - without it, row order
   // isn't guaranteed stable across a table rewrite/vacuum/query-plan change, and a drillable list
   // reordering itself with no underlying data change is a worse experience than a fixed one.
   List<Account> findByPortfolioIdAndStatusOrderByCreatedAtAsc(UUID portfolioId, String status);

@@ -7,6 +7,7 @@ import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.CurrentUserResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SessionSummaryResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
@@ -162,9 +163,10 @@ class CurrentUserControllerTest {
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(new ParameterizedTypeReference<List<SessionSummaryResponse>>() {})
+            .expectBody(new ParameterizedTypeReference<PageResponse<SessionSummaryResponse>>() {})
             .returnResult()
-            .getResponseBody();
+            .getResponseBody()
+            .content();
     return sessions.stream().filter(SessionSummaryResponse::current).findFirst().orElseThrow().id();
   }
 

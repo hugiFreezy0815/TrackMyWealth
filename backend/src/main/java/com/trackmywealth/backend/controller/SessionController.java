@@ -1,12 +1,14 @@
 package com.trackmywealth.backend.controller;
 
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SessionSummaryResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.SessionService;
+import com.trackmywealth.backend.web.Paged;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,10 +35,11 @@ public class SessionController {
 
   @Operation(operationId = "listSessions", summary = "List the signed-in user's sessions")
   @GetMapping("/api/v1/sessions")
-  public ResponseEntity<List<SessionSummaryResponse>> listSessions(
+  public PageResponse<SessionSummaryResponse> listSessions(
+      @Paged(fixedOrder = "lastSeenAt descending, then id ascending") Pageable pageable,
       @AuthenticationPrincipal AuthenticatedUserPrincipal principal) {
-    return ResponseEntity.ok(
-        sessionService.listSessions(principal.userId(), principal.sessionId()));
+    return PageResponse.of(
+        sessionService.listSessions(principal.userId(), principal.sessionId(), pageable));
   }
 
   @Operation(operationId = "revokeSession", summary = "Sign out one session")

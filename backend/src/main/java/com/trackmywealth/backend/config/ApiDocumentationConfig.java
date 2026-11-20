@@ -411,7 +411,15 @@ public class ApiDocumentationConfig {
                     .minimum(BigDecimal.ONE)
                     .maximum(BigDecimal.valueOf(PagingValues.MAX_SIZE))
                     ._default(PagingValues.DEFAULT_SIZE)));
-    if (!whitelist.isFixedOrder()) {
+    if (whitelist.isFixedOrder()) {
+      String order =
+          "Fixed order: "
+              + whitelist.fixedOrder()
+              + ". Takes page and size only; any sort is a 400 INVALID_SORT.";
+      String description = operation.getDescription();
+      operation.setDescription(
+          description == null || description.isBlank() ? order : description + " " + order);
+    } else {
       List<String> sortValues = new ArrayList<>();
       for (String field : whitelist.fieldNames()) {
         sortValues.add(field);

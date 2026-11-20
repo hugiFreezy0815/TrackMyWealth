@@ -6,6 +6,7 @@ import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.RefreshTokenRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
@@ -26,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -410,13 +412,49 @@ class WorkspaceMemberControllerTest {
     UUID first = seedBusinessMember("sam@one.example.com");
     UUID second = seedBusinessMember("sam@two.example.com");
 
-    WorkspaceMemberListItemResponse[] listed =
-        listMembers(login("sam@one.example.com", SECOND_MEMBER_PASSWORD));
+    String token = login("sam@one.example.com", SECOND_MEMBER_PASSWORD);
+    var firstPage = memberPage(token, "?size=1");
+    var secondPage = memberPage(token, "?page=1&size=1");
 
-    assertThat(listed)
-        .extracting(WorkspaceMemberListItemResponse::id)
+    assertThat(firstPage.page().totalElements()).isEqualTo(2);
+    assertThat(firstPage.page().totalPages()).isEqualTo(2);
+    assertThat(firstPage.content()).hasSize(1);
+    assertThat(secondPage.content()).hasSize(1);
+    assertThat(List.of(firstPage.content().get(0).id(), secondPage.content().get(0).id()))
         .containsExactlyElementsOf(
             Stream.of(first, second).sorted(Comparator.comparing(UUID::toString)).toList());
+  }
+
+  @Test
+  void retrievesMembershipBeyondTwoHundredRows() throws Exception {
+    bootstrapAdministrator();
+    UUID first = seedBusinessMember("sam@first.example.com");
+    try (Connection connection = dataSource.getConnection()) {
+      connection.setAutoCommit(false);
+      for (int i = 0; i < 200; i++) {
+        insertMemberWithLogin(connection, UUID.randomUUID(), "sam@" + i + ".example.com");
+      }
+      connection.commit();
+    }
+
+    String token = login("sam@first.example.com", SECOND_MEMBER_PASSWORD);
+    var firstPage = memberPage(token, "?size=201");
+    var secondPage = memberPage(token, "?page=1&size=200");
+    var afterLast = memberPage(token, "?page=2&size=200");
+    assertThat(firstPage.page().size()).isEqualTo(200);
+    assertThat(firstPage.page().totalElements()).isEqualTo(201);
+    assertThat(firstPage.page().totalPages()).isEqualTo(2);
+    assertThat(firstPage.content()).hasSize(200);
+    assertThat(secondPage.content()).hasSize(1);
+    assertThat(afterLast.content()).isEmpty();
+    assertThat(afterLast.page().totalElements()).isEqualTo(201);
+    assertThat(
+            Stream.concat(firstPage.content().stream(), secondPage.content().stream())
+                .map(WorkspaceMemberListItemResponse::id)
+                .toList())
+        .hasSize(201)
+        .doesNotHaveDuplicates()
+        .contains(first);
   }
 
   // SQL fixture stays valid after #389 removes administrator-created multi-member onboarding. One
@@ -454,13 +492,18 @@ class WorkspaceMemberControllerTest {
   }
 
   private WorkspaceMemberListItemResponse[] listMembers(String token) {
+    return memberPage(token, "").content().toArray(WorkspaceMemberListItemResponse[]::new);
+  }
+
+  private PageResponse<WorkspaceMemberListItemResponse> memberPage(String token, String query) {
     return client(token)
         .get()
-        .uri("/api/v1/workspace-members")
+        .uri("/api/v1/workspace-members" + query)
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(WorkspaceMemberListItemResponse[].class)
+        .expectBody(
+            new ParameterizedTypeReference<PageResponse<WorkspaceMemberListItemResponse>>() {})
         .returnResult()
         .getResponseBody();
   }

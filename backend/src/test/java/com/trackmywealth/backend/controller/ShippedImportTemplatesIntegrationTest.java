@@ -10,6 +10,7 @@ import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateTestResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.service.ShippedTemplateFixtures;
 import java.io.IOException;
@@ -101,9 +102,9 @@ class ShippedImportTemplatesIntegrationTest {
           SWISSQUOTE_HOLDINGS,
           POSTFINANCE_POSITIONS,
           POSTFINANCE_CASH);
-  private static final ParameterizedTypeReference<List<ImportTemplateResponse>> TEMPLATE_LIST =
-      new ParameterizedTypeReference<>() {};
-  private static final ParameterizedTypeReference<List<ImportTemplateCandidateResponse>>
+  private static final ParameterizedTypeReference<PageResponse<ImportTemplateResponse>>
+      TEMPLATE_LIST = new ParameterizedTypeReference<>() {};
+  private static final ParameterizedTypeReference<PageResponse<ImportTemplateCandidateResponse>>
       CANDIDATES = new ParameterizedTypeReference<>() {};
 
   @Container
@@ -147,6 +148,7 @@ class ShippedImportTemplatesIntegrationTest {
             .expectBody(TEMPLATE_LIST)
             .returnResult()
             .getResponseBody()
+            .content()
             .stream()
             .filter(ImportTemplateResponse::systemProvided)
             .toList();
@@ -482,7 +484,8 @@ class ShippedImportTemplatesIntegrationTest {
         .isOk()
         .expectBody(CANDIDATES)
         .returnResult()
-        .getResponseBody();
+        .getResponseBody()
+        .content();
   }
 
   private static void assertBooking(

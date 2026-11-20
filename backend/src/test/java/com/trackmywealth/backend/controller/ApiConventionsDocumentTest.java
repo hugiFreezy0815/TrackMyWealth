@@ -52,15 +52,10 @@ class ApiConventionsDocumentTest {
   }
 
   @Test
-  void theExceptionTableListsEveryOperationThatAnswersAPlainArray() throws IOException {
-    Set<String> documented = new TreeSet<>();
-    for (List<String> row : tableAfter("| Operation | Current scope or limit |")) {
-      documented.add(operationIn(row.get(0)));
-    }
-
-    assertThat(documented)
-        .as("the array table of %s against the array responses of %s", GUIDE, CONTRACT)
-        .isEqualTo(arrayOperationsOfTheContract());
+  void noOperationReturnsAnUnboundedPlainArray() throws IOException {
+    assertThat(arrayOperationsOfTheContract())
+        .as("root array responses in %s require a documented, enforced domain limit", CONTRACT)
+        .isEmpty();
   }
 
   /** US-29-14 (#574): a client may rely on the header only where the contract declares it. */

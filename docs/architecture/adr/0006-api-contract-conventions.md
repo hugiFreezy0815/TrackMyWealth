@@ -45,8 +45,8 @@ as the REST design baseline. The contract uses [OpenAPI 3.1](https://spec.openap
 | Throttling | Use `429` and `Retry-After` seconds. The existing limiter exposes the retry delay and does not advertise a general rate-budget contract. | Also publishing the recommended `X-RateLimit-*` counters. |
 | Optional response fields | Response records publish nullable properties with their keys present so clients have one stable shape across responses. The hand-built problem schema omits optional members when unset. | Treating absent keys and explicit nulls as interchangeable on responses. |
 
-[API conventions](../../api/conventions.md#which-collections-are-paged) lists the current array
-endpoints that lack a domain count bound. #473 converted the historical collections listed there.
+[API conventions](../../api/conventions.md#which-collections-are-paged) lists the paginated
+operations. #473 converted historical collections and #570 converted the remaining collections.
 Only two creates send `Location` today ([Response headers](#response-headers-us-29-09-455));
 [#459](https://github.com/hugiFreezy0815/TrackMyWealth/issues/459) adds it to every 201.
 
@@ -54,37 +54,17 @@ Only two creates send `Location` today ([Response headers](#response-headers-us-
 
 ### Collection paging
 
-[Issue #570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570) tracks all eight
-operations below.
+[Issue #570](https://github.com/hugiFreezy0815/TrackMyWealth/issues/570) resolved the eight
+remaining array responses with offset paging. Workspace membership has no domain cap and is
+retrievable beyond 200 rows. Category traversal retains the hierarchy across pages, and detection
+applies its ranking before slicing the matches. Each order ends with a unique ID tie-breaker.
 
-The eight array operations listed in
-[API conventions](../../api/conventions.md#which-collections-are-paged) need either a paged
-contract or a documented domain bound that guarantees a complete result. Preserve the current
-authorization scope and sorting semantics for each operation. Plan the client migration and
-obtain breaking-change approval before changing a response shape.
+The agreed breaking change uses the existing operation URLs and requires a coordinated consumer
+release. See [migration instructions](../../api/conventions.md#migrating-collection-consumers-570)
+for request and response changes.
 
-The Sprint 6 plan (decision 3) treated accounts, portfolios and categories as small bounded
-lists that return a plain array "each with a documented upper bound". The review of #371
-(PR #566, 2026-11-13) found that these three have no enforced or published count bound: "tens,
-not thousands" describes the expected size, it does not limit it. Decision 3 itself stands: an
-array is allowed only for a complete, domain-bounded list. What is open is whether each of the
-eight lists gets such a bound or is paged, and #570 decides that per operation. Until then they
-keep returning the complete result.
-
-`ApiConventionsDocumentTest` keeps the guide's two operation tables in step with the contract: a
-paged operation, a sort field or a plain-array response that the guide does not list fails the
-build.
-
-- Accounts, portfolios, categories, categorization rules, import templates and sessions need
-  paging unless a domain count bound is established. For categories, retain the tree hierarchy
-  across the migration. The current depth limit leaves the number of nodes unrestricted.
-- Workspace members need a contract that lets clients retrieve the complete authorized
-  membership list when the workspace exceeds the current 200-row limit.
-- Import template detection needs a bounded result or paging that preserves its ranking.
-  One candidate per available template inherits the template collection's unbounded size.
-
-Verify that callers can retrieve all permitted results, including above the default page size
-and across an equal-sort-value boundary. Verify that foreign records remain invisible.
+`ApiConventionsDocumentTest` verifies the guide's paged-operation and sort-field table against
+OpenAPI and checks that collection responses follow the documented contract.
 
 ### Category request schema
 

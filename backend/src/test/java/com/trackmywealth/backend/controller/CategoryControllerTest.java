@@ -9,6 +9,7 @@ import com.trackmywealth.backend.dto.CreateCategoryRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UpdateCategoryRequest;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
@@ -37,6 +38,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -63,7 +65,7 @@ class CategoryControllerTest {
   private static final String BASE = "/api/v1/categories";
   // Bound by RLS, unlike the application's own role in these tests (see RowLevelSecurityRole).
   private static final String RLS_ROLE = "category_rls_role";
-  private static final ParameterizedTypeReference<List<CategoryResponse>> CATEGORY_LIST =
+  private static final ParameterizedTypeReference<PageResponse<CategoryResponse>> CATEGORY_LIST =
       new ParameterizedTypeReference<>() {};
 
   @Container
@@ -126,6 +128,27 @@ class CategoryControllerTest {
   // --- Definition of Done ------------------------------------------------------------------
 
   @Test
+  void pagesRetainTreeOrderAcrossAParentChildBoundary() {
+    String token = bootstrapAdministrator();
+    List<CategoryResponse> expected = list(token, false);
+    List<CategoryResponse> retrieved = new java.util.ArrayList<>();
+    for (int page = 0; page < expected.size(); page++) {
+      var result = categoryPage(token, "?size=1&page=" + page);
+      assertThat(result.page().totalElements()).isEqualTo(expected.size());
+      assertThat(result.content()).hasSize(1);
+      retrieved.addAll(result.content());
+    }
+    assertThat(retrieved).containsExactlyElementsOf(expected);
+    assertThat(retrieved).filteredOn(category -> category.level() > 1).isNotEmpty();
+    List<UUID> ids = retrieved.stream().map(CategoryResponse::id).toList();
+    for (CategoryResponse category : retrieved) {
+      if (category.parentId() != null) {
+        assertThat(ids.subList(0, ids.indexOf(category.id()))).contains(category.parentId());
+      }
+    }
+  }
+
+  @Test
   void aCustomSubcategoryIsCreatedAndAUsedDefaultIsDeactivatedNotDeleted() throws Exception {
     String token = bootstrapAdministrator();
     UUID workspaceId = workspaceOf("admin@example.com");
@@ -182,7 +205,8 @@ class CategoryControllerTest {
 
     // The deactivation is this workspace's alone.
     AuthenticatedUserPrincipal other = seedSecondWorkspace();
-    List<CategoryResponse> seenByOther = as(other, () -> categoryService.list(false, other));
+    List<CategoryResponse> seenByOther =
+        as(other, () -> categoryService.list(false, PageRequest.of(0, 200), other).getContent());
     assertThat(codes(seenByOther)).contains("LEISURE").doesNotContain("WS_STREAMING_SUBSCRIPTIONS");
   }
 
@@ -839,9 +863,13 @@ class CategoryControllerTest {
   }
 
   private List<CategoryResponse> list(String token, boolean includeInactive) {
+    return categoryPage(token, "?size=200&includeInactive=" + includeInactive).content();
+  }
+
+  private PageResponse<CategoryResponse> categoryPage(String token, String query) {
     return client(token)
         .get()
-        .uri(BASE + "?includeInactive=" + includeInactive)
+        .uri(BASE + query)
         .exchange()
         .expectStatus()
         .isOk()

@@ -1,13 +1,15 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.SessionSummaryResponse;
 import com.trackmywealth.backend.entity.UserSession;
 import com.trackmywealth.backend.repository.RefreshTokenRepository;
 import com.trackmywealth.backend.repository.UserSessionRepository;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,12 +39,12 @@ public class SessionService {
     this.authorizationDenialAuditService = authorizationDenialAuditService;
   }
 
-  public List<SessionSummaryResponse> listSessions(UUID callerUserId, UUID callerSessionId) {
+  public Page<SessionSummaryResponse> listSessions(
+      UUID callerUserId, UUID callerSessionId, Pageable pageable) {
     return userSessionRepository
-        .findByUser_IdAndStatusOrderByLastSeenAtDesc(callerUserId, ACTIVE)
-        .stream()
-        .map(session -> toSummary(session, callerSessionId))
-        .toList();
+        .findByUser_IdAndStatusOrderByLastSeenAtDescIdAsc(
+            callerUserId, ACTIVE, PagingValues.requireBoundedFixedOrder(pageable))
+        .map(session -> toSummary(session, callerSessionId));
   }
 
   /**
