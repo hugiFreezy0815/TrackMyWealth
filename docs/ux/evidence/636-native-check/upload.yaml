@@ -1,0 +1,42 @@
+# #574 native check: open the import screen of the EUR demo account and upload the synthetic
+# statement from Files > On My iPhone. Env: ACCOUNT_ID, PREFIX, LOST (true when the proxy drops
+# this upload's answer).
+appId: com.anonymous.trackmywealth
+---
+- openLink: trackmywealth://accounts/${ACCOUNT_ID}/imports/new
+- tapOn:
+    text: 'Open'
+    optional: true
+- extendedWaitUntil:
+    visible: 'Choose file'
+    timeout: 30000
+- tapOn: 'Choose file'
+- extendedWaitUntil:
+    visible: 'Browse'
+    timeout: 15000
+    optional: true
+- tapOn:
+    text: 'Browse'
+    optional: true
+- tapOn:
+    text: 'On My iPhone'
+    optional: true
+- extendedWaitUntil:
+    visible: 'dkb-girokonto-synthetic.*'
+    timeout: 15000
+# The name label does not select the file; its thumbnail does (iPhone 17, "On My iPhone" grid).
+- tapOn:
+    point: '18%,27%'
+- runFlow:
+    when:
+      true: ${LOST == 'true'}
+    commands:
+      - extendedWaitUntil:
+          visible: 'The connection dropped before the server answered.*'
+          timeout: 30000
+      - takeScreenshot: ${PREFIX}-1-lost-response
+      - tapOn: 'Try again'
+- extendedWaitUntil:
+    visible: 'Review before importing'
+    timeout: 30000
+- takeScreenshot: ${PREFIX}-2-review

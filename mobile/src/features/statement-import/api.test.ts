@@ -14,11 +14,19 @@ import {
   downloadErrorsCsv,
   parseStatement,
   setStatementRowIncluded,
+  statementForm,
   uploadStatement,
 } from './api';
 import type { Batch } from './model';
+import { File } from 'expo-file-system';
+import { convertFormDataAsync } from 'expo/src/winter/fetch/convertFormData';
 
 // The JSON calls are checked for their options; upload and text run the real transport on fetch.
+jest.mock('expo-file-system', () => ({
+  File: jest.fn().mockImplementation(() => ({
+    bytes: async () => new TextEncoder().encode('Date;Amount\n'),
+  })),
+}));
 jest.mock('@/api/typed-api', () => ({
   typedApi: {
     ...jest.requireActual('@/api/typed-api').typedApi,
@@ -82,6 +90,58 @@ function hangingFetch() {
       ),
   ) as unknown as typeof fetch;
 }
+
+describe('native statement part (#636)', () => {
+  // On iOS and Android the global FormData is React Native's, patched by Expo (SDK 58): the same
+  // pairing as on the phone, so the part goes through the encoder Expo's fetch uses.
+  const jestFormData = globalThis.FormData;
+  beforeAll(() => {
+    // React Native's own FormData (a Flow module without type declarations for this path).
+    const ReactNativeFormData = jest.requireActual<{ default: typeof FormData }>(
+      'react-native/Libraries/Network/FormData',
+    ).default;
+    // Patches the class in place, as Expo's runtime does on the phone (jest-expo stubs the runtime).
+    jest
+      .requireActual<typeof import('expo/src/winter/FormData')>('expo/src/winter/FormData')
+      .installFormDataPatch(ReactNativeFormData);
+    globalThis.FormData = ReactNativeFormData;
+  });
+  afterAll(() => {
+    globalThis.FormData = jestFormData;
+  });
+
+  type Part = [string, { name?: string; type?: string; uri?: string; bytes?: () => unknown }];
+  const partsOf = (form: FormData) => (form as unknown as { _parts: Part[] })._parts;
+
+  it('sends the picked copy as bytes with the statement name and type, never as a uri', async () => {
+    const [[field, part]] = partsOf(statementForm(file));
+
+    expect(field).toBe('file');
+    expect(part).toMatchObject({ name: 'synthetic-dkb.csv', type: 'text/csv' });
+    expect(part).not.toHaveProperty('uri');
+    await expect(part.bytes?.()).resolves.toEqual(new TextEncoder().encode('Date;Amount\n'));
+    expect(File).toHaveBeenCalledWith('file:///dkb.csv');
+  });
+
+  it('falls back to a generic media type when the picker reports none', () => {
+    const [[, part]] = partsOf(statementForm({ ...file, mimeType: undefined }));
+    expect(part.type).toBe('application/octet-stream');
+  });
+
+  // Expo's native fetch encodes the body with this converter; React Native's { uri } part made it
+  // throw "Unsupported FormDataPart implementation" before anything was sent.
+  it("is accepted by Expo's native multipart encoder", async () => {
+    const { body, boundary } = await convertFormDataAsync(statementForm(file));
+    const text = new TextDecoder().decode(body);
+
+    expect(text).toContain(
+      'content-disposition: form-data; name="file"; filename="synthetic-dkb.csv"',
+    );
+    expect(text).toContain('content-type: text/csv');
+    expect(text).toContain('Date;Amount');
+    expect(text.trimEnd()).toMatch(new RegExp(`--${boundary}--$`));
+  });
+});
 
 describe('authenticated multipart and CSV transport (#492)', () => {
   it('uploads to the contract path with the bearer token but no JSON Content-Type', async () => {

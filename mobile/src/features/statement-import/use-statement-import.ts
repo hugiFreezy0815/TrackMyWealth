@@ -37,6 +37,8 @@ export const SLOW_UPLOAD_MS = 10_000;
 /** The system picker's types; the extension check in `statementFileError` decides. */
 const PICKER_TYPES = [
   'text/csv',
+  // Android labels a .csv file in Downloads this way; without it the picker greys the file out (#636).
+  'text/comma-separated-values',
   'text/plain',
   'text/xml',
   'application/xml',

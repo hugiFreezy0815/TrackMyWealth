@@ -1,0 +1,14 @@
+# Leave the open review: Cancel, then Discard in the dialog.
+appId: com.anonymous.trackmywealth
+---
+- scrollUntilVisible:
+    element: 'Cancel'
+    direction: DOWN
+    timeout: 20000
+- tapOn: 'Cancel'
+- tapOn:
+    text: 'Discard'
+    index: -1
+- extendedWaitUntil:
+    notVisible: 'Review before importing'
+    timeout: 15000

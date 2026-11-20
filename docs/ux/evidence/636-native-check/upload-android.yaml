@@ -1,0 +1,27 @@
+# #574 native check: open the import screen of the EUR demo account and upload the synthetic
+# statement from the system picker's Downloads (Android). Env: ACCOUNT_ID, PREFIX, LOST (true when the proxy drops
+# this upload's answer).
+appId: com.anonymous.trackmywealth
+---
+- openLink: trackmywealth://accounts/${ACCOUNT_ID}/imports/new
+- extendedWaitUntil:
+    visible: 'Choose file'
+    timeout: 30000
+- tapOn: 'Choose file'
+- tapOn: 'Show roots'
+- tapOn: 'Downloads'
+- extendedWaitUntil:
+    visible: 'dkb-girokonto-synthetic.csv'
+    timeout: 15000
+- tapOn: 'dkb-girokonto-synthetic.csv'
+- runFlow:
+    when:
+      true: ${LOST == 'true'}
+    commands:
+      - extendedWaitUntil:
+          visible: 'The connection dropped before the server answered.*'
+          timeout: 30000
+      - tapOn: 'Try again'
+- extendedWaitUntil:
+    visible: 'Review before importing'
+    timeout: 30000
