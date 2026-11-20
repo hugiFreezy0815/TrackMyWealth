@@ -1,0 +1,112 @@
+{
+  "checks": {
+    "A1 upload carries Idempotency-Key": {
+      "ok": true,
+      "detail": "5d5f5e43-363d-4d68-b6ba-35c01c1c7b3d"
+    },
+    "A2 key is a version 4 UUID": {
+      "ok": true
+    },
+    "A3 CORS preflight asked for idempotency-key and was allowed": {
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "requested": "authorization,idempotency-key",
+        "allowed": "authorization, idempotency-key"
+      }
+    },
+    "B1 server answered 201 to the lost attempt": {
+      "ok": true,
+      "detail": 201
+    },
+    "B2 app explains the dropped connection and offers Try again": {
+      "ok": true,
+      "detail": [
+        "The connection dropped before the server answered. Try again: your statement won't be imported twice.",
+        "Try again"
+      ]
+    },
+    "B3 retry reused the same key": {
+      "ok": true,
+      "detail": [
+        "9db4df76-6aaa-4130-9f2f-9e79a8759cad",
+        "9db4df76-6aaa-4130-9f2f-9e79a8759cad"
+      ]
+    },
+    "B4 key differs from scenario A": {
+      "ok": true
+    },
+    "B5 exactly one batch exists for the lost upload and its retry": {
+      "ok": true,
+      "detail": {
+        "newBatches": 1
+      }
+    },
+    "B6 the batch the retry shows is the one the lost attempt created": {
+      "ok": true,
+      "detail": {
+        "lostAttemptBatchId": "aee10a18-1abe-48d5-a28e-666924b888af",
+        "batchInAccount": "aee10a18-1abe-48d5-a28e-666924b888af"
+      }
+    },
+    "C1 a new upload gets a new key": {
+      "ok": true,
+      "detail": "1038e77b-c6bd-4364-8d39-954785774777"
+    },
+    "D1 three uploads made exactly three batches": {
+      "ok": true,
+      "detail": {
+        "before": 0,
+        "after": 3,
+        "statuses": [
+          "DISCARDED",
+          "DISCARDED",
+          "DISCARDED"
+        ]
+      }
+    },
+    "D2 no page errors": {
+      "ok": true,
+      "detail": [
+        "console: Failed to load resource: net::ERR_CONNECTION_RESET"
+      ]
+    }
+  },
+  "replayResponseBody": {
+    "id": "aee10a18-1abe-48d5-a28e-666924b888af",
+    "status": "PARSED"
+  },
+  "batches": {
+    "before": 0,
+    "after": 3,
+    "statuses": [
+      "DISCARDED",
+      "DISCARDED",
+      "DISCARDED"
+    ]
+  },
+  "uploads": [
+    {
+      "uuid": "5d5f5e43-363d-4d68-b6ba-35c01c1c7b3d",
+      "url": "http://localhost:8093/api/v1/accounts/64d144fa-5d9a-4bd2-b64c-75de7cde87af/imports"
+    },
+    {
+      "uuid": "9db4df76-6aaa-4130-9f2f-9e79a8759cad",
+      "url": "http://localhost:8093/api/v1/accounts/64d144fa-5d9a-4bd2-b64c-75de7cde87af/imports"
+    },
+    {
+      "uuid": "9db4df76-6aaa-4130-9f2f-9e79a8759cad",
+      "url": "http://localhost:8093/api/v1/accounts/64d144fa-5d9a-4bd2-b64c-75de7cde87af/imports"
+    },
+    {
+      "uuid": "1038e77b-c6bd-4364-8d39-954785774777",
+      "url": "http://localhost:8093/api/v1/accounts/64d144fa-5d9a-4bd2-b64c-75de7cde87af/imports"
+    }
+  ],
+  "preflights": [
+    {
+      "status": 200,
+      "allowHeaders": "authorization, idempotency-key"
+    }
+  ]
+}

@@ -167,8 +167,15 @@ export const IMPORT_UPLOAD_ERRORS: readonly string[] = [
   'IDEMPOTENCY_KEY_MISMATCH',
 ] as const;
 
-/** The response status counts, not client-side calculations, decide what gets imported. */
-export function importErrorMessageKey(error: unknown): string | null {
+/**
+ * The import screen's own text for a failed step. A dropped connection gets one too (#574): after
+ * a lost upload response the Retry resends the same Idempotency-Key, so the statement is never
+ * imported twice and the text can say so; any other step only asks to try again.
+ */
+export function importErrorMessageKey(error: unknown, uploadRetry = false): string | null {
+  if (error instanceof NetworkError) {
+    return uploadRetry ? 'statement.error.uploadConnection' : 'statement.error.connection';
+  }
   const code = importProblemCode(error);
   return code && IMPORT_UPLOAD_ERRORS.includes(code) ? 'statement.error.' + code : null;
 }
