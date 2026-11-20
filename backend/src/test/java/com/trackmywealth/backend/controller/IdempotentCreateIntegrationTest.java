@@ -59,7 +59,7 @@ import tools.jackson.databind.ObjectMapper;
 class IdempotentCreateIntegrationTest {
 
   private static final String PASSWORD = "correct-horse-battery-staple";
-  private static final String KEY = "0f8fad5b-d9cb-469f-a165-70867728950e";
+  private static final String CREATE_UUID = "0f8fad5b-d9cb-469f-a165-70867728950e";
 
   @Container
   static PostgreSQLContainer<?> postgres =
@@ -259,10 +259,10 @@ class IdempotentCreateIntegrationTest {
     Create create = create(operation);
     long before = count(create.countSql());
 
-    EntityExchangeResult<byte[]> first = created(post(create.path(), KEY, create.body()));
+    EntityExchangeResult<byte[]> first = created(post(create.path(), CREATE_UUID, create.body()));
     long afterFirst = count(create.countSql());
     EntityExchangeResult<byte[]> retry =
-        created(post(create.path(), KEY.toUpperCase(Locale.ROOT), create.body()));
+        created(post(create.path(), CREATE_UUID.toUpperCase(Locale.ROOT), create.body()));
 
     assertThat(afterFirst).isEqualTo(before + 1);
     assertThat(count(create.countSql())).isEqualTo(afterFirst);
@@ -276,10 +276,10 @@ class IdempotentCreateIntegrationTest {
   @MethodSource("operations")
   void theSameKeyForADifferentRequestIsUnprocessable(String operation) {
     Create create = create(operation);
-    created(post(create.path(), KEY, create.body()));
+    created(post(create.path(), CREATE_UUID, create.body()));
     long afterFirst = count(create.countSql());
 
-    post(create.path(), KEY, create.otherBody())
+    post(create.path(), CREATE_UUID, create.otherBody())
         .expectStatus()
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
         .expectBody()
@@ -296,10 +296,11 @@ class IdempotentCreateIntegrationTest {
   @Test
   void theBodyIsComparedAsTheServerReadsIt() {
     String path = "/api/v1/accounts/" + asset + "/valuations";
-    created(post(path, KEY, "{\"valuationDate\":\"2026-01-31\",\"value\":\"25000.00\"}"));
+    created(post(path, CREATE_UUID, "{\"valuationDate\":\"2026-01-31\",\"value\":\"25000.00\"}"));
 
-    created(post(path, KEY, "{ \"value\": \"25000.00\", \"valuationDate\": \"2026-01-31\" }"));
-    post(path, KEY, "{\"valuationDate\":\"2026-01-31\",\"value\":\"25000.0\"}")
+    created(
+        post(path, CREATE_UUID, "{ \"value\": \"25000.00\", \"valuationDate\": \"2026-01-31\" }"));
+    post(path, CREATE_UUID, "{\"valuationDate\":\"2026-01-31\",\"value\":\"25000.0\"}")
         .expectStatus()
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
 
@@ -331,13 +332,13 @@ class IdempotentCreateIntegrationTest {
         () ->
             idempotencyService.claim(
                 "createAccount",
-                KEY,
+                CREATE_UUID,
                 IdempotencyService.fingerprint(
                     objectMapper.writeValueAsBytes(request), "createAccount"),
                 member));
     long before = count("SELECT count(*) FROM account");
 
-    post("/api/v1/accounts", KEY, request)
+    post("/api/v1/accounts", CREATE_UUID, request)
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT)
         .expectHeader()
@@ -356,7 +357,7 @@ class IdempotentCreateIntegrationTest {
     String path = "/api/v1/accounts/" + cash + "/transactions";
     String etag = archive(cash);
 
-    post(path, KEY, request)
+    post(path, CREATE_UUID, request)
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT)
         .expectBody()
@@ -365,7 +366,7 @@ class IdempotentCreateIntegrationTest {
     assertThat(count("SELECT count(*) FROM idempotency_key")).isZero();
 
     restore(cash, etag);
-    created(post(path, KEY, request));
+    created(post(path, CREATE_UUID, request));
     assertThat(count("SELECT count(*) FROM transaction")).isEqualTo(1L);
     assertThat(count("SELECT count(*) FROM idempotency_key WHERE status = 'COMPLETED'"))
         .isEqualTo(1L);
@@ -391,10 +392,13 @@ class IdempotentCreateIntegrationTest {
     created(
         post(
             "/api/v1/accounts",
-            KEY,
+            CREATE_UUID,
             Map.of("name", "Savings", "accountType", "CASH", "nativeCurrency", "CHF")));
     created(
-        post("/api/v1/portfolios", KEY, Map.of("name", "Manual bank", "portfolioCurrency", "CHF")));
+        post(
+            "/api/v1/portfolios",
+            CREATE_UUID,
+            Map.of("name", "Manual bank", "portfolioCurrency", "CHF")));
 
     assertThat(count("SELECT count(*) FROM idempotency_key")).isEqualTo(2L);
   }

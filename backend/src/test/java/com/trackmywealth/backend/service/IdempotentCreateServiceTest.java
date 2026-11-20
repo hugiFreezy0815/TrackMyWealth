@@ -32,7 +32,7 @@ import tools.jackson.databind.json.JsonMapper;
 /** US-29-17 (#629): the wrapper's branches; the database behaviour is integration-tested. */
 class IdempotentCreateServiceTest {
 
-  private static final String KEY = "0F8FAD5B-D9CB-469F-A165-70867728950E";
+  private static final String CREATE_UUID = "0F8FAD5B-D9CB-469F-A165-70867728950E";
   private static final UUID WORKSPACE = UUID.randomUUID();
 
   private final IdempotencyService idempotency = mock(IdempotencyService.class);
@@ -58,7 +58,7 @@ class IdempotentCreateServiceTest {
     AuthenticatedUserPrincipal administrator =
         new AuthenticatedUserPrincipal(UUID.randomUUID(), "SYSTEM_ADMINISTRATOR", null, null, "EN");
 
-    assertThat(create(KEY, administrator)).isEqualTo("created-1");
+    assertThat(create(CREATE_UUID, administrator)).isEqualTo("created-1");
     verifyNoInteractions(idempotency);
   }
 
@@ -67,13 +67,13 @@ class IdempotentCreateServiceTest {
     IdempotencyClaim claim = IdempotencyClaim.held(UUID.randomUUID(), OffsetDateTime.now());
     when(idempotency.claim(eq("createThing"), anyString(), anyString(), any())).thenReturn(claim);
 
-    assertThat(create(KEY, member())).isEqualTo("created-1");
+    assertThat(create(CREATE_UUID, member())).isEqualTo("created-1");
 
     // The key is stored normalized; the fingerprint covers the operation and the request.
     verify(idempotency)
         .claim(
             "createThing",
-            KEY.toLowerCase(Locale.ROOT),
+            CREATE_UUID.toLowerCase(Locale.ROOT),
             IdempotencyService.fingerprint(
                 objectMapper.writeValueAsBytes(List.of(WORKSPACE, Map.of("name", "A"))),
                 "createThing"),
@@ -89,7 +89,7 @@ class IdempotentCreateServiceTest {
     when(idempotency.claim(any(), any(), any(), any())).thenReturn(replay);
     when(idempotency.replayed(replay, String.class)).thenReturn("stored");
 
-    assertThat(create(KEY, member())).isEqualTo("stored");
+    assertThat(create(CREATE_UUID, member())).isEqualTo("stored");
     assertThat(creates).hasValue(0);
     verifyNoInteractions(transactions);
   }
@@ -140,7 +140,7 @@ class IdempotentCreateServiceTest {
   private String failingCreate(RuntimeException failure) {
     return service.create(
         "createThing",
-        KEY,
+        CREATE_UUID,
         member(),
         Map.of("name", "A"),
         String.class,

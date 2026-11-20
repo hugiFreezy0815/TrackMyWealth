@@ -103,14 +103,15 @@ describe('typedApi', () => {
 
   it('sends the Idempotency-Key of a create that takes one (#629)', async () => {
     const fetchMock = mockFetch({ id: 'p-1' }, 201);
+    const createUuid = '0f8fad5b-d9cb-469f-a165-70867728950e';
 
     await typedApi.post('/api/v1/portfolios', {
       body: { name: 'Manual bank', portfolioCurrency: 'CHF' },
-      idempotencyKey: '0f8fad5b-d9cb-469f-a165-70867728950e',
+      idempotencyKey: createUuid,
     });
 
     expect(sent(fetchMock).init.headers).toEqual(
-      expect.objectContaining({ 'Idempotency-Key': '0f8fad5b-d9cb-469f-a165-70867728950e' }),
+      expect.objectContaining({ 'Idempotency-Key': createUuid }),
     );
   });
 

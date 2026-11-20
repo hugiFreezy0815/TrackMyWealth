@@ -13,3 +13,12 @@
 # credential. The next commit renames it UPLOAD_UUID (no longer key-named); this fingerprint covers
 # only that one historical line, so any new key-shaped literal is still caught.
 20726172e2056ccb5ae8e8e39b66e82735623d19:backend/src/test/java/com/trackmywealth/backend/controller/ImportBatchIdempotencyTest.java:generic-api-key:75
+
+# PR #635 (US-29-17, #629), commit cf62250 named synthetic Idempotency-Key test UUIDs `KEY` and
+# `idempotencyKey`. They are fixed example values sent as a request header in tests, not
+# credentials. The next commit renames them (CREATE_UUID, createUuid); these fingerprints cover
+# only those four historical lines, so any new key-shaped literal is still caught.
+cf622508845a0ad8ce0dd3c3b4bd8ea8126c0d02:backend/src/test/java/com/trackmywealth/backend/controller/IdempotentCreateIntegrationTest.java:generic-api-key:62
+cf622508845a0ad8ce0dd3c3b4bd8ea8126c0d02:backend/src/test/java/com/trackmywealth/backend/service/IdempotentCreateServiceTest.java:generic-api-key:35
+cf622508845a0ad8ce0dd3c3b4bd8ea8126c0d02:mobile/src/api/typed-api.test.ts:generic-api-key:109
+cf622508845a0ad8ce0dd3c3b4bd8ea8126c0d02:mobile/src/api/typed-api.test.ts:generic-api-key:113
