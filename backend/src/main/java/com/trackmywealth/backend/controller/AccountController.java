@@ -11,6 +11,7 @@ import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AccountListService;
 import com.trackmywealth.backend.service.AccountService;
+import com.trackmywealth.backend.service.IdempotentCreateService;
 import com.trackmywealth.backend.service.SavingsPocketService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
@@ -18,6 +19,8 @@ import com.trackmywealth.backend.web.ResponseHeader;
 import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -50,14 +53,17 @@ public class AccountController {
   private final AccountService accountService;
   private final AccountListService accountListService;
   private final SavingsPocketService savingsPocketService;
+  private final IdempotentCreateService idempotentCreates;
 
   public AccountController(
       AccountService accountService,
       AccountListService accountListService,
-      SavingsPocketService savingsPocketService) {
+      SavingsPocketService savingsPocketService,
+      IdempotentCreateService idempotentCreates) {
     this.accountService = accountService;
     this.accountListService = accountListService;
     this.savingsPocketService = savingsPocketService;
+    this.idempotentCreates = idempotentCreates;
   }
 
   /**
@@ -88,13 +94,30 @@ public class AccountController {
 
   @SuccessStatus(HttpStatus.CREATED)
   @Operation(operationId = "createAccount", summary = "Create an account")
-  @ProblemCodes({ProblemCode.NOT_FOUND, ProblemCode.CONFLICT})
+  @ProblemCodes({
+    ProblemCode.NOT_FOUND,
+    ProblemCode.CONFLICT,
+    ProblemCode.IDEMPOTENCY_KEY_IN_USE,
+    ProblemCode.IDEMPOTENCY_KEY_MISMATCH
+  })
   @PostMapping
   @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<AccountSummaryResponse> createAccount(
       @Valid @RequestBody CreateAccountRequest request,
+      @Parameter(
+              description = IdempotentCreateService.HEADER_DESCRIPTION,
+              schema = @Schema(type = "string", format = "uuid"))
+          @RequestHeader(value = IdempotentCreateService.HEADER, required = false)
+          String idempotencyKey,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    AccountSummaryResponse created = accountService.createAccount(request, actor);
+    AccountSummaryResponse created =
+        idempotentCreates.create(
+            "createAccount",
+            idempotencyKey,
+            actor,
+            request,
+            AccountSummaryResponse.class,
+            () -> accountService.createAccount(request, actor));
     return withEtag(ResponseEntity.status(HttpStatus.CREATED), created);
   }
 

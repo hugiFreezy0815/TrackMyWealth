@@ -6,6 +6,7 @@ import com.trackmywealth.backend.dto.ImportTemplateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateTestResponse;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.service.IdempotentCreateService;
 import com.trackmywealth.backend.service.ImportTemplateService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
@@ -14,6 +15,8 @@ import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.io.IOException;
@@ -52,9 +55,12 @@ public class ImportTemplateController {
   private static final String BY_ID = "/{id}";
 
   private final ImportTemplateService importTemplateService;
+  private final IdempotentCreateService idempotentCreates;
 
-  public ImportTemplateController(ImportTemplateService importTemplateService) {
+  public ImportTemplateController(
+      ImportTemplateService importTemplateService, IdempotentCreateService idempotentCreates) {
     this.importTemplateService = importTemplateService;
+    this.idempotentCreates = idempotentCreates;
   }
 
   /** Current versions of the shipped and the workspace's own templates, by name. */
@@ -83,14 +89,28 @@ public class ImportTemplateController {
   @ProblemCodes({
     ProblemCode.NOT_FOUND,
     ProblemCode.IMPORT_TEMPLATE_INVALID,
-    ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED
+    ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED,
+    ProblemCode.IDEMPOTENCY_KEY_IN_USE,
+    ProblemCode.IDEMPOTENCY_KEY_MISMATCH
   })
   @PostMapping
   @SendsHeaders({ResponseHeader.ETAG, ResponseHeader.LOCATION})
   public ResponseEntity<ImportTemplateResponse> create(
       @Valid @RequestBody ImportTemplateRequest request,
+      @Parameter(
+              description = IdempotentCreateService.HEADER_DESCRIPTION,
+              schema = @Schema(type = "string", format = "uuid"))
+          @RequestHeader(value = IdempotentCreateService.HEADER, required = false)
+          String idempotencyKey,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    ImportTemplateResponse created = importTemplateService.create(request, actor);
+    ImportTemplateResponse created =
+        idempotentCreates.create(
+            "createImportTemplate",
+            idempotencyKey,
+            actor,
+            request,
+            ImportTemplateResponse.class,
+            () -> importTemplateService.create(request, actor));
     URI location =
         ServletUriComponentsBuilder.fromCurrentRequest()
             .path(BY_ID)

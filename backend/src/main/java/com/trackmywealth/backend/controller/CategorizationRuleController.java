@@ -5,6 +5,7 @@ import com.trackmywealth.backend.dto.CreateCategorizationRuleRequest;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CategorizationRuleService;
+import com.trackmywealth.backend.service.IdempotentCreateService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.ResponseHeader;
@@ -12,6 +13,8 @@ import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -38,9 +41,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class CategorizationRuleController {
 
   private final CategorizationRuleService ruleService;
+  private final IdempotentCreateService idempotentCreates;
 
-  public CategorizationRuleController(CategorizationRuleService ruleService) {
+  public CategorizationRuleController(
+      CategorizationRuleService ruleService, IdempotentCreateService idempotentCreates) {
     this.ruleService = ruleService;
+    this.idempotentCreates = idempotentCreates;
   }
 
   /** Evaluation order; inactive rules only with {@code includeInactive=true}. */
@@ -55,13 +61,30 @@ public class CategorizationRuleController {
 
   @SuccessStatus(HttpStatus.CREATED)
   @Operation(operationId = "createCategorizationRule", summary = "Create a categorization rule")
-  @ProblemCodes({ProblemCode.NOT_FOUND, ProblemCode.UNPROCESSABLE})
+  @ProblemCodes({
+    ProblemCode.NOT_FOUND,
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.IDEMPOTENCY_KEY_IN_USE,
+    ProblemCode.IDEMPOTENCY_KEY_MISMATCH
+  })
   @PostMapping
   @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<CategorizationRuleResponse> create(
       @Valid @RequestBody CreateCategorizationRuleRequest request,
+      @Parameter(
+              description = IdempotentCreateService.HEADER_DESCRIPTION,
+              schema = @Schema(type = "string", format = "uuid"))
+          @RequestHeader(value = IdempotentCreateService.HEADER, required = false)
+          String idempotencyKey,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    CategorizationRuleResponse response = ruleService.create(request, actor);
+    CategorizationRuleResponse response =
+        idempotentCreates.create(
+            "createCategorizationRule",
+            idempotencyKey,
+            actor,
+            request,
+            CategorizationRuleResponse.class,
+            () -> ruleService.create(request, actor));
     return VersionedResponse.created(response, response.version());
   }
 

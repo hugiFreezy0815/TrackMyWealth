@@ -101,6 +101,19 @@ describe('typedApi', () => {
     expect(sent(fetchMock).init.method).toBe('DELETE');
   });
 
+  it('sends the Idempotency-Key of a create that takes one (#629)', async () => {
+    const fetchMock = mockFetch({ id: 'p-1' }, 201);
+
+    await typedApi.post('/api/v1/portfolios', {
+      body: { name: 'Manual bank', portfolioCurrency: 'CHF' },
+      idempotencyKey: '0f8fad5b-d9cb-469f-a165-70867728950e',
+    });
+
+    expect(sent(fetchMock).init.headers).toEqual(
+      expect.objectContaining({ 'Idempotency-Key': '0f8fad5b-d9cb-469f-a165-70867728950e' }),
+    );
+  });
+
   it('fails before sending when a path parameter is missing at runtime', () => {
     const fetchMock = mockFetch({});
     const untyped = typedApi.get as unknown as (
@@ -135,6 +148,13 @@ describe('typedApi', () => {
         version: 1,
         // @ts-expect-error - a field the request schema does not have
         body: { importAccountId: 'a', batch: 'b' },
+      });
+      void typedApi.put('/api/v1/accounts/{accountId}/identifier/from-import', {
+        params: { accountId: 'a' },
+        version: 1,
+        body: { importAccountId: 'a', batchId: 'b' },
+        // @ts-expect-error - only an operation that declares the header takes a key
+        idempotencyKey: 'k',
       });
       void typedApi.get('/api/v1/users/me').then((me) => {
         // @ts-expect-error - a renamed or removed response field is a compile error

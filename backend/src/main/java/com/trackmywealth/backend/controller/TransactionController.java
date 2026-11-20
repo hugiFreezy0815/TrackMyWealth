@@ -10,6 +10,7 @@ import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.service.IdempotentCreateService;
 import com.trackmywealth.backend.service.TransactionCorrectionService;
 import com.trackmywealth.backend.service.TransactionHistoryService;
 import com.trackmywealth.backend.service.TransactionRemovalService;
@@ -24,8 +25,11 @@ import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -62,18 +66,21 @@ public class TransactionController {
   private final TransactionRemovalService transactionRemovalService;
   private final TransferResolutionService transferResolutionService;
   private final TransactionHistoryService transactionHistoryService;
+  private final IdempotentCreateService idempotentCreates;
 
   public TransactionController(
       TransactionService transactionService,
       TransactionCorrectionService transactionCorrectionService,
       TransactionRemovalService transactionRemovalService,
       TransferResolutionService transferResolutionService,
-      TransactionHistoryService transactionHistoryService) {
+      TransactionHistoryService transactionHistoryService,
+      IdempotentCreateService idempotentCreates) {
     this.transactionService = transactionService;
     this.transactionCorrectionService = transactionCorrectionService;
     this.transactionRemovalService = transactionRemovalService;
     this.transferResolutionService = transferResolutionService;
     this.transactionHistoryService = transactionHistoryService;
+    this.idempotentCreates = idempotentCreates;
   }
 
   @SuccessStatus(HttpStatus.CREATED)
@@ -82,15 +89,29 @@ public class TransactionController {
     ProblemCode.CONFLICT,
     ProblemCode.RETRY,
     ProblemCode.ACCOUNT_ARCHIVED,
-    ProblemCode.UNPROCESSABLE
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.IDEMPOTENCY_KEY_IN_USE,
+    ProblemCode.IDEMPOTENCY_KEY_MISMATCH
   })
   @PostMapping("/transactions")
   @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<TransactionResponse> recordTransaction(
       @PathVariable UUID accountId,
       @Valid @RequestBody CreateTransactionRequest request,
+      @Parameter(
+              description = IdempotentCreateService.HEADER_DESCRIPTION,
+              schema = @Schema(type = "string", format = "uuid"))
+          @RequestHeader(value = IdempotentCreateService.HEADER, required = false)
+          String idempotencyKey,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    TransactionResponse response = transactionService.recordTransaction(accountId, request, actor);
+    TransactionResponse response =
+        idempotentCreates.create(
+            "recordTransaction",
+            idempotencyKey,
+            actor,
+            List.of(accountId, request),
+            TransactionResponse.class,
+            () -> transactionService.recordTransaction(accountId, request, actor));
     return VersionedResponse.created(response, response.version());
   }
 

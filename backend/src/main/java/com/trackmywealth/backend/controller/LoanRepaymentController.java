@@ -5,14 +5,18 @@ import com.trackmywealth.backend.dto.LoanRepaymentResponse;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.service.IdempotentCreateService;
 import com.trackmywealth.backend.service.LoanRepaymentService;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.Paged.SortField;
 import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -22,6 +26,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -36,21 +41,42 @@ import org.springframework.web.bind.annotation.RestController;
 public class LoanRepaymentController {
 
   private final LoanRepaymentService loanRepaymentService;
+  private final IdempotentCreateService idempotentCreates;
 
-  public LoanRepaymentController(LoanRepaymentService loanRepaymentService) {
+  public LoanRepaymentController(
+      LoanRepaymentService loanRepaymentService, IdempotentCreateService idempotentCreates) {
     this.loanRepaymentService = loanRepaymentService;
+    this.idempotentCreates = idempotentCreates;
   }
 
   @SuccessStatus(HttpStatus.CREATED)
   @Operation(operationId = "recordLoanRepayment", summary = "Record a loan repayment")
-  @ProblemCodes({ProblemCode.CONFLICT, ProblemCode.ACCOUNT_ARCHIVED, ProblemCode.UNPROCESSABLE})
+  @ProblemCodes({
+    ProblemCode.CONFLICT,
+    ProblemCode.ACCOUNT_ARCHIVED,
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.IDEMPOTENCY_KEY_IN_USE,
+    ProblemCode.IDEMPOTENCY_KEY_MISMATCH
+  })
   @PostMapping
   public ResponseEntity<LoanRepaymentResponse> recordRepayment(
       @PathVariable UUID accountId,
       @Valid @RequestBody CreateLoanRepaymentRequest request,
+      @Parameter(
+              description = IdempotentCreateService.HEADER_DESCRIPTION,
+              schema = @Schema(type = "string", format = "uuid"))
+          @RequestHeader(value = IdempotentCreateService.HEADER, required = false)
+          String idempotencyKey,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return ResponseEntity.status(HttpStatus.CREATED)
-        .body(loanRepaymentService.record(accountId, request, actor));
+        .body(
+            idempotentCreates.create(
+                "recordLoanRepayment",
+                idempotencyKey,
+                actor,
+                List.of(accountId, request),
+                LoanRepaymentResponse.class,
+                () -> loanRepaymentService.record(accountId, request, actor)));
   }
 
   @Operation(operationId = "listLoanRepayments", summary = "List a loan's repayments")

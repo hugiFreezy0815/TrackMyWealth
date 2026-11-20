@@ -52,6 +52,12 @@ type VersionOption<O> =
       : { version: number }
     : { version?: never };
 
+// An operation that takes an Idempotency-Key (ADR 0006, #629) may be given the key of this create.
+type IdempotencyOption<O> =
+  'Idempotency-Key' extends HeaderNames<O>
+    ? { idempotencyKey?: string }
+    : { idempotencyKey?: never };
+
 type PathOption<O> =
   IsNever<ParameterIn<O, 'path'>> extends true
     ? { params?: never }
@@ -76,6 +82,7 @@ export type CallOptions<P extends keyof paths, M extends HttpMethod> = PathOptio
   QueryOption<Operation<P, M>> &
   BodyOption<Operation<P, M>> &
   VersionOption<Operation<P, M>> &
+  IdempotencyOption<Operation<P, M>> &
   Pick<RequestOptions, 'renewSession' | 'signal'>;
 
 type SuccessStatus = 200 | 201 | 202 | 204;
@@ -125,6 +132,7 @@ type UntypedOptions = {
   query?: Record<string, unknown>;
   body?: unknown;
   version?: number;
+  idempotencyKey?: string;
 } & Pick<RequestOptions, 'renewSession' | 'signal'>;
 
 function call<M extends HttpMethod>(method: M) {
@@ -134,14 +142,17 @@ function call<M extends HttpMethod>(method: M) {
   ): Promise<ResponseBody<P, M>> => {
     // The signature checked the options against the operation; inside, they are plain values
     // (and reading them through their generic type would expand it over every path).
-    const { params, query, body, version, renewSession, signal }: UntypedOptions =
+    const { params, query, body, version, idempotencyKey, renewSession, signal }: UntypedOptions =
       (options as unknown[])[0] ?? {};
+    const headers: Record<string, string> = {};
+    if (version !== undefined) headers['If-Match'] = `"${version}"`;
+    if (idempotencyKey !== undefined) headers['Idempotency-Key'] = idempotencyKey;
     return request<ResponseBody<P, M>>(pathWith(path, params) + queryString(query), {
       method: method.toUpperCase(),
       body,
       renewSession,
       signal,
-      headers: version === undefined ? undefined : { 'If-Match': `"${version}"` },
+      headers: Object.keys(headers).length === 0 ? undefined : headers,
     });
   };
 }

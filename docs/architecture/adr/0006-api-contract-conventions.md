@@ -102,9 +102,10 @@ fields individually. Bean validation still determines whether each property is r
 ### Idempotent creates
 
 [Issue #574](https://github.com/hugiFreezy0815/TrackMyWealth/issues/574) implements this
-policy for the statement upload; the remaining creating POSTs follow in
-[#629](https://github.com/hugiFreezy0815/TrackMyWealth/issues/629). `docs/api/conventions.md`
-lists the operations that support it.
+policy for the statement upload, and
+[#629](https://github.com/hugiFreezy0815/TrackMyWealth/issues/629) for the remaining creating
+POSTs, except three recorded as exempt. `docs/api/conventions.md` lists the operations that
+support it and the exemptions with their reasons.
 
 The approved follow-up starts with statement upload and then covers creating POST operations.
 For a supported operation, the client sends an `Idempotency-Key` containing a fresh UUID for

@@ -14,6 +14,9 @@ import {
   useSaveIdentifier,
 } from './use-create';
 
+let mockUuids = 0;
+jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => `key-${++mockUuids}`) }));
+
 jest.mock('@/api/typed-api', () => ({
   typedApi: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn() },
 }));
@@ -34,6 +37,7 @@ function wrapper() {
 }
 
 beforeEach(() => {
+  mockUuids = 0;
   api.get.mockReset();
   api.post.mockReset();
   api.put.mockReset();
@@ -71,12 +75,16 @@ describe('add-flow API calls (#491)', () => {
     );
     expect(api.post).toHaveBeenCalledWith('/api/v1/portfolios', {
       body: { catalogueInstitutionId: 'dkb', portfolioCurrency: 'EUR' },
+      idempotencyKey: 'key-1',
     });
 
     const account = await renderHook(() => useCreateAccount(), { wrapper: wrapper() });
     const body = { portfolioId: 'p-1', name: 'Giro', accountType: 'CASH', nativeCurrency: 'EUR' };
     await act(() => account.result.current.mutateAsync(body));
-    expect(api.post).toHaveBeenLastCalledWith('/api/v1/accounts', { body });
+    expect(api.post).toHaveBeenLastCalledWith('/api/v1/accounts', {
+      body,
+      idempotencyKey: 'key-2',
+    });
   });
 
   it('saves the identifier with If-Match from the created account', async () => {
@@ -143,6 +151,7 @@ describe('add-flow API calls (#491)', () => {
     expect(api.post).toHaveBeenLastCalledWith('/api/v1/accounts/{accountId}/opening-balance', {
       params: { accountId: 'a-1' },
       body: { date: '2026-11-09', balance: '1000.00', currency: 'CHF' },
+      idempotencyKey: 'key-1',
     });
 
     const valuation = await renderHook(() => useRecordValuation(), { wrapper: wrapper() });
@@ -152,6 +161,57 @@ describe('add-flow API calls (#491)', () => {
     expect(api.post).toHaveBeenLastCalledWith('/api/v1/accounts/{accountId}/valuations', {
       params: { accountId: 'a-1' },
       body: { valuationDate: '2026-11-09', value: '800000.45' },
+      idempotencyKey: 'key-2',
     });
+  });
+});
+
+describe('Idempotency-Key on the add-flow creates (#629)', () => {
+  const body = { portfolioId: 'p-1', name: 'Giro', accountType: 'CASH', nativeCurrency: 'EUR' };
+  // A failed send is expected here; catching it inside act keeps the renderer usable.
+  const failing = (send: () => Promise<unknown>) =>
+    act(async () => {
+      await send().catch(() => undefined);
+    });
+  const keyOf = (call: number) =>
+    (api.post.mock.calls[call][1] as { idempotencyKey?: string }).idempotencyKey;
+
+  it('retries a failed create with its key, so a lost response creates no second account', async () => {
+    api.post
+      .mockRejectedValueOnce(new TypeError('Network request failed'))
+      .mockResolvedValueOnce(createdAccount() as never);
+    const { result } = await renderHook(() => useCreateAccount(), { wrapper: wrapper() });
+
+    await failing(() => result.current.mutateAsync(body));
+    await act(() => result.current.mutateAsync({ ...body }));
+
+    expect(api.post).toHaveBeenCalledTimes(2);
+    expect(keyOf(1)).toBe(keyOf(0));
+  });
+
+  it('sends a changed request and a create after a success with new keys', async () => {
+    api.post
+      .mockRejectedValueOnce(new TypeError('Network request failed'))
+      .mockResolvedValue(createdAccount() as never);
+    const { result } = await renderHook(() => useCreateAccount(), { wrapper: wrapper() });
+
+    await failing(() => result.current.mutateAsync(body));
+    await act(() => result.current.mutateAsync({ ...body, name: 'Savings' }));
+    await act(() => result.current.mutateAsync({ ...body, name: 'Savings' }));
+
+    expect(new Set([keyOf(0), keyOf(1), keyOf(2)]).size).toBe(3);
+  });
+
+  it('keys an opening balance by its account, so another account never reuses the key', async () => {
+    api.post.mockRejectedValue(new TypeError('Network request failed'));
+    const { result } = await renderHook(() => useRecordOpeningBalance(), { wrapper: wrapper() });
+    const values = { date: '2026-11-09', balance: '1000.00' as const };
+
+    await failing(() => result.current.mutateAsync({ account: createdAccount(), ...values }));
+    await failing(() =>
+      result.current.mutateAsync({ account: createdAccount({ id: 'a-2' }), ...values }),
+    );
+
+    expect(keyOf(1)).not.toBe(keyOf(0));
   });
 });

@@ -7,6 +7,7 @@ import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AccountSnapshotService;
+import com.trackmywealth.backend.service.IdempotentCreateService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.Paged.SortField;
@@ -16,8 +17,11 @@ import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -39,23 +43,44 @@ import org.springframework.web.bind.annotation.RestController;
 public class AccountSnapshotController {
 
   private final AccountSnapshotService accountSnapshotService;
+  private final IdempotentCreateService idempotentCreates;
 
-  public AccountSnapshotController(AccountSnapshotService accountSnapshotService) {
+  public AccountSnapshotController(
+      AccountSnapshotService accountSnapshotService, IdempotentCreateService idempotentCreates) {
     this.accountSnapshotService = accountSnapshotService;
+    this.idempotentCreates = idempotentCreates;
   }
 
   @SuccessStatus(HttpStatus.CREATED)
   @Operation(
       operationId = "recordAccountSnapshot",
       summary = "Record a balance or holdings snapshot")
-  @ProblemCodes({ProblemCode.CONFLICT, ProblemCode.RETRY, ProblemCode.UNPROCESSABLE})
+  @ProblemCodes({
+    ProblemCode.CONFLICT,
+    ProblemCode.RETRY,
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.IDEMPOTENCY_KEY_IN_USE,
+    ProblemCode.IDEMPOTENCY_KEY_MISMATCH
+  })
   @PostMapping
   @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<AccountSnapshotResponse> recordSnapshot(
       @PathVariable UUID accountId,
       @Valid @RequestBody RecordAccountSnapshotRequest request,
+      @Parameter(
+              description = IdempotentCreateService.HEADER_DESCRIPTION,
+              schema = @Schema(type = "string", format = "uuid"))
+          @RequestHeader(value = IdempotentCreateService.HEADER, required = false)
+          String idempotencyKey,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    AccountSnapshotResponse response = accountSnapshotService.record(accountId, request, actor);
+    AccountSnapshotResponse response =
+        idempotentCreates.create(
+            "recordAccountSnapshot",
+            idempotencyKey,
+            actor,
+            List.of(accountId, request),
+            AccountSnapshotResponse.class,
+            () -> accountSnapshotService.record(accountId, request, actor));
     return VersionedResponse.created(response, response.version());
   }
 
