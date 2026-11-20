@@ -32,13 +32,15 @@ import org.springframework.web.multipart.MultipartFile;
  * ProblemCodeCoverageTest}).
  *
  * <p>Implied are the codes the request handling around the endpoint answers with, whatever the
- * endpoint does: {@code INTERNAL} always; {@code UNAUTHENTICATED} unless the path is public, {@code
- * FORBIDDEN} on an administration path (both from {@link ApiAccessPaths}, which SecurityConfig
- * enforces); {@code VALIDATION_FAILED} when anything is bound from the request; {@code NOT_FOUND}
- * for a path variable; {@code VERSION_REQUIRED} and {@code VERSION_CONFLICT} for {@code If-Match};
- * {@code VERSION_CONFLICT} also for any other write, which can lose a race on a versioned row;
- * {@code INVALID_SORT} for a {@link Paged} list; {@code IMPORT_FILE_TOO_LARGE} for an upload;
- * {@code RATE_LIMITED} where {@code RateLimitFilter} limits the request.
+ * endpoint does: {@code INTERNAL} always; {@code APP_UPDATE_REQUIRED} and {@code VALIDATION_FAILED}
+ * always, for the {@code X-App-Version} check ({@link MinimumAppVersionFilter}); {@code
+ * UNAUTHENTICATED} unless the path is public, {@code FORBIDDEN} on an administration path (both
+ * from {@link ApiAccessPaths}, which SecurityConfig enforces); {@code VALIDATION_FAILED} when
+ * anything is bound from the request; {@code NOT_FOUND} for a path variable; {@code
+ * VERSION_REQUIRED} and {@code VERSION_CONFLICT} for {@code If-Match}; {@code VERSION_CONFLICT}
+ * also for any other write, which can lose a race on a versioned row; {@code INVALID_SORT} for a
+ * {@link Paged} list; {@code IMPORT_FILE_TOO_LARGE} for an upload; {@code RATE_LIMITED} where
+ * {@code RateLimitFilter} limits the request.
  *
  * <p>Each code is documented under the status this endpoint answers it with ({@link #statusOf}).
  */
@@ -68,7 +70,11 @@ public final class OperationProblemCodes {
 
   /** The codes the endpoint's mapping and parameters imply. */
   public static Set<ProblemCode> implied(Method method) {
-    Set<ProblemCode> codes = EnumSet.of(ProblemCode.INTERNAL);
+    // MinimumAppVersionFilter (#576), on every API request: a malformed X-App-Version is a 400,
+    // one older than the configured minimum a 426.
+    Set<ProblemCode> codes =
+        EnumSet.of(
+            ProblemCode.INTERNAL, ProblemCode.VALIDATION_FAILED, ProblemCode.APP_UPDATE_REQUIRED);
     List<String> paths = paths(method);
     if (!paths.stream().allMatch(OperationProblemCodes::isPublic)) {
       codes.add(ProblemCode.UNAUTHENTICATED);

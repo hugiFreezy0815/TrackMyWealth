@@ -42,6 +42,7 @@ as the REST design baseline. The contract uses [OpenAPI 3.1](https://spec.openap
 | Money | Preserve operation-specific amount and currency fields and use exact decimal strings (#176), including where an operation already specifies the currency for all its amounts. | Zalando's common money object with a numeric amount and currency together. |
 | Problem details | Add stable `code` and `correlationId` fields and document the corresponding `tmw.error.*` keys. Clients need a stable discriminator and localized copy. These extension members are compatible with RFC 9457. | Using only the problem type and standard fields as the client contract. |
 | Request tracing header | Keep the published `X-Correlation-Id` as the id a member quotes to support, and add W3C `traceparent` for propagation ([Distributed tracing](#distributed-tracing)). A third, vendor-specific header would add nothing. | Zalando's `X-Flow-ID`. |
+| Too-old app | Answer `426` with `APP_UPDATE_REQUIRED` and no `Upgrade` header (#576). The remedy is a new app build, and 426 tells any client that retrying will not help. | RFC 9110's 426 with an `Upgrade` header naming a protocol, or a `400`. |
 | Throttling | Use `429` and `Retry-After` seconds. The existing limiter exposes the retry delay and does not advertise a general rate-budget contract. | Also publishing the recommended `X-RateLimit-*` counters. |
 | Optional response fields | Response records publish nullable properties with their keys present so clients have one stable shape across responses. The hand-built problem schema omits optional members when unset. | Treating absent keys and explicit nulls as interchangeable on responses. |
 
@@ -104,13 +105,70 @@ operation publishes support in OpenAPI.
 ### Deprecation and removal
 
 [Issue #576](https://github.com/hugiFreezy0815/TrackMyWealth/issues/576) implements this
-policy.
+policy. [API conventions](../../api/conventions.md#app-version-and-deprecations) has the client
+and operator instructions.
 
-Mark deprecated operations or fields with `deprecated: true` in OpenAPI. From the announced
-deprecation date, affected responses carry `Deprecation`
-([RFC 9745](https://www.rfc-editor.org/rfc/rfc9745)) and a `Link` with `rel="deprecation"` to
-migration instructions. Publish the removal date in `Sunset`
-([RFC 8594](https://www.rfc-editor.org/rfc/rfc8594)) once it can be committed to.
+Mark deprecated operations or fields with `deprecated: true` in OpenAPI. Affected responses carry
+`Deprecation` ([RFC 9745](https://www.rfc-editor.org/rfc/rfc9745)) with the announced
+deprecation date and a `Link` with `rel="deprecation"` to migration instructions. Publish the
+removal date in `Sunset` ([RFC 8594](https://www.rfc-editor.org/rfc/rfc8594)) once it can be
+committed to.
+
+**Implementation (#576).**
+
+- **One annotation, `@ApiDeprecation(since, migration, sunset)`,** on a handler method (the
+  operation) or a request or response record component (the field). The contract, the headers
+  and the counter all derive from it, so they cannot drift. `Deprecations` resolves the
+  annotations that affect an operation through its body types, including generics such as
+  `PageResponse<T>`, lists and nested records. Several annotations merge to the earliest
+  `since`, the earliest `sunset` and every migration note. Rejected: springdoc's
+  `@Schema(deprecated = true)` and Java's `@Deprecated`, which carry no date or note, and a
+  hand-kept list of deprecated paths next to the code.
+- **A deprecated field announces itself on its whole operation.** RFC 9745 deprecates a resource,
+  not part of a body, so `Deprecation` on an operation whose body has a deprecated field
+  stretches its meaning. Clients only see the headers per response, though, and the contract
+  names the field. Only a body field can be deprecated: a query or form parameter is not a schema
+  property the contract could mark, so the operation is deprecated instead. The contract's
+  generation fails for a deprecated component outside a body and for a body type it cannot follow
+  (raw, `?` or `Object`), so no deprecation is left out silently.
+- **The counter keeps at most 100 app versions apart and counts the rest as `other`.** The version
+  comes from the client, so the tag values must be bounded. Dropping calls beyond the cap would
+  undercount, and an operator could then wrongly conclude that no app uses the element any more.
+  With `other`, the totals stay complete.
+- **Headers from the marking on, not from the date.** `Deprecation` is sent as soon as the element
+  is marked, with its date, which may lie in the future (RFC 9745 allows this). The contract
+  shows `deprecated: true` from the same release, so the headers and the contract agree.
+  Rejected: holding the header back until the date, which needs a clock in the interceptor and
+  hides the announcement exactly while clients could migrate.
+- **Set before the handler runs** (`DeprecationHeaders`, a `HandlerInterceptor`), so error
+  responses carry them too. The contract documents them on success responses only, because
+  error responses refer to the shared problem response.
+- **Usage by app version.** Each call is counted in `tmw.api.deprecated.requests` by
+  `operationId` and `X-App-Version`. Its version tag is capped at 100 values because the
+  client sends it. `metrics` is exposed on the actuator, for administrators only like every
+  endpoint except health and info. This lets an operator check "every supported app version
+  has migrated" against real traffic.
+
+**Minimum app version (#576).**
+
+- **Header `X-App-Version: MAJOR.MINOR.PATCH`** from the app's `app.json`, on every request.
+  Rejected: `User-Agent`, which a browser does not let the web build set.
+- **A request without the header is served** (PO decision on #576). The minimum protects only
+  against an app that is too old. Scripts, `curl` and `scripts/seed_demo.py` are not apps, and
+  no native build has been distributed without the header. A malformed header is
+  `400 VALIDATION_FAILED`.
+- **`426 Upgrade Required` with `APP_UPDATE_REQUIRED`** (reaction `UPDATE_APP`), answered by
+  `MinimumAppVersionFilter` in the security chain after CORS and before the rate limiter and the
+  token check. Any client that does not know the code still sees a status that retrying does
+  not fix. This deviates from RFC 9110, which expects an `Upgrade` header naming a protocol; the
+  remedy here is a newer app, so none is sent. Rejected: `400`, which the catalogue reads as
+  "fix the input".
+- **Configured by the operator:** `MINIMUM_APP_VERSION`, empty by default, so every version is
+  served. A malformed value stops the backend from starting instead of silently disabling the
+  check.
+- **The app** replaces every screen with an update screen on any 426. The screen keeps the stored
+  session. On native it offers to try again, and on web it reloads the page, which loads the
+  current build.
 
 **Minimum notice.** The notice period is the supported-client window, not a fixed number of
 days: removal can occur only after every supported app version has migrated and the announced

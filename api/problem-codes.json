@@ -62,6 +62,7 @@
     "SAVINGS_POCKET_IN_USE": {"statuses": [409], "reaction": "FIX_INPUT", "deprecated": false},
     "LOCKED": {"statuses": [423], "reaction": "RETRY_LATER", "deprecated": false},
     "RATE_LIMITED": {"statuses": [429], "reaction": "RETRY_LATER", "deprecated": false},
+    "APP_UPDATE_REQUIRED": {"statuses": [426], "reaction": "UPDATE_APP", "deprecated": false},
     "INTERNAL": {"statuses": [500], "reaction": "REPORT", "deprecated": false}
   },
   "retiredProblemCodes": [],

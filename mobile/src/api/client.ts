@@ -1,5 +1,8 @@
 import { Platform } from 'react-native';
 
+import { APP_VERSION, appVersionHeaders } from './app-version';
+import { reportUpdateRequired } from './update-required';
+
 // FR-CLI-007: the build's default, replaced by the server a user configured (see server-url.ts).
 let apiBaseUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
 
@@ -150,9 +153,9 @@ type ExchangeOptions = Omit<RequestInit, 'body' | 'headers'> & {
 };
 
 /**
- * One authenticated exchange, shared by every transport: the access token, one renewal of the
- * session on a 401 (never for /api/v1/auth/), ApiError with the problem body and Retry-After, and
- * NetworkError when the server was not reached in time.
+ * One authenticated exchange, shared by every transport: the app version (#576), the access token,
+ * one renewal of the session on a 401 (never for /api/v1/auth/), ApiError with the problem body and
+ * Retry-After, a reported update on a 426, and NetworkError when the server was not reached in time.
  */
 async function exchange(path: string, options: ExchangeOptions): Promise<Response> {
   const {
@@ -166,7 +169,15 @@ async function exchange(path: string, options: ExchangeOptions): Promise<Respons
   const attempt = (token: string | null) =>
     send(
       url,
-      { ...init, headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...headers } },
+      {
+        ...init,
+        headers: {
+          // US-29-16 (#576): lets the server refuse a build it no longer serves.
+          ...appVersionHeaders(APP_VERSION),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...headers,
+        },
+      },
       timeoutMs,
       deadlineManagedByCaller,
     );
@@ -186,6 +197,9 @@ async function exchange(path: string, options: ExchangeOptions): Promise<Respons
   }
 
   if (!response.ok) {
+    // US-29-16 (#576): the server no longer serves this app version; the root layout asks the
+    // member to update. The request still fails like any other, so callers stop as usual.
+    if (response.status === 426) reportUpdateRequired();
     const errorBody = await response.json().catch(() => undefined);
     throw new ApiError(
       `${init.method ?? 'GET'} ${path} failed with ${response.status}`,

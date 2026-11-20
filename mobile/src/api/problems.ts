@@ -33,14 +33,16 @@ export function isKnownImportRowCode(code: string): code is KnownImportRowCode {
 
 /**
  * The reaction to a response with no code this app knows, by its status (#375): 401 refreshes
- * the token or signs in again, 403 shows "not allowed", 409 and 412 reload the current state,
- * another 4xx shows the status's generic error, and anything else is reported with its
- * correlationId. Never a retry: an unknown code must not repeat a request that is not idempotent.
+ * the token or signs in again, 403 shows "not allowed", 409 and 412 reload the current state, 426
+ * asks to update the app (#576), another 4xx shows the status's generic error, and anything else is
+ * reported with its correlationId. Never a retry: an unknown code must not repeat a request that is
+ * not idempotent.
  */
 export function reactionForStatus(status: number): ClientReaction {
   if (status === 401) return 'REAUTHENTICATE';
   if (status === 403) return 'SHOW';
   if (status === 409 || status === 412) return 'RELOAD';
+  if (status === 426) return 'UPDATE_APP';
   if (status >= 400 && status < 500) return 'SHOW';
   return 'REPORT';
 }

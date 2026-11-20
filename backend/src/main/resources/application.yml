@@ -245,6 +245,12 @@ app:
     # 0.3 - pg_trgm's own default - from matching on a shared city name alone. Raise it to guess
     # less often.
     fuzzy-similarity-threshold: ${CATEGORIZATION_FUZZY_THRESHOLD:0.3}
+  client:
+    # US-29-16 (#576): the oldest app version (MAJOR.MINOR.PATCH, e.g. 1.4.0) this server serves.
+    # An app that sends an older X-App-Version gets 426 APP_UPDATE_REQUIRED and asks its member to
+    # update. Empty serves every version. A request without the header (scripts, curl) is always
+    # served. Raise it before removing a deprecated API element (docs/api/conventions.md).
+    minimum-app-version: ${MINIMUM_APP_VERSION:}
   cors:
     # Origins the browser-based web build of mobile/ is allowed to call this API from (see
     # SecurityConfig). Supports Spring's AntPathMatcher-style patterns (e.g. https://*.example.com).
@@ -325,7 +331,9 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,flyway
+        # metrics (#576): tmw.api.deprecated.requests counts calls of deprecated elements by app
+        # version. Like every endpoint but health and info, administrators only (SecurityConfig).
+        include: health,info,flyway,metrics
   endpoint:
     health:
       # #191: "authorized" alone means any signed-in user; the details (database, disk space and

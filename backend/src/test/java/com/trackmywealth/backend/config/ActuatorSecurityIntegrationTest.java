@@ -123,6 +123,19 @@ class ActuatorSecurityIntegrationTest {
   }
 
   @Test
+  void metricsAreForAdministratorsOnly() {
+    String adminToken = bootstrapAdministrator();
+    String memberToken = createStandardUser(adminToken);
+
+    // #576: exposed for tmw.api.deprecated.requests, but operational data like the rest.
+    for (String path : List.of("/actuator/metrics", "/actuator/metrics/jvm.memory.used")) {
+      anonymousClient().get().uri(path).exchange().expectStatus().isUnauthorized();
+      client(memberToken).get().uri(path).exchange().expectStatus().isForbidden();
+      client(adminToken).get().uri(path).exchange().expectStatus().isOk();
+    }
+  }
+
+  @Test
   void theEndpointIndexIsForAdministratorsOnly() {
     String adminToken = bootstrapAdministrator();
     String memberToken = createStandardUser(adminToken);

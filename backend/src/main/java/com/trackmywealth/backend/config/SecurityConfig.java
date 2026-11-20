@@ -5,7 +5,10 @@ import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.ApiAccessPaths;
 import com.trackmywealth.backend.security.JwtAuthenticationFilter;
 import com.trackmywealth.backend.security.RateLimitFilter;
+import com.trackmywealth.backend.web.AppVersion;
 import com.trackmywealth.backend.web.CorrelationIdFilter;
+import com.trackmywealth.backend.web.DeprecationHeaders;
+import com.trackmywealth.backend.web.MinimumAppVersionFilter;
 import com.trackmywealth.backend.web.ProblemResponseWriter;
 import com.trackmywealth.backend.web.TraceparentResponseFilter;
 import java.util.List;
@@ -68,6 +71,7 @@ public class SecurityConfig {
       HttpSecurity http,
       JwtAuthenticationFilter jwtAuthenticationFilter,
       RateLimitFilter rateLimitFilter,
+      MinimumAppVersionFilter minimumAppVersionFilter,
       ProblemResponseWriter problemResponseWriter)
       throws Exception {
     http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -106,6 +110,9 @@ public class SecurityConfig {
         // already be registered (the call above) before another filter can be placed relative to
         // it - Spring Security's filter comparator resolves this per call, not by final order.
         .addFilterBefore(rateLimitFilter, JwtAuthenticationFilter.class)
+        // US-29-16 (#576): an app older than the minimum is refused before it is rate-limited or
+        // its token checked; after the CORS filter, so the web build can read the 426.
+        .addFilterBefore(minimumAppVersionFilter, RateLimitFilter.class)
         // A missing/invalid/expired token gets a plain 401, distinct from the 403 an
         // authenticated-but-wrong-role caller gets (Spring Security's own AccessDeniedHandler,
         // unchanged) - without this, both cases fall back to the same Http403ForbiddenEntryPoint,
@@ -169,6 +176,7 @@ public class SecurityConfig {
             CorrelationIdFilter.HEADER,
             HttpHeaders.IF_MATCH,
             "Idempotency-Key",
+            AppVersion.HEADER,
             TraceparentResponseFilter.HEADER));
     // Bearer tokens are sent via the Authorization header (see mobile/src/api/client.ts), not
     // cookies, so credentialed (cookie-carrying) CORS requests are not needed yet. Revisit
@@ -185,6 +193,9 @@ public class SecurityConfig {
             HttpHeaders.ETAG,
             HttpHeaders.LOCATION,
             HttpHeaders.RETRY_AFTER,
+            DeprecationHeaders.DEPRECATION,
+            DeprecationHeaders.SUNSET,
+            HttpHeaders.LINK,
             TraceparentResponseFilter.HEADER));
 
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

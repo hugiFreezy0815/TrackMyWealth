@@ -26,9 +26,14 @@ import org.springframework.web.multipart.MultipartFile;
 class OperationProblemCodesTest {
 
   @Test
-  void everyEndpointCanFailUnexpectedly() {
+  void everyEndpointCanFailUnexpectedlyAndRefuseTheAppVersion() {
+    // MinimumAppVersionFilter (#576): a malformed X-App-Version is a 400, a too-old one a 426.
     assertThat(implied(Things.class, "plain"))
-        .containsExactly(ProblemCode.UNAUTHENTICATED, ProblemCode.INTERNAL);
+        .containsExactly(
+            ProblemCode.VALIDATION_FAILED,
+            ProblemCode.UNAUTHENTICATED,
+            ProblemCode.APP_UPDATE_REQUIRED,
+            ProblemCode.INTERNAL);
   }
 
   @Test
@@ -110,7 +115,11 @@ class OperationProblemCodesTest {
   @Test
   void aMethodWithoutAMappingImpliesOnlyTheRequestHandlingAroundIt() {
     assertThat(implied(Unmapped.class, "helper"))
-        .containsExactly(ProblemCode.UNAUTHENTICATED, ProblemCode.INTERNAL);
+        .containsExactly(
+            ProblemCode.VALIDATION_FAILED,
+            ProblemCode.UNAUTHENTICATED,
+            ProblemCode.APP_UPDATE_REQUIRED,
+            ProblemCode.INTERNAL);
   }
 
   @Test

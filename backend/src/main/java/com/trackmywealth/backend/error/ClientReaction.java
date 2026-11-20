@@ -12,7 +12,9 @@ public enum ClientReaction {
   RETRY("Send the same request again right away."),
   RETRY_LATER("Retry the same request later, after Retry-After seconds when that header is sent."),
   REAUTHENTICATE("Refresh the access token or sign in again, then retry."),
-  REPORT("Show a generic error and offer to report it, quoting the correlationId.");
+  REPORT("Show a generic error and offer to report it, quoting the correlationId."),
+  UPDATE_APP(
+      "Ask the member to update the app; every request fails the same way until it is updated.");
 
   private final String sentence;
 
