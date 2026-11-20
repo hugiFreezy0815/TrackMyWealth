@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -14,6 +15,7 @@ import static org.mockito.Mockito.when;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse.CurrencyAmount;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
+import com.trackmywealth.backend.dto.DatedCashFlows;
 import com.trackmywealth.backend.dto.ValueHistoryWarningValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.SavingsRateMethodology;
@@ -26,6 +28,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -83,6 +86,41 @@ class CashFlowServiceTest {
     savingInto();
     savingOutOf();
     pending();
+  }
+
+  // #607 (PO 2026-11-20): interest, dividends and fees are return, so they are no flow; a deposit
+  // of unknown origin is one; tax is one only on the accounts the caller names (no positions).
+  @Test
+  void datedFlowsLeaveWhatTheMoneyEarnedOrCostToTheReturn() {
+    UUID cash = UUID.randomUUID();
+    UUID depot = UUID.randomUUID();
+    List<UUID> accounts = List.of(cash, depot);
+    when(transactionRepository.sumHistoryIncomeByAccountDateCurrency(
+            eq(accounts), eq(Set.of("INCOME", "DEPOSIT")), eq(DAY_1), eq(DAY_3)))
+        .thenReturn(List.<Object[]>of(new Object[] {cash, DAY_1, "EUR", new BigDecimal("500")}));
+    when(transactionRepository.sumHistorySpendingByAccountDateCurrency(
+            eq(accounts),
+            eq(Set.of("CREDIT_CARD_PURCHASE", "WITHDRAWAL", "EXPENSE", "REFUND")),
+            eq(DAY_1),
+            eq(DAY_3)))
+        .thenReturn(List.<Object[]>of(new Object[] {cash, DAY_2, "EUR", new BigDecimal("-100")}));
+    when(transactionRepository.sumHistorySpendingByAccountDateCurrency(
+            eq(List.of(cash)), eq(Set.of("TAX")), eq(DAY_1), eq(DAY_3)))
+        .thenReturn(List.<Object[]>of(new Object[] {cash, DAY_3, "EUR", new BigDecimal("-50")}));
+    rate("EUR", DAY_1, "1.00", false, false);
+    rate("EUR", DAY_2, "1.10", false, false);
+
+    DatedCashFlows flows = service.datedFlows(accounts, List.of(cash), DAY_1, DAY_3, "CHF");
+
+    // Each flow at its own day's rate; no rate on day 3 leaves that flow unknown.
+    assertThat(flows.flows())
+        .containsExactlyInAnyOrder(
+            new DatedCashFlows.Flow(cash, DAY_1, new BigDecimal("500.00")),
+            new DatedCashFlows.Flow(cash, DAY_2, new BigDecimal("-110.00")),
+            new DatedCashFlows.Flow(cash, DAY_3, null));
+    verify(transactionRepository, never())
+        .sumHistorySpendingByAccountDateCurrency(
+            argThat(ids -> ids.contains(depot)), eq(Set.of("TAX")), any(), any());
   }
 
   @Test

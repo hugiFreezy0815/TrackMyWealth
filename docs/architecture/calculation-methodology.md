@@ -558,8 +558,16 @@ already contains that day's bookings.
   its tracking start. This is the same capital movement the breakdown shows (`capitalMovements`).
 - **A lifecycle or portfolio change** (archive, restore, reassignment) moves the account's value
   that day into or out of the scope.
-- **Net saving**: external income and spending, as in `contributions` (#477), counted from the
-  day after the account's tracking start while it was in the scope the day before.
+- **Income and spending**: external income (`INCOME`) and spending (`EXPENSE`,
+  `CREDIT_CARD_PURCHASE`, `WITHDRAWAL`, `REFUND`), plus a `DEPOSIT` that is not an internal
+  transfer (money of unknown origin entering), counted from the day after the account's tracking
+  start while it was in the scope the day before. `TAX` is a flow too (a tax bill), except on an
+  account that holds positions.
+- **Not flows, but return** (PO, 2026-11-20): `INTEREST` and `DIVIDEND` (what the money earned),
+  `FEE` (what it cost), and `TAX` on an account that holds positions (withholding tax, stamp
+  duty). A savings account that only earns interest therefore shows a positive return. The
+  breakdown line keeps #477's net saving, which includes interest, dividends, fees and taxes, and
+  leaves a deposit of unknown origin in Market & FX.
 - **Internal transfers**: each leg on a tracked account of the scope is a flow. When both legs
   are in the scope, they cancel out, so a transfer between two tracked accounts changes nothing.
   When only one leg is, the money entered or left the scope.
@@ -585,5 +593,14 @@ balance. They do not affect the return, which never reads values before a tracki
 | 5. Transfer of 5,000 between two tracked accounts of the scope | 10,000 | −5,000 and +5,000 (cancel) | 10,000 | **0.00** |
 | 6. An EUR account without a CHF rate today | | | unknown | **null** |
 | 7. The only account starts at an opening balance of 0 | 0 | none | 0 | **null** (denominator 0) |
+| 8. 10,000 all year: interest +100, deposit +5,000 (150 days ago), fee −20, tax bill −1,000 (50 days ago) | 10,000 | +5,000, w = 150/365; −1,000, w = 50/365 | 14,080 | 80 / 11,917.81 = **0.67**; the wealth change is +4,080 |
+| 9. 10,000 in cash, a card that owed 200 before the period and charges a fee of 20 | 9,800 | none | 9,780 | −20 / 9,800 = **−0.20** |
+| 10. EUR 1,000 held all year (CHF rate 1.00, then 1.20); EUR 500 income 100 days ago at 1.20 | 1,000 | +600, w = 100/365 | 1,800 | 200 / 1,164.38 = **17.18** (FX is return, the flow is not) |
 
 The examples are the known-answer tests in `PeriodReturnServiceTest` and `NetWorthControllerTest`.
+
+**Debt in the scope.** Liabilities count negative in `V_start`, so a net worth carrying a mortgage
+has a small denominator, and its return is leveraged: CHF 20,000 of assets, a CHF 19,000 mortgage
+and a market gain of CHF 1,000 give about +100 %. That is the return on the member's equity, which
+is what net worth measures. A section or portfolio without debt is not affected, and a scope whose
+debt exceeds its assets (denominator 0 or less) has no return.

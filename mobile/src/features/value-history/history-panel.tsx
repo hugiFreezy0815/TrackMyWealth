@@ -56,7 +56,11 @@ function returnFigure(
 }
 
 /** The chip's period: "since 17 Oct 2026" when the return starts after the period does. */
-function chipRange(intl: ReturnType<typeof useIntl>, data: ValueHistory, figure: unknown) {
+function chipRange(
+  intl: ReturnType<typeof useIntl>,
+  data: ValueHistory,
+  figure: ChangeFigure | null,
+) {
   const returnFrom = data.change.returnFrom;
   return figure && returnFrom && returnFrom > data.from
     ? msg(intl, 'history.chipSince', { date: formatDate(returnFrom, intl.locale) })
