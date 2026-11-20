@@ -20276,6 +20276,23 @@ components:
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
+        totalReturnPercent:
+          type:
+          - string
+          - "null"
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        missingCostBasisCount:
+          type:
+          - integer
+          - "null"
+          format: int32
+        foreignCurrencyCostBasisCount:
+          type:
+          - integer
+          - "null"
+          format: int32
         dueDate:
           type:
           - string
@@ -20303,8 +20320,10 @@ components:
       - balance
       - currency
       - dueDate
+      - foreignCurrencyCostBasisCount
       - linkedPropertyAccountId
       - maskedIdentifier
+      - missingCostBasisCount
       - name
       - nature
       - positionsAsOf
@@ -20312,6 +20331,7 @@ components:
       - reconciliationStatus
       - statementDate
       - totalReturn
+      - totalReturnPercent
       - valueInPortfolioCurrency
       - valueKnown
       - valueSourceDate

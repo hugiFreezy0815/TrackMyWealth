@@ -5,6 +5,7 @@ import com.trackmywealth.backend.dto.AccountPositionsResponse;
 import com.trackmywealth.backend.dto.AccountPositionsSource;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
 import com.trackmywealth.backend.dto.NativeAccountValue;
+import com.trackmywealth.backend.dto.ReportedAccountHoldings;
 import com.trackmywealth.backend.dto.ReportedHoldingValue;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.dto.ValueStatus;
@@ -157,6 +158,58 @@ public class AccountPositionsService {
         new NativeAccountValue(total, ValueBasisValues.LATEST_SNAPSHOT, date, date, stale));
   }
 
+  /**
+   * #440: one statement's positions count, its value in the account currency and the unrealised
+   * gain of its positions (statement cash excluded), from the same components as {@link
+   * #reportedValue}. Without a value there is no gain; a position without a known gain (no cost
+   * basis, or a cost basis whose currency is uncertain) leaves both gain figures null rather than a
+   * partial sum (FR-PERF-018), and is counted by cause.
+   */
+  ReportedAccountHoldings summary(
+      List<ReportedHoldingValue> components,
+      String accountCurrency,
+      Function<String, Optional<CurrencyConversionResult>> rates) {
+    LocalDate date = components.get(0).getSnapshotDate();
+    List<ReportedHoldingValue> holdings =
+        components.stream().filter(ReportedHoldingValue::isHolding).toList();
+    Optional<NativeAccountValue> value = reportedValue(components, accountCurrency, rates);
+    if (value.isEmpty()) {
+      return new ReportedAccountHoldings(date, holdings.size());
+    }
+    BigDecimal totalGain = BigDecimal.ZERO;
+    BigDecimal totalCostBasis = BigDecimal.ZERO;
+    int missingBasis = 0;
+    int foreignBasis = 0;
+    for (ReportedHoldingValue holding : holdings) {
+      BigDecimal costBasis = holding.getReportedCostBasis();
+      // Only a position reported in the account currency has a certain gain, so its reported
+      // value is already the value in the account currency.
+      BigDecimal gain =
+          unrealisedGain(
+              holding.getReportedValue(),
+              holding.getReportedCurrency(),
+              accountCurrency,
+              costBasis);
+      if (costBasis == null) {
+        missingBasis++;
+      } else if (gain == null) {
+        foreignBasis++;
+      } else {
+        totalGain = totalGain.add(gain);
+        totalCostBasis = totalCostBasis.add(costBasis);
+      }
+    }
+    boolean gainKnown = missingBasis == 0 && foreignBasis == 0;
+    return new ReportedAccountHoldings(
+        date,
+        holdings.size(),
+        value.get(),
+        gainKnown ? totalGain : null,
+        gainKnown ? gainPercent(totalGain, totalCostBasis) : null,
+        missingBasis == 0 ? null : missingBasis,
+        foreignBasis == 0 ? null : foreignBasis);
+  }
+
   private AccountPositionResponse toPosition(
       SnapshotHolding holding,
       Security security,
@@ -171,10 +224,7 @@ public class AccountPositionsService {
     BigDecimal gain =
         unrealisedGain(inAccountCurrency, reportedCurrency, accountCurrency, costBasis);
     BigDecimal gainPercent =
-        gain == null || costBasis.signum() == 0
-            ? null
-            : gain.multiply(BigDecimal.valueOf(100))
-                .divide(costBasis.abs(), 2, RoundingMode.HALF_UP);
+        gain == null || costBasis == null ? null : gainPercent(gain, costBasis);
 
     ValueStatus status = status(inAccountCurrency, rate, holding.isCostBasisEstimated());
     return new AccountPositionResponse(
@@ -211,6 +261,12 @@ public class AccountPositionsService {
     return valueInAccountCurrency
         .subtract(costBasis)
         .setScale(FxRateService.MONEY_SCALE, RoundingMode.HALF_UP);
+  }
+
+  private static @Nullable BigDecimal gainPercent(BigDecimal gain, BigDecimal costBasis) {
+    return costBasis.signum() == 0
+        ? null
+        : gain.multiply(BigDecimal.valueOf(100)).divide(costBasis.abs(), 2, RoundingMode.HALF_UP);
   }
 
   /**

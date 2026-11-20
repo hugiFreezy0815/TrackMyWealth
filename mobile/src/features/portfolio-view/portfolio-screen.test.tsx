@@ -85,6 +85,9 @@ const makeAccount = (id: string, overrides: Partial<PortfolioAccount> = {}): Por
   positionsCount: null,
   positionsAsOf: null,
   totalReturn: null,
+  totalReturnPercent: null,
+  missingCostBasisCount: null,
+  foreignCurrencyCostBasisCount: null,
   dueDate: null,
   linkedPropertyAccountId: null,
   maskedIdentifier: null,
@@ -669,12 +672,63 @@ describe('S2 rows per section type', () => {
     });
   });
 
-  it('shows the depot row with position count and date, and its total return', async () => {
-    setData(view([depotSection({ totalReturn: '7.84' })]));
+  it('shows the depot gain amount and percentage from the server', async () => {
+    setData(view([depotSection({ totalReturn: '3200', totalReturnPercent: '14.68' })]));
     await mount();
     expect(screen.getByText('3 positions · As of 30 Sep 2026')).toBeTruthy();
-    expect(screen.getByText('Total return')).toBeTruthy();
-    expect(screen.getByText('+7.8%')).toBeTruthy();
+    expect(screen.getByText('Unrealised gain')).toBeTruthy();
+    expect(screen.getByText(/3[,’']200[.]00/)).toBeTruthy();
+    // One decimal, like the position rows below it.
+    expect(screen.getByText('+14.7%')).toBeTruthy();
+  });
+
+  it('masks both unrealised gain figures when amounts are hidden', async () => {
+    setData(view([depotSection({ totalReturn: '3200', totalReturnPercent: '14.68' })]));
+    jest.mocked(useAmountsHidden).mockReturnValue(true);
+    await mount();
+
+    const depot = within(screen.getByTestId('account-row-depot'));
+    expect(depot.getByText('Unrealised gain')).toBeTruthy();
+    expect(depot.getAllByLabelText('hidden').length).toBeGreaterThanOrEqual(3);
+    expect(renderedText()).not.toMatch(/3[,’']200|14[.]68/);
+  });
+
+  it('shows the reason and affected position count when the gain is unavailable', async () => {
+    setData(view([depotSection({ missingCostBasisCount: 1, foreignCurrencyCostBasisCount: 2 })]));
+    await mount();
+
+    expect(
+      screen.getByText(
+        /cost basis missing for 1 position · cost basis currency unknown for 2 positions/,
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText('Unrealised gain')).toBeNull();
+  });
+
+  it('explains why unknown holdings value prevents a gain', async () => {
+    setData(view([depotSection({ balance: null, valueKnown: false, valueStatus: 'UNKNOWN' })]));
+    await mount();
+    expect(
+      screen.getByText('Unrealised gain unavailable (incomplete holdings statement value)'),
+    ).toBeTruthy();
+  });
+
+  it('explains a crypto account without any holdings statement the same way', async () => {
+    setData(
+      view([
+        makeSection('CRYPTO', [
+          makeAccount('crypto', {
+            name: 'Wallet',
+            accountType: 'CRYPTO',
+            balance: null,
+            valueKnown: false,
+            valueStatus: 'UNKNOWN',
+          }),
+        ]),
+      ]),
+    );
+    await mount();
+    expect(screen.getByText('Unrealised gain unavailable (no holdings statement)')).toBeTruthy();
   });
 
   it('indents a mortgage only under a property that is in the section', async () => {

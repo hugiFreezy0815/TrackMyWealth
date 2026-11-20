@@ -75,17 +75,19 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
           )
           SELECT s.account_id AS "accountId", s.snapshot_date AS "snapshotDate",
                  s.unrecorded_cash AS "unrecordedCash", parts.amount AS "reportedValue",
-                 parts.currency AS "reportedCurrency"
+                 parts.currency AS "reportedCurrency", parts.holding AS "holding",
+                 parts.cost_basis AS "reportedCostBasis"
           FROM flagged s
           CROSS JOIN LATERAL (
               SELECT coalesce(s.balance, CASE WHEN EXISTS (
                          SELECT 1 FROM snapshot_foreign_cash fc WHERE fc.snapshot_id = s.id)
                        THEN 0 END) AS amount,
-                     s.currency AS currency
+                     s.currency AS currency, false AS holding, NULL::numeric AS cost_basis
               UNION ALL
-              SELECT c.amount, c.currency FROM snapshot_foreign_cash c WHERE c.snapshot_id = s.id
+              SELECT c.amount, c.currency, false, NULL::numeric
+              FROM snapshot_foreign_cash c WHERE c.snapshot_id = s.id
               UNION ALL
-              SELECT h.reported_value, h.reported_currency
+              SELECT h.reported_value, h.reported_currency, true, h.reported_cost_basis
               FROM snapshot_holding h WHERE h.snapshot_id = s.id
           ) parts
           """,

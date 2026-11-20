@@ -17,4 +17,10 @@ public interface ReportedHoldingValue {
   @Nullable BigDecimal getReportedValue();
 
   @Nullable String getReportedCurrency();
+
+  /** Whether this component is a position; otherwise it is statement cash (#440). */
+  boolean isHolding();
+
+  /** A position's reported cost basis; always null for cash. */
+  @Nullable BigDecimal getReportedCostBasis();
 }

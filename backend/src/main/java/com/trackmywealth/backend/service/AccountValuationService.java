@@ -7,6 +7,7 @@ import com.trackmywealth.backend.dto.KeyedAmount;
 import com.trackmywealth.backend.dto.KeyedDate;
 import com.trackmywealth.backend.dto.MultiCurrencyValuations;
 import com.trackmywealth.backend.dto.NativeAccountValue;
+import com.trackmywealth.backend.dto.ReportedAccountHoldings;
 import com.trackmywealth.backend.dto.ReportedHoldingValue;
 import com.trackmywealth.backend.dto.SnapshotBalance;
 import com.trackmywealth.backend.dto.ValueBasisValues;
@@ -318,7 +319,7 @@ public class AccountValuationService {
     targetCurrencies.forEach(target -> byCurrency.put(target, new ArrayList<>()));
     if (accounts.isEmpty()) {
       // Nothing to value: no query at all, every list empty (#381 review).
-      return new MultiCurrencyValuations(byCurrency, List.of());
+      return new MultiCurrencyValuations(byCurrency, List.of(), Map.of());
     }
     AccountValueSources sources = sourcesFor(accounts, asOf);
     Map<UUID, LocalDate> openingDates = new HashMap<>();
@@ -330,6 +331,7 @@ public class AccountValuationService {
 
     Map<String, Map<String, Optional<CurrencyConversionResult>>> rates = new HashMap<>();
     List<AccountValuation> inOwnCurrency = new ArrayList<>();
+    Map<UUID, ReportedAccountHoldings> holdingsSummaries = new HashMap<>();
     for (Account account : accounts) {
       UUID accountId = account.getId();
       String ownCurrency = sources.ownCurrencies().get(accountId);
@@ -360,9 +362,16 @@ public class AccountValuationService {
                 rates,
                 asOf,
                 accountWarnings));
+        if (account.isHoldsPositions() && !holdings.isEmpty()) {
+          // #440: same components and (already resolved) own-currency rates as the value above.
+          holdingsSummaries.put(
+              accountId,
+              accountPositionsService.summary(
+                  holdings, ownCurrency, cachedRates(ownCurrency, rates, asOf)));
+        }
       }
     }
-    return new MultiCurrencyValuations(byCurrency, inOwnCurrency);
+    return new MultiCurrencyValuations(byCurrency, inOwnCurrency, holdingsSummaries);
   }
 
   private AccountValuation valueInTarget(
@@ -374,11 +383,7 @@ public class AccountValuationService {
       Map<String, Map<String, Optional<CurrencyConversionResult>>> rates,
       LocalDate asOf,
       List<String> warnings) {
-    Function<String, Optional<CurrencyConversionResult>> lookup = rateLookup(target, asOf);
-    Map<String, Optional<CurrencyConversionResult>> resolved =
-        rates.computeIfAbsent(target, unused -> new HashMap<>());
-    Function<String, Optional<CurrencyConversionResult>> rate =
-        from -> resolved.computeIfAbsent(from, lookup);
+    Function<String, Optional<CurrencyConversionResult>> rate = cachedRates(target, rates, asOf);
     if (account.isHoldsPositions()
         && !account.isManualValuation()
         && !account.isHasAmortisation()) {
@@ -588,6 +593,17 @@ public class AccountValuationService {
     return !account.isManualValuation()
         && !account.isHasAmortisation()
         && account.isHasTransactions();
+  }
+
+  // Rates into target, each looked up at most once per valuation run.
+  private Function<String, Optional<CurrencyConversionResult>> cachedRates(
+      String target,
+      Map<String, Map<String, Optional<CurrencyConversionResult>>> rates,
+      LocalDate asOf) {
+    Function<String, Optional<CurrencyConversionResult>> lookup = rateLookup(target, asOf);
+    Map<String, Optional<CurrencyConversionResult>> resolved =
+        rates.computeIfAbsent(target, unused -> new HashMap<>());
+    return from -> resolved.computeIfAbsent(from, lookup);
   }
 
   private Function<String, Optional<CurrencyConversionResult>> rateLookup(

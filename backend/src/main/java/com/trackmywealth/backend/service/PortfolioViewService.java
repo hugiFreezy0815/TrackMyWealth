@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccountPositionCount;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
 import com.trackmywealth.backend.dto.ImportBatchValues;
@@ -14,6 +13,7 @@ import com.trackmywealth.backend.dto.PortfolioViewResponse;
 import com.trackmywealth.backend.dto.PortfolioViewResponse.AccountRow;
 import com.trackmywealth.backend.dto.PortfolioViewResponse.LastImport;
 import com.trackmywealth.backend.dto.PortfolioViewResponse.Section;
+import com.trackmywealth.backend.dto.ReportedAccountHoldings;
 import com.trackmywealth.backend.dto.SignedAmounts;
 import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.Account;
@@ -27,7 +27,6 @@ import com.trackmywealth.backend.repository.AccountMortgageRepository;
 import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ImportTemplateRepository;
-import com.trackmywealth.backend.repository.SnapshotHoldingRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -51,17 +50,15 @@ import org.springframework.transaction.annotation.Transactional;
  * US-04-06/FR-INS-013: the Portfolio View - one portfolio tab with its total and a section per kind
  * of account, for the getquin-style overview (#377).
  *
- * <p>No new aggregation path: every figure is an {@link AccountValuation} from {@link
- * AccountValuationService#valueAllIn}, the calculation the portfolio summary and net worth use:
- * each account's value is resolved once and converted into the portfolio's currency, the
- * workspace's and its own. The totals are {@link PortfolioTotals}, as in the portfolio list
- * (US-04-05), so a tab shows the same money as its row there. Which section an account belongs to
- * is {@link AccountService#portfolioPlacementsOf}'s decision; this class only reads capability
- * flags.
+ * <p>Every account's value comes from {@link AccountValuationService#valueAllIn}, the calculation
+ * the portfolio summary and net worth use: each account's value is resolved once and converted into
+ * the portfolio's currency, the workspace's and its own. The totals are {@link PortfolioTotals}, as
+ * in the portfolio list (US-04-05), so a tab shows the same money as its row there. Which section
+ * an account belongs to is {@link AccountService#portfolioPlacementsOf}'s decision; this class only
+ * reads capability flags. The positions count and gain come from the same holdings read as the
+ * account's value.
  *
- * <p>The number of queries does not grow with the number of accounts beyond what {@code valueAll}
- * itself runs per account: placements, positions, card and mortgage details are each one query for
- * the whole portfolio.
+ * <p>Placements, card and mortgage details are read in batches for the whole portfolio.
  */
 @Service
 public class PortfolioViewService {
@@ -74,7 +71,6 @@ public class PortfolioViewService {
   private final AccountService accountService;
   private final AccountValuationService accountValuationService;
   private final BusinessDateService businessDateService;
-  private final SnapshotHoldingRepository snapshotHoldingRepository;
   private final AccountCreditCardRepository accountCreditCardRepository;
   private final AccountMortgageRepository accountMortgageRepository;
   private final CardStatementService cardStatementService;
@@ -91,7 +87,6 @@ public class PortfolioViewService {
       AccountService accountService,
       AccountValuationService accountValuationService,
       BusinessDateService businessDateService,
-      SnapshotHoldingRepository snapshotHoldingRepository,
       AccountCreditCardRepository accountCreditCardRepository,
       AccountMortgageRepository accountMortgageRepository,
       CardStatementService cardStatementService,
@@ -106,7 +101,6 @@ public class PortfolioViewService {
     this.accountService = accountService;
     this.accountValuationService = accountValuationService;
     this.businessDateService = businessDateService;
-    this.snapshotHoldingRepository = snapshotHoldingRepository;
     this.accountCreditCardRepository = accountCreditCardRepository;
     this.accountMortgageRepository = accountMortgageRepository;
     this.cardStatementService = cardStatementService;
@@ -150,7 +144,14 @@ public class PortfolioViewService {
       List<AccountRow> rows = new ArrayList<>();
       for (Account account : entry.getValue()) {
         UUID id = account.getId();
-        rows.add(toRow(account, placements.get(id), inPortfolio.get(id), inOwn.get(id), details));
+        rows.add(
+            toRow(
+                account,
+                placements.get(id),
+                inPortfolio.get(id),
+                inOwn.get(id),
+                valuations.reportedHoldings().get(id),
+                details));
       }
       PortfolioTotals subtotals = totalsOf(entry.getValue(), inPortfolio, inWorkspace, oneCurrency);
       sections.add(
@@ -217,11 +218,9 @@ public class PortfolioViewService {
       PortfolioPlacement placement,
       AccountValuation portfolioValue,
       AccountValuation ownValue,
+      @Nullable ReportedAccountHoldings holdings,
       PortfolioAccountDetails details) {
     UUID id = account.getId();
-    boolean holdsPositions = account.isHoldsPositions();
-    Integer positionsCount = holdsPositions ? details.positionsCount().get(id) : null;
-    LocalDate positionsAsOf = holdsPositions ? details.positionsAsOf().get(id) : null;
     return new AccountRow(
         id,
         account.getName(),
@@ -234,10 +233,12 @@ public class PortfolioViewService {
         ValueStatus.of(portfolioValue),
         portfolioValue.valueSourceDate(),
         portfolioValue.warnings(),
-        positionsCount,
-        positionsAsOf,
-        // EPIC 15: no performance calculation exists yet (PO decision on #390).
-        null,
+        holdings == null ? null : holdings.positionsCount(),
+        holdings == null ? null : holdings.snapshotDate(),
+        holdings == null ? null : holdings.totalReturn(),
+        holdings == null ? null : holdings.totalReturnPercent(),
+        holdings == null ? null : holdings.missingCostBasisCount(),
+        holdings == null ? null : holdings.foreignCurrencyCostBasisCount(),
         details.dueDates().get(id),
         details.linkedProperties().get(id),
         account.getIdentifierMasked(),
@@ -247,18 +248,6 @@ public class PortfolioViewService {
 
   private PortfolioAccountDetails details(
       List<Account> accounts, Map<UUID, PortfolioPlacement> placements) {
-    List<UUID> withPositions =
-        accounts.stream().filter(Account::isHoldsPositions).map(Account::getId).toList();
-    Map<UUID, Integer> positionsCount = new HashMap<>();
-    Map<UUID, LocalDate> positionsAsOf = new HashMap<>();
-    if (!withPositions.isEmpty()) {
-      for (AccountPositionCount count :
-          snapshotHoldingRepository.countPositionsInNewestHoldingsSnapshot(withPositions)) {
-        positionsCount.put(count.getAccountId(), Math.toIntExact(count.getPositions()));
-        positionsAsOf.put(count.getAccountId(), count.getPositionsAsOf());
-      }
-    }
-
     List<UUID> cards =
         accounts.stream().filter(Account::isHasStatementCycle).map(Account::getId).toList();
     Map<UUID, LocalDate> dueDates = new HashMap<>();
@@ -285,12 +274,7 @@ public class PortfolioViewService {
       }
     }
     return new PortfolioAccountDetails(
-        positionsCount,
-        positionsAsOf,
-        dueDates,
-        statementDates,
-        reconciliationService.statuses(accounts),
-        linkedProperties);
+        dueDates, statementDates, reconciliationService.statuses(accounts), linkedProperties);
   }
 
   // The newest committed batch of any active account, by commit time (id breaking a tie); a

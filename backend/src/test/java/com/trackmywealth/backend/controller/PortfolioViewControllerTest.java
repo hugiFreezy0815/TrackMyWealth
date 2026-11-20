@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.trackmywealth.backend.dto.AccountIdentifierRequest;
+import com.trackmywealth.backend.dto.AccountPositionResponse;
+import com.trackmywealth.backend.dto.AccountPositionsResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
@@ -697,6 +699,117 @@ class PortfolioViewControllerTest {
     assertThat(cardRow.balance()).isEqualByComparingTo("0");
   }
 
+  @ParameterizedTest
+  @MethodSource("investmentSections")
+  void investmentReturnMatchesLatestPositionsAndExcludesCash(
+      String accountType, PortfolioSection section) throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse portfolio = createPortfolio(token, "Investment", "CHF");
+    UUID accountId = investmentAccount(token, portfolio, accountType);
+    UUID older = seedSnapshot(accountId, today().minusDays(4), "0", false);
+    holding(older, "999", "CHF", "1");
+    UUID snapshot = seedSnapshot(accountId, today().minusDays(2), "700", false);
+    holding(snapshot, "15000", "CHF", "11800");
+    holding(snapshot, "10000", "CHF", "10000");
+    seedSnapshot(accountId, today().minusDays(1), "5000", false);
+
+    Section investment = getView(token, portfolio.id()).sections().get(0);
+    AccountRow row = investment.accounts().get(0);
+    AccountPositionsResponse positions =
+        client(token)
+            .get()
+            .uri("/api/v1/accounts/{id}/positions", accountId)
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(AccountPositionsResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(investment.section()).isEqualTo(section);
+    assertThat(row.balance()).isEqualByComparingTo("25700");
+    assertThat(row.totalReturn()).isEqualByComparingTo("3200");
+    assertThat(row.totalReturnPercent()).isEqualByComparingTo("14.68");
+    assertThat(row.positionsCount()).isEqualTo(positions.positions().size());
+    assertThat(row.positionsAsOf()).isEqualTo(positions.asOf());
+    assertThat(row.totalReturn())
+        .isEqualByComparingTo(
+            positions.positions().stream()
+                .map(AccountPositionResponse::unrealisedGain)
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
+    assertThat(row.missingCostBasisCount()).isNull();
+    assertThat(row.foreignCurrencyCostBasisCount()).isNull();
+  }
+
+  private static Stream<Arguments> investmentSections() {
+    return Stream.of(
+        Arguments.of("SECURITIES", PortfolioSection.DEPOT),
+        Arguments.of("CRYPTO", PortfolioSection.CRYPTO));
+  }
+
+  @Test
+  void noPartialReturnWhenCostBasisIsMissingOrItsCurrencyIsUnknown() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse portfolio = createPortfolio(token, "Investment", "CHF");
+    UUID depot = investmentAccount(token, portfolio, "SECURITIES");
+    LocalDate date = today().minusDays(2);
+    seedFxRate("USD", "CHF", "0.9", date);
+    UUID snapshot = seedSnapshot(depot, date, "0", false);
+    holding(snapshot, "500", "CHF", "410");
+    holding(snapshot, "600", "CHF", null);
+
+    AccountRow missingBasis = getView(token, portfolio.id()).sections().get(0).accounts().get(0);
+    assertThat(missingBasis.valueKnown()).isTrue();
+    assertThat(missingBasis.totalReturn()).isNull();
+    assertThat(missingBasis.totalReturnPercent()).isNull();
+    assertThat(missingBasis.missingCostBasisCount()).isEqualTo(1);
+    assertThat(missingBasis.foreignCurrencyCostBasisCount()).isNull();
+
+    UUID newer = seedSnapshot(depot, date.plusDays(1), "0", false);
+    holding(newer, "500", "CHF", "410");
+    holding(newer, "300", "USD", "100");
+    holding(newer, "200", "USD", "100");
+
+    AccountRow ambiguousBasis = getView(token, portfolio.id()).sections().get(0).accounts().get(0);
+    assertThat(ambiguousBasis.valueKnown()).isTrue();
+    assertThat(ambiguousBasis.totalReturn()).isNull();
+    assertThat(ambiguousBasis.totalReturnPercent()).isNull();
+    assertThat(ambiguousBasis.missingCostBasisCount()).isNull();
+    assertThat(ambiguousBasis.foreignCurrencyCostBasisCount()).isEqualTo(2);
+  }
+
+  @Test
+  void noReturnWithoutACompleteHoldingsValue() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse portfolio = createPortfolio(token, "Investment", "CHF");
+    UUID depot = investmentAccount(token, portfolio, "SECURITIES");
+
+    AccountRow withoutSnapshot = getView(token, portfolio.id()).sections().get(0).accounts().get(0);
+    assertThat(withoutSnapshot.valueKnown()).isFalse();
+    assertThat(withoutSnapshot.totalReturn()).isNull();
+    assertThat(withoutSnapshot.totalReturnPercent()).isNull();
+
+    UUID snapshot = seedSnapshot(depot, today(), "0", false);
+    holding(snapshot, "500", "CHF", "410");
+    holding(snapshot);
+
+    AccountRow incomplete = getView(token, portfolio.id()).sections().get(0).accounts().get(0);
+    assertThat(incomplete.valueKnown()).isFalse();
+    assertThat(incomplete.positionsCount()).isEqualTo(2);
+    assertThat(incomplete.totalReturn()).isNull();
+    assertThat(incomplete.totalReturnPercent()).isNull();
+  }
+
+  private UUID investmentAccount(String token, PortfolioResponse portfolio, String accountType) {
+    return createAccount(
+            token,
+            AccountRequests.account(accountType, accountType, "CHF")
+                .portfolioId(portfolio.id())
+                .holdsPositions(true)
+                .build())
+        .id();
+  }
+
   // #482's acceptance criterion: the server masks; the full IBAN is in neither the stored row nor
   // the response, which shows only the country, the check digits and the last four characters.
   @Test
@@ -1346,6 +1459,11 @@ class PortfolioViewControllerTest {
   }
 
   private void holding(UUID snapshotId) throws Exception {
+    holding(snapshotId, null, null, null);
+  }
+
+  private void holding(UUID snapshotId, String value, String currency, String costBasis)
+      throws Exception {
     UUID security = UUID.randomUUID();
     execute(
         "INSERT INTO security (id, synthetic_key, legal_name, display_name, denomination_currency)"
@@ -1353,9 +1471,13 @@ class PortfolioViewControllerTest {
         security,
         security);
     execute(
-        "INSERT INTO snapshot_holding (snapshot_id, security_id, quantity) VALUES (?, ?, 1)",
+        "INSERT INTO snapshot_holding (snapshot_id, security_id, quantity, reported_value,"
+            + " reported_currency, reported_cost_basis) VALUES (?, ?, 1, ?, ?, ?)",
         snapshotId,
-        security);
+        security,
+        value == null ? null : new BigDecimal(value),
+        currency,
+        costBasis == null ? null : new BigDecimal(costBasis));
   }
 
   // A second workspace, created directly: V19's trigger gives it its Personal Assets portfolio.

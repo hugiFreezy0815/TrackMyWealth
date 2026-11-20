@@ -181,7 +181,7 @@ crypto) are each shown the way their contents need.
   currency, `complete`, `valueStatus`, warnings, and the non-empty sections in the order above,
   each with signed subtotals and its accounts (own-currency balance, value in portfolio currency,
   value status, positions count and its snapshot date (`positionsAsOf`) for accounts holding
-  positions, `totalReturn` (always `null` until EPIC 15), card due date, mortgage's linked
+  positions, unrealised gain (US-04-08), card due date, mortgage's linked
   property). Same valuation as the summary and net
   worth.
 - **Value status** (`CURRENT`, `ESTIMATED`, `STALE`, `UNRECONCILED`, `UNKNOWN`) is derived from the
@@ -194,3 +194,28 @@ crypto) are each shown the way their contents need.
 apart, and another workspace's portfolio answers the same audited 404 as an unknown id.
 **Priority:** MUST. **Size:** L.
 
+## US-04-08 — Portfolio View: unrealised gain for depot and crypto accounts (#440)
+
+**Actor:** Workspace member. **Objective:** FR-INS-013, FR-PRF-06 and FR-PERF-018.
+
+- The row uses the newest non-withdrawn holdings statement on or before the business date.
+  The positions count, valuation and gain use the same statement. A newer balance-only
+  statement does not replace it.
+- `totalReturn` is the sum of the positions' unrealised gains in the account currency, excluding
+  statement cash. `totalReturnPercent` is that amount divided by the absolute total cost basis,
+  multiplied by 100 and rounded half-up to two decimal places. A zero total cost basis leaves
+  the percentage unavailable, as on the positions endpoint.
+- Both figures are null when the statement cannot establish the account value or any position
+  has an unknown gain. For a valued account, `missingCostBasisCount` and
+  `foreignCurrencyCostBasisCount` identify the affected positions. The latter applies when the
+  reported position currency differs from the account currency and the cost-basis currency is
+  unknown (#527).
+- The mobile depot and crypto rows display the server figures under “Unrealised gain” or explain
+  why the gain is unavailable. The amount and percent follow the app's amount-visibility setting.
+- `PortfolioViewControllerTest` covers both account types, comparison with the positions API,
+  missing cost basis, foreign currency, and missing or incomplete holdings statements.
+- The app shows the percentage with one decimal, like every other percentage, including the
+  position rows below the account (PO 2026-11-19); the API keeps two.
+- Backend and app ship from the same commit. No native build has been distributed, so no older
+  client reads `totalReturn` as a percentage. Once native builds are released, a change in a
+  field's meaning needs a new field instead.
