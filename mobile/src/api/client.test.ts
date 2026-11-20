@@ -9,6 +9,14 @@ import {
   setRefreshHandler,
 } from './client';
 import { problemReaction } from './problems';
+import { dismissUpdateRequired, updateRequiredSnapshot } from './update-required';
+import { APP_VERSION } from './app-version';
+
+// #576: jest's expo-constants carries no app.json version; the header needs one.
+jest.mock('expo-constants', () => ({
+  __esModule: true,
+  default: { expoConfig: { version: '4.5.6' } },
+}));
 
 function mockFetchOnce(response: Partial<Response> & { json?: () => Promise<unknown> }) {
   const fetchMock = jest.fn().mockResolvedValue({
@@ -41,6 +49,48 @@ describe('api client', () => {
       }),
     );
     expect(result).toEqual({ status: 'UP' });
+  });
+
+  it('sends the build version on every request (#576)', async () => {
+    const fetchMock = mockFetchOnce({});
+
+    await api.get('/api/v1/accounts');
+
+    expect(APP_VERSION).toBe('4.5.6');
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-App-Version': APP_VERSION }),
+      }),
+    );
+  });
+
+  it('reports a 426 as an update the member must install, and still fails the request', async () => {
+    dismissUpdateRequired();
+    mockFetchOnce({
+      ok: false,
+      status: 426,
+      json: async () => ({ title: 'Upgrade Required', status: 426, code: 'APP_UPDATE_REQUIRED' }),
+    });
+
+    const failure = await api.get('/api/v1/accounts').catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(ApiError);
+    expect(problemReaction(failure as ApiError)).toMatchObject({
+      reaction: 'UPDATE_APP',
+      code: 'APP_UPDATE_REQUIRED',
+    });
+    expect(updateRequiredSnapshot()).toBe(true);
+    dismissUpdateRequired();
+  });
+
+  it('reports no update for any other failure', async () => {
+    dismissUpdateRequired();
+    mockFetchOnce({ ok: false, status: 400, json: async () => ({}) });
+
+    await api.get('/api/v1/accounts').catch(() => undefined);
+
+    expect(updateRequiredSnapshot()).toBe(false);
   });
 
   it('attaches a bearer token once setAccessToken has been called', async () => {

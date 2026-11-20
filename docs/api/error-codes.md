@@ -19,6 +19,7 @@ Codes are part of the API contract, and an open set: new codes are added without
 | `RETRY_LATER` | Retry the same request later, after Retry-After seconds when that header is sent. |
 | `REAUTHENTICATE` | Refresh the access token or sign in again, then retry. |
 | `REPORT` | Show a generic error and offer to report it, quoting the correlationId. |
+| `UPDATE_APP` | Ask the member to update the app; every request fails the same way until it is updated. |
 
 ## Problem codes
 
@@ -86,6 +87,7 @@ Codes are part of the API contract, and an open set: new codes are added without
 | `SAVINGS_POCKET_IN_USE` | 409 | The chosen account is already the savings pocket of another account. | `FIX_INPUT` | `tmw.error.SAVINGS_POCKET_IN_USE` | This account is already the savings pocket of another account. | Dieses Konto ist bereits das Sparkonto eines anderen Kontos. |
 | `LOCKED` | 423 | The user account is temporarily locked after failed sign-ins. | `RETRY_LATER` | `tmw.error.LOCKED` | Your sign-in is temporarily locked. Please try again later. | Deine Anmeldung ist vorübergehend gesperrt. Bitte versuche es später noch einmal. |
 | `RATE_LIMITED` | 429 | Too many requests; honour Retry-After. | `RETRY_LATER` | `tmw.error.RATE_LIMITED` | Too many attempts. Please wait a moment and try again. | Zu viele Versuche. Bitte warte einen Moment und versuche es dann noch einmal. |
+| `APP_UPDATE_REQUIRED` | 426 | The X-App-Version sent is older than the oldest app version this server serves (#576). | `UPDATE_APP` | `tmw.error.APP_UPDATE_REQUIRED` | This version of the app is too old for your server. Update the app to continue. | Diese Version der App ist zu alt für deinen Server. Aktualisiere die App, um weiterzumachen. |
 | `INTERNAL` | 500 | Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own. | `REPORT` | `tmw.error.INTERNAL` | Something went wrong. Please try again; if it happens again, report it with the reference shown. | Etwas ist schiefgelaufen. Bitte versuche es noch einmal; wenn es wieder passiert, melde es mit der angezeigten Referenz. |
 
 ## Import row codes

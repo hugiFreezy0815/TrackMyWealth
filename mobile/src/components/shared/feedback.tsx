@@ -93,7 +93,13 @@ export function problemMessageKey(problem: Pick<ProblemReaction, 'code' | 'react
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
-const NO_RETRY_REACTIONS: readonly ClientReaction[] = ['REAUTHENTICATE', 'SHOW', 'FIX_INPUT'];
+const NO_RETRY_REACTIONS: readonly ClientReaction[] = [
+  'REAUTHENTICATE',
+  'SHOW',
+  'FIX_INPUT',
+  // #576: the root layout already shows the update screen; the same request fails until then.
+  'UPDATE_APP',
+];
 
 export function ErrorBanner({
   error,

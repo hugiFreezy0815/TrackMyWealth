@@ -368,6 +368,14 @@ cd backend
 or `api/**`, lints new or changed migrations with sqlfluff, and builds the Docker image.
 GitHub-hosted runners have Docker preinstalled, so no extra CI setup is needed for Testcontainers.
 
+**Minimum app version (#576).** `MINIMUM_APP_VERSION` (`app.client.minimum-app-version`, e.g.
+`1.4.0`) is the oldest app version the backend serves. An app that sends an older `X-App-Version`
+gets `426 APP_UPDATE_REQUIRED` and shows an update screen. Empty, the default, serves every version.
+Requests without the header (scripts, `curl`) are always served. Raise it when a release note asks
+you to, before a deprecated API element is removed (see `docs/api/conventions.md`, "App version and
+deprecations"). Administrators can see which app versions still call deprecated operations at
+`/actuator/metrics/tmw.api.deprecated.requests`.
+
 **Request tracing (#575).** API request logs include the W3C trace ID and the support
 correlation ID. Use `X-Correlation-Id` to find a user-reported error, or use the trace ID
 from `traceparent` to correlate backend logs with an upstream proxy. The default

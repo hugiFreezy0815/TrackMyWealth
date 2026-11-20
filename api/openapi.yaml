@@ -69,6 +69,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -129,6 +130,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -156,6 +172,7 @@ paths:
       - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     post:
       tags:
@@ -183,6 +200,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -287,6 +305,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -317,6 +350,7 @@ paths:
       - VERSION_CONFLICT
       - IDEMPOTENCY_KEY_IN_USE
       - IDEMPOTENCY_KEY_MISMATCH
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}:
     get:
@@ -342,6 +376,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -403,6 +438,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -429,6 +479,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     put:
       tags:
@@ -461,6 +512,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -558,6 +610,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -602,6 +669,7 @@ paths:
       - VERSION_REQUIRED
       - VERSION_CONFLICT
       - IMMUTABLE_FIELD
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/amortisation-schedule:
     get:
@@ -662,6 +730,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -737,6 +806,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -765,6 +849,7 @@ paths:
       - UNAUTHENTICATED
       - NOT_FOUND
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     post:
       tags:
@@ -798,6 +883,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -903,6 +989,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -934,6 +1035,7 @@ paths:
       - IDEMPOTENCY_KEY_MISMATCH
       - ACCOUNT_ARCHIVED
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/amortisation-schedule/{entryId}:
     put:
@@ -973,6 +1075,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -1085,6 +1188,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -1130,6 +1248,7 @@ paths:
       - VERSION_CONFLICT
       - ACCOUNT_ARCHIVED
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     delete:
       tags:
@@ -1168,6 +1287,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "204":
           description: No Content
@@ -1268,6 +1388,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -1313,6 +1448,7 @@ paths:
       - VERSION_CONFLICT
       - ACCOUNT_ARCHIVED
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/archive:
     post:
@@ -1346,6 +1482,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -1437,6 +1574,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -1481,6 +1633,7 @@ paths:
       - CONFLICT
       - VERSION_REQUIRED
       - VERSION_CONFLICT
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/balance:
     get:
@@ -1517,6 +1670,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -1591,6 +1745,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -1618,6 +1787,7 @@ paths:
       - UNAUTHENTICATED
       - NOT_FOUND
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/identifier:
     get:
@@ -1643,6 +1813,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -1704,6 +1875,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -1730,6 +1916,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     put:
       tags:
@@ -1762,6 +1949,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -1874,6 +2062,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -1935,6 +2138,7 @@ paths:
       - ACCOUNT_IDENTIFIER_INVALID
       - ACCOUNT_IDENTIFIER_IN_USE
       - ACCOUNT_IDENTIFICATION_UNAVAILABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     delete:
       tags:
@@ -1972,6 +2176,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -2063,6 +2268,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -2107,6 +2327,7 @@ paths:
       - VERSION_REQUIRED
       - VERSION_CONFLICT
       - ACCOUNT_IDENTIFIER_INVALID
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/identifier/from-import:
     put:
@@ -2140,6 +2361,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -2265,6 +2487,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -2348,6 +2585,7 @@ paths:
       - ACCOUNT_IDENTIFIER_IN_USE
       - ACCOUNT_IDENTIFIER_NOT_IN_FILE
       - ACCOUNT_IDENTIFICATION_UNAVAILABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/imports:
     get:
@@ -2408,6 +2646,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -2468,6 +2707,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -2495,6 +2749,7 @@ paths:
       - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     post:
       tags:
@@ -2540,6 +2795,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           multipart/form-data:
@@ -2684,6 +2940,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -2760,6 +3031,7 @@ paths:
       - IMPORT_OCR_UNAVAILABLE
       - IMPORT_TOO_MANY_OPEN_BATCHES
       - ACCOUNT_IDENTIFICATION_UNAVAILABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/imports/{batchId}:
     get:
@@ -2791,6 +3063,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -2852,6 +3125,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -2878,6 +3166,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/imports/{batchId}/account-proposal:
     post:
@@ -2909,6 +3198,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -3010,6 +3300,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -3073,6 +3378,7 @@ paths:
       - IMPORT_OCR_FAILED
       - IMPORT_OCR_UNAVAILABLE
       - IMPORT_BATCH_STATE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/imports/{batchId}/commit:
     post:
@@ -3112,6 +3418,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -3226,6 +3533,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -3279,6 +3601,7 @@ paths:
       - IMPORT_SNAPSHOT_RECONCILIATION_DECIDED
       - IMPORT_HOLDINGS_UNRESOLVED
       - IMPORT_HOLDINGS_UNREADABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/imports/{batchId}/confirm-account:
     post:
@@ -3318,6 +3641,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -3425,6 +3749,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -3471,6 +3810,7 @@ paths:
       - ACCOUNT_ARCHIVED
       - UNPROCESSABLE
       - IMPORT_BATCH_STATE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/imports/{batchId}/discard:
     post:
@@ -3510,6 +3850,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -3617,6 +3958,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -3663,6 +4019,7 @@ paths:
       - ACCOUNT_ARCHIVED
       - UNPROCESSABLE
       - IMPORT_BATCH_STATE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/imports/{batchId}/errors.csv:
     get:
@@ -3694,6 +4051,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: "The rows that could not be imported, as CSV"
@@ -3754,6 +4112,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -3780,6 +4153,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/imports/{batchId}/parse:
     post:
@@ -3819,6 +4193,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -3948,6 +4323,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -4037,6 +4427,7 @@ paths:
       - IMPORT_OCR_UNAVAILABLE
       - IMPORT_BATCH_STATE
       - ACCOUNT_IDENTIFICATION_UNAVAILABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/imports/{batchId}/rollback:
     post:
@@ -4076,6 +4467,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -4190,6 +4582,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -4237,6 +4644,7 @@ paths:
       - UNPROCESSABLE
       - IMPORT_BATCH_STATE
       - IMPORT_ROLLBACK_RECONCILIATION_DECIDED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/imports/{batchId}/rows:
     get:
@@ -4308,6 +4716,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -4368,6 +4777,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -4395,6 +4819,7 @@ paths:
       - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/imports/{batchId}/rows/{rowNumber}:
     patch:
@@ -4440,6 +4865,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -4554,6 +4980,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -4601,6 +5042,7 @@ paths:
       - UNPROCESSABLE
       - IMPORT_BATCH_STATE
       - IMPORT_ROW_NOT_INCLUDABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/opening-balance:
     get:
@@ -4626,6 +5068,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -4688,6 +5131,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -4715,6 +5173,7 @@ paths:
       - UNAUTHENTICATED
       - NOT_FOUND
       - OPENING_BALANCE_NOT_RECORDED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     put:
       tags:
@@ -4747,6 +5206,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -4861,6 +5321,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -4908,6 +5383,7 @@ paths:
       - OPENING_BALANCE_NOT_APPLICABLE
       - OPENING_BALANCE_AFTER_FIRST_TRANSACTION
       - OPENING_BALANCE_NOT_RECORDED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     post:
       tags:
@@ -4941,6 +5417,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -5048,6 +5525,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -5081,6 +5573,7 @@ paths:
       - UNPROCESSABLE
       - OPENING_BALANCE_NOT_APPLICABLE
       - OPENING_BALANCE_AFTER_FIRST_TRANSACTION
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     delete:
       tags:
@@ -5113,6 +5606,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "204":
           description: No Content
@@ -5184,6 +5678,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -5228,6 +5737,7 @@ paths:
       - VERSION_REQUIRED
       - VERSION_CONFLICT
       - OPENING_BALANCE_NOT_RECORDED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/positions:
     get:
@@ -5253,6 +5763,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -5327,6 +5838,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -5354,6 +5880,7 @@ paths:
       - UNAUTHENTICATED
       - NOT_FOUND
       - POSITIONS_NOT_APPLICABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/reassign-portfolio:
     post:
@@ -5387,6 +5914,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -5484,6 +6012,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -5528,6 +6071,7 @@ paths:
       - CONFLICT
       - VERSION_REQUIRED
       - VERSION_CONFLICT
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/reconciliations:
     get:
@@ -5588,6 +6132,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -5648,6 +6193,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -5675,6 +6235,7 @@ paths:
       - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/reconciliations/{resultId}:
     get:
@@ -5706,6 +6267,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -5767,6 +6329,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -5793,6 +6370,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/reconciliations/{resultId}/accept:
     post:
@@ -5832,6 +6410,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -5930,6 +6509,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -5975,6 +6569,7 @@ paths:
       - VERSION_CONFLICT
       - RECONCILIATION_STALE
       - RECONCILIATION_FINALIZED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/reconciliations/{resultId}/dismiss:
     post:
@@ -6014,6 +6609,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -6112,6 +6708,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -6157,6 +6768,7 @@ paths:
       - VERSION_CONFLICT
       - RECONCILIATION_STALE
       - RECONCILIATION_FINALIZED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/reconciliations/{resultId}/reopen:
     post:
@@ -6196,6 +6808,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -6288,6 +6901,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -6333,6 +6961,7 @@ paths:
       - VERSION_CONFLICT
       - RECONCILIATION_STALE
       - RECONCILIATION_FINALIZED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/repayments:
     get:
@@ -6393,6 +7022,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -6453,6 +7083,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -6480,6 +7125,7 @@ paths:
       - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     post:
       tags:
@@ -6513,6 +7159,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -6617,6 +7264,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -6649,6 +7311,7 @@ paths:
       - IDEMPOTENCY_KEY_MISMATCH
       - ACCOUNT_ARCHIVED
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/restore:
     post:
@@ -6682,6 +7345,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -6773,6 +7437,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -6817,6 +7496,7 @@ paths:
       - CONFLICT
       - VERSION_REQUIRED
       - VERSION_CONFLICT
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/savings-pocket:
     put:
@@ -6857,6 +7537,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -6971,6 +7652,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -7018,6 +7714,7 @@ paths:
       - SAVINGS_POCKET_NOT_APPLICABLE
       - SAVINGS_POCKET_UNSUITABLE
       - SAVINGS_POCKET_IN_USE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/snapshots:
     get:
@@ -7078,6 +7775,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -7138,6 +7836,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -7165,6 +7878,7 @@ paths:
       - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     post:
       tags:
@@ -7198,6 +7912,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -7304,6 +8019,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -7336,6 +8066,7 @@ paths:
       - IDEMPOTENCY_KEY_IN_USE
       - IDEMPOTENCY_KEY_MISMATCH
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/snapshots/{snapshotId}:
     get:
@@ -7367,6 +8098,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -7428,6 +8160,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -7454,6 +8201,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     put:
       tags:
@@ -7492,6 +8240,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -7604,6 +8353,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -7649,6 +8413,7 @@ paths:
       - VERSION_REQUIRED
       - VERSION_CONFLICT
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/transactions:
     get:
@@ -7718,6 +8483,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -7778,6 +8544,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -7805,6 +8586,7 @@ paths:
       - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     post:
       tags:
@@ -7838,6 +8620,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -7945,6 +8728,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -7978,6 +8776,7 @@ paths:
       - IDEMPOTENCY_KEY_MISMATCH
       - ACCOUNT_ARCHIVED
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/transactions/deleted:
     get:
@@ -8026,6 +8825,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -8086,6 +8886,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -8113,6 +8928,7 @@ paths:
       - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/transactions/{transactionId}:
     get:
@@ -8144,6 +8960,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -8205,6 +9022,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -8231,6 +9063,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     put:
       tags:
@@ -8269,6 +9102,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -8383,6 +9217,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -8430,6 +9279,7 @@ paths:
       - ACCOUNT_ARCHIVED
       - UNPROCESSABLE
       - RECONCILIATION_ADJUSTMENT_LOCKED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     delete:
       tags:
@@ -8473,6 +9323,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -8580,6 +9431,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -8626,6 +9492,7 @@ paths:
       - VERSION_CONFLICT
       - UNPROCESSABLE
       - RECONCILIATION_ADJUSTMENT_LOCKED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/transactions/{transactionId}/category:
     put:
@@ -8665,6 +9532,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -8778,6 +9646,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -8824,6 +9707,7 @@ paths:
       - VERSION_CONFLICT
       - UNPROCESSABLE
       - RECONCILIATION_ADJUSTMENT_LOCKED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     delete:
       tags:
@@ -8862,6 +9746,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -8954,6 +9839,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -8999,6 +9899,7 @@ paths:
       - VERSION_REQUIRED
       - VERSION_CONFLICT
       - RECONCILIATION_ADJUSTMENT_LOCKED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/transactions/{transactionId}/history:
     get:
@@ -9065,6 +9966,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -9125,6 +10027,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -9152,6 +10069,7 @@ paths:
       - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/transactions/{transactionId}/restore:
     post:
@@ -9191,6 +10109,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -9298,6 +10217,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -9344,6 +10278,7 @@ paths:
       - VERSION_CONFLICT
       - UNPROCESSABLE
       - RECONCILIATION_ADJUSTMENT_LOCKED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/transactions/{transactionId}/untracked-transfer:
     post:
@@ -9383,6 +10318,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -9489,6 +10425,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -9534,6 +10485,7 @@ paths:
       - VERSION_REQUIRED
       - VERSION_CONFLICT
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     delete:
       tags:
@@ -9572,6 +10524,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -9678,6 +10631,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -9723,6 +10691,7 @@ paths:
       - VERSION_REQUIRED
       - VERSION_CONFLICT
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{accountId}/valuations:
     get:
@@ -9783,6 +10752,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -9843,6 +10813,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -9870,6 +10855,7 @@ paths:
       - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     post:
       tags:
@@ -9903,6 +10889,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -10005,6 +10992,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -10035,6 +11037,7 @@ paths:
       - VERSION_CONFLICT
       - IDEMPOTENCY_KEY_IN_USE
       - IDEMPOTENCY_KEY_MISMATCH
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{cardAccountId}/settlement-matches/run:
     post:
@@ -10060,6 +11063,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -10149,6 +11153,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -10177,6 +11196,7 @@ paths:
       - NOT_FOUND
       - VERSION_CONFLICT
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{cardAccountId}/settlement-source:
     get:
@@ -10202,6 +11222,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -10278,6 +11299,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -10305,6 +11341,7 @@ paths:
       - UNAUTHENTICATED
       - NOT_FOUND
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     put:
       tags:
@@ -10337,6 +11374,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -10449,6 +11487,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -10494,6 +11547,7 @@ paths:
       - VERSION_CONFLICT
       - ACCOUNT_ARCHIVED
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{cardAccountId}/statement:
     get:
@@ -10519,6 +11573,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -10593,6 +11648,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -10620,6 +11690,7 @@ paths:
       - UNAUTHENTICATED
       - NOT_FOUND
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/accounts/{cardAccountId}/statement-config:
     get:
@@ -10645,6 +11716,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -10721,6 +11793,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -10748,6 +11835,7 @@ paths:
       - UNAUTHENTICATED
       - NOT_FOUND
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     put:
       tags:
@@ -10780,6 +11868,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -10877,6 +11966,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -10921,6 +12025,7 @@ paths:
       - VERSION_REQUIRED
       - VERSION_CONFLICT
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/admin/fx-import:
     get:
@@ -10940,6 +12045,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -10956,6 +12062,21 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FxImportSettingsResponse"
+        "400":
+          description: |-
+            Problem codes:
+            - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "401":
           description: |-
             Problem codes:
@@ -10975,6 +12096,21 @@ paths:
           description: |-
             Problem codes:
             - `FORBIDDEN`: Signed in, but not allowed to do this (e.g. an administration endpoint).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -11009,8 +12145,10 @@ paths:
                 type: string
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
+      - VALIDATION_FAILED
       - UNAUTHENTICATED
       - FORBIDDEN
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     put:
       tags:
@@ -11037,6 +12175,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -11149,6 +12288,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -11194,6 +12348,7 @@ paths:
       - VERSION_REQUIRED
       - VERSION_CONFLICT
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/admin/reference-data:
     get:
@@ -11213,6 +12368,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -11227,6 +12383,21 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReferenceDataResponse"
+        "400":
+          description: |-
+            Problem codes:
+            - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "401":
           description: |-
             Problem codes:
@@ -11246,6 +12417,21 @@ paths:
           description: |-
             Problem codes:
             - `FORBIDDEN`: Signed in, but not allowed to do this (e.g. an administration endpoint).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -11280,8 +12466,10 @@ paths:
                 type: string
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
+      - VALIDATION_FAILED
       - UNAUTHENTICATED
       - FORBIDDEN
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/admin/users:
     post:
@@ -11301,6 +12489,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -11384,6 +12573,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -11412,6 +12616,7 @@ paths:
       - FORBIDDEN
       - CONFLICT
       - VERSION_CONFLICT
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/admin/users/{id}:
     get:
@@ -11437,6 +12642,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -11513,6 +12719,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -11540,6 +12761,7 @@ paths:
       - UNAUTHENTICATED
       - FORBIDDEN
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     patch:
       tags:
@@ -11572,6 +12794,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -11684,6 +12907,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -11729,6 +12967,7 @@ paths:
       - CONFLICT
       - VERSION_REQUIRED
       - VERSION_CONFLICT
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/admin/users/{id}/disable:
     post:
@@ -11762,6 +13001,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -11868,6 +13108,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -11913,6 +13168,7 @@ paths:
       - CONFLICT
       - VERSION_REQUIRED
       - VERSION_CONFLICT
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/admin/users/{id}/reactivate:
     post:
@@ -11946,6 +13202,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -12037,6 +13294,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -12081,6 +13353,7 @@ paths:
       - NOT_FOUND
       - VERSION_REQUIRED
       - VERSION_CONFLICT
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/auth/login:
     post:
@@ -12105,6 +13378,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -12190,6 +13464,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "429":
           description: |-
             Problem codes:
@@ -12239,6 +13528,7 @@ paths:
       - VERSION_CONFLICT
       - LOCKED
       - RATE_LIMITED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/auth/mfa/verify:
     post:
@@ -12263,6 +13553,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -12348,6 +13639,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "429":
           description: |-
             Problem codes:
@@ -12397,6 +13703,7 @@ paths:
       - VERSION_CONFLICT
       - LOCKED
       - RATE_LIMITED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/auth/refresh:
     post:
@@ -12416,6 +13723,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -12481,6 +13789,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "429":
           description: |-
             Problem codes:
@@ -12529,6 +13852,7 @@ paths:
       - UNAUTHENTICATED
       - VERSION_CONFLICT
       - RATE_LIMITED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/cash-flow:
     get:
@@ -12558,6 +13882,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -12617,6 +13942,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -12643,6 +13983,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/categories:
     get:
@@ -12691,6 +14032,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -12751,6 +14093,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -12778,6 +14135,7 @@ paths:
       - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     post:
       tags:
@@ -12805,6 +14163,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -12911,6 +14270,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -12943,6 +14317,7 @@ paths:
       - IDEMPOTENCY_KEY_IN_USE
       - IDEMPOTENCY_KEY_MISMATCH
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/categories/{id}:
     get:
@@ -12968,6 +14343,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -13029,6 +14405,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -13055,6 +14446,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     put:
       tags:
@@ -13087,6 +14479,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -13200,6 +14593,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -13246,6 +14654,7 @@ paths:
       - VERSION_CONFLICT
       - RETRY
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     delete:
       tags:
@@ -13278,6 +14687,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "204":
           description: No Content
@@ -13363,6 +14773,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -13407,6 +14832,7 @@ paths:
       - CONFLICT
       - VERSION_REQUIRED
       - VERSION_CONFLICT
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/categories/{id}/activate:
     post:
@@ -13440,6 +14866,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -13531,6 +14958,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -13575,6 +15017,7 @@ paths:
       - VERSION_REQUIRED
       - VERSION_CONFLICT
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/categories/{id}/deactivate:
     post:
@@ -13608,6 +15051,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -13699,6 +15143,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -13743,6 +15202,7 @@ paths:
       - VERSION_REQUIRED
       - VERSION_CONFLICT
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/categorization-rules:
     get:
@@ -13790,6 +15250,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -13850,6 +15311,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -13877,6 +15353,7 @@ paths:
       - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     post:
       tags:
@@ -13904,6 +15381,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -14008,6 +15486,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -14038,6 +15531,7 @@ paths:
       - IDEMPOTENCY_KEY_IN_USE
       - IDEMPOTENCY_KEY_MISMATCH
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/categorization-rules/{id}/deactivate:
     post:
@@ -14071,6 +15565,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -14147,6 +15642,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -14190,6 +15700,7 @@ paths:
       - NOT_FOUND
       - VERSION_REQUIRED
       - VERSION_CONFLICT
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/import-templates:
     get:
@@ -14243,6 +15754,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -14303,6 +15815,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -14330,6 +15857,7 @@ paths:
       - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     post:
       tags:
@@ -14357,6 +15885,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -14464,6 +15993,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -14495,6 +16039,7 @@ paths:
       - IDEMPOTENCY_KEY_MISMATCH
       - IMPORT_TEMPLATE_INVALID
       - IMPORT_TEMPLATE_UNSUPPORTED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/import-templates/detect:
     post:
@@ -14537,6 +16082,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           multipart/form-data:
@@ -14666,6 +16212,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -14732,6 +16293,7 @@ paths:
       - IMPORT_SPREADSHEET_BUSY
       - IMPORT_OCR_FAILED
       - IMPORT_OCR_UNAVAILABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/import-templates/test:
     post:
@@ -14757,6 +16319,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           multipart/form-data:
@@ -14886,6 +16449,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -14949,6 +16527,7 @@ paths:
       - IMPORT_PDF_BUSY
       - IMPORT_OCR_FAILED
       - IMPORT_OCR_UNAVAILABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/import-templates/{id}:
     get:
@@ -14974,6 +16553,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -15035,6 +16615,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -15061,6 +16656,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     put:
       tags:
@@ -15093,6 +16689,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -15206,6 +16803,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -15252,6 +16864,7 @@ paths:
       - IMPORT_TEMPLATE_INVALID
       - IMPORT_TEMPLATE_UNSUPPORTED
       - IMPORT_TEMPLATE_READ_ONLY
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     delete:
       tags:
@@ -15284,6 +16897,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "204":
           description: No Content
@@ -15384,6 +16998,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -15429,6 +17058,7 @@ paths:
       - VERSION_CONFLICT
       - IMPORT_TEMPLATE_READ_ONLY
       - IMPORT_TEMPLATE_IN_USE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/import-templates/{id}/activate:
     post:
@@ -15462,6 +17092,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -15553,6 +17184,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -15597,6 +17243,7 @@ paths:
       - VERSION_REQUIRED
       - VERSION_CONFLICT
       - IMPORT_TEMPLATE_READ_ONLY
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/import-templates/{id}/deactivate:
     post:
@@ -15630,6 +17277,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -15721,6 +17369,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -15765,6 +17428,7 @@ paths:
       - VERSION_REQUIRED
       - VERSION_CONFLICT
       - IMPORT_TEMPLATE_READ_ONLY
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/import-templates/{id}/test:
     post:
@@ -15796,6 +17460,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           multipart/form-data:
@@ -15922,6 +17587,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -15985,6 +17665,7 @@ paths:
       - IMPORT_PDF_BUSY
       - IMPORT_OCR_FAILED
       - IMPORT_OCR_UNAVAILABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/import-templates/{templateId}/account-proposal:
     post:
@@ -16010,6 +17691,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           multipart/form-data:
@@ -16136,6 +17818,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -16199,6 +17896,7 @@ paths:
       - IMPORT_PDF_BUSY
       - IMPORT_OCR_FAILED
       - IMPORT_OCR_UNAVAILABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/institutions/catalogue:
     get:
@@ -16268,6 +17966,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -16313,6 +18012,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -16339,6 +18053,7 @@ paths:
       - VALIDATION_FAILED
       - INVALID_SORT
       - UNAUTHENTICATED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/net-worth:
     get:
@@ -16363,6 +18078,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -16422,6 +18138,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -16448,6 +18179,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/net-worth/history:
     get:
@@ -16480,6 +18212,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -16539,6 +18272,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -16565,6 +18313,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/portfolios:
     get:
@@ -16610,6 +18359,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -16670,6 +18420,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -16697,6 +18462,7 @@ paths:
       - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     post:
       tags:
@@ -16724,6 +18490,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -16829,6 +18596,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -16860,6 +18642,7 @@ paths:
       - IDEMPOTENCY_KEY_IN_USE
       - IDEMPOTENCY_KEY_MISMATCH
       - UNPROCESSABLE
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/portfolios/{portfolioId}:
     get:
@@ -16885,6 +18668,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -16946,6 +18730,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -16972,6 +18771,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     put:
       tags:
@@ -17004,6 +18804,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -17101,6 +18902,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -17145,6 +18961,7 @@ paths:
       - CONFLICT
       - VERSION_REQUIRED
       - VERSION_CONFLICT
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/portfolios/{portfolioId}/history:
     get:
@@ -17178,6 +18995,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -17237,6 +19055,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -17263,6 +19096,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/portfolios/{portfolioId}/summary:
     get:
@@ -17293,6 +19127,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -17352,6 +19187,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -17378,6 +19228,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/portfolios/{portfolioId}/view:
     get:
@@ -17403,6 +19254,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -17462,6 +19314,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -17488,6 +19355,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/securities:
     get:
@@ -17512,6 +19380,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -17571,6 +19440,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "429":
           description: |-
             Problem codes:
@@ -17618,6 +19502,7 @@ paths:
       - UNAUTHENTICATED
       - NOT_FOUND
       - RATE_LIMITED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
     post:
       tags:
@@ -17636,6 +19521,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -17744,6 +19630,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "429":
           description: |-
             Problem codes:
@@ -17793,6 +19694,7 @@ paths:
       - VERSION_CONFLICT
       - UNPROCESSABLE
       - RATE_LIMITED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/securities/{id}:
     get:
@@ -17818,6 +19720,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -17877,6 +19780,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -17903,6 +19821,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/sessions:
     get:
@@ -17944,6 +19863,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -17989,6 +19909,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -18015,6 +19950,7 @@ paths:
       - VALIDATION_FAILED
       - INVALID_SORT
       - UNAUTHENTICATED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/sessions/{id}/revoke:
     post:
@@ -18040,6 +19976,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -18114,6 +20051,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "429":
           description: |-
             Problem codes:
@@ -18162,6 +20114,7 @@ paths:
       - NOT_FOUND
       - VERSION_CONFLICT
       - RATE_LIMITED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/settlement-matches:
     get:
@@ -18245,6 +20198,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -18305,6 +20259,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -18332,6 +20301,7 @@ paths:
       - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/settlement-matches/{matchId}/confirm:
     post:
@@ -18365,6 +20335,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -18456,6 +20427,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -18500,6 +20486,7 @@ paths:
       - CONFLICT
       - VERSION_REQUIRED
       - VERSION_CONFLICT
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/settlement-matches/{matchId}/reject:
     post:
@@ -18533,6 +20520,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -18624,6 +20612,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -18668,6 +20671,7 @@ paths:
       - CONFLICT
       - VERSION_REQUIRED
       - VERSION_CONFLICT
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/setup/administrator:
     post:
@@ -18692,6 +20696,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -18732,6 +20737,21 @@ paths:
             Problem codes:
             - `CONFLICT`: The request conflicts with the current state; detail says how.
             - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -18791,6 +20811,7 @@ paths:
       - CONFLICT
       - VERSION_CONFLICT
       - RATE_LIMITED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/transactions:
     get:
@@ -18916,6 +20937,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -18976,6 +20998,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -19003,6 +21040,7 @@ paths:
       - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/users/me:
     get:
@@ -19022,6 +21060,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -19036,10 +21075,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CurrentUserResponse"
+        "400":
+          description: |-
+            Problem codes:
+            - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "401":
           description: |-
             Problem codes:
             - `UNAUTHENTICATED`: No valid access token, or a sign-in was refused.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -19074,7 +21143,9 @@ paths:
                 type: string
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
+      - VALIDATION_FAILED
       - UNAUTHENTICATED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/users/me/mfa/confirm:
     post:
@@ -19094,6 +21165,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -19176,6 +21248,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "429":
           description: |-
             Problem codes:
@@ -19225,6 +21312,7 @@ paths:
       - VERSION_CONFLICT
       - LOCKED
       - RATE_LIMITED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/users/me/mfa/disable:
     post:
@@ -19244,6 +21332,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -19325,6 +21414,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -19352,6 +21456,7 @@ paths:
       - UNAUTHENTICATED
       - VERSION_CONFLICT
       - LOCKED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/users/me/mfa/enroll:
     post:
@@ -19371,6 +21476,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -19457,6 +21563,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -19485,6 +21606,7 @@ paths:
       - CONFLICT
       - VERSION_CONFLICT
       - LOCKED
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/workspace:
     get:
@@ -19504,6 +21626,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -19520,6 +21643,21 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkspaceResponse"
+        "400":
+          description: |-
+            Problem codes:
+            - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "401":
           description: |-
             Problem codes:
@@ -19550,6 +21688,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -19573,8 +21726,10 @@ paths:
                 type: string
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
+      - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/workspace-members:
     get:
@@ -19616,6 +21771,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -19676,6 +21832,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -19703,6 +21874,7 @@ paths:
       - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/workspace-members/{memberId}:
     get:
@@ -19728,6 +21900,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -19789,6 +21962,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "500":
           description: |-
             Problem codes:
@@ -19815,6 +22003,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/workspace-members/{memberId}/deactivate:
     post:
@@ -19848,6 +22037,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       responses:
         "200":
           description: OK
@@ -19939,6 +22129,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -19983,6 +22188,7 @@ paths:
       - CONFLICT
       - VERSION_REQUIRED
       - VERSION_CONFLICT
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/workspace/currency:
     put:
@@ -20010,6 +22216,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -20092,6 +22299,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -20135,6 +22357,7 @@ paths:
       - NOT_FOUND
       - VERSION_REQUIRED
       - VERSION_CONFLICT
+      - APP_UPDATE_REQUIRED
       - INTERNAL
   /api/v1/workspace/name:
     put:
@@ -20162,6 +22385,7 @@ paths:
           minLength: 8
           pattern: "[A-Za-z0-9._-]{8,64}"
       - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
       requestBody:
         content:
           application/json:
@@ -20244,6 +22468,21 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "428":
           description: |-
             Problem codes:
@@ -20287,6 +22526,7 @@ paths:
       - NOT_FOUND
       - VERSION_REQUIRED
       - VERSION_CONFLICT
+      - APP_UPDATE_REQUIRED
       - INTERNAL
 components:
   schemas:
@@ -21128,6 +23368,7 @@ components:
           - SAVINGS_POCKET_IN_USE
           - LOCKED
           - RATE_LIMITED
+          - APP_UPDATE_REQUIRED
           - INTERNAL
         correlationId:
           type: string
@@ -26164,6 +28405,17 @@ components:
           schema:
             $ref: "#/components/schemas/ApiProblem"
   parameters:
+    AppVersion:
+      name: X-App-Version
+      in: header
+      description: "The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on\
+        \ every request; other callers leave it out and are always served. Older than\
+        \ the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not\
+        \ MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED."
+      required: false
+      schema:
+        type: string
+        pattern: "^(0|[1-9][0-9]{0,5})\\.(0|[1-9][0-9]{0,5})\\.(0|[1-9][0-9]{0,5})$"
     Traceparent:
       name: traceparent
       in: header

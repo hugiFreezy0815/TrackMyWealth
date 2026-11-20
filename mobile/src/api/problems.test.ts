@@ -28,6 +28,7 @@ describe('problemReaction', () => {
     [403, 'SHOW'],
     [409, 'RELOAD'],
     [412, 'RELOAD'],
+    [426, 'UPDATE_APP'],
     [400, 'SHOW'],
     [404, 'SHOW'],
     [422, 'SHOW'],

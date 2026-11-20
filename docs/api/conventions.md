@@ -203,6 +203,80 @@ Three creating POSTs do not take the header, by decision (#629):
 | `POST /api/v1/admin/users` (`createUser`) | An e-mail address is unique, so a retry is `409 CONFLICT` and creates no second user; an administrator usually has no workspace to scope a key to. Check the user list before resubmitting. |
 | `POST /api/v1/setup/administrator` (`setupAdministrator`) | One-time and unauthenticated: there is no user to scope a key to, a retry after success is `409 CONFLICT`, and a stored response would keep live sign-in tokens. Sign in instead. |
 
+## App version and deprecations
+
+ADR 0006 "Deprecation and removal" and
+[#576](https://github.com/hugiFreezy0815/TrackMyWealth/issues/576) define how an element of
+`/api/v1` is retired without breaking an app version that is still supported.
+
+### Sending the app version
+
+The app sends its version, `MAJOR.MINOR.PATCH` from `app.json` (`expo.version`), in
+`X-App-Version` on every request. Other callers (scripts, `curl`, `scripts/seed_demo.py`) leave
+it out.
+
+| Request | Answer |
+| --- | --- |
+| No `X-App-Version` | Served. The caller is not the app, and the minimum protects only against an app that is too old (PO decision on #576). |
+| `X-App-Version` not `MAJOR.MINOR.PATCH` (for example `1.4` or `1.4.0-beta`) | `400 VALIDATION_FAILED`, whether a minimum is configured or not. |
+| Older than the server's minimum app version | `426 APP_UPDATE_REQUIRED`, before sign-in, rate limiting or the token check. |
+| The minimum or newer | Served. |
+
+The operator sets the minimum with `MINIMUM_APP_VERSION` (`app.client.minimum-app-version`).
+Empty, the default, serves every version, and a malformed value stops the backend from starting.
+Only paths under `/api/` are checked: `/actuator/*` and `/api-docs` are not. A CORS preflight is
+never refused, so the web build can read the 426.
+
+On `APP_UPDATE_REQUIRED` (reaction `UPDATE_APP`, also for an unknown code with status 426) the app
+replaces every screen with the update screen and keeps the stored session. On iOS and Android it
+asks the member to update from the store and offers **Try again**. On web it offers **Reload
+page**, which loads the current build. RFC 9110 expects an `Upgrade` header with 426. The server
+sends none, because the remedy is a new app build, not another protocol (ADR 0006).
+
+The backend is self-hosted and can be older than the app. The minimum only ever refuses an app
+that is too old. A newer app on an older backend is handled by the additive-change rules
+(unknown enum values and problem codes).
+
+### Deprecated elements
+
+A handler method or a component of a request or response record marked
+`@ApiDeprecation(since = "yyyy-MM-dd", migration = "https://...", sunset = "yyyy-MM-dd")`
+(`sunset` is optional) is deprecated:
+
+- The contract marks the operation or the property `deprecated: true` and notes the date and the
+  migration note in its description.
+- Every response of the operation (and of every operation whose request or response body contains
+  the deprecated field) carries:
+  - `Deprecation: @<epoch seconds>` ([RFC 9745](https://www.rfc-editor.org/rfc/rfc9745)), the
+    start of the `since` day in UTC. It is sent as soon as the element is marked, also before
+    that date, which RFC 9745 allows.
+  - `Link: <migration note>; rel="deprecation"; type="text/html"`, one per note.
+  - `Sunset: <HTTP-date>` ([RFC 8594](https://www.rfc-editor.org/rfc/rfc8594)), once a removal
+    date is committed.
+
+  When several deprecated elements affect one operation, `Deprecation` and `Sunset` carry the
+  earliest dates, and `Link` lists every note. Success responses document the headers in the
+  contract. Error responses carry them too.
+- The backend counts every call in `tmw.api.deprecated.requests`, tagged with `operation` (the
+  `operationId`) and `app_version` (`none` without the header; at most 100 versions are kept
+  apart). An administrator reads it at `/actuator/metrics/tmw.api.deprecated.requests`, for
+  example `?tag=operation:listAccounts`.
+
+A wrong annotation (a malformed date, a sunset that is not after `since`, or a migration note that
+is not an absolute `https` URL) fails the contract's generation and names the element.
+
+### Removing a deprecated element
+
+1. Mark it `@ApiDeprecation` and write the migration note, for example a section of this guide.
+   Release an app that no longer uses it.
+2. Raise `MINIMUM_APP_VERSION` to that release, or tell operators to raise it in the release notes,
+   once the app versions below it are no longer supported. The deprecation counter shows which
+   versions still call the element.
+3. Set `sunset` when the removal date can be committed to.
+4. Remove the element only when every supported app version has migrated (the minimum is at least
+   the first release without it) and the sunset has passed. It is still a breaking change: the
+   `api-breaking` label and a PR note.
+
 ## Uploads
 
 Five operations take a file as `multipart/form-data`, each in a part named `file`:

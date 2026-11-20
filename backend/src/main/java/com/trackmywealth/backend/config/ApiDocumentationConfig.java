@@ -4,7 +4,9 @@ import com.trackmywealth.backend.dto.CreateCategoryRequest;
 import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.UpdateCategoryRequest;
 import com.trackmywealth.backend.error.ProblemCode;
+import com.trackmywealth.backend.web.AppVersion;
 import com.trackmywealth.backend.web.CorrelationIdFilter;
+import com.trackmywealth.backend.web.Deprecations;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.PagedArgumentResolver;
@@ -66,6 +68,9 @@ public class ApiDocumentationConfig {
   private static final String API_PROBLEM_RESPONSE = "ApiProblemResponse";
   private static final String TRACEPARENT_REQUEST_REF = "#/components/parameters/Traceparent";
   private static final String TRACEPARENT_RESPONSE_REF = "#/components/headers/Traceparent";
+  private static final String APP_VERSION_PARAMETER = "AppVersion";
+  private static final String APP_VERSION_REQUEST_REF =
+      "#/components/parameters/" + APP_VERSION_PARAMETER;
 
   /** The problem envelope's schema, for the per-status error responses (#374). */
   public static final String API_PROBLEM_REF = "#/components/schemas/" + API_PROBLEM_SCHEMA;
@@ -80,6 +85,8 @@ public class ApiDocumentationConfig {
   private static final int WIRE_CONVENTIONS_ORDER = 0;
   // After the wire conventions and the row codes (both 0), still before ApiDocumentOrder.
   private static final int RESPONSE_FIELDS_ORDER = 100;
+  // After the wire conventions, before the response fields take the record marks.
+  private static final int DEPRECATED_FIELDS_ORDER = 50;
 
   private static final String OK = "200";
   private static final String UNAUTHORIZED = "401";
@@ -156,6 +163,16 @@ public class ApiDocumentationConfig {
         openApi -> ResponseFieldContract.apply(openApi, Set.of(API_PROBLEM_SCHEMA)));
   }
 
+  /**
+   * US-29-16 (#576): {@code deprecated: true} on each schema property whose record component is
+   * {@code @ApiDeprecation}. Before {@link #responseFieldContract()}, which takes the record marks
+   * this reads and copies the shared schemas, deprecated properties included.
+   */
+  @Bean
+  OpenApiCustomizer deprecatedFields() {
+    return new OrderedOpenApiCustomizer(DEPRECATED_FIELDS_ORDER, DeprecationContract::markFields);
+  }
+
   @Bean
   OpenApiCustomizer apiWireConventions() {
     return new OrderedOpenApiCustomizer(WIRE_CONVENTIONS_ORDER, ApiDocumentationConfig::wire);
@@ -174,6 +191,18 @@ public class ApiDocumentationConfig {
             .description("W3C trace context. Invalid or absent values start a trace.")
             .required(false)
             .schema(new StringSchema()));
+    components.addParameters(
+        APP_VERSION_PARAMETER,
+        new Parameter()
+            .name(AppVersion.HEADER)
+            .in(HEADER_PARAMETER)
+            .required(false)
+            .description(
+                "The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request;"
+                    + " other callers leave it out and are always served. Older than the"
+                    + " server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not"
+                    + " MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED.")
+            .schema(new StringSchema().pattern(AppVersion.PATTERN)));
     components.addHeaders(
         "Traceparent",
         new Header()
@@ -208,6 +237,8 @@ public class ApiDocumentationConfig {
                           documentOptimisticConcurrency(operation);
                           operation.addParametersItem(
                               new Parameter().$ref(TRACEPARENT_REQUEST_REF));
+                          operation.addParametersItem(
+                              new Parameter().$ref(APP_VERSION_REQUEST_REF));
                           Map<String, ApiResponse> responses = responsesOf(operation);
                           responses.putIfAbsent(
                               "default", new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
@@ -279,6 +310,9 @@ public class ApiDocumentationConfig {
       if (headers != null) {
         ResponseHeaderContract.document(responsesOf(operation), headers.value());
       }
+      // US-29-16 (#576): last, so the deprecation headers land on the final success responses.
+      Deprecations.of(handlerMethod.getMethod())
+          .ifPresent(deprecation -> DeprecationContract.document(operation, deprecation));
       return operation;
     };
   }
