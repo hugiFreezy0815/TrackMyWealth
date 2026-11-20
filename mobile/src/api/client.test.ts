@@ -4,10 +4,13 @@ import {
   DecimalString,
   NetworkError,
   REQUEST_TIMEOUT_MS,
+  requestMultipart,
   SessionRefreshUnavailableError,
   setAccessToken,
   setRefreshHandler,
 } from './client';
+import { Platform } from 'react-native';
+
 import { problemReaction } from './problems';
 import { dismissUpdateRequired, updateRequiredSnapshot } from './update-required';
 import { APP_VERSION } from './app-version';
@@ -328,5 +331,95 @@ describe('api client', () => {
 
     expect(result).toBeUndefined();
     expect(jsonSpy).not.toHaveBeenCalled();
+  });
+});
+
+// #640: only a failed connection, or an answer lost on its way back, leaves an upload's outcome
+// unknown. A failure in the app before the request left is no connection problem.
+describe('statement upload failures (#640)', () => {
+  const ORIGINAL_OS = Platform.OS;
+  const upload = () => requestMultipart('/api/v1/accounts/a-1/imports', { body: new FormData() });
+  let warn: jest.SpyInstance;
+
+  beforeEach(() => {
+    warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    Platform.OS = ORIGINAL_OS;
+    warn.mockRestore();
+  });
+
+  it.each([
+    ['ios', new Error('Unsupported FormDataPart implementation')],
+    ['android', new TypeError('Unsupported BodyInit type')],
+    ['web', new Error('Unsupported FormDataPart implementation')],
+  ] as const)(
+    'on %s, rethrows an app error from before sending and logs it',
+    async (os, failure) => {
+      Platform.OS = os;
+      globalThis.fetch = jest.fn().mockRejectedValue(failure) as unknown as typeof fetch;
+
+      const rejection = await upload().catch((error: unknown) => error);
+
+      expect(rejection).toBe(failure);
+      expect(rejection).not.toBeInstanceOf(NetworkError);
+      expect(warn).toHaveBeenCalledWith('Statement upload failed in the app:', failure.message);
+    },
+  );
+
+  it.each([
+    ['ios', new Error('fetch failed: The network connection was lost.')],
+    ['android', new Error('fetch failed: Unable to resolve host')],
+    ['web', new TypeError('Failed to fetch')],
+  ] as const)('on %s, reports a failed connection as a NetworkError', async (os, failure) => {
+    Platform.OS = os;
+    globalThis.fetch = jest.fn().mockRejectedValue(failure) as unknown as typeof fetch;
+
+    await expect(upload()).rejects.toBeInstanceOf(NetworkError);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('keeps an answer lost after the headers uncertain, whatever the error type', async () => {
+    Platform.OS = 'ios';
+    mockFetchOnce({
+      status: 201,
+      json: async () => {
+        throw new Error('stream reset');
+      },
+    });
+
+    await expect(upload()).rejects.toThrow(
+      new NetworkError('Statement upload could not finish receiving its response'),
+    );
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('passes a problem response through unchanged', async () => {
+    mockFetchOnce({
+      ok: false,
+      status: 409,
+      headers: new Headers(),
+      json: async () => ({ status: 409, title: 'busy', code: 'IDEMPOTENCY_KEY_IN_USE' }),
+    });
+
+    await expect(upload()).rejects.toBeInstanceOf(ApiError);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("keeps the member's Cancel an abort, not an app error", async () => {
+    const cancel = new AbortController();
+    const aborted = Object.assign(new Error('Aborted'), { name: 'AbortError' });
+    globalThis.fetch = jest.fn(async () => {
+      cancel.abort();
+      throw aborted;
+    }) as unknown as typeof fetch;
+
+    await expect(
+      requestMultipart('/api/v1/accounts/a-1/imports', {
+        body: new FormData(),
+        signal: cancel.signal,
+      }),
+    ).rejects.toBe(aborted);
+    expect(warn).not.toHaveBeenCalled();
   });
 });
