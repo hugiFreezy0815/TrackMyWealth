@@ -35,12 +35,18 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      # #633: this job saves the Maven repository cache, since `verify` resolves every plugin the
+      # build uses. The key covers .mvn as well, so a Maven version or resolver setting change
+      # starts a fresh cache.
       - name: Set up JDK 17
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6
         with:
           distribution: temurin
           java-version: "17"
           cache: maven
+          cache-dependency-path: |
+            backend/pom.xml
+            backend/.mvn/**
 
       # Testcontainers (DatabaseBootstrapInitializerTest, TrackMyWealthApplicationStartupTest)
       # needs a Docker daemon - already present on GitHub-hosted ubuntu-24.04 runners.
@@ -55,6 +61,11 @@ jobs:
           path: ~/.m2/wrapper
           key: maven-wrapper-${{ hashFiles('backend/.mvn/wrapper/maven-wrapper.properties') }}
 
+      # #633: resolves everything up front with retries, so a download that breaks off fails
+      # this step's attempt, not the test run. Nearly instant while the Maven cache is warm.
+      - name: Resolve Maven dependencies
+        run: ./.mvn/resolve-dependencies.sh
+
       # #372: a change to api/ alone (api/openapi.yaml edited by hand) runs the full verify too.
       # The drift check (OpenApiContractTest) fails on any edit that does not match the code, so a
       # contract-only shortcut would save nothing, and a test filter could silently match nothing.
@@ -64,8 +75,20 @@ jobs:
       # Verifies the deployment path a self-hosted install (laptop or NAS) actually uses
       # (`docker compose up -d --build`, see the root README's "Running on a NAS" section) still
       # builds - separate from the Maven build above, which doesn't touch the Dockerfile at all.
+      # #633: built with BuildKit and the GitHub Actions cache shared with scripts-ci.yml, so the
+      # Maven layer (wrapper distribution and dependencies) comes from the cache while mvnw,
+      # pom.xml and .mvn are unchanged, instead of from Maven Central on every run.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
       - name: Build Docker image
-        run: docker build -t trackmywealth-backend .
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: backend
+          tags: trackmywealth-backend
+          load: true
+          cache-from: type=gha,scope=backend-image
+          cache-to: type=gha,scope=backend-image,mode=max
 
       # #544: verify both explicit values reach the backend service, and omitted values
       # remain empty so developers can still run postgres-only Compose commands.
@@ -104,17 +127,27 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # #633: restores the `test` job's Maven cache but never saves it. This job runs `test`
+      # only, so a cache it saved would lack the packaging and report plugins, and as the job
+      # that finishes first it used to win the save, leaving `verify` to download those plugins
+      # from Maven Central on every run.
       - name: Set up JDK 17
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6
         with:
           distribution: temurin
           java-version: "17"
           cache: maven
+          cache-dependency-path: |
+            backend/pom.xml
+            backend/.mvn/**
+          cache-read-only: true
       - name: Cache Maven Wrapper distribution
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.m2/wrapper
           key: maven-wrapper-${{ hashFiles('backend/.mvn/wrapper/maven-wrapper.properties') }}
+      - name: Resolve Maven dependencies
+        run: ./.mvn/resolve-dependencies.sh
       - name: Verify 1Y historical valuation performance
         env:
           HISTORY_PERF: "true"

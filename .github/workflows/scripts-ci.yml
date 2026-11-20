@@ -32,18 +32,37 @@ permissions:
 jobs:
   scripts:
     runs-on: ubuntu-24.04
+    env:
+      COMPOSE_PROJECT_NAME: trackmywealth
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Unit tests
         run: python3 -m unittest discover -s scripts/tests -v
 
+      # #633: the backend image is built here, not by `docker compose up --build`, so the build
+      # can use the GitHub Actions cache (shared with backend-ci.yml). While mvnw, pom.xml and
+      # .mvn are unchanged, the Maven layer comes from the cache instead of Maven Central.
+      # Compose names a built image <project>-<service>; COMPOSE_PROJECT_NAME fixes the project,
+      # and `up --no-build` below fails rather than build again if the tag ever stops matching.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build the backend image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: backend
+          tags: ${{ env.COMPOSE_PROJECT_NAME }}-backend
+          load: true
+          cache-from: type=gha,scope=backend-image
+          cache-to: type=gha,scope=backend-image,mode=max
+
       - name: Verify the demo seed and its rerun
         timeout-minutes: 15
         run: |
           export JWT_SECRET="$(openssl rand -base64 32)"
           export MFA_ENCRYPTION_KEY="$(openssl rand -base64 32)"
-          docker compose up -d --build
+          docker compose up -d --no-build
           curl --retry 30 --retry-all-errors --retry-delay 2 --max-time 5 \
             --fail --silent --show-error http://127.0.0.1:8080/actuator/health > /dev/null
           first=$(python3 scripts/seed_demo.py)
