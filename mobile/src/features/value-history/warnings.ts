@@ -11,7 +11,7 @@ export type HistoryWarningCode =
  */
 const HISTORY_WARNING_LABELS: Record<HistoryWarningCode, string> = {
   VALUE_UNKNOWN: 'history.warning.unknownValue',
-  INCEPTION_UNCERTAIN: 'history.warning.lifecycle',
+  INCEPTION_UNCERTAIN: 'history.warning.inception',
   LIFECYCLE_UNVERIFIED: 'history.warning.lifecycle',
   ATTRIBUTION_PENDING_REVIEW: 'history.warning.pendingMovements',
   ATTRIBUTION_FX_UNAVAILABLE: 'history.warning.missingFx',
@@ -21,8 +21,10 @@ const HISTORY_WARNING_LABELS: Record<HistoryWarningCode, string> = {
 const OTHER_HISTORY_WARNING = 'history.warning.other';
 
 /**
- * Codes that make the period change itself unreliable, not only its split: an account whose value
- * or existence is unknown at one end of the period is left out of that end's sum.
+ * Codes that make the wealth change itself unreliable, not only its split: an account whose value
+ * or existence is unknown at one end of the period is left out of that end's sum. They do not
+ * touch the return (#607): the server measures it over tracked history only and sends null when it
+ * cannot.
  */
 const DISTORTING_CODES: readonly string[] = [
   'VALUE_UNKNOWN',

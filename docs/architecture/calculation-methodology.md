@@ -502,3 +502,88 @@ A payment's interest row is an `EXPENSE` naming the loan as counterparty and is 
 transfer; that shape is what identifies it. A card payment confirmed as a settlement also names an
 account (the card) but is always an internal transfer, so it stays an ordinary, correctable
 expense, and card settlement matching never takes a loan's interest as a card payment.
+
+## Period return (US-11-07, #607)
+
+The history responses (`GET /api/v1/net-worth/history`, `GET /api/v1/portfolios/{id}/history`)
+carry two percentages in `change` and in each `sections[].change`:
+
+- `percent` is the **wealth change**, `amount / |value at from|` (#477). Net saving and accounts
+  that start being tracked count as growth here. It stays in the API but the app does not show it.
+- `returnPercent` is the **period return**. It never counts external flows, or the first balance of
+  an account that starts being tracked, as gain. `returnFrom` is the date it is measured from.
+
+The method is **Modified Dietz**, an interim method until US-16-02's time-weighted return
+provides daily valuations (ADR 0009). The API fields stay the same when the method is replaced.
+
+```
+R = (V_end − V_start − ΣCF) / (V_start + Σ w_i · CF_i)      w_i = (T − t_i) / T
+```
+
+`T` is the number of days from `returnFrom` to today, and `t_i` the number of days from `returnFrom`
+to flow `i`. A flow on the first day has the full weight 1, a flow today has weight 0. The result
+is in percent, rounded half up to two decimals.
+
+**Tracking start.** An account's tracked history begins on the first day its value rests on a
+recorded balance. Which source applies follows the same capability flags as the account's value
+(`AccountValuationService`, see *Opening balances* above):
+
+| Account | Tracking start |
+|---|---|
+| `manual_valuation` (custom asset) | first manual valuation |
+| `has_amortisation` (loan, mortgage) with an original principal | its inception (opening date, creation or first evidence, whichever is earliest), or an earlier statement balance |
+| `has_amortisation` without one | first snapshot with a balance |
+| `holds_positions` (depot, mandate, crypto) | first holdings statement |
+| `has_transactions = false` (vested benefits) | first snapshot with a balance |
+| any other ledger with an opening balance | the opening balance date |
+| `has_statement_cycle` (credit card) without an opening balance | its inception: its value is 0 plus its ledger from day one (PO, 2026-11-20) |
+| any other ledger without an opening balance | none: its value is unknown, so it is not part of the return |
+
+A booking without a known balance does not start the tracking, and neither does the opening
+date (#585) on its own: the opening date is a member statement, not a balance. A member who knows
+an account started at zero records an opening balance of 0 on that day. No balance is imputed
+between an opening date and the first known balance.
+
+**Return start.** `returnFrom` is the period start, or the scope's earliest tracked day when that
+is later. For a portfolio, an account counts from the later of its tracking start and the day it
+joined the portfolio. `returnFrom` is null when nothing in the scope is tracked during the period.
+
+**Values.** `V_start` is the sum of the scope's tracked accounts on `returnFrom`; `V_end` is the
+sum today. Liabilities count negative, as in net worth. Each value is the end-of-day value, so it
+already contains that day's bookings.
+
+**Flows (`CF`).** Every flow is in the response currency, converted at its own day's rate:
+
+- **An account starting to be tracked** inside the period enters with its first known balance, on
+  its tracking start. This is the same capital movement the breakdown shows (`capitalMovements`).
+- **A lifecycle or portfolio change** (archive, restore, reassignment) moves the account's value
+  that day into or out of the scope.
+- **Net saving**: external income and spending, as in `contributions` (#477), counted from the
+  day after the account's tracking start while it was in the scope the day before.
+- **Internal transfers**: each leg on a tracked account of the scope is a flow. When both legs
+  are in the scope, they cancel out, so a transfer between two tracked accounts changes nothing.
+  When only one leg is, the money entered or left the scope.
+
+**No return (`returnPercent = null`).** The return is unknown, never zero, when:
+
+- a tracked value is unknown (`VALUE_UNKNOWN` inside the tracked history, for example a missing
+  FX rate);
+- a flow is unknown (a row pending review, or a missing FX rate on a booking date);
+- no day has passed since `returnFrom`; or
+- the denominator is 0 or less (for example a scope that holds only debt).
+
+`INCEPTION_UNCERTAIN` and `VALUE_UNKNOWN` before an account's tracking start make the wealth
+change uncertain, because the net worth before that day may be missing the account's earlier
+balance. They do not affect the return, which never reads values before a tracking start.
+
+| Worked example | `V_start` | Flows | `V_end` | `returnPercent` |
+|---|---|---|---|---|
+| 1. A holds 2,000 all year; B's first balance is 1,000, 30 days ago (1Y) | 2,000 | +1,000, w = 30/365 | 3,000 | **0.00** (with or without B's opening date) |
+| 2. As 1, but A grows to 2,100 by today | 2,000 | +1,000, w = 30/365 | 3,100 | 100 / (2,000 + 30/365 × 1,000) = **4.80** |
+| 3. The workspace's only account has its first balance on 17 Oct 2026 (1Y) | value on 17 Oct | none | same | **0.00**, `returnFrom = 2026-10-17`, chip "since 17 Oct 2026" |
+| 4. Salary 5,000 in, spending 3,000 out, no market change | 10,000 | +5,000, −3,000 | 12,000 | **0.00**; the wealth change is +2,000 |
+| 5. Transfer of 5,000 between two tracked accounts of the scope | 10,000 | −5,000 and +5,000 (cancel) | 10,000 | **0.00** |
+| 6. An EUR account without a CHF rate today | | | unknown | **null** |
+| 7. The only account starts at an opening balance of 0 | 0 | none | 0 | **null** (denominator 0) |
+
+The examples are the known-answer tests in `PeriodReturnServiceTest` and `NetWorthControllerTest`.

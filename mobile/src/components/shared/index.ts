@@ -38,6 +38,8 @@ export {
   PortfolioTabs,
   InstitutionLogo,
   ChangeChip,
+  directionOf,
+  type ChangeFigure,
   ChipGroup,
   FilterChips,
   CountTile,

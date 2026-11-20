@@ -217,11 +217,31 @@ describe('shared navigation and financial rows', () => {
     expect(glyph.props.accessibilityElementsHidden).toBe(true);
   });
 
-  it('keeps a hidden change neutral and drops its percentage', async () => {
+  it('follows its figure, not the amount, for the arrow and colour', async () => {
+    await renderWithIntl(
+      <ChangeChip
+        amount="5000"
+        currency="CHF"
+        uncertain
+        figure={{ text: 'Return −1.2%', label: 'Return minus 1.2 percent', direction: 'down' }}
+      />,
+    );
+    expect(screen.getByLabelText('Return minus 1.2 percent')).toBeTruthy();
+    const glyph = screen.getByText('↘', { includeHiddenElements: true });
+    expect(glyph.props.style.color).toBe('#C42F37');
+  });
+
+  it('keeps a hidden change neutral and drops its figure', async () => {
     jest.mocked(useAmountsHidden).mockReturnValue(true);
-    await renderWithIntl(<ChangeChip amount="-312.4" currency="CHF" percentage="−0.8%" />);
+    await renderWithIntl(
+      <ChangeChip
+        amount="-312.4"
+        currency="CHF"
+        figure={{ text: 'Return −0.8%', label: 'Return minus 0.8 percent', direction: 'down' }}
+      />,
+    );
     expect(screen.getByText('••••')).toBeTruthy();
-    expect(screen.queryByText('−0.8%')).toBeNull();
+    expect(screen.queryByText('Return −0.8%')).toBeNull();
     const glyph = screen.getByText('→', { includeHiddenElements: true });
     expect(glyph.props.style.color).toBe('#53627A');
     jest.mocked(useAmountsHidden).mockReturnValue(false);

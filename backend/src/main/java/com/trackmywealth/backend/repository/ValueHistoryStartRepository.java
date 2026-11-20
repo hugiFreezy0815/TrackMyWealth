@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.repository;
 
+import com.trackmywealth.backend.dto.TrackingStartSources;
 import java.sql.Types;
 import java.time.LocalDate;
 import java.util.Collection;
@@ -67,6 +68,32 @@ public class ValueHistoryStartRepository {
       ) events GROUP BY account_id
       """;
 
+  /**
+   * #607: per account, every dated value source that can start its tracked history, read once for
+   * the whole response. Withdrawn snapshots (US-07-12) say nothing; the opening balance is read as
+   * {@code AccountValuationService} reads it.
+   */
+  private static final String TRACKING_START_SOURCES =
+      """
+      SELECT a.id AS account_id,
+        (SELECT MIN(s.snapshot_date) FROM account_snapshot s
+          WHERE s.account_id = a.id AND s.withdrawn_at IS NULL AND s.balance IS NOT NULL)
+          AS first_balance,
+        (SELECT MIN(s.snapshot_date) FROM account_snapshot s
+          WHERE s.account_id = a.id AND s.is_opening_balance) AS opening_balance,
+        (SELECT MIN(s.snapshot_date) FROM account_snapshot s
+          WHERE s.account_id = a.id AND s.withdrawn_at IS NULL
+            AND EXISTS (SELECT 1 FROM snapshot_holding h WHERE h.snapshot_id = s.id))
+          AS first_holdings,
+        (SELECT MIN(v.valuation_date) FROM custom_asset_valuation v WHERE v.account_id = a.id)
+          AS first_valuation,
+        (EXISTS (SELECT 1 FROM account_mortgage m WHERE m.account_id = a.id)
+          OR EXISTS (SELECT 1 FROM account_loan l WHERE l.account_id = a.id))
+          AS has_original_principal
+      FROM account a
+      WHERE a.id IN (:accountIds)
+      """;
+
   private final NamedParameterJdbcTemplate jdbcTemplate;
 
   public ValueHistoryStartRepository(NamedParameterJdbcTemplate jdbcTemplate) {
@@ -85,6 +112,30 @@ public class ValueHistoryStartRepository {
             rs ->
                 result.put(
                     rs.getObject("account_id", UUID.class), rs.getObject("min", LocalDate.class)));
+    return Map.copyOf(result);
+  }
+
+  public Map<UUID, TrackingStartSources> trackingStartSources(Collection<UUID> accountIds) {
+    if (accountIds.isEmpty()) {
+      return Map.of();
+    }
+    Map<UUID, TrackingStartSources> result = new HashMap<>();
+    jdbcTemplate.query(
+        TRACKING_START_SOURCES,
+        new MapSqlParameterSource("accountIds", accountIds),
+        (org.springframework.jdbc.core.RowCallbackHandler)
+            rs -> {
+              UUID accountId = rs.getObject("account_id", UUID.class);
+              result.put(
+                  accountId,
+                  new TrackingStartSources(
+                      accountId,
+                      rs.getObject("first_balance", LocalDate.class),
+                      rs.getObject("opening_balance", LocalDate.class),
+                      rs.getObject("first_holdings", LocalDate.class),
+                      rs.getObject("first_valuation", LocalDate.class),
+                      rs.getBoolean("has_original_principal")));
+            });
     return Map.copyOf(result);
   }
 

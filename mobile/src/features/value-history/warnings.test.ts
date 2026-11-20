@@ -50,7 +50,7 @@ describe('history warning codes', () => {
         'ANOTHER_FUTURE_CODE',
         'toString',
       ]),
-    ).toEqual(['history.warning.lifecycle', 'history.warning.other']);
+    ).toEqual(['history.warning.inception', 'history.warning.lifecycle', 'history.warning.other']);
     expect(historyWarningMessageIds([])).toEqual([]);
   });
 
