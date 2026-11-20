@@ -430,6 +430,36 @@ describe('S7 step 1: file and account (#492)', () => {
     expect(deletePickedCopy).toHaveBeenCalledWith('file:///cache/synthetic-dkb.csv');
   });
 
+  it('promises no second import only while the lost upload can be retried online', async () => {
+    jest.mocked(supportsUploadReplay).mockReturnValue(true);
+    pickFile();
+    serve(null).failNext(
+      'upload',
+      '/api/v1/accounts/{accountId}/imports',
+      new NetworkError('The 201 response body was lost'),
+    );
+    await mount();
+    await fireEvent.press(screen.getByRole('button', { name: 'Choose file' }));
+    expect(await screen.findByText(en['statement.error.uploadConnection'])).toBeTruthy();
+
+    // Offline there is no Retry, so the text only asks to check the connection (#574).
+    await act(async () => onlineManager.setOnline(false));
+    expect(await screen.findByText(en['statement.error.connection'])).toBeTruthy();
+    expect(screen.queryByText(en['statement.error.uploadConnection'])).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+
+    // Back online, the same file and key can be retried again, and the promise returns.
+    await act(async () => onlineManager.setOnline(true));
+    expect(await screen.findByText(en['statement.error.uploadConnection'])).toBeTruthy();
+    await fireEvent.press(await screen.findByRole('button', { name: 'Try again' }));
+
+    expect(await commitButton(41)).toBeTruthy();
+    const keys = server
+      .callsOf('upload', '/api/v1/accounts/{accountId}/imports')
+      .map((call) => (call.options.headers as Record<string, string>)['Idempotency-Key']);
+    expect(keys).toEqual(['statement-upload-uuid', 'statement-upload-uuid']);
+  });
+
   it('never retries an old file when committing a resumed batch fails', async () => {
     pickFile();
     const fake = serve(null);
