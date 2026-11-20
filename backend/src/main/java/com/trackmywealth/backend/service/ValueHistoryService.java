@@ -5,6 +5,7 @@ import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.CashFlowContribution;
 import com.trackmywealth.backend.dto.HistoryWarning;
 import com.trackmywealth.backend.dto.MultiCurrencyValuations;
+import com.trackmywealth.backend.dto.PeriodReturns;
 import com.trackmywealth.backend.dto.PortfolioCapitalFlows;
 import com.trackmywealth.backend.dto.PortfolioPeriodChange;
 import com.trackmywealth.backend.dto.PortfolioPlacement;
@@ -67,6 +68,7 @@ public class ValueHistoryService {
   private final BusinessDateService businessDateService;
   private final CashFlowService cashFlowService;
   private final ValueHistoryStartRepository historyStartRepository;
+  private final PeriodReturnService periodReturnService;
 
   public ValueHistoryService(
       AccessControlService accessControlService,
@@ -78,7 +80,8 @@ public class ValueHistoryService {
       AccountService accountService,
       BusinessDateService businessDateService,
       CashFlowService cashFlowService,
-      ValueHistoryStartRepository historyStartRepository) {
+      ValueHistoryStartRepository historyStartRepository,
+      PeriodReturnService periodReturnService) {
     this.accessControlService = accessControlService;
     this.portfolioLookupService = portfolioLookupService;
     this.workspaceRepository = workspaceRepository;
@@ -89,6 +92,7 @@ public class ValueHistoryService {
     this.businessDateService = businessDateService;
     this.cashFlowService = cashFlowService;
     this.historyStartRepository = historyStartRepository;
+    this.periodReturnService = periodReturnService;
   }
 
   @Transactional(readOnly = true)
@@ -264,6 +268,17 @@ public class ValueHistoryService {
               flows.complete() ? flows.contributions() : null,
               capitalMovements);
     }
+    PeriodReturns returns =
+        periodReturns(
+            accounts,
+            from,
+            today,
+            currency,
+            portfolioId,
+            firstEvidence,
+            historyStates,
+            withSections ? placements : Map.of());
+    change = change.withReturn(returns.total());
     List<SectionChange> sections = new ArrayList<>();
     if (withSections) {
       for (PortfolioSection section : PortfolioSection.values()) {
@@ -272,9 +287,10 @@ public class ValueHistoryService {
               new SectionChange(
                   section,
                   change(
-                      start.sections().getOrDefault(section, BigDecimal.ZERO),
-                      end.sections().getOrDefault(section, BigDecimal.ZERO),
-                      null)));
+                          start.sections().getOrDefault(section, BigDecimal.ZERO),
+                          end.sections().getOrDefault(section, BigDecimal.ZERO),
+                          null)
+                      .withReturn(returns.section(section))));
         }
       }
     }
@@ -289,6 +305,69 @@ public class ValueHistoryService {
         complete,
         warnings.stream().map(HistoryWarning::message).distinct().sorted().toList(),
         warnings.stream().map(HistoryWarning::code).distinct().sorted().toList());
+  }
+
+  /**
+   * #607: the period return of the history's scope and, with {@code placements}, of each section.
+   * An account is in the scope on a day by its effective lifecycle and portfolio state then, as for
+   * the chart; its inception is the one the chart uses.
+   */
+  private PeriodReturns periodReturns(
+      List<Account> accounts,
+      LocalDate from,
+      LocalDate today,
+      String currency,
+      @Nullable UUID portfolioId,
+      Map<UUID, LocalDate> firstEvidence,
+      Map<UUID, List<AccountHistoryState>> historyStates,
+      Map<UUID, PortfolioPlacement> placements) {
+    ZoneId zone = businessDateService.zone();
+    Map<UUID, Account> byId = new HashMap<>();
+    Map<UUID, LocalDate> inceptions = new HashMap<>();
+    Map<UUID, List<LocalDate>> changeDays = new HashMap<>();
+    Map<UUID, PortfolioSection> sectionOf = new HashMap<>();
+    for (Account account : accounts) {
+      UUID id = account.getId();
+      byId.put(id, account);
+      LocalDate inception = inceptionDate(account, zone, firstEvidence.get(id));
+      if (inception != null) {
+        inceptions.put(id, inception);
+      }
+      changeDays.put(
+          id,
+          historyStates.getOrDefault(id, List.of()).stream()
+              .map(state -> state.effectiveAt().atZoneSameInstant(zone).toLocalDate())
+              .distinct()
+              .toList());
+      PortfolioPlacement placement = placements.get(id);
+      if (placement != null) {
+        sectionOf.put(id, placement.section());
+      }
+    }
+    return periodReturnService.returns(
+        accounts,
+        from,
+        today,
+        currency,
+        inceptions,
+        changeDays,
+        (id, date) -> includedOn(byId.get(id), date, zone, historyStates, portfolioId),
+        sectionOf);
+  }
+
+  // In the scope on a day by its effective state then; the current state for pre-tracking data.
+  private static boolean includedOn(
+      Account account,
+      LocalDate date,
+      ZoneId zone,
+      Map<UUID, List<AccountHistoryState>> historyStates,
+      @Nullable UUID portfolioId) {
+    AccountHistoryState state = stateOn(account, date, zone, historyStates);
+    return state == null
+        ? ACTIVE_STATUS.equals(account.getStatus())
+            && (portfolioId == null || portfolioId.equals(account.getPortfolio().getId()))
+        : ACTIVE_STATUS.equals(state.status())
+            && (portfolioId == null || portfolioId.equals(state.portfolioId()));
   }
 
   /**

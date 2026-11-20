@@ -2,9 +2,18 @@ import { Fragment } from 'react';
 import { useIntl } from 'react-intl';
 import { Text, View } from 'react-native';
 
-import { Amount, ChangeChip, ChipGroup, ErrorBanner, LoadingSkeleton } from '@/components/shared';
+import {
+  Amount,
+  ChangeChip,
+  ChipGroup,
+  directionOf,
+  ErrorBanner,
+  LoadingSkeleton,
+  type ChangeFigure,
+} from '@/components/shared';
 import { figureTexts } from '@/components/shared/figure';
 import { Spacing, TypeScale } from '@/constants/theme';
+import { formatDate } from '@/format/date';
 import { InfoText, msg } from '@/features/overview/overview-text';
 import { useTheme } from '@/hooks/use-theme';
 import { isHistoryPeriod, periods, selectHistoryPeriod, type HistoryPeriod } from './period';
@@ -25,6 +34,33 @@ export function historyForDisplay(
   const data = query.data;
   if (data?.period === period) return data;
   if (!online && query.isPlaceholderData && isHistoryPeriod(data?.period)) return data;
+}
+
+/**
+ * #607: "Return +0.7%" for the chip, from the server's period return. Never derived here; absent
+ * when the server sends none or amounts are hidden (a percentage would hint at the amounts).
+ */
+function returnFigure(
+  intl: ReturnType<typeof useIntl>,
+  data: ValueHistory | undefined,
+  hidden: boolean,
+): ChangeFigure | null {
+  const value = data?.change.returnPercent;
+  if (value == null || hidden) return null;
+  const percent = figureTexts(intl, { value, kind: 'percent', signRole: 'change' });
+  return {
+    text: msg(intl, 'history.return', { percent: percent.display }),
+    label: msg(intl, 'history.return', { percent: percent.label }),
+    direction: directionOf(percent.display),
+  };
+}
+
+/** The chip's period: "since 17 Oct 2026" when the return starts after the period does. */
+function chipRange(intl: ReturnType<typeof useIntl>, data: ValueHistory, figure: unknown) {
+  const returnFrom = data.change.returnFrom;
+  return figure && returnFrom && returnFrom > data.from
+    ? msg(intl, 'history.chipSince', { date: formatDate(returnFrom, intl.locale) })
+    : msg(intl, `history.chipRange.${data.period}`);
 }
 
 /** "Net saving +CHF 3'635.70 · Market & FX +CHF 3'206.40" on one wrapping line (M03). */
@@ -91,10 +127,7 @@ export function HistoryPanel({
   const codes = data?.warningCodes ?? [];
   const warnings = historyWarningMessageIds(codes);
   const uncertain = changeIsUncertain(codes);
-  const percentage =
-    data?.change.percent != null && !hidden && !uncertain
-      ? figureTexts(intl, { value: data.change.percent, kind: 'percent', signRole: 'change' })
-      : null;
+  const figure = returnFigure(intl, data, hidden);
   return (
     <>
       {unavailableOffline ? (
@@ -132,14 +165,15 @@ export function HistoryPanel({
                 <ChangeChip
                   amount={data.change.amount}
                   currency={data.currency}
-                  percentage={percentage?.display}
-                  percentageLabel={percentage?.label}
+                  figure={figure}
                   uncertain={uncertain}
                 />
-                <InfoText>{msg(intl, `history.chipRange.${data.period}`)}</InfoText>
+                <InfoText>{chipRange(intl, data, figure)}</InfoText>
               </View>
               {uncertain ? (
-                <InfoText warning>{msg(intl, 'history.changeUncertain')}</InfoText>
+                <InfoText warning>
+                  {msg(intl, figure ? 'history.changeUncertainReturn' : 'history.changeUncertain')}
+                </InfoText>
               ) : null}
               <ChangeSplit data={data} hidden={hidden} />
             </>

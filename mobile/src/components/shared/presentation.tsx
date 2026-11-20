@@ -57,18 +57,27 @@ export function SectionCard({
   );
 }
 
+export type ChangeDirection = 'up' | 'down' | 'flat';
+
+/** Direction of a displayed signed figure ("+1.2%", "−CHF 3.00", "0.0%"). */
+export function directionOf(display: string): ChangeDirection {
+  return display.startsWith('−') ? 'down' : display.startsWith('+') ? 'up' : 'flat';
+}
+
+/** A performance figure after the amount, e.g. "Return +0.7%", that decides the chip's tone. */
+export type ChangeFigure = { text: string; label: string; direction: ChangeDirection };
+
 export function ChangeChip({
   amount,
   currency,
-  percentage,
-  percentageLabel,
+  figure,
   uncertain = false,
 }: {
   amount: DecimalString;
   currency: string;
-  percentage?: string | null;
-  percentageLabel?: string;
-  /** The server flags the change as possibly distorted: neutral colours, no percentage. */
+  /** #607: shown after "·"; colour and arrow then follow it instead of the amount. */
+  figure?: ChangeFigure | null;
+  /** The server flags the amount as possibly distorted: neutral colours unless a figure is shown. */
   uncertain?: boolean;
 }) {
   const theme = useTheme();
@@ -82,8 +91,9 @@ export function ChangeChip({
     signRole: 'change',
     masked: hidden,
   });
-  const direction = display.startsWith('−') ? 'down' : display.startsWith('+') ? 'up' : 'flat';
-  const tone = uncertain ? 'flat' : direction;
+  const shownFigure = figure && !hidden ? figure : null;
+  const direction = shownFigure ? shownFigure.direction : directionOf(display);
+  const tone = shownFigure ? direction : uncertain || hidden ? 'flat' : direction;
   const color =
     tone === 'down' ? theme.statusLoss : tone === 'up' ? theme.statusGain : theme.textSecondary;
   const backgroundColor =
@@ -106,7 +116,7 @@ export function ChangeChip({
         backgroundColor,
       }}
     >
-      {/* The arrow repeats the sign of the amount; screen readers read the amount instead. */}
+      {/* The arrow repeats the sign it follows; screen readers read the figures instead. */}
       <Text
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
@@ -120,10 +130,22 @@ export function ChangeChip({
         signRole="change"
         style={{ ...TypeScale.numberMedium, fontWeight: '600', color }}
       />
-      {percentage && !hidden && !uncertain ? (
-        <Text accessibilityLabel={percentageLabel} style={{ ...TypeScale.numberMedium, color }}>
-          {percentage}
-        </Text>
+      {shownFigure ? (
+        <>
+          <Text
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            style={{ ...TypeScale.numberMedium, fontWeight: '600', color }}
+          >
+            ·
+          </Text>
+          <Text
+            accessibilityLabel={shownFigure.label}
+            style={{ ...TypeScale.numberMedium, fontWeight: '600', color }}
+          >
+            {shownFigure.text}
+          </Text>
+        </>
       ) : null}
     </View>
   );

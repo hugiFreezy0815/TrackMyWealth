@@ -2172,6 +2172,13 @@ export interface components {
        * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
        */
       capitalMovements: DecimalString | null;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      returnPercent: DecimalString | null;
+      /** Format: date */
+      returnFrom: string | null;
     };
     Conflict: {
       /** @enum {string} */

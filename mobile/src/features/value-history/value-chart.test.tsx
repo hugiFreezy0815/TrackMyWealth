@@ -27,6 +27,8 @@ function history(points: ValueHistory['points']): ValueHistory {
       contributions: null,
       marketAndFx: null,
       capitalMovements: null,
+      returnPercent: null,
+      returnFrom: null,
     },
     sections: [],
     complete: true,

@@ -49,13 +49,32 @@ public record ValueHistoryResponse(
   /** A bounded sampled value. Unknown accounts are omitted from the sum, not treated as zero. */
   public record Point(LocalDate date, BigDecimal value, boolean estimated) {}
 
-  /** Percent is unavailable for a zero starting value; flows are in the response currency. */
+  /**
+   * {@code percent} is the wealth change ({@code amount / |value at from|}, #477), unavailable for
+   * a zero starting value; flows are in the response currency. {@code returnPercent} (#607) is the
+   * period return - Modified Dietz over each account's tracked history, so net saving and accounts
+   * entering tracking are flows, never gain - measured from {@code returnFrom}: the period start,
+   * or the scope's earliest tracking start when that is later. It is null when a tracked value or
+   * flow is unknown or the denominator is 0 or less; {@code returnFrom} is null when nothing in the
+   * scope is tracked during the period.
+   */
   public record Change(
       BigDecimal amount,
       @Nullable BigDecimal percent,
       @Nullable BigDecimal contributions,
       @Nullable BigDecimal marketAndFx,
-      @Nullable BigDecimal capitalMovements) {
+      @Nullable BigDecimal capitalMovements,
+      @Nullable BigDecimal returnPercent,
+      @Nullable LocalDate returnFrom) {
+
+    public Change(
+        BigDecimal amount,
+        @Nullable BigDecimal percent,
+        @Nullable BigDecimal contributions,
+        @Nullable BigDecimal marketAndFx,
+        @Nullable BigDecimal capitalMovements) {
+      this(amount, percent, contributions, marketAndFx, capitalMovements, null, null);
+    }
 
     public Change(
         BigDecimal amount,
@@ -63,6 +82,18 @@ public record ValueHistoryResponse(
         @Nullable BigDecimal contributions,
         @Nullable BigDecimal marketAndFx) {
       this(amount, percent, contributions, marketAndFx, null);
+    }
+
+    /** This change with the period return of the same scope. */
+    public Change withReturn(PeriodReturn periodReturn) {
+      return new Change(
+          amount,
+          percent,
+          contributions,
+          marketAndFx,
+          capitalMovements,
+          periodReturn.percent(),
+          periodReturn.from());
     }
   }
 
