@@ -13,9 +13,11 @@ WORKDIR /build
 RUN apt-get update \
     && apt-get install -y --no-install-recommends unzip \
     && rm -rf /var/lib/apt/lists/*
+# #633: with retries (see the script). CI caches this layer (scripts-ci.yml, backend-ci.yml), so
+# it only runs when mvnw, pom.xml or .mvn change.
 COPY mvnw pom.xml ./
 COPY .mvn ./.mvn
-RUN ./mvnw -B dependency:go-offline
+RUN ./.mvn/resolve-dependencies.sh
 
 COPY src ./src
 RUN ./mvnw -B package -DskipTests

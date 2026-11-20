@@ -17,8 +17,9 @@ implemented today and what is still backlog.
 .github/dependabot.yml              Weekly dependency-update PRs (Maven, npm, Docker, Actions)
 .sqlfluff / .sqlfluffignore         SQL lint config - see docs/architecture/development-standards.md
 backend/                         Spring Boot 4.1 backend, compiled for Java 17
-  mvnw / mvnw.cmd / .mvn/          Maven Wrapper (Maven 3.9.16, download checksum-verified) - always
-                                 build via ./mvnw, not a local mvn
+  mvnw / mvnw.cmd / .mvn/          Maven Wrapper (version pinned and checksum-verified in
+                                 .mvn/wrapper/maven-wrapper.properties) - always build via ./mvnw,
+                                 not a local mvn; .mvn/maven.config retries failed downloads
   Dockerfile                     Multi-stage build -> runtime image (amd64/arm64, see "Running on a NAS")
   pom.xml                        Spotless/PMD/SpotBugs/JaCoCo coverage gate wired into the verify phase
   src/main/java/.../controller/  REST API under /api/v1 - 23 controllers; DTOs only at the boundary
@@ -367,6 +368,16 @@ cd backend
 `.github/workflows/backend-ci.yml` runs `./mvnw -B verify` on every push/PR touching `backend/**`
 or `api/**`, lints new or changed migrations with sqlfluff, and builds the Docker image.
 GitHub-hosted runners have Docker preinstalled, so no extra CI setup is needed for Testcontainers.
+
+**Maven Central downloads (#633).** Maven Central rate-limits busy CI runners (HTTP 429).
+`backend/.mvn/maven.config` makes every `./mvnw` run, local, CI or the Docker build, retry a
+failed request up to five times with a growing pause, and give up on a download that stalls for
+60 s. `backend/.mvn/resolve-dependencies.sh` resolves the whole build up front and retries it
+three times, which also covers the wrapper's own download of Maven and downloads that break off
+mid-file; the Docker build and Backend CI run it before building. CI keeps the Maven repository in
+the Actions cache (saved by the `test` job only), and both workflows that build the backend image
+share a BuildKit layer cache, so the Maven layer is only downloaded again when `mvnw`, `pom.xml`
+or `.mvn` change.
 
 **Request tracing (#575).** API request logs include the W3C trace ID and the support
 correlation ID. Use `X-Correlation-Id` to find a user-reported error, or use the trace ID
