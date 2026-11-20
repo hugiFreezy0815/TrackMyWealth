@@ -4162,6 +4162,8 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
+        /** @description A fresh UUID for each create, the same UUID on every retry of it (ADR 0006). A retry of the same request within 24 hours answers the first request's 201 again and creates nothing. */
+        'Idempotency-Key'?: string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
@@ -4238,8 +4240,26 @@ export interface operations {
        * @description Problem codes:
        *     - `CONFLICT`: The request conflicts with the current state; detail says how.
        *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+       *     - `IDEMPOTENCY_KEY_IN_USE`: A request with this Idempotency-Key is still running; retry it with the same key to get its result.
        */
       409: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          /** @description Seconds to wait before retrying, when the server can tell. */
+          'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `IDEMPOTENCY_KEY_MISMATCH`: This Idempotency-Key was already used for a different request; a new request needs a new key.
+       */
+      422: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
@@ -4621,6 +4641,8 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
+        /** @description A fresh UUID for each create, the same UUID on every retry of it (ADR 0006). A retry of the same request within 24 hours answers the first request's 201 again and creates nothing. */
+        'Idempotency-Key'?: string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
@@ -4698,12 +4720,15 @@ export interface operations {
       /**
        * @description Problem codes:
        *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+       *     - `IDEMPOTENCY_KEY_IN_USE`: A request with this Idempotency-Key is still running; retry it with the same key to get its result.
        *     - `ACCOUNT_ARCHIVED`: The account is archived; restore it first.
        */
       409: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          /** @description Seconds to wait before retrying, when the server can tell. */
+          'Retry-After'?: number;
           traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
@@ -4713,6 +4738,7 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `IDEMPOTENCY_KEY_MISMATCH`: This Idempotency-Key was already used for a different request; a new request needs a new key.
        *     - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
        */
       422: {
@@ -7879,6 +7905,8 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
+        /** @description A fresh UUID for each create, the same UUID on every retry of it (ADR 0006). A retry of the same request within 24 hours answers the first request's 201 again and creates nothing. */
+        'Idempotency-Key'?: string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
@@ -7957,12 +7985,15 @@ export interface operations {
        * @description Problem codes:
        *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
        *     - `RETRY`: A concurrent request won a race for the same key; the retry answers with the winner.
+       *     - `IDEMPOTENCY_KEY_IN_USE`: A request with this Idempotency-Key is still running; retry it with the same key to get its result.
        *     - `OPENING_BALANCE_AFTER_FIRST_TRANSACTION`: Live transactions are booked before the opening date (transactionCount, earliestBookingDate); move the date back or repeat with acknowledgeEarlierTransactions = true.
        */
       409: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          /** @description Seconds to wait before retrying, when the server can tell. */
+          'Retry-After'?: number;
           traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
@@ -7972,6 +8003,7 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `IDEMPOTENCY_KEY_MISMATCH`: This Idempotency-Key was already used for a different request; a new request needs a new key.
        *     - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
        *     - `OPENING_BALANCE_NOT_APPLICABLE`: This account takes no opening balance: a loan, a mortgage or a manually valued asset has a value source of its own.
        */
@@ -9101,6 +9133,8 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
+        /** @description A fresh UUID for each create, the same UUID on every retry of it (ADR 0006). A retry of the same request within 24 hours answers the first request's 201 again and creates nothing. */
+        'Idempotency-Key'?: string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
@@ -9178,12 +9212,15 @@ export interface operations {
        * @description Problem codes:
        *     - `CONFLICT`: The request conflicts with the current state; detail says how.
        *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+       *     - `IDEMPOTENCY_KEY_IN_USE`: A request with this Idempotency-Key is still running; retry it with the same key to get its result.
        *     - `ACCOUNT_ARCHIVED`: The account is archived; restore it first.
        */
       409: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          /** @description Seconds to wait before retrying, when the server can tell. */
+          'Retry-After'?: number;
           traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
@@ -9193,6 +9230,7 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `IDEMPOTENCY_KEY_MISMATCH`: This Idempotency-Key was already used for a different request; a new request needs a new key.
        *     - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
        */
       422: {
@@ -9626,6 +9664,8 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
+        /** @description A fresh UUID for each create, the same UUID on every retry of it (ADR 0006). A retry of the same request within 24 hours answers the first request's 201 again and creates nothing. */
+        'Idempotency-Key'?: string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
@@ -9705,11 +9745,14 @@ export interface operations {
        *     - `CONFLICT`: The request conflicts with the current state; detail says how.
        *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
        *     - `RETRY`: A concurrent request won a race for the same key; the retry answers with the winner.
+       *     - `IDEMPOTENCY_KEY_IN_USE`: A request with this Idempotency-Key is still running; retry it with the same key to get its result.
        */
       409: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          /** @description Seconds to wait before retrying, when the server can tell. */
+          'Retry-After'?: number;
           traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
@@ -9719,6 +9762,7 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `IDEMPOTENCY_KEY_MISMATCH`: This Idempotency-Key was already used for a different request; a new request needs a new key.
        *     - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
        */
       422: {
@@ -10113,6 +10157,8 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
+        /** @description A fresh UUID for each create, the same UUID on every retry of it (ADR 0006). A retry of the same request within 24 hours answers the first request's 201 again and creates nothing. */
+        'Idempotency-Key'?: string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
@@ -10192,12 +10238,15 @@ export interface operations {
        *     - `CONFLICT`: The request conflicts with the current state; detail says how.
        *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
        *     - `RETRY`: A concurrent request won a race for the same key; the retry answers with the winner.
+       *     - `IDEMPOTENCY_KEY_IN_USE`: A request with this Idempotency-Key is still running; retry it with the same key to get its result.
        *     - `ACCOUNT_ARCHIVED`: The account is archived; restore it first.
        */
       409: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          /** @description Seconds to wait before retrying, when the server can tell. */
+          'Retry-After'?: number;
           traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
@@ -10207,6 +10256,7 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `IDEMPOTENCY_KEY_MISMATCH`: This Idempotency-Key was already used for a different request; a new request needs a new key.
        *     - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
        */
       422: {
@@ -11717,6 +11767,8 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
+        /** @description A fresh UUID for each create, the same UUID on every retry of it (ADR 0006). A retry of the same request within 24 hours answers the first request's 201 again and creates nothing. */
+        'Idempotency-Key'?: string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
@@ -11794,8 +11846,26 @@ export interface operations {
        * @description Problem codes:
        *     - `CONFLICT`: The request conflicts with the current state; detail says how.
        *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+       *     - `IDEMPOTENCY_KEY_IN_USE`: A request with this Idempotency-Key is still running; retry it with the same key to get its result.
        */
       409: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          /** @description Seconds to wait before retrying, when the server can tell. */
+          'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `IDEMPOTENCY_KEY_MISMATCH`: This Idempotency-Key was already used for a different request; a new request needs a new key.
+       */
+      422: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
@@ -14092,6 +14162,8 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
+        /** @description A fresh UUID for each create, the same UUID on every retry of it (ADR 0006). A retry of the same request within 24 hours answers the first request's 201 again and creates nothing. */
+        'Idempotency-Key'?: string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
@@ -14169,11 +14241,14 @@ export interface operations {
        *     - `CONFLICT`: The request conflicts with the current state; detail says how.
        *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
        *     - `RETRY`: A concurrent request won a race for the same key; the retry answers with the winner.
+       *     - `IDEMPOTENCY_KEY_IN_USE`: A request with this Idempotency-Key is still running; retry it with the same key to get its result.
        */
       409: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          /** @description Seconds to wait before retrying, when the server can tell. */
+          'Retry-After'?: number;
           traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
@@ -14183,6 +14258,7 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `IDEMPOTENCY_KEY_MISMATCH`: This Idempotency-Key was already used for a different request; a new request needs a new key.
        *     - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
        */
       422: {
@@ -14974,6 +15050,8 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
+        /** @description A fresh UUID for each create, the same UUID on every retry of it (ADR 0006). A retry of the same request within 24 hours answers the first request's 201 again and creates nothing. */
+        'Idempotency-Key'?: string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
@@ -15049,11 +15127,14 @@ export interface operations {
       /**
        * @description Problem codes:
        *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+       *     - `IDEMPOTENCY_KEY_IN_USE`: A request with this Idempotency-Key is still running; retry it with the same key to get its result.
        */
       409: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          /** @description Seconds to wait before retrying, when the server can tell. */
+          'Retry-After'?: number;
           traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
@@ -15063,6 +15144,7 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `IDEMPOTENCY_KEY_MISMATCH`: This Idempotency-Key was already used for a different request; a new request needs a new key.
        *     - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
        */
       422: {
@@ -15314,6 +15396,8 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
+        /** @description A fresh UUID for each create, the same UUID on every retry of it (ADR 0006). A retry of the same request within 24 hours answers the first request's 201 again and creates nothing. */
+        'Idempotency-Key'?: string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
@@ -15390,11 +15474,14 @@ export interface operations {
       /**
        * @description Problem codes:
        *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+       *     - `IDEMPOTENCY_KEY_IN_USE`: A request with this Idempotency-Key is still running; retry it with the same key to get its result.
        */
       409: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          /** @description Seconds to wait before retrying, when the server can tell. */
+          'Retry-After'?: number;
           traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
@@ -15404,6 +15491,7 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `IDEMPOTENCY_KEY_MISMATCH`: This Idempotency-Key was already used for a different request; a new request needs a new key.
        *     - `IMPORT_TEMPLATE_INVALID`: The import template breaks a rule; field names the template field, detail the rule.
        *     - `IMPORT_TEMPLATE_UNSUPPORTED`: A valid template this release cannot import yet.
        */
@@ -17168,6 +17256,8 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
+        /** @description A fresh UUID for each create, the same UUID on every retry of it (ADR 0006). A retry of the same request within 24 hours answers the first request's 201 again and creates nothing. */
+        'Idempotency-Key'?: string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
@@ -17244,11 +17334,14 @@ export interface operations {
        * @description Problem codes:
        *     - `CONFLICT`: The request conflicts with the current state; detail says how.
        *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+       *     - `IDEMPOTENCY_KEY_IN_USE`: A request with this Idempotency-Key is still running; retry it with the same key to get its result.
        */
       409: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          /** @description Seconds to wait before retrying, when the server can tell. */
+          'Retry-After'?: number;
           traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
@@ -17258,6 +17351,7 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `IDEMPOTENCY_KEY_MISMATCH`: This Idempotency-Key was already used for a different request; a new request needs a new key.
        *     - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
        */
       422: {

@@ -4,6 +4,7 @@ import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.OpeningBalanceResponse;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.service.IdempotentCreateService;
 import com.trackmywealth.backend.service.OpeningBalanceService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
@@ -12,8 +13,11 @@ import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -38,9 +42,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class OpeningBalanceController {
 
   private final OpeningBalanceService openingBalanceService;
+  private final IdempotentCreateService idempotentCreates;
 
-  public OpeningBalanceController(OpeningBalanceService openingBalanceService) {
+  public OpeningBalanceController(
+      OpeningBalanceService openingBalanceService, IdempotentCreateService idempotentCreates) {
     this.openingBalanceService = openingBalanceService;
+    this.idempotentCreates = idempotentCreates;
   }
 
   @Operation(operationId = "getOpeningBalance", summary = "Read an account's opening balance")
@@ -59,15 +66,29 @@ public class OpeningBalanceController {
     ProblemCode.RETRY,
     ProblemCode.UNPROCESSABLE,
     ProblemCode.OPENING_BALANCE_NOT_APPLICABLE,
-    ProblemCode.OPENING_BALANCE_AFTER_FIRST_TRANSACTION
+    ProblemCode.OPENING_BALANCE_AFTER_FIRST_TRANSACTION,
+    ProblemCode.IDEMPOTENCY_KEY_IN_USE,
+    ProblemCode.IDEMPOTENCY_KEY_MISMATCH
   })
   @PostMapping
   @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<OpeningBalanceResponse> recordOpeningBalance(
       @PathVariable UUID accountId,
       @Valid @RequestBody OpeningBalanceRequest request,
+      @Parameter(
+              description = IdempotentCreateService.HEADER_DESCRIPTION,
+              schema = @Schema(type = "string", format = "uuid"))
+          @RequestHeader(value = IdempotentCreateService.HEADER, required = false)
+          String idempotencyKey,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    OpeningBalanceResponse response = openingBalanceService.record(accountId, request, actor);
+    OpeningBalanceResponse response =
+        idempotentCreates.create(
+            "recordOpeningBalance",
+            idempotencyKey,
+            actor,
+            List.of(accountId, request),
+            OpeningBalanceResponse.class,
+            () -> openingBalanceService.record(accountId, request, actor));
     return VersionedResponse.created(response, response.version());
   }
 

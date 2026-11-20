@@ -6,6 +6,7 @@ import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AmortisationScheduleService;
+import com.trackmywealth.backend.service.IdempotentCreateService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.Paged.SortField;
@@ -15,8 +16,11 @@ import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -42,9 +46,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class AmortisationScheduleController {
 
   private final AmortisationScheduleService amortisationScheduleService;
+  private final IdempotentCreateService idempotentCreates;
 
-  public AmortisationScheduleController(AmortisationScheduleService amortisationScheduleService) {
+  public AmortisationScheduleController(
+      AmortisationScheduleService amortisationScheduleService,
+      IdempotentCreateService idempotentCreates) {
     this.amortisationScheduleService = amortisationScheduleService;
+    this.idempotentCreates = idempotentCreates;
   }
 
   @Operation(
@@ -63,15 +71,31 @@ public class AmortisationScheduleController {
   @Operation(
       operationId = "createAmortisationEntry",
       summary = "Add an amortisation schedule entry")
-  @ProblemCodes({ProblemCode.ACCOUNT_ARCHIVED, ProblemCode.UNPROCESSABLE})
+  @ProblemCodes({
+    ProblemCode.ACCOUNT_ARCHIVED,
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.IDEMPOTENCY_KEY_IN_USE,
+    ProblemCode.IDEMPOTENCY_KEY_MISMATCH
+  })
   @PostMapping
   @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<AmortisationScheduleEntryResponse> createEntry(
       @PathVariable UUID accountId,
       @Valid @RequestBody AmortisationScheduleEntryRequest request,
+      @Parameter(
+              description = IdempotentCreateService.HEADER_DESCRIPTION,
+              schema = @Schema(type = "string", format = "uuid"))
+          @RequestHeader(value = IdempotentCreateService.HEADER, required = false)
+          String idempotencyKey,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     AmortisationScheduleEntryResponse response =
-        amortisationScheduleService.create(accountId, request, actor);
+        idempotentCreates.create(
+            "createAmortisationEntry",
+            idempotencyKey,
+            actor,
+            List.of(accountId, request),
+            AmortisationScheduleEntryResponse.class,
+            () -> amortisationScheduleService.create(accountId, request, actor));
     return VersionedResponse.created(response, response.version());
   }
 

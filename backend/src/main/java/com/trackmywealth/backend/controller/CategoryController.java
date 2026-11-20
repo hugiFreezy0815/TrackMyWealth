@@ -6,12 +6,15 @@ import com.trackmywealth.backend.dto.UpdateCategoryRequest;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CategoryService;
+import com.trackmywealth.backend.service.IdempotentCreateService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.ResponseHeader;
 import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -37,9 +40,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class CategoryController {
 
   private final CategoryService categoryService;
+  private final IdempotentCreateService idempotentCreates;
 
-  public CategoryController(CategoryService categoryService) {
+  public CategoryController(
+      CategoryService categoryService, IdempotentCreateService idempotentCreates) {
     this.categoryService = categoryService;
+    this.idempotentCreates = idempotentCreates;
   }
 
   /** Tree order; inactive categories only with {@code includeInactive=true}. */
@@ -67,14 +73,28 @@ public class CategoryController {
     ProblemCode.NOT_FOUND,
     ProblemCode.CONFLICT,
     ProblemCode.RETRY,
-    ProblemCode.UNPROCESSABLE
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.IDEMPOTENCY_KEY_IN_USE,
+    ProblemCode.IDEMPOTENCY_KEY_MISMATCH
   })
   @PostMapping
   @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<CategoryResponse> create(
       @Valid @RequestBody CreateCategoryRequest request,
+      @Parameter(
+              description = IdempotentCreateService.HEADER_DESCRIPTION,
+              schema = @Schema(type = "string", format = "uuid"))
+          @RequestHeader(value = IdempotentCreateService.HEADER, required = false)
+          String idempotencyKey,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    CategoryResponse created = categoryService.create(request, actor);
+    CategoryResponse created =
+        idempotentCreates.create(
+            "createCategory",
+            idempotencyKey,
+            actor,
+            request,
+            CategoryResponse.class,
+            () -> categoryService.create(request, actor));
     return withEtag(ResponseEntity.status(HttpStatus.CREATED), created);
   }
 

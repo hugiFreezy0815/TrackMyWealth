@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { DecimalString } from '@/api/decimal';
+import { useIdempotencyKeys } from '@/api/idempotency-key';
 import { ifMatch } from '@/api/queries/conflict';
 import { invalidateFinancialData } from '@/api/queries/invalidation';
 import { queryKeys } from '@/api/queries/keys';
@@ -45,19 +46,32 @@ export function useInstitutionCatalogue(query: string, country: string | null) {
   });
 }
 
+// A retried create reuses its Idempotency-Key (#629): a lost response never creates a second
+// portfolio, account, opening balance or valuation.
+
 export function useCreatePortfolio() {
   const client = useQueryClient();
+  const keys = useIdempotencyKeys();
   return useMutation({
-    mutationFn: (body: PortfolioRequest) => typedApi.post('/api/v1/portfolios', { body }),
-    onSuccess: () => invalidateFinancialData(client),
+    mutationFn: (body: PortfolioRequest) =>
+      typedApi.post('/api/v1/portfolios', { body, idempotencyKey: keys.keyFor(body) }),
+    onSuccess: () => {
+      keys.succeeded();
+      return invalidateFinancialData(client);
+    },
   });
 }
 
 export function useCreateAccount() {
   const client = useQueryClient();
+  const keys = useIdempotencyKeys();
   return useMutation({
-    mutationFn: (body: AccountRequest) => typedApi.post('/api/v1/accounts', { body }),
-    onSuccess: () => invalidateFinancialData(client),
+    mutationFn: (body: AccountRequest) =>
+      typedApi.post('/api/v1/accounts', { body, idempotencyKey: keys.keyFor(body) }),
+    onSuccess: () => {
+      keys.succeeded();
+      return invalidateFinancialData(client);
+    },
   });
 }
 
@@ -96,6 +110,7 @@ export function useSaveIdentifier() {
 
 export function useRecordOpeningBalance() {
   const client = useQueryClient();
+  const keys = useIdempotencyKeys();
   return useMutation({
     mutationFn: ({
       account,
@@ -105,17 +120,24 @@ export function useRecordOpeningBalance() {
       account: Account;
       date: string;
       balance: DecimalString;
-    }) =>
-      typedApi.post('/api/v1/accounts/{accountId}/opening-balance', {
+    }) => {
+      const body = { date, balance, currency: account.nativeCurrency };
+      return typedApi.post('/api/v1/accounts/{accountId}/opening-balance', {
         params: { accountId: account.id },
-        body: { date, balance, currency: account.nativeCurrency },
-      }),
-    onSuccess: () => invalidateFinancialData(client),
+        body,
+        idempotencyKey: keys.keyFor({ accountId: account.id, body }),
+      });
+    },
+    onSuccess: () => {
+      keys.succeeded();
+      return invalidateFinancialData(client);
+    },
   });
 }
 
 export function useRecordValuation() {
   const client = useQueryClient();
+  const keys = useIdempotencyKeys();
   return useMutation({
     mutationFn: ({
       account,
@@ -125,11 +147,17 @@ export function useRecordValuation() {
       account: Account;
       date: string;
       value: DecimalString;
-    }) =>
-      typedApi.post('/api/v1/accounts/{accountId}/valuations', {
+    }) => {
+      const body = { valuationDate: date, value };
+      return typedApi.post('/api/v1/accounts/{accountId}/valuations', {
         params: { accountId: account.id },
-        body: { valuationDate: date, value },
-      }),
-    onSuccess: () => invalidateFinancialData(client),
+        body,
+        idempotencyKey: keys.keyFor({ accountId: account.id, body }),
+      });
+    },
+    onSuccess: () => {
+      keys.succeeded();
+      return invalidateFinancialData(client);
+    },
   });
 }

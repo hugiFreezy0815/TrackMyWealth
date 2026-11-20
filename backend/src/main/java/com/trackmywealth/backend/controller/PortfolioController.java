@@ -9,6 +9,7 @@ import com.trackmywealth.backend.dto.UpdatePortfolioRequest;
 import com.trackmywealth.backend.dto.ValueHistoryResponse;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.service.IdempotentCreateService;
 import com.trackmywealth.backend.service.PortfolioService;
 import com.trackmywealth.backend.service.PortfolioViewService;
 import com.trackmywealth.backend.service.ValueHistoryService;
@@ -20,6 +21,7 @@ import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -51,14 +53,17 @@ public class PortfolioController {
   private final PortfolioService portfolioService;
   private final PortfolioViewService portfolioViewService;
   private final ValueHistoryService historyService;
+  private final IdempotentCreateService idempotentCreates;
 
   public PortfolioController(
       PortfolioService portfolioService,
       PortfolioViewService portfolioViewService,
-      ValueHistoryService historyService) {
+      ValueHistoryService historyService,
+      IdempotentCreateService idempotentCreates) {
     this.portfolioService = portfolioService;
     this.portfolioViewService = portfolioViewService;
     this.historyService = historyService;
+    this.idempotentCreates = idempotentCreates;
   }
 
   /**
@@ -84,14 +89,32 @@ public class PortfolioController {
   }
 
   @SuccessStatus(HttpStatus.CREATED)
-  @ProblemCodes({ProblemCode.NOT_FOUND, ProblemCode.CONFLICT, ProblemCode.UNPROCESSABLE})
+  @ProblemCodes({
+    ProblemCode.NOT_FOUND,
+    ProblemCode.CONFLICT,
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.IDEMPOTENCY_KEY_IN_USE,
+    ProblemCode.IDEMPOTENCY_KEY_MISMATCH
+  })
   @Operation(operationId = "createPortfolio", summary = "Create a portfolio")
   @PostMapping
   @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<PortfolioResponse> createPortfolio(
       @Valid @RequestBody CreatePortfolioRequest request,
+      @Parameter(
+              description = IdempotentCreateService.HEADER_DESCRIPTION,
+              schema = @Schema(type = "string", format = "uuid"))
+          @RequestHeader(value = IdempotentCreateService.HEADER, required = false)
+          String idempotencyKey,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    PortfolioResponse created = portfolioService.createPortfolio(request, actor);
+    PortfolioResponse created =
+        idempotentCreates.create(
+            "createPortfolio",
+            idempotencyKey,
+            actor,
+            request,
+            PortfolioResponse.class,
+            () -> portfolioService.createPortfolio(request, actor));
     return VersionedResponse.created(created, created.version());
   }
 

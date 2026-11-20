@@ -157,11 +157,28 @@ documented reaction when no header is present.
 
 A timeout on a creating POST can leave a resource committed even though the response was lost.
 The operations below take an `Idempotency-Key` request header (ADR 0006,
-[#574](https://github.com/hugiFreezy0815/TrackMyWealth/issues/574)) so that a retry is safe:
+[#574](https://github.com/hugiFreezy0815/TrackMyWealth/issues/574),
+[#629](https://github.com/hugiFreezy0815/TrackMyWealth/issues/629)) so that a retry is safe:
 
 | Idempotent operation | Request that must match |
 | --- | --- |
 | `POST /api/v1/accounts/{accountId}/imports` (statement upload) | Account, file content, file name, media type, `templateId`, `snapshotDate` |
+| `POST /api/v1/accounts` (`createAccount`) | JSON body |
+| `POST /api/v1/accounts/{accountId}/amortisation-schedule` (`createAmortisationEntry`) | Account, JSON body |
+| `POST /api/v1/accounts/{accountId}/opening-balance` (`recordOpeningBalance`) | Account, JSON body |
+| `POST /api/v1/accounts/{accountId}/repayments` (`recordLoanRepayment`) | Account, JSON body |
+| `POST /api/v1/accounts/{accountId}/snapshots` (`recordAccountSnapshot`) | Account, JSON body |
+| `POST /api/v1/accounts/{accountId}/transactions` (`recordTransaction`) | Account, JSON body |
+| `POST /api/v1/accounts/{accountId}/valuations` (`recordAccountValuation`) | Account, JSON body |
+| `POST /api/v1/categories` (`createCategory`) | JSON body |
+| `POST /api/v1/categorization-rules` (`createCategorizationRule`) | JSON body |
+| `POST /api/v1/import-templates` (`createImportTemplate`) | JSON body |
+| `POST /api/v1/portfolios` (`createPortfolio`) | JSON body |
+
+A JSON body matches when the server reads it as the same request: it compares the fields the
+operation reads, so key order, whitespace and a `null` field versus an absent one do not
+matter, but any changed value, including a different decimal scale (`10.0` versus
+`10.00`), is a different request.
 
 - Send a fresh UUID for each logical create and the **same** UUID on every retry of it. Anything
   other than a UUID is `400 VALIDATION_FAILED`.
@@ -178,9 +195,13 @@ The operations below take an `Idempotency-Key` request header (ADR 0006,
   the same key is a new request.
 - Without the header, an operation behaves as before: every request creates.
 
-Every other creating POST does not take the header yet
-([#629](https://github.com/hugiFreezy0815/TrackMyWealth/issues/629)): check the resulting state
-before resubmitting one of them.
+Three creating POSTs do not take the header, by decision (#629):
+
+| Operation | Why it needs no key |
+| --- | --- |
+| `POST /api/v1/securities` (`findOrCreateSecurity`) | Already find-or-create: a retry finds the security the first attempt created and answers `200` with it. |
+| `POST /api/v1/admin/users` (`createUser`) | An e-mail address is unique, so a retry is `409 CONFLICT` and creates no second user; an administrator usually has no workspace to scope a key to. Check the user list before resubmitting. |
+| `POST /api/v1/setup/administrator` (`setupAdministrator`) | One-time and unauthenticated: there is no user to scope a key to, a retry after success is `409 CONFLICT`, and a stored response would keep live sign-in tokens. Sign in instead. |
 
 ## Uploads
 
