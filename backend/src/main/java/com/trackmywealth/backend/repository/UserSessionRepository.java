@@ -5,9 +5,10 @@ import static com.trackmywealth.backend.repository.RefreshTokenRepository.REVOKE
 import com.trackmywealth.backend.entity.RefreshToken;
 import com.trackmywealth.backend.entity.UserSession;
 import java.time.OffsetDateTime;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -53,7 +54,10 @@ public interface UserSessionRepository extends JpaRepository<UserSession, UUID> 
   int detachRevokedRefreshTokensForUser(@Param("userId") UUID userId);
 
   // US-02-03: "my active sessions", most recently used first.
-  List<UserSession> findByUser_IdAndStatusOrderByLastSeenAtDesc(UUID userId, String status);
+  Page<UserSession> findByUser_IdAndStatusOrderByLastSeenAtDescIdAsc(
+      UUID userId, String status, Pageable pageable);
+
+  long countByUser_IdAndStatus(UUID userId, String status);
 
   // US-02-03: scoped to the caller's own id in the query itself, not just checked afterward - a
   // session belonging to someone else looks exactly like a nonexistent one to the caller

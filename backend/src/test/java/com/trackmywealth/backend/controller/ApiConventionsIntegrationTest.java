@@ -885,8 +885,8 @@ class ApiConventionsIntegrationTest {
                             notPageResponses.add(name + " -> " + schema);
                           }
                         }));
-    // Six more paged lists in US-29-13 (#473); the transaction history in US-07-38 (#480).
-    assertThat(pagedOperations).hasSize(13);
+    // Includes the eight collection operations paginated in #570.
+    assertThat(pagedOperations).hasSize(21);
     assertThat(notPageResponses).as("paged operations not answering a PageResponse").isEmpty();
 
     JsonNode list =
@@ -936,7 +936,7 @@ class ApiConventionsIntegrationTest {
                 }
               }
             });
-    assertThat(paged).hasSize(13);
+    assertThat(paged).hasSize(21);
   }
 
   private static JsonNode parameter(JsonNode operation, String name) {

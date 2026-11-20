@@ -9,6 +9,7 @@ import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
 import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.NetWorthSectionResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.PortfolioListItemResponse;
 import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.PortfolioSection;
@@ -37,6 +38,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -779,9 +781,12 @@ class NetWorthControllerTest {
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(PortfolioListItemResponse[].class)
+            .expectBody(
+                new ParameterizedTypeReference<PageResponse<PortfolioListItemResponse>>() {})
             .returnResult()
-            .getResponseBody();
+            .getResponseBody()
+            .content()
+            .toArray(PortfolioListItemResponse[]::new);
 
     assertThat(rows).isNotEmpty();
     assertThat(rows[0].change()).isNotNull();

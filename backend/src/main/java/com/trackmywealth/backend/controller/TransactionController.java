@@ -300,11 +300,7 @@ public class TransactionController {
    */
   @Operation(
       operationId = "listRemovedTransactions",
-      summary = "List an account's removed transactions",
-      description =
-          "Fixed order: "
-              + RESTORE_LIST_ORDER
-              + ". Takes page and size only; any sort is a 400 INVALID_SORT.")
+      summary = "List an account's removed transactions")
   @GetMapping("/transactions/deleted")
   public PageResponse<TransactionResponse> listRestorableTransactions(
       @PathVariable UUID accountId,

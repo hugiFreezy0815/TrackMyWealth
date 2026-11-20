@@ -2,6 +2,7 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.CategoryResponse;
 import com.trackmywealth.backend.dto.CreateCategoryRequest;
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.UpdateCategoryRequest;
 import com.trackmywealth.backend.entity.Category;
 import com.trackmywealth.backend.entity.WorkspaceCategoryOverride;
@@ -24,6 +25,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -96,17 +99,20 @@ public class CategoryService {
 
   /** The taxonomy in tree order (parents first, siblings by English label). */
   @Transactional(readOnly = true)
-  public List<CategoryResponse> list(boolean includeInactive, AuthenticatedUserPrincipal actor) {
+  public Page<CategoryResponse> list(
+      boolean includeInactive, Pageable pageable, AuthenticatedUserPrincipal actor) {
+    PagingValues.requireBoundedFixedOrder(pageable);
     accessControlService.requireActingMember(actor);
     Map<UUID, Category> categories = loadCategories(actor.workspaceId());
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(actor.workspaceId());
     Map<UUID, List<Category>> children = childrenOf(categories, overrides);
 
-    List<CategoryResponse> result = new ArrayList<>();
+    List<Category> result = new ArrayList<>();
     for (Category root : children.getOrDefault(null, List.of())) {
-      appendInTreeOrder(root, children, categories, overrides, includeInactive, result);
+      appendInTreeOrder(root, children, overrides, includeInactive, result);
     }
-    return result;
+    return PagingValues.pageOfOrdered(result, pageable)
+        .map(category -> toResponse(category, categories, overrides));
   }
 
   @Transactional(readOnly = true)
@@ -487,7 +493,8 @@ public class CategoryService {
     }
     Comparator<Category> byLabel =
         Comparator.comparing(
-            (Category category) -> nameEn(category, overrides), String.CASE_INSENSITIVE_ORDER);
+                (Category category) -> nameEn(category, overrides), String.CASE_INSENSITIVE_ORDER)
+            .thenComparing(category -> category.getId().toString());
     children.values().forEach(siblings -> siblings.sort(byLabel));
     return children;
   }
@@ -495,16 +502,15 @@ public class CategoryService {
   private void appendInTreeOrder(
       Category category,
       Map<UUID, List<Category>> children,
-      Map<UUID, Category> categories,
       Map<UUID, WorkspaceCategoryOverride> overrides,
       boolean includeInactive,
-      List<CategoryResponse> into) {
+      List<Category> into) {
     if (!includeInactive && !isOwnActive(category, overrides)) {
       return; // and so is everything below it: an inactive ancestor makes a category inactive
     }
-    into.add(toResponse(category, categories, overrides));
+    into.add(category);
     for (Category child : children.getOrDefault(category.getId(), List.of())) {
-      appendInTreeOrder(child, children, categories, overrides, includeInactive, into);
+      appendInTreeOrder(child, children, overrides, includeInactive, into);
     }
   }
 

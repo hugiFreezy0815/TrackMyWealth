@@ -182,9 +182,10 @@ class AdminReferenceDataControllerTest {
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(new ParameterizedTypeReference<List<CategoryResponse>>() {})
+            .expectBody(new ParameterizedTypeReference<PageResponse<CategoryResponse>>() {})
             .returnResult()
-            .getResponseBody();
+            .getResponseBody()
+            .content();
     assertThat(categories)
         .extracting(CategoryResponse::code)
         .contains("GROCERIES", "UNCATEGORIZED", "DINING", "FEES");

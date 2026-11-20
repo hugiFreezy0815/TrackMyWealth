@@ -4,6 +4,7 @@ import com.trackmywealth.backend.dto.AccountHistoryState;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.CashFlowContribution;
 import com.trackmywealth.backend.dto.HistoryWarning;
+import com.trackmywealth.backend.dto.MultiCurrencyValuations;
 import com.trackmywealth.backend.dto.PortfolioCapitalFlows;
 import com.trackmywealth.backend.dto.PortfolioPeriodChange;
 import com.trackmywealth.backend.dto.PortfolioPlacement;
@@ -34,6 +35,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -301,46 +303,52 @@ public class ValueHistoryService {
     }
     LocalDate from = today.minusMonths(1);
     Set<String> currencies = new TreeSet<>();
-    portfolios.forEach(portfolio -> currencies.add(portfolio.getPortfolioCurrency()));
+    Set<UUID> portfolioIds = new HashSet<>();
+    for (Portfolio portfolio : portfolios) {
+      currencies.add(portfolio.getPortfolioCurrency());
+      portfolioIds.add(portfolio.getId());
+    }
+    ZoneId zone = businessDateService.zone();
     List<UUID> ids = accounts.stream().map(Account::getId).toList();
     Map<UUID, LocalDate> firstEvidence = historyStartRepository.firstEvidence(ids);
     Map<UUID, List<AccountHistoryState>> historyStates =
         accountHistoryStateRepository.historyFor(ids);
-    List<Account> eligibleAtStart =
-        onDate(
-            accounts, from, businessDateService.zone(), firstEvidence, historyStates, null, null);
-    List<Account> eligibleAtEnd =
-        onDate(
-            accounts, today, businessDateService.zone(), firstEvidence, historyStates, null, null);
-    Map<UUID, Set<UUID>> idsAtStart = new HashMap<>();
-    Map<UUID, Set<UUID>> idsAtEnd = new HashMap<>();
-    for (Account account : eligibleAtStart) {
-      AccountHistoryState state = stateOn(account, from, businessDateService.zone(), historyStates);
-      UUID previousPortfolio = state == null ? account.getPortfolio().getId() : state.portfolioId();
-      idsAtStart
-          .computeIfAbsent(previousPortfolio, unused -> new java.util.HashSet<>())
-          .add(account.getId());
-    }
-    for (Account account : eligibleAtEnd) {
-      AccountHistoryState state =
-          stateOn(account, today, businessDateService.zone(), historyStates);
-      UUID currentPortfolio = state == null ? account.getPortfolio().getId() : state.portfolioId();
-      idsAtEnd
-          .computeIfAbsent(currentPortfolio, unused -> new java.util.HashSet<>())
-          .add(account.getId());
-    }
-    var start = accountValuationService.valueAllInCurrencies(eligibleAtStart, currencies, from);
-    var end = accountValuationService.valueAllInCurrencies(eligibleAtEnd, currencies, today);
+    Map<UUID, List<Account>> atStartByPortfolio =
+        accountsInPortfolios(
+            onDate(accounts, from, zone, firstEvidence, historyStates, null, null),
+            portfolioIds,
+            from,
+            zone,
+            historyStates);
+    Map<UUID, List<Account>> atEndByPortfolio =
+        accountsInPortfolios(
+            onDate(accounts, today, zone, firstEvidence, historyStates, null, null),
+            portfolioIds,
+            today,
+            zone,
+            historyStates);
+    var start =
+        accountValuationService.valueAllInCurrencies(
+            atStartByPortfolio.values().stream().flatMap(List::stream).toList(), currencies, from);
+    var end =
+        accountValuationService.valueAllInCurrencies(
+            atEndByPortfolio.values().stream().flatMap(List::stream).toList(), currencies, today);
     Map<UUID, PortfolioPeriodChange> result = new HashMap<>();
     for (Portfolio portfolio : portfolios) {
       UUID portfolioId = portfolio.getId();
       String currency = portfolio.getPortfolioCurrency();
-      Set<UUID> startIds = idsAtStart.getOrDefault(portfolioId, Set.of());
-      Set<UUID> endIds = idsAtEnd.getOrDefault(portfolioId, Set.of());
       List<AccountValuation> atStart =
-          start.in(currency).stream().filter(v -> startIds.contains(v.accountId())).toList();
+          MultiCurrencyValuations.select(
+              atStartByPortfolio.getOrDefault(portfolioId, List.of()).stream()
+                  .map(Account::getId)
+                  .toList(),
+              start.byAccountIn(currency));
       List<AccountValuation> atEnd =
-          end.in(currency).stream().filter(v -> endIds.contains(v.accountId())).toList();
+          MultiCurrencyValuations.select(
+              atEndByPortfolio.getOrDefault(portfolioId, List.of()).stream()
+                  .map(Account::getId)
+                  .toList(),
+              end.byAccountIn(currency));
       if (atStart.stream().anyMatch(v -> !v.valueKnown())
           || atEnd.stream().anyMatch(v -> !v.valueKnown())) {
         result.put(portfolioId, new PortfolioPeriodChange("1M", null, null));
@@ -350,6 +358,22 @@ public class ValueHistoryService {
       result.put(portfolioId, new PortfolioPeriodChange("1M", change.amount(), change.percent()));
     }
     return Map.copyOf(result);
+  }
+
+  private static Map<UUID, List<Account>> accountsInPortfolios(
+      List<Account> eligible,
+      Set<UUID> portfolioIds,
+      LocalDate date,
+      ZoneId zone,
+      Map<UUID, List<AccountHistoryState>> historyStates) {
+    Map<UUID, List<Account>> grouped = new HashMap<>();
+    for (Account account : eligible) {
+      UUID portfolioId = portfolioOfOnDate(account, date, zone, historyStates);
+      if (portfolioIds.contains(portfolioId)) {
+        grouped.computeIfAbsent(portfolioId, unused -> new ArrayList<>()).add(account);
+      }
+    }
+    return grouped;
   }
 
   private ValueHistorySnapshot snapshot(

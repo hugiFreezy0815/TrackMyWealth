@@ -4,6 +4,8 @@ import com.trackmywealth.backend.entity.CategorizationRule;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -18,7 +20,15 @@ public interface CategorizationRuleRepository extends JpaRepository<Categorizati
   List<CategorizationRule> findByWorkspaceIdAndActiveTrueOrderByPriorityAscCreatedAtAscIdAsc(
       UUID workspaceId);
 
-  List<CategorizationRule> findByWorkspaceIdOrderByPriorityAscCreatedAtAscIdAsc(UUID workspaceId);
+  Page<CategorizationRule> findByWorkspaceIdOrderByPriorityAscCreatedAtAscIdAsc(
+      UUID workspaceId, Pageable pageable);
+
+  Page<CategorizationRule> findByWorkspaceIdAndActiveTrueOrderByPriorityAscCreatedAtAscIdAsc(
+      UUID workspaceId, Pageable pageable);
+
+  long countByWorkspaceId(UUID workspaceId);
+
+  long countByWorkspaceIdAndActiveTrue(UUID workspaceId);
 
   Optional<CategorizationRule> findByIdAndWorkspaceId(UUID id, UUID workspaceId);
 }

@@ -163,6 +163,34 @@ class CategorizationControllerTest {
   // --- order of the layers --------------------------------------------------------------------
 
   @Test
+  void equalPriorityRulesKeepTheirEvaluationOrderAcrossPages() throws Exception {
+    String token = bootstrapAdministrator();
+    var first = createRule(token, "MERCHANT", "First shop", defaultId("GROCERIES"), 10);
+    var second = createRule(token, "MERCHANT", "Second shop", defaultId("GROCERIES"), 10);
+    String tieDate =
+        "UPDATE categorization_rule SET created_at = '2026-01-01T00:00:00Z' WHERE id = ?";
+    execute(tieDate, first.id());
+    execute(tieDate, second.id());
+
+    var page0 = rulePage(token, "?size=1");
+    var page1 = rulePage(token, "?page=1&size=1");
+    assertThat(page0.page().totalElements()).isEqualTo(2);
+    assertThat(List.of(page0.content().get(0).id(), page1.content().get(0).id()))
+        .containsExactlyElementsOf(
+            List.of(first.id(), second.id()).stream()
+                .sorted(java.util.Comparator.comparing(UUID::toString))
+                .toList());
+
+    for (boolean includeInactive : List.of(false, true)) {
+      var oversizedOffset =
+          rulePage(token, "?page=2147483647&size=2&includeInactive=" + includeInactive);
+      assertThat(oversizedOffset.content()).isEmpty();
+      assertThat(oversizedOffset.page())
+          .isEqualTo(new PageResponse.PageMetadata(Integer.MAX_VALUE, 2, 2, 1));
+    }
+  }
+
+  @Test
   void aUserRuleBeatsTheShippedMappingAndIsNamedInTheLog() {
     String token = bootstrapAdministrator();
     CategorizationRuleResponse rule =
@@ -1213,13 +1241,17 @@ class CategorizationControllerTest {
   }
 
   private List<CategorizationRuleResponse> listRules(String token, boolean includeInactive) {
+    return rulePage(token, "?includeInactive=" + includeInactive).content();
+  }
+
+  private PageResponse<CategorizationRuleResponse> rulePage(String token, String query) {
     return client(token)
         .get()
-        .uri(RULES + "?includeInactive=" + includeInactive)
+        .uri(RULES + query)
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<CategorizationRuleResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<CategorizationRuleResponse>>() {})
         .returnResult()
         .getResponseBody();
   }

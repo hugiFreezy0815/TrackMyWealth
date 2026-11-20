@@ -13,6 +13,7 @@ import com.trackmywealth.backend.dto.LinkSavingsPocketRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.SignedAmounts;
@@ -65,7 +66,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class AccountListControllerTest {
 
   private static final String PASSWORD = "correct-horse-battery-staple";
-  private static final ParameterizedTypeReference<List<AccountListItemResponse>> ROWS =
+  private static final ParameterizedTypeReference<PageResponse<AccountListItemResponse>> ROWS =
       new ParameterizedTypeReference<>() {};
 
   @Container
@@ -126,6 +127,24 @@ class AccountListControllerTest {
   }
 
   // --- Acceptance criteria -----------------------------------------------------------------
+
+  @Test
+  void equallyOldAccountsAppearOnceAcrossPages() throws Exception {
+    String token = bootstrapAdministrator();
+    UUID first = createAccount(token, cash("First", "CHF", null)).id();
+    UUID second = createAccount(token, cash("Second", "CHF", null)).id();
+    execute(
+        "UPDATE account SET created_at = '2026-01-01T00:00:00Z' WHERE id IN (?, ?)", first, second);
+
+    var page0 = page(token, "?size=1");
+    var page1 = page(token, "?page=1&size=1");
+    assertThat(page0.page().totalElements()).isEqualTo(2);
+    assertThat(List.of(page0.content().get(0).id(), page1.content().get(0).id()))
+        .containsExactlyElementsOf(
+            List.of(first, second).stream()
+                .sorted(java.util.Comparator.comparing(UUID::toString))
+                .toList());
+  }
 
   @Test
   void everyAccountOfBothPortfoliosAppearsOnceWithItsBalanceInAccountAndWorkspaceCurrency()
@@ -218,6 +237,20 @@ class AccountListControllerTest {
         .containsExactly(inOwn);
     assertThat(list(token, "?portfolioId=" + foreignPortfolio)).isEmpty();
     assertThat(list(token, "?portfolioId=" + UUID.randomUUID())).isEmpty();
+  }
+
+  @Test
+  void oversizedOffsetKeepsTheRequestedPageAndFilteredWorkspaceTotal() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse own = createPortfolio(token, "Own", "CHF");
+    createAccount(token, cash("Matching", "CHF", own.id()));
+    createAccount(token, cash("Other portfolio", "CHF", null));
+    foreignPortfolioWithAnAccount();
+
+    var result = page(token, "?page=2147483647&size=201&accountType=CASH&portfolioId=" + own.id());
+    assertThat(result.content()).isEmpty();
+    assertThat(result.page())
+        .isEqualTo(new PageResponse.PageMetadata(Integer.MAX_VALUE, 200, 1, 1));
   }
 
   @Test
@@ -369,7 +402,8 @@ class AccountListControllerTest {
   void fiftyAccountsAreListedWithTheSameNumberOfQueriesAsSix() throws Exception {
     String token = bootstrapAdministrator();
     createMixedAccounts(token, 1);
-    long forSix = statementsFor(() -> assertThat(list(token, "")).hasSize(6));
+    // Both requests fill a page, so both include the count query for the page totals.
+    long forSix = statementsFor(() -> assertThat(list(token, "?size=6")).hasSize(6));
 
     createMixedAccounts(token, 7); // 6 + 42 = 48, plus two more below
     createAccount(token, cash("49", "CHF", null));
@@ -558,6 +592,10 @@ class AccountListControllerTest {
   }
 
   private List<AccountListItemResponse> list(String token, String query) {
+    return page(token, query).content();
+  }
+
+  private PageResponse<AccountListItemResponse> page(String token, String query) {
     return client(token)
         .get()
         .uri("/api/v1/accounts" + query)

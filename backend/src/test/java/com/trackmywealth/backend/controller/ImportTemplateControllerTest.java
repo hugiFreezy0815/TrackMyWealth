@@ -15,6 +15,7 @@ import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateTestResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.ResolvedImportTemplate;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.error.ApiException;
@@ -98,9 +99,9 @@ class ImportTemplateControllerTest {
           .getBytes(StandardCharsets.UTF_8);
   // Bound by RLS, unlike the application's own role in these tests (see RowLevelSecurityRole).
   private static final String RLS_ROLE = "import_template_rls_role";
-  private static final ParameterizedTypeReference<List<ImportTemplateResponse>> TEMPLATE_LIST =
-      new ParameterizedTypeReference<>() {};
-  private static final ParameterizedTypeReference<List<ImportTemplateCandidateResponse>>
+  private static final ParameterizedTypeReference<PageResponse<ImportTemplateResponse>>
+      TEMPLATE_LIST = new ParameterizedTypeReference<>() {};
+  private static final ParameterizedTypeReference<PageResponse<ImportTemplateCandidateResponse>>
       CANDIDATES = new ParameterizedTypeReference<>() {};
 
   @Container
@@ -202,6 +203,50 @@ class ImportTemplateControllerTest {
     assertThat(candidates.get(0).template().id()).isEqualTo(created.id());
     assertThat(candidates.get(0).match()).isEqualTo(ImportTemplateCandidateResponse.EXACT_HEADER);
     assertThat(candidates).extracting(c -> c.template().name()).doesNotContain("German bank");
+  }
+
+  @Test
+  void listsAndRanksTemplatesAcrossEqualNamePageBoundaries() throws Exception {
+    byte[] file = fixture(SWISS);
+    ImportTemplateResponse exactA = create(swissRequest(headerOf(SWISS)));
+    ImportTemplateResponse exactB = create(swissRequest(headerOf(SWISS)));
+    List<String> widerHeader = new java.util.ArrayList<>(headerOf(SWISS));
+    widerHeader.add("Unused column");
+    ImportTemplateResponse mapped = create(withName(swissRequest(widerHeader), "Earlier by name"));
+    var exactIds =
+        java.util.stream.Stream.of(exactA.id(), exactB.id())
+            .sorted(java.util.Comparator.comparing(UUID::toString))
+            .toList();
+
+    var templates = list(false);
+    List<UUID> listed = new java.util.ArrayList<>();
+    for (int page = 0; page < templates.size(); page++) {
+      var result = templatePage("?size=1&page=" + page);
+      assertThat(result.page().totalElements()).isEqualTo(templates.size());
+      assertThat(result.content()).hasSize(1);
+      listed.add(result.content().get(0).id());
+    }
+    assertThat(listed)
+        .containsExactlyElementsOf(templates.stream().map(ImportTemplateResponse::id).toList());
+    assertThat(listed).containsSubsequence(exactIds);
+
+    var first = detectionPage(file, "?size=1");
+    assertThat(first.page().totalElements()).isGreaterThanOrEqualTo(3);
+    var ranked = new java.util.ArrayList<>(first.content());
+    for (int page = 1; page < first.page().totalPages(); page++) {
+      ranked.addAll(detectionPage(file, "?size=1&page=" + page).content());
+    }
+    assertThat(ranked).containsExactlyElementsOf(detect(file));
+    assertThat(ranked)
+        .extracting(candidate -> candidate.template().id())
+        .containsSubsequence(exactIds.get(0), exactIds.get(1), mapped.id());
+
+    var oversizedOffset = templatePage("?page=2147483647&size=2");
+    assertThat(oversizedOffset.content()).isEmpty();
+    assertThat(oversizedOffset.page())
+        .isEqualTo(
+            new PageResponse.PageMetadata(
+                Integer.MAX_VALUE, 2, templates.size(), (templates.size() + 1) / 2));
   }
 
   @Test
@@ -946,7 +991,8 @@ class ImportTemplateControllerTest {
             .isOk()
             .expectBody(TEMPLATE_LIST)
             .returnResult()
-            .getResponseBody();
+            .getResponseBody()
+            .content();
 
     assertThat(filtered)
         .singleElement()
@@ -1828,9 +1874,13 @@ class ImportTemplateControllerTest {
   }
 
   private List<ImportTemplateResponse> list(boolean includeInactive) {
+    return templatePage("?includeInactive=" + includeInactive).content();
+  }
+
+  private PageResponse<ImportTemplateResponse> templatePage(String query) {
     return client()
         .get()
-        .uri(BASE + "?includeInactive=" + includeInactive)
+        .uri(BASE + query)
         .exchange()
         .expectStatus()
         .isOk()
@@ -1840,7 +1890,12 @@ class ImportTemplateControllerTest {
   }
 
   private List<ImportTemplateCandidateResponse> detect(byte[] content) {
-    return multipart(BASE + "/detect", content, null)
+    return detectionPage(content, "").content();
+  }
+
+  private PageResponse<ImportTemplateCandidateResponse> detectionPage(
+      byte[] content, String query) {
+    return multipart(BASE + "/detect" + query, content, null)
         .expectStatus()
         .isOk()
         .expectBody(CANDIDATES)

@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
@@ -42,6 +43,8 @@ import org.springframework.web.server.ResponseStatusException;
  * repositories mocked. {@code CategoryControllerTest} covers the same flows against PostgreSQL.
  */
 class CategoryServiceTest {
+
+  private static final PageRequest PAGE = PageRequest.of(0, 200);
 
   private static final UUID WORKSPACE = UUID.randomUUID();
   private static final UUID MEMBER = UUID.randomUUID();
@@ -491,8 +494,10 @@ class CategoryServiceTest {
     Category archived = own("WS_ARCHIVED", "Archived", "Archiviert", leisure);
     archived.setActive(false);
 
-    List<String> active = service.list(false, ACTOR).stream().map(CategoryResponse::code).toList();
-    List<String> all = service.list(true, ACTOR).stream().map(CategoryResponse::code).toList();
+    List<String> active =
+        service.list(false, PAGE, ACTOR).stream().map(CategoryResponse::code).toList();
+    List<String> all =
+        service.list(true, PAGE, ACTOR).stream().map(CategoryResponse::code).toList();
 
     assertThat(active)
         .containsExactly("TRANSFER_INTERNAL", "LEISURE", sport.getCode(), "UNCATEGORIZED");
@@ -533,7 +538,7 @@ class CategoryServiceTest {
 
     @Test
     void readsDoNotLock() {
-      service.list(true, ACTOR);
+      service.list(true, PAGE, ACTOR);
       service.get(leisure.getId(), ACTOR);
 
       verify(workspaceRepository, never()).findByIdForUpdate(any());
@@ -624,7 +629,7 @@ class CategoryServiceTest {
       assertStatus(
           () -> service.create(new CreateCategoryRequest(streaming.getId(), "X", "X"), ACTOR),
           HttpStatus.UNPROCESSABLE_CONTENT);
-      assertThat(service.list(false, ACTOR))
+      assertThat(service.list(false, PAGE, ACTOR))
           .extracting(CategoryResponse::code)
           .doesNotContain("STREAMING", "WS_NETFLIX");
     }

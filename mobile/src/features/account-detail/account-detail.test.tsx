@@ -1,3 +1,4 @@
+import { collectionPage } from '@/api/collection-page.fixture';
 import { QueryClient, QueryClientProvider, type InfiniteData } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import { IntlProvider, createIntl, createIntlCache } from 'react-intl';
@@ -148,8 +149,8 @@ function fakeServer(account: AccountSummary, rows: Transaction[], holdings?: Pos
     '/api/v1/accounts/{accountId}/positions': () => state.holdings,
     '/api/v1/accounts/{accountId}/transactions/{transactionId}': ({ params }) =>
       state.rows.find((row) => row.id === params?.transactionId) ?? null,
-    '/api/v1/accounts': () => [listItem],
-    '/api/v1/categories': () => CATEGORIES,
+    '/api/v1/accounts': () => collectionPage([listItem]),
+    '/api/v1/categories': () => collectionPage(CATEGORIES),
     '/api/v1/accounts/{accountId}/transactions': ({ query = {} }) => {
       const size = Number(query.size);
       const number = Number(query.page);
@@ -677,9 +678,9 @@ describe('S3 account detail acceptance checks (#494)', () => {
       if (expired && new Headers(init?.headers).get('Authorization') !== 'Bearer access-new') {
         return new Response(null, { status: 401 });
       }
-      if (url.pathname === '/api/v1/accounts') return json([listItem]);
+      if (url.pathname === '/api/v1/accounts') return json(collectionPage([listItem]));
       if (url.pathname === '/api/v1/accounts/acc') return json(summary());
-      if (url.pathname === '/api/v1/categories') return json(CATEGORIES);
+      if (url.pathname === '/api/v1/categories') return json(collectionPage(CATEGORIES));
       if (url.pathname === '/api/v1/accounts/acc/transactions') {
         const isCount = url.searchParams.get('size') === '1';
         const row = txn(0, { merchantDescription: expired ? 'Recovered session row' : 'Shop 000' });

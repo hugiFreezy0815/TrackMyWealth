@@ -17,6 +17,7 @@ import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateTestResponse;
 import com.trackmywealth.backend.dto.ImportTemplateValues;
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.dto.ResolvedImportTemplate;
 import com.trackmywealth.backend.entity.Account;
@@ -40,6 +41,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
@@ -139,17 +142,22 @@ public class ImportTemplateService {
 
   /** The current versions, by name; inactive ones only with {@code includeInactive}. */
   @Transactional(readOnly = true)
-  public List<ImportTemplateResponse> list(
-      UUID institutionCatalogueId, boolean includeInactive, AuthenticatedUserPrincipal actor) {
+  public Page<ImportTemplateResponse> list(
+      UUID institutionCatalogueId,
+      boolean includeInactive,
+      Pageable pageable,
+      AuthenticatedUserPrincipal actor) {
     accessControlService.requireActingMember(actor);
-    return templateRepository.findCurrentVisibleTo(actor.workspaceId()).stream()
-        .filter(t -> includeInactive || t.isActive())
-        .filter(
-            t ->
-                institutionCatalogueId == null
-                    || institutionCatalogueId.equals(t.getInstitutionCatalogueId()))
-        .map(this::toResponse)
-        .toList();
+    PagingValues.requireBoundedFixedOrder(pageable);
+    return PagingValues.jpaPage(
+            pageable,
+            () ->
+                templateRepository.findCurrentVisibleTo(
+                    actor.workspaceId(), institutionCatalogueId, includeInactive, pageable),
+            () ->
+                templateRepository.countCurrentVisibleTo(
+                    actor.workspaceId(), institutionCatalogueId, includeInactive))
+        .map(this::toResponse);
   }
 
   /** Any version, current or not - a batch's history refers to old ones. */
@@ -274,6 +282,12 @@ public class ImportTemplateService {
    * @throws ApiException 422 {@code IMPORT_PDF_NO_TEXT} for a PDF without text layer (a scanned
    *     statement, which only an explicitly chosen OCR template reads), 503 {@code IMPORT_PDF_BUSY}
    */
+  public Page<ImportTemplateCandidateResponse> detect(
+      byte[] content, Pageable pageable, AuthenticatedUserPrincipal actor) {
+    PagingValues.requireBoundedFixedOrder(pageable);
+    return PagingValues.pageOfOrdered(detect(content, actor), pageable);
+  }
+
   public List<ImportTemplateCandidateResponse> detect(
       byte[] content, AuthenticatedUserPrincipal actor) {
     List<ImportTemplate> templates =
@@ -295,7 +309,8 @@ public class ImportTemplateService {
                 (ImportTemplateCandidateResponse c) ->
                     !ImportTemplateCandidateResponse.EXACT_HEADER.equals(c.match()))
             .thenComparing(c -> c.template().systemProvided())
-            .thenComparing(c -> c.template().name()));
+            .thenComparing(c -> c.template().name())
+            .thenComparing(c -> c.template().id().toString()));
     if (LOG.isInfoEnabled()) {
       LOG.info(
           "Detected import templates for a {} byte file: {} candidates",

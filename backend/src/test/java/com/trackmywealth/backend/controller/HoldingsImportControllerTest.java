@@ -1326,9 +1326,11 @@ class HoldingsImportControllerTest {
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(AccountListItemResponse[].class)
+            .expectBody(new ParameterizedTypeReference<PageResponse<AccountListItemResponse>>() {})
             .returnResult()
-            .getResponseBody();
+            .getResponseBody()
+            .content()
+            .toArray(AccountListItemResponse[]::new);
     assertThat(accounts).singleElement().extracting(AccountListItemResponse::id).isEqualTo(depot);
     return accounts[0];
   }

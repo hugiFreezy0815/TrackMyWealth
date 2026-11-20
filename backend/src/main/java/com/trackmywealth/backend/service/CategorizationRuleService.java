@@ -2,13 +2,15 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.CategorizationRuleResponse;
 import com.trackmywealth.backend.dto.CreateCategorizationRuleRequest;
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.entity.CategorizationRule;
 import com.trackmywealth.backend.repository.CategorizationRuleRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
-import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,16 +53,27 @@ public class CategorizationRuleService {
 
   /** In evaluation order: lowest priority first, then the older rule. */
   @Transactional(readOnly = true)
-  public List<CategorizationRuleResponse> list(
-      boolean includeInactive, AuthenticatedUserPrincipal actor) {
+  public Page<CategorizationRuleResponse> list(
+      boolean includeInactive, Pageable pageable, AuthenticatedUserPrincipal actor) {
     accessControlService.requireActingMember(actor);
-    List<CategorizationRule> rules =
+    PagingValues.requireBoundedFixedOrder(pageable);
+    UUID workspaceId = actor.workspaceId();
+    Page<CategorizationRule> rules =
         includeInactive
-            ? ruleRepository.findByWorkspaceIdOrderByPriorityAscCreatedAtAscIdAsc(
-                actor.workspaceId())
-            : ruleRepository.findByWorkspaceIdAndActiveTrueOrderByPriorityAscCreatedAtAscIdAsc(
-                actor.workspaceId());
-    return rules.stream().map(CategorizationRuleService::toResponse).toList();
+            ? PagingValues.jpaPage(
+                pageable,
+                () ->
+                    ruleRepository.findByWorkspaceIdOrderByPriorityAscCreatedAtAscIdAsc(
+                        workspaceId, pageable),
+                () -> ruleRepository.countByWorkspaceId(workspaceId))
+            : PagingValues.jpaPage(
+                pageable,
+                () ->
+                    ruleRepository
+                        .findByWorkspaceIdAndActiveTrueOrderByPriorityAscCreatedAtAscIdAsc(
+                            workspaceId, pageable),
+                () -> ruleRepository.countByWorkspaceIdAndActiveTrue(workspaceId));
+    return rules.map(CategorizationRuleService::toResponse);
   }
 
   @Transactional

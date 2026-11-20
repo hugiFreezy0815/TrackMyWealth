@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
 import com.trackmywealth.backend.dto.MultiCurrencyValuations;
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.PortfolioListItemResponse;
 import com.trackmywealth.backend.dto.PortfolioPeriodChange;
 import com.trackmywealth.backend.dto.PortfolioPlacement;
@@ -32,6 +33,10 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -140,8 +145,7 @@ public class PortfolioService {
 
   /**
    * US-04-05 (#381): every active portfolio of the workspace with its active accounts' count and
-   * totals, for the portfolio tabs. A bounded list, deliberately not paged: a workspace holds a
-   * handful of portfolios. Every active member sees all of them (US-03-06).
+   * totals, for the portfolio tabs. Every active member sees all portfolios (US-03-06).
    *
    * <p>No second calculation path: the active accounts of the listed portfolios are valued once by
    * {@link AccountValuationService#valueAllInCurrencies}, in the workspace's currency and every
@@ -154,14 +158,23 @@ public class PortfolioService {
    * (#439). Such an account is in no row, and is not valued here.
    */
   @Transactional(readOnly = true)
-  public List<PortfolioListItemResponse> listPortfolios(AuthenticatedUserPrincipal actor) {
+  public Page<PortfolioListItemResponse> listPortfolios(
+      Pageable pageable, AuthenticatedUserPrincipal actor) {
     accessControlService.requireWorkspaceAccess(actor, actor.workspaceId());
-    List<Portfolio> portfolios =
-        portfolioRepository.findByWorkspaceIdAndStatus(actor.workspaceId(), ACTIVE, LIST_ORDER);
-    if (portfolios.isEmpty()) {
-      // Not reachable while V19 gives every workspace its Personal Assets portfolio.
-      return List.of();
+    PagingValues.requireBoundedFixedOrder(pageable);
+    Page<Portfolio> page =
+        PagingValues.jpaPage(
+            pageable,
+            () ->
+                portfolioRepository.findByWorkspaceIdAndStatus(
+                    actor.workspaceId(),
+                    ACTIVE,
+                    PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), LIST_ORDER)),
+            () -> portfolioRepository.countByWorkspaceIdAndStatus(actor.workspaceId(), ACTIVE));
+    if (page.isEmpty()) {
+      return new PageImpl<>(List.of(), pageable, page.getTotalElements());
     }
+    List<Portfolio> portfolios = page.getContent();
 
     String workspaceCurrency = portfolios.get(0).getWorkspace().getCurrency();
     Set<String> currencies = new LinkedHashSet<>();
@@ -220,7 +233,7 @@ public class PortfolioService {
               asOf,
               monthlyChanges.get(portfolio.getId())));
     }
-    return rows;
+    return new PageImpl<>(rows, pageable, page.getTotalElements());
   }
 
   private static PortfolioListItemResponse toListItem(

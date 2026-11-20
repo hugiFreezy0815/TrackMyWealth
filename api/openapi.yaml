@@ -15,10 +15,10 @@ paths:
       tags:
       - Accounts
       summary: List the workspace's accounts with their current value
-      description: "Every active account of the workspace, or every archived one with\
-        \ archived=true, oldest first. Not paged: a workspace holds tens of accounts.\
-        \ Amounts are signed (assets positive, liabilities negative) and come from\
-        \ the same valuation as net worth."
+      description: "Active accounts of the workspace, or archived accounts with archived=true,\
+        \ oldest first. Amounts are signed (assets positive, liabilities negative)\
+        \ and come from the same valuation as net worth. Fixed order: createdAt ascending,\
+        \ then id ascending. Takes page and size only; any sort is a 400 INVALID_SORT."
       operationId: listAccounts
       parameters:
       - name: portfolioId
@@ -38,6 +38,26 @@ paths:
         schema:
           type: boolean
           default: false
+      - name: page
+        in: query
+        description: Zero-based page number.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        description: "Items per page; a larger value is capped to 200, and page.size\
+          \ in the response says the size applied."
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 50
+          maximum: 200
+          minimum: 1
       - name: X-Correlation-Id
         in: header
         description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
@@ -62,13 +82,12 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/AccountListItemResponse"
+                $ref: "#/components/schemas/PageResponseAccountListItemResponse"
         "400":
           description: |-
             Problem codes:
             - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+            - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -134,6 +153,7 @@ paths:
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
       - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
       - INTERNAL
@@ -12629,6 +12649,9 @@ paths:
       tags:
       - Categories
       summary: List the categories
+      description: "Fixed order: Parent before descendants, siblings by English name\
+        \ ignoring case, then id ascending. Takes page and size only; any sort is\
+        \ a 400 INVALID_SORT."
       operationId: listCategories
       parameters:
       - name: includeInactive
@@ -12637,6 +12660,26 @@ paths:
         schema:
           type: boolean
           default: false
+      - name: page
+        in: query
+        description: Zero-based page number.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        description: "Items per page; a larger value is capped to 200, and page.size\
+          \ in the response says the size applied."
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 50
+          maximum: 200
+          minimum: 1
       - name: X-Correlation-Id
         in: header
         description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
@@ -12661,13 +12704,12 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/CategoryResponse"
+                $ref: "#/components/schemas/PageResponseCategoryResponse"
         "400":
           description: |-
             Problem codes:
             - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+            - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -12733,6 +12775,7 @@ paths:
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
       - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
       - INTERNAL
@@ -13706,6 +13749,8 @@ paths:
       tags:
       - Categories
       summary: List the categorization rules
+      description: "Fixed order: priority ascending, then createdAt ascending, then\
+        \ id ascending. Takes page and size only; any sort is a 400 INVALID_SORT."
       operationId: listCategorizationRules
       parameters:
       - name: includeInactive
@@ -13714,6 +13759,26 @@ paths:
         schema:
           type: boolean
           default: false
+      - name: page
+        in: query
+        description: Zero-based page number.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        description: "Items per page; a larger value is capped to 200, and page.size\
+          \ in the response says the size applied."
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 50
+          maximum: 200
+          minimum: 1
       - name: X-Correlation-Id
         in: header
         description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
@@ -13738,13 +13803,12 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/CategorizationRuleResponse"
+                $ref: "#/components/schemas/PageResponseCategorizationRuleResponse"
         "400":
           description: |-
             Problem codes:
             - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+            - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -13810,6 +13874,7 @@ paths:
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
       - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
       - INTERNAL
@@ -14131,6 +14196,8 @@ paths:
       tags:
       - Import templates
       summary: List the import templates
+      description: "Fixed order: name ascending, then id ascending. Takes page and\
+        \ size only; any sort is a 400 INVALID_SORT."
       operationId: listImportTemplates
       parameters:
       - name: institutionCatalogueId
@@ -14145,6 +14212,26 @@ paths:
         schema:
           type: boolean
           default: false
+      - name: page
+        in: query
+        description: Zero-based page number.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        description: "Items per page; a larger value is capped to 200, and page.size\
+          \ in the response says the size applied."
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 50
+          maximum: 200
+          minimum: 1
       - name: X-Correlation-Id
         in: header
         description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
@@ -14169,13 +14256,12 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/ImportTemplateResponse"
+                $ref: "#/components/schemas/PageResponseImportTemplateResponse"
         "400":
           description: |-
             Problem codes:
             - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+            - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -14241,6 +14327,7 @@ paths:
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
       - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
       - INTERNAL
@@ -14414,8 +14501,31 @@ paths:
       tags:
       - Import templates
       summary: Find the templates that can read a file
+      description: "Fixed order: exact header matches first, workspace templates first\
+        \ within a match tier, then name and template id ascending. Takes page and\
+        \ size only; any sort is a 400 INVALID_SORT."
       operationId: detectImportTemplate
       parameters:
+      - name: page
+        in: query
+        description: Zero-based page number.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        description: "Items per page; a larger value is capped to 200, and page.size\
+          \ in the response says the size applied."
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 50
+          maximum: 200
+          minimum: 1
       - name: X-Correlation-Id
         in: header
         description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
@@ -14436,6 +14546,8 @@ paths:
                 file:
                   type: string
                   format: binary
+                pageable:
+                  $ref: "#/components/schemas/Pageable"
               required:
               - file
       responses:
@@ -14451,13 +14563,12 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/ImportTemplateCandidateResponse"
+                $ref: "#/components/schemas/PageResponseImportTemplateCandidateResponse"
         "400":
           description: |-
             Problem codes:
             - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+            - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -14601,6 +14712,7 @@ paths:
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
       - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
       - VERSION_CONFLICT
@@ -16460,12 +16572,33 @@ paths:
       - Portfolios
       summary: List the workspace's portfolios with their totals
       description: "Every active portfolio of the workspace, the Personal Assets default\
-        \ included, in creation order. Not paged: a workspace holds a handful of portfolios.\
-        \ Each row has the number of active accounts and their signed total (assets\
-        \ positive, liabilities negative) in the portfolio's and the workspace's currency,\
-        \ from the same valuation as the Portfolio View and net worth."
+        \ included, in creation order. Each row has the number of active accounts\
+        \ and their signed total (assets positive, liabilities negative) in the portfolio's\
+        \ and the workspace's currency, from the same valuation as the Portfolio View\
+        \ and net worth. Fixed order: createdAt ascending, then id ascending. Takes\
+        \ page and size only; any sort is a 400 INVALID_SORT."
       operationId: listPortfolios
       parameters:
+      - name: page
+        in: query
+        description: Zero-based page number.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        description: "Items per page; a larger value is capped to 200, and page.size\
+          \ in the response says the size applied."
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 50
+          maximum: 200
+          minimum: 1
       - name: X-Correlation-Id
         in: header
         description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
@@ -16490,13 +16623,12 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/PortfolioListItemResponse"
+                $ref: "#/components/schemas/PageResponsePortfolioListItemResponse"
         "400":
           description: |-
             Problem codes:
             - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+            - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -16562,6 +16694,7 @@ paths:
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
       - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
       - INTERNAL
@@ -17776,8 +17909,30 @@ paths:
       tags:
       - Current user
       summary: List the signed-in user's sessions
+      description: "Fixed order: lastSeenAt descending, then id ascending. Takes page\
+        \ and size only; any sort is a 400 INVALID_SORT."
       operationId: listSessions
       parameters:
+      - name: page
+        in: query
+        description: Zero-based page number.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        description: "Items per page; a larger value is capped to 200, and page.size\
+          \ in the response says the size applied."
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 50
+          maximum: 200
+          minimum: 1
       - name: X-Correlation-Id
         in: header
         description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
@@ -17802,9 +17957,23 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/SessionSummaryResponse"
+                $ref: "#/components/schemas/PageResponseSessionSummaryResponse"
+        "400":
+          description: |-
+            Problem codes:
+            - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+            - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "401":
           description: |-
             Problem codes:
@@ -17843,6 +18012,8 @@ paths:
                 type: string
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
+      - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - INTERNAL
   /api/v1/sessions/{id}/revoke:
@@ -19410,8 +19581,30 @@ paths:
       tags:
       - Workspace
       summary: List the workspace's members
+      description: "Fixed order: displayName ascending, then memberId ascending. Takes\
+        \ page and size only; any sort is a 400 INVALID_SORT."
       operationId: listWorkspaceMembers
       parameters:
+      - name: page
+        in: query
+        description: Zero-based page number.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        description: "Items per page; a larger value is capped to 200, and page.size\
+          \ in the response says the size applied."
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 50
+          maximum: 200
+          minimum: 1
       - name: X-Correlation-Id
         in: header
         description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
@@ -19436,9 +19629,23 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/WorkspaceMemberListItemResponse"
+                $ref: "#/components/schemas/PageResponseWorkspaceMemberListItemResponse"
+        "400":
+          description: |-
+            Problem codes:
+            - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+            - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "401":
           description: |-
             Problem codes:
@@ -19458,21 +19665,6 @@ paths:
           description: |-
             Problem codes:
             - `NOT_FOUND`: Not found, or not visible to the caller; the two are never told apart.
-          headers:
-            X-Correlation-Id:
-              description: Correlation id assigned to this request.
-              schema:
-                type: string
-            traceparent:
-              $ref: "#/components/headers/Traceparent"
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ApiProblem"
-        "422":
-          description: |-
-            Problem codes:
-            - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -19507,9 +19699,10 @@ paths:
                 type: string
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
+      - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
-      - UNPROCESSABLE
       - INTERNAL
   /api/v1/workspace-members/{memberId}:
     get:
@@ -23982,6 +24175,18 @@ components:
       - size
       - totalElements
       - totalPages
+    PageResponseAccountListItemResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/AccountListItemResponse"
+        page:
+          $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
     PageResponseAccountSnapshotResponse:
       type: object
       properties:
@@ -24001,6 +24206,30 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AmortisationScheduleEntryResponse"
+        page:
+          $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
+    PageResponseCategorizationRuleResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategorizationRuleResponse"
+        page:
+          $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
+    PageResponseCategoryResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryResponse"
         page:
           $ref: "#/components/schemas/PageMetadata"
       required:
@@ -24042,6 +24271,30 @@ components:
       required:
       - content
       - page
+    PageResponseImportTemplateCandidateResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImportTemplateCandidateResponse"
+        page:
+          $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
+    PageResponseImportTemplateResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImportTemplateResponse"
+        page:
+          $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
     PageResponseInstitutionCatalogueEntrySummaryResponse:
       type: object
       properties:
@@ -24066,6 +24319,18 @@ components:
       required:
       - content
       - page
+    PageResponsePortfolioListItemResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/PortfolioListItemResponse"
+        page:
+          $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
     PageResponseReconciliationResultResponse:
       type: object
       properties:
@@ -24073,6 +24338,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ReconciliationResultResponse"
+        page:
+          $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
+    PageResponseSessionSummaryResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionSummaryResponse"
         page:
           $ref: "#/components/schemas/PageMetadata"
       required:
@@ -24114,6 +24391,33 @@ components:
       required:
       - content
       - page
+    PageResponseWorkspaceMemberListItemResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkspaceMemberListItemResponse"
+        page:
+          $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
+    Pageable:
+      type: object
+      properties:
+        page:
+          type: integer
+          format: int32
+          minimum: 0
+        size:
+          type: integer
+          format: int32
+          minimum: 1
+        sort:
+          type: array
+          items:
+            type: string
     Point:
       type: object
       properties:

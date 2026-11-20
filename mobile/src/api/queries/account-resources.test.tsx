@@ -1,3 +1,4 @@
+import { collectionPage } from '@/api/collection-page.fixture';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
@@ -44,7 +45,7 @@ beforeEach(() => {
 
 describe('S3 account detail API calls (#494)', () => {
   it('never fetches an unscoped account list while the portfolio is unknown', async () => {
-    api.get.mockResolvedValue([] as never);
+    api.get.mockResolvedValue(page(0) as never);
     const view = await renderHook(
       ({ portfolioId }: { portfolioId?: string }) =>
         useAccounts(portfolioId, { enabled: !!portfolioId }),
@@ -54,9 +55,25 @@ describe('S3 account detail API calls (#494)', () => {
     await view.rerender({ portfolioId: 'p1' });
     await waitFor(() =>
       expect(api.get).toHaveBeenCalledWith('/api/v1/accounts', {
-        query: { portfolioId: 'p1' },
+        query: { page: 0, portfolioId: 'p1' },
+        signal: expect.any(AbortSignal),
       }),
     );
+  });
+
+  it('loads all account pages with the same portfolio filter', async () => {
+    api.get
+      .mockResolvedValueOnce(collectionPage([{ id: 'first' }], 0, 1, 2) as never)
+      .mockResolvedValueOnce(collectionPage([{ id: 'second' }], 1, 1, 2) as never);
+    const view = await renderHook(() => useAccounts('p1'), { wrapper: wrapper() });
+
+    await waitFor(() =>
+      expect(view.result.current.data?.map(({ id }) => id)).toEqual(['first', 'second']),
+    );
+    expect(api.get.mock.calls.map(([, options]) => options?.query)).toEqual([
+      { page: 0, portfolioId: 'p1' },
+      { page: 1, portfolioId: 'p1' },
+    ]);
   });
 
   it('asks for 50 rows per page with the chosen sort and filter', async () => {

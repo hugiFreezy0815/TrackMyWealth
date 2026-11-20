@@ -10,13 +10,14 @@ import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -69,30 +70,33 @@ public class WorkspaceMemberService {
    * US-03-05: the members of the caller's own workspace, inactive ones included, ordered by display
    * name. Any member of the workspace may list them ({@link AccessControlService}); the workspace
    * comes from the caller's session, never from the request, and RLS confines the query to it as
-   * well. The query reads at most one row past {@link PagingValues#MAX_SIZE}, so no workspace can
-   * force an unbounded read; a workspace above the limit is refused rather than silently cut off.
+   * well. Inactive memberships remain visible and administrators are excluded from the page and its
+   * totals.
    *
    * <p>Until FR-USR-013 stops it, first-run setup still makes the administrator a member, but the
    * administrator is not one of the workspace's people (FR-USR-07, FR-TEN-007): it may not list
    * them (the audited 404 every other denial gets), and its membership is left out of the list.
    */
   @Transactional(readOnly = true)
-  public List<WorkspaceMemberListItemResponse> listWorkspaceMembers(
-      AuthenticatedUserPrincipal actor) {
+  public Page<WorkspaceMemberListItemResponse> listWorkspaceMembers(
+      Pageable pageable, AuthenticatedUserPrincipal actor) {
     accessControlService.requireActingMember(actor);
     if (UserRoleValues.SYSTEM_ADMINISTRATOR.equals(actor.role())) {
       throw accessControlService.denyAsNotFound(actor, WORKSPACE_ENTITY_TYPE, actor.workspaceId());
     }
 
-    // Not PagingValues.requireBounded: this is a plain array, not a page, and the one row past the
-    // limit only tells a full workspace from an overfull one.
-    List<WorkspaceMember> members =
-        workspaceMemberRepository.findMembersForListing(
-            actor.workspaceId(), Limit.of(PagingValues.MAX_SIZE + 1));
-    if (members.size() > PagingValues.MAX_SIZE) {
-      throw new ResponseStatusException(
-          HttpStatus.UNPROCESSABLE_ENTITY,
-          "The workspace has more members than one list can hold.");
+    PagingValues.requireBoundedFixedOrder(pageable);
+    Page<WorkspaceMember> members =
+        PagingValues.jpaPage(
+            pageable,
+            () ->
+                workspaceMemberRepository.findMembersForListing(
+                    actor.workspaceId(), UserRoleValues.SYSTEM_ADMINISTRATOR, pageable),
+            () ->
+                workspaceMemberRepository.countMembersForListing(
+                    actor.workspaceId(), UserRoleValues.SYSTEM_ADMINISTRATOR));
+    if (members.isEmpty()) {
+      return new PageImpl<>(List.of(), pageable, members.getTotalElements());
     }
 
     // Exactly one login per member: V110 (#389) makes app_user.workspace_member_id unique and
@@ -105,26 +109,22 @@ public class WorkspaceMemberService {
             .collect(
                 Collectors.toMap(user -> user.getWorkspaceMember().getId(), Function.identity()));
 
-    List<WorkspaceMemberListItemResponse> listed = new ArrayList<>();
-    for (WorkspaceMember member : members) {
-      AppUser user = usersByMemberId.get(member.getId());
-      if (user == null) {
-        throw new IllegalStateException(
-            "Workspace member " + member.getId() + " has no login, which V110 forbids.");
-      }
-      if (UserRoleValues.SYSTEM_ADMINISTRATOR.equals(user.getRole())) {
-        continue;
-      }
-      listed.add(
-          new WorkspaceMemberListItemResponse(
-              member.getId(),
-              user.getId(),
-              member.getDisplayName(),
-              ACTIVE.equals(member.getStatus()),
-              VersionPreconditionService.persistedVersion(
-                  member.getVersion(), VERSIONED_RESOURCE)));
+    return members.map(member -> toListItem(member, usersByMemberId));
+  }
+
+  private static WorkspaceMemberListItemResponse toListItem(
+      WorkspaceMember member, Map<UUID, AppUser> usersByMemberId) {
+    AppUser user = usersByMemberId.get(member.getId());
+    if (user == null) {
+      throw new IllegalStateException(
+          "Workspace member " + member.getId() + " has no login, which V110 forbids.");
     }
-    return listed;
+    return new WorkspaceMemberListItemResponse(
+        member.getId(),
+        user.getId(),
+        member.getDisplayName(),
+        ACTIVE.equals(member.getStatus()),
+        VersionPreconditionService.persistedVersion(member.getVersion(), VERSIONED_RESOURCE));
   }
 
   @Transactional(readOnly = true)

@@ -12,7 +12,7 @@ export interface paths {
     };
     /**
      * List the workspace's accounts with their current value
-     * @description Every active account of the workspace, or every archived one with archived=true, oldest first. Not paged: a workspace holds tens of accounts. Amounts are signed (assets positive, liabilities negative) and come from the same valuation as net worth.
+     * @description Active accounts of the workspace, or archived accounts with archived=true, oldest first. Amounts are signed (assets positive, liabilities negative) and come from the same valuation as net worth. Fixed order: createdAt ascending, then id ascending. Takes page and size only; any sort is a 400 INVALID_SORT.
      */
     get: operations['listAccounts'];
     put?: never;
@@ -960,7 +960,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List the categories */
+    /**
+     * List the categories
+     * @description Fixed order: Parent before descendants, siblings by English name ignoring case, then id ascending. Takes page and size only; any sort is a 400 INVALID_SORT.
+     */
     get: operations['listCategories'];
     put?: never;
     /** Create a category */
@@ -1031,7 +1034,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List the categorization rules */
+    /**
+     * List the categorization rules
+     * @description Fixed order: priority ascending, then createdAt ascending, then id ascending. Takes page and size only; any sort is a 400 INVALID_SORT.
+     */
     get: operations['listCategorizationRules'];
     put?: never;
     /** Create a categorization rule */
@@ -1066,7 +1072,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List the import templates */
+    /**
+     * List the import templates
+     * @description Fixed order: name ascending, then id ascending. Takes page and size only; any sort is a 400 INVALID_SORT.
+     */
     get: operations['listImportTemplates'];
     put?: never;
     /** Create an import template */
@@ -1086,7 +1095,10 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Find the templates that can read a file */
+    /**
+     * Find the templates that can read a file
+     * @description Fixed order: exact header matches first, workspace templates first within a match tier, then name and template id ascending. Takes page and size only; any sort is a 400 INVALID_SORT.
+     */
     post: operations['detectImportTemplate'];
     delete?: never;
     options?: never;
@@ -1258,7 +1270,7 @@ export interface paths {
     };
     /**
      * List the workspace's portfolios with their totals
-     * @description Every active portfolio of the workspace, the Personal Assets default included, in creation order. Not paged: a workspace holds a handful of portfolios. Each row has the number of active accounts and their signed total (assets positive, liabilities negative) in the portfolio's and the workspace's currency, from the same valuation as the Portfolio View and net worth.
+     * @description Every active portfolio of the workspace, the Personal Assets default included, in creation order. Each row has the number of active accounts and their signed total (assets positive, liabilities negative) in the portfolio's and the workspace's currency, from the same valuation as the Portfolio View and net worth. Fixed order: createdAt ascending, then id ascending. Takes page and size only; any sort is a 400 INVALID_SORT.
      */
     get: operations['listPortfolios'];
     put?: never;
@@ -1381,7 +1393,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List the signed-in user's sessions */
+    /**
+     * List the signed-in user's sessions
+     * @description Fixed order: lastSeenAt descending, then id ascending. Takes page and size only; any sort is a 400 INVALID_SORT.
+     */
     get: operations['listSessions'];
     put?: never;
     post?: never;
@@ -1588,7 +1603,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List the workspace's members */
+    /**
+     * List the workspace's members
+     * @description Fixed order: displayName ascending, then memberId ascending. Takes page and size only; any sort is a 400 INVALID_SORT.
+     */
     get: operations['listWorkspaceMembers'];
     put?: never;
     post?: never;
@@ -3221,12 +3239,24 @@ export interface components {
       /** Format: int32 */
       totalPages: number;
     };
+    PageResponseAccountListItemResponse: {
+      content: components['schemas']['AccountListItemResponse'][];
+      page: components['schemas']['PageMetadata'];
+    };
     PageResponseAccountSnapshotResponse: {
       content: components['schemas']['AccountSnapshotResponse'][];
       page: components['schemas']['PageMetadata'];
     };
     PageResponseAmortisationScheduleEntryResponse: {
       content: components['schemas']['AmortisationScheduleEntryResponse'][];
+      page: components['schemas']['PageMetadata'];
+    };
+    PageResponseCategorizationRuleResponse: {
+      content: components['schemas']['CategorizationRuleResponse'][];
+      page: components['schemas']['PageMetadata'];
+    };
+    PageResponseCategoryResponse: {
+      content: components['schemas']['CategoryResponse'][];
       page: components['schemas']['PageMetadata'];
     };
     PageResponseCustomAssetValuationResponse: {
@@ -3241,6 +3271,14 @@ export interface components {
       content: components['schemas']['ImportRowResponse'][];
       page: components['schemas']['PageMetadata'];
     };
+    PageResponseImportTemplateCandidateResponse: {
+      content: components['schemas']['ImportTemplateCandidateResponse'][];
+      page: components['schemas']['PageMetadata'];
+    };
+    PageResponseImportTemplateResponse: {
+      content: components['schemas']['ImportTemplateResponse'][];
+      page: components['schemas']['PageMetadata'];
+    };
     PageResponseInstitutionCatalogueEntrySummaryResponse: {
       content: components['schemas']['InstitutionCatalogueEntrySummaryResponse'][];
       page: components['schemas']['PageMetadata'];
@@ -3249,8 +3287,16 @@ export interface components {
       content: components['schemas']['LoanRepaymentResponse'][];
       page: components['schemas']['PageMetadata'];
     };
+    PageResponsePortfolioListItemResponse: {
+      content: components['schemas']['PortfolioListItemResponse'][];
+      page: components['schemas']['PageMetadata'];
+    };
     PageResponseReconciliationResultResponse: {
       content: components['schemas']['ReconciliationResultResponse'][];
+      page: components['schemas']['PageMetadata'];
+    };
+    PageResponseSessionSummaryResponse: {
+      content: components['schemas']['SessionSummaryResponse'][];
       page: components['schemas']['PageMetadata'];
     };
     PageResponseSettlementMatchResponse: {
@@ -3264,6 +3310,17 @@ export interface components {
     PageResponseTransactionResponse: {
       content: components['schemas']['TransactionResponse'][];
       page: components['schemas']['PageMetadata'];
+    };
+    PageResponseWorkspaceMemberListItemResponse: {
+      content: components['schemas']['WorkspaceMemberListItemResponse'][];
+      page: components['schemas']['PageMetadata'];
+    };
+    Pageable: {
+      /** Format: int32 */
+      page?: number;
+      /** Format: int32 */
+      size?: number;
+      sort?: string[];
     };
     Point: {
       /** Format: date */
@@ -4071,6 +4128,10 @@ export interface operations {
         portfolioId?: string;
         accountType?: string;
         archived?: boolean;
+        /** @description Zero-based page number. */
+        page?: number;
+        /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
+        size?: number;
       };
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
@@ -4092,12 +4153,13 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['AccountListItemResponse'][];
+          'application/json': components['schemas']['PageResponseAccountListItemResponse'];
         };
       };
       /**
        * @description Problem codes:
        *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       *     - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
        */
       400: {
         headers: {
@@ -14071,6 +14133,10 @@ export interface operations {
     parameters: {
       query?: {
         includeInactive?: boolean;
+        /** @description Zero-based page number. */
+        page?: number;
+        /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
+        size?: number;
       };
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
@@ -14092,12 +14158,13 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['CategoryResponse'][];
+          'application/json': components['schemas']['PageResponseCategoryResponse'];
         };
       };
       /**
        * @description Problem codes:
        *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       *     - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
        */
       400: {
         headers: {
@@ -14959,6 +15026,10 @@ export interface operations {
     parameters: {
       query?: {
         includeInactive?: boolean;
+        /** @description Zero-based page number. */
+        page?: number;
+        /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
+        size?: number;
       };
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
@@ -14980,12 +15051,13 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['CategorizationRuleResponse'][];
+          'application/json': components['schemas']['PageResponseCategorizationRuleResponse'];
         };
       };
       /**
        * @description Problem codes:
        *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       *     - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
        */
       400: {
         headers: {
@@ -15305,6 +15377,10 @@ export interface operations {
       query?: {
         institutionCatalogueId?: string;
         includeInactive?: boolean;
+        /** @description Zero-based page number. */
+        page?: number;
+        /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
+        size?: number;
       };
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
@@ -15326,12 +15402,13 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ImportTemplateResponse'][];
+          'application/json': components['schemas']['PageResponseImportTemplateResponse'];
         };
       };
       /**
        * @description Problem codes:
        *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       *     - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
        */
       400: {
         headers: {
@@ -15526,7 +15603,12 @@ export interface operations {
   };
   detectImportTemplate: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Zero-based page number. */
+        page?: number;
+        /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
+        size?: number;
+      };
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
@@ -15541,6 +15623,7 @@ export interface operations {
         'multipart/form-data': {
           /** Format: binary */
           file: string;
+          pageable?: components['schemas']['Pageable'];
         };
       };
     };
@@ -15554,12 +15637,13 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ImportTemplateCandidateResponse'][];
+          'application/json': components['schemas']['PageResponseImportTemplateCandidateResponse'];
         };
       };
       /**
        * @description Problem codes:
        *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       *     - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
        */
       400: {
         headers: {
@@ -17165,7 +17249,12 @@ export interface operations {
   };
   listPortfolios: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Zero-based page number. */
+        page?: number;
+        /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
+        size?: number;
+      };
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
@@ -17186,12 +17275,13 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PortfolioListItemResponse'][];
+          'application/json': components['schemas']['PageResponsePortfolioListItemResponse'];
         };
       };
       /**
        * @description Problem codes:
        *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       *     - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
        */
       400: {
         headers: {
@@ -18249,7 +18339,12 @@ export interface operations {
   };
   listSessions: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Zero-based page number. */
+        page?: number;
+        /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
+        size?: number;
+      };
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
@@ -18270,7 +18365,23 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['SessionSummaryResponse'][];
+          'application/json': components['schemas']['PageResponseSessionSummaryResponse'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       *     - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
+       */
+      400: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
         };
       };
       /**
@@ -19502,7 +19613,12 @@ export interface operations {
   };
   listWorkspaceMembers: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Zero-based page number. */
+        page?: number;
+        /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
+        size?: number;
+      };
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
@@ -19523,7 +19639,23 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['WorkspaceMemberListItemResponse'][];
+          'application/json': components['schemas']['PageResponseWorkspaceMemberListItemResponse'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       *     - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
+       */
+      400: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
         };
       };
       /**
@@ -19546,21 +19678,6 @@ export interface operations {
        *     - `NOT_FOUND`: Not found, or not visible to the caller; the two are never told apart.
        */
       404: {
-        headers: {
-          /** @description Correlation id assigned to this request. */
-          'X-Correlation-Id'?: string;
-          traceparent: components['headers']['Traceparent'];
-          [name: string]: unknown;
-        };
-        content: {
-          'application/problem+json': components['schemas']['ApiProblem'];
-        };
-      };
-      /**
-       * @description Problem codes:
-       *     - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
-       */
-      422: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;

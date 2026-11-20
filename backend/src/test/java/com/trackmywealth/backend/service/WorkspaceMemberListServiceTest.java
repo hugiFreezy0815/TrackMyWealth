@@ -15,22 +15,22 @@ import com.trackmywealth.backend.entity.WorkspaceMember;
 import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
-import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * US-03-05: the service's own decisions on the member list - who may ask, the bound, what each row
- * shows. Workspace isolation and the query itself are proven against PostgreSQL in {@code
+ * US-03-05: the service's own decisions on the member list - who may ask and what each row shows.
+ * Workspace isolation and the query itself are proven against PostgreSQL in {@code
  * WorkspaceMemberControllerTest}.
  */
 class WorkspaceMemberListServiceTest {
 
-  private static final Limit BOUNDED = Limit.of(PagingValues.MAX_SIZE + 1);
+  private static final PageRequest FIRST = PageRequest.of(0, PagingValues.DEFAULT_SIZE);
 
   private final AppUserRepository users = mock(AppUserRepository.class);
   private final WorkspaceMemberRepository members = mock(WorkspaceMemberRepository.class);
@@ -59,7 +59,8 @@ class WorkspaceMemberListServiceTest {
     givenMembers(active, inactive);
     givenLogins(List.of(active, inactive), annasLogin, bensLogin);
 
-    List<WorkspaceMemberListItemResponse> listed = service.listWorkspaceMembers(actor);
+    List<WorkspaceMemberListItemResponse> listed =
+        service.listWorkspaceMembers(FIRST, actor).getContent();
 
     assertThat(listed)
         .containsExactly(
@@ -74,11 +75,11 @@ class WorkspaceMemberListServiceTest {
     when(accessControlService.requireActingMember(actor))
         .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
 
-    assertThatThrownBy(() -> service.listWorkspaceMembers(actor))
+    assertThatThrownBy(() -> service.listWorkspaceMembers(FIRST, actor))
         .isInstanceOfSatisfying(
             ResponseStatusException.class,
             error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
-    verify(members, never()).findMembersForListing(any(), any());
+    verify(members, never()).findMembersForListing(any(), any(), any());
   }
 
   // FR-USR-07: the bootstrap membership passes requireActingMember, but the administrator is not
@@ -91,26 +92,11 @@ class WorkspaceMemberListServiceTest {
     when(accessControlService.denyAsNotFound(administrator, "Workspace", workspaceId))
         .thenReturn(new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
 
-    assertThatThrownBy(() -> service.listWorkspaceMembers(administrator))
+    assertThatThrownBy(() -> service.listWorkspaceMembers(FIRST, administrator))
         .isInstanceOfSatisfying(
             ResponseStatusException.class,
             error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
-    verify(members, never()).findMembersForListing(any(), any());
-  }
-
-  @Test
-  void theAdministratorsBootstrapMembershipIsNotListed() {
-    WorkspaceMember person = member("Anna", "ACTIVE", 1);
-    WorkspaceMember administrator = member("admin", "ACTIVE", 1);
-    givenMembers(person, administrator);
-    givenLogins(
-        List.of(person, administrator),
-        login(person, "STANDARD_USER"),
-        login(administrator, "SYSTEM_ADMINISTRATOR"));
-
-    assertThat(service.listWorkspaceMembers(actor))
-        .extracting(WorkspaceMemberListItemResponse::id)
-        .containsExactly(person.getId());
+    verify(members, never()).findMembersForListing(any(), any(), any());
   }
 
   // V110 refuses a member without a login, so one can only come from a corrupted database: the
@@ -122,26 +108,14 @@ class WorkspaceMemberListServiceTest {
     givenMembers(person, loginless);
     givenLogins(List.of(person, loginless), login(person, "STANDARD_USER"));
 
-    assertThatThrownBy(() -> service.listWorkspaceMembers(actor))
+    assertThatThrownBy(() -> service.listWorkspaceMembers(FIRST, actor))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining(loginless.getId().toString());
   }
 
-  @Test
-  void aWorkspaceAboveTheLimitIsRefusedBeforeAnyLoginIsRead() {
-    givenMembers(
-        Collections.nCopies(PagingValues.MAX_SIZE + 1, member("Anna", "ACTIVE", 1))
-            .toArray(WorkspaceMember[]::new));
-
-    assertThatThrownBy(() -> service.listWorkspaceMembers(actor))
-        .isInstanceOfSatisfying(
-            ResponseStatusException.class,
-            error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY));
-    verify(users, never()).findUsersLinkedToMembers(any());
-  }
-
   private void givenMembers(WorkspaceMember... listed) {
-    when(members.findMembersForListing(workspaceId, BOUNDED)).thenReturn(List.of(listed));
+    when(members.findMembersForListing(workspaceId, "SYSTEM_ADMINISTRATOR", FIRST))
+        .thenReturn(new PageImpl<>(List.of(listed), FIRST, listed.length));
   }
 
   private void givenLogins(List<WorkspaceMember> listed, AppUser... logins) {

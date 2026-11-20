@@ -5,6 +5,8 @@ import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -15,6 +17,15 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface ImportTemplateRepository extends JpaRepository<ImportTemplate, UUID> {
 
+  String WORKSPACE_ID = "workspaceId";
+  String INSTITUTION_ID = "institutionId";
+  String INCLUDE_INACTIVE = "includeInactive";
+  String LIST_FILTERS =
+      " FROM ImportTemplate t WHERE t.current = true"
+          + " AND (t.workspaceId IS NULL OR t.workspaceId = :workspaceId)"
+          + " AND (:includeInactive = true OR t.active = true)"
+          + " AND (:institutionId IS NULL OR t.institutionCatalogueId = :institutionId)";
+
   /**
    * The current version of every shipped template and of the workspace's own. Filtered explicitly
    * as well as by RLS (V65), so the result never depends on the database role bypassing row-level
@@ -24,14 +35,27 @@ public interface ImportTemplateRepository extends JpaRepository<ImportTemplate, 
       "SELECT t FROM ImportTemplate t WHERE t.current = true"
           + " AND (t.workspaceId IS NULL OR t.workspaceId = :workspaceId)"
           + " ORDER BY t.name, t.id")
-  List<ImportTemplate> findCurrentVisibleTo(@Param("workspaceId") UUID workspaceId);
+  List<ImportTemplate> findCurrentVisibleTo(@Param(WORKSPACE_ID) UUID workspaceId);
+
+  @Query("SELECT t" + LIST_FILTERS + " ORDER BY t.name, t.id")
+  Page<ImportTemplate> findCurrentVisibleTo(
+      @Param(WORKSPACE_ID) UUID workspaceId,
+      @Param(INSTITUTION_ID) UUID institutionCatalogueId,
+      @Param(INCLUDE_INACTIVE) boolean includeInactive,
+      Pageable pageable);
+
+  @Query("SELECT COUNT(t)" + LIST_FILTERS)
+  long countCurrentVisibleTo(
+      @Param(WORKSPACE_ID) UUID workspaceId,
+      @Param(INSTITUTION_ID) UUID institutionCatalogueId,
+      @Param(INCLUDE_INACTIVE) boolean includeInactive);
 
   /** One version, if the workspace may see it (its own or a shipped one). */
   @Query(
       "SELECT t FROM ImportTemplate t WHERE t.id = :id"
           + " AND (t.workspaceId IS NULL OR t.workspaceId = :workspaceId)")
   Optional<ImportTemplate> findVisibleTo(
-      @Param("id") UUID id, @Param("workspaceId") UUID workspaceId);
+      @Param("id") UUID id, @Param(WORKSPACE_ID) UUID workspaceId);
 
   /**
    * One of the workspace's own versions, locking the row: every change of a template starts here,
@@ -42,7 +66,7 @@ public interface ImportTemplateRepository extends JpaRepository<ImportTemplate, 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("SELECT t FROM ImportTemplate t WHERE t.id = :id AND t.workspaceId = :workspaceId")
   Optional<ImportTemplate> findOwnForUpdate(
-      @Param("id") UUID id, @Param("workspaceId") UUID workspaceId);
+      @Param("id") UUID id, @Param(WORKSPACE_ID) UUID workspaceId);
 
   /** The current version of a template family, if any. */
   Optional<ImportTemplate> findByTemplateFamilyIdAndCurrentTrue(UUID templateFamilyId);

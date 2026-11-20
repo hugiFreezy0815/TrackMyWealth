@@ -1,3 +1,4 @@
+import { collectionPage } from '@/api/collection-page.fixture';
 import { useState } from 'react';
 import { Pressable } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -83,11 +84,12 @@ async function setup(initial = source, extra: (typeof source)[] = [], ui = <Fixt
       return [current, ...accounts].find(({ id }) => id === options?.params?.accountId);
     }
     if (directoryFailure) throw directoryFailure;
-    return [current, ...accounts]
+    const content = [current, ...accounts]
       .filter(({ status }) =>
         options?.query?.archived ? status === 'ARCHIVED' : status === 'ACTIVE',
       )
       .map(row);
+    return collectionPage(content);
   }) as unknown as typeof typedApi.get);
   const client = new QueryClient({
     defaultOptions: {
@@ -189,7 +191,7 @@ test('hides the action for another account’s pocket', async () => {
   await waitFor(() => {
     expect(api.get).toHaveBeenCalledWith(
       '/api/v1/accounts',
-      expect.objectContaining({ query: { archived: true } }),
+      expect.objectContaining({ query: { page: 0, archived: true } }),
     );
   });
   expect(screen.queryByRole('button', { name: LINK })).toBeNull();
@@ -290,7 +292,7 @@ test('offers nothing when there is no pocket to replace and no account to choose
   await waitFor(() => {
     expect(api.get).toHaveBeenCalledWith(
       '/api/v1/accounts',
-      expect.objectContaining({ query: { archived: true } }),
+      expect.objectContaining({ query: { page: 0, archived: true } }),
     );
   });
   await waitFor(() => expect(screen.queryByText(/Loading/)).toBeNull());

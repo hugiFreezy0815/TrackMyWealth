@@ -275,7 +275,7 @@ def import_statement(api, account, day):
 
 
 def seed(api, anchor):
-    portfolios = api.request("GET", "/portfolios")
+    portfolios = list(api.pages("/portfolios"))
     portfolio_specs = (
         ("Demo · Cloudberry Bank", "CH", "CHF", "BANK"),
         ("Demo · Paper Moon Bank", "DE", "EUR", "BANK"),
@@ -292,7 +292,7 @@ def seed(api, anchor):
     if personal is None:
         raise SeedError("The demo workspace has no default Personal Assets portfolio.")
 
-    accounts = api.request("GET", "/accounts")
+    accounts = list(api.pages("/accounts"))
     account_specs = {
         "cash": ("Cloudberry Current", swiss, "CASH", "CHF", {}),
         "savings": ("Cloudberry Savings", swiss, "SAVINGS", "CHF", {}),
@@ -319,7 +319,7 @@ def seed(api, anchor):
     ):
         opening(api, ids[key], anchor - timedelta(days=185), amount, currency)
 
-    categories = api.request("GET", "/categories")
+    categories = list(api.pages("/categories"))
     salary, groceries = [
         ensure_named(api, categories, "/categories", {"nameEn": en, "nameDe": de},
                      name_field="nameEn")["id"]
@@ -439,7 +439,7 @@ def account_values(client):
     # Native balance and status only: the workspace-currency figure moves when a fresh stack's
     # first exchange rates arrive, which may happen between the two members' reads.
     return {row["id"]: (row["balance"], row["valueStatus"])
-            for row in client.request("GET", "/accounts")}
+            for row in client.pages("/accounts")}
 
 
 def check_account_values(ids, first, second):
@@ -465,13 +465,13 @@ def verify(api, partner, ids):
     imports = list(api.pages(cash_path + "/imports"))
     if (len(cash_rows), len(card_rows), len(savings_rows), len(imports)) != (24, 2, 6, 1):
         raise SeedError("The demo ledgers or import history did not have the expected counts.")
-    categories = api.request("GET", "/categories")
+    categories = list(api.pages("/categories"))
     uncategorized = find_unique(categories, lambda row: row["code"] == "UNCATEGORIZED")
     if uncategorized is None or sum(
         row["categoryId"] == uncategorized["id"] for row in cash_rows
     ) < 3:
         raise SeedError("The demo ledger did not contain three uncategorised bookings.")
-    portfolios = api.request("GET", "/portfolios")
+    portfolios = list(api.pages("/portfolios"))
     if len(portfolios) != 4 or not any(
         row["name"] == "Demo · Alpine Lantern Investments" and row["portfolioType"] == "MIXED"
         for row in portfolios

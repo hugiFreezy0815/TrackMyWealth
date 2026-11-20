@@ -5,6 +5,7 @@ import com.trackmywealth.backend.dto.AccountListItemResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.LinkSavingsPocketRequest;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.ReassignAccountPortfolioRequest;
 import com.trackmywealth.backend.dto.UpdateAccountRequest;
 import com.trackmywealth.backend.error.ProblemCode;
@@ -14,6 +15,7 @@ import com.trackmywealth.backend.service.AccountService;
 import com.trackmywealth.backend.service.IdempotentCreateService;
 import com.trackmywealth.backend.service.SavingsPocketService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.ResponseHeader;
 import com.trackmywealth.backend.web.SendsHeaders;
@@ -23,8 +25,8 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -66,30 +68,27 @@ public class AccountController {
     this.idempotentCreates = idempotentCreates;
   }
 
-  /**
-   * US-05-06 (#380): every account of the workspace with its current value, oldest first. Not
-   * paged: a workspace is expected to hold tens of accounts, not thousands. Nothing enforces that
-   * bound yet, so the list is a known exception in docs/api/conventions.md until #570 decides
-   * between paging and an enforced bound.
-   */
+  /** US-05-06 (#380): the workspace accounts with their current values, oldest first. */
   @ProblemCodes({ProblemCode.NOT_FOUND})
   @Operation(
       operationId = "listAccounts",
       summary = "List the workspace's accounts with their current value",
       description =
-          "Every active account of the workspace, or every archived one with archived=true, oldest"
-              + " first. Not paged: a workspace holds tens of accounts. Amounts are signed (assets"
+          "Active accounts of the workspace, or archived accounts with archived=true, oldest"
+              + " first. Amounts are signed (assets"
               + " positive, liabilities negative) and come from the same valuation as net worth.")
   @GetMapping
-  public List<AccountListItemResponse> listAccounts(
+  public PageResponse<AccountListItemResponse> listAccounts(
       @RequestParam(required = false) UUID portfolioId,
       @RequestParam(required = false) String accountType,
       @RequestParam(defaultValue = "false") boolean archived,
+      @Paged(fixedOrder = "createdAt ascending, then id ascending") Pageable pageable,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     // An empty parameter (?accountType=) is a filter left unset, not an unknown type.
     String type = StringUtils.hasText(accountType) ? accountType : null;
-    return accountListService.listAccounts(
-        new AccountListFilter(portfolioId, type, archived), actor);
+    return PageResponse.of(
+        accountListService.listAccounts(
+            new AccountListFilter(portfolioId, type, archived), pageable, actor));
   }
 
   @SuccessStatus(HttpStatus.CREATED)

@@ -1,3 +1,4 @@
+import { collectionPage } from '@/api/collection-page.fixture';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
@@ -81,7 +82,7 @@ describe('S4 transaction queries', () => {
 
   it('requests inactive categories only for historical display', async () => {
     const { wrapper } = setup();
-    api.get.mockResolvedValue([] as never);
+    api.get.mockResolvedValue(collectionPage([]) as never);
     const view = await renderHook(
       () => ({
         active: useCategories(),
@@ -91,10 +92,12 @@ describe('S4 transaction queries', () => {
     );
     await waitFor(() => expect(view.result.current.history.isSuccess).toBe(true));
     expect(api.get).toHaveBeenCalledWith('/api/v1/categories', {
-      query: { includeInactive: false },
+      query: { page: 0, includeInactive: false },
+      signal: expect.any(AbortSignal),
     });
     expect(api.get).toHaveBeenCalledWith('/api/v1/categories', {
-      query: { includeInactive: true },
+      query: { page: 0, includeInactive: true },
+      signal: expect.any(AbortSignal),
     });
   });
 
