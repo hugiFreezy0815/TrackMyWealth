@@ -240,6 +240,13 @@ class ImportTemplateControllerTest {
     assertThat(ranked)
         .extracting(candidate -> candidate.template().id())
         .containsSubsequence(exactIds.get(0), exactIds.get(1), mapped.id());
+
+    var oversizedOffset = templatePage("?page=2147483647&size=2");
+    assertThat(oversizedOffset.content()).isEmpty();
+    assertThat(oversizedOffset.page())
+        .isEqualTo(
+            new PageResponse.PageMetadata(
+                Integer.MAX_VALUE, 2, templates.size(), (templates.size() + 1) / 2));
   }
 
   @Test

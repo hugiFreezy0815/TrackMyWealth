@@ -59,9 +59,9 @@ remaining array responses with offset paging. Workspace membership has no domain
 retrievable beyond 200 rows. Category traversal retains the hierarchy across pages, and detection
 applies its ranking before slicing the matches. Each order ends with a unique ID tie-breaker.
 
-The agreed breaking change uses the existing operation URLs and requires a coordinated consumer
-release. See [migration instructions](../../api/conventions.md#migrating-collection-consumers-570)
-for request and response changes.
+The approved breaking change uses the existing operation URLs. There is no running production
+version supporting the previous response shape. The [migration instructions](../../api/conventions.md#migrating-collection-consumers-570)
+describe the supported builds and the request and response changes.
 
 `ApiConventionsDocumentTest` verifies the guide's paged-operation and sort-field table against
 OpenAPI and checks that collection responses follow the documented contract.

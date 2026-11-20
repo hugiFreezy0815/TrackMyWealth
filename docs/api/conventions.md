@@ -237,9 +237,12 @@ the complete tree. Workspace members include inactive memberships visible to the
 ranks all visible matches before returning a page. Resend the same file as multipart for each
 detection page. If templates change, restart detection at page zero.
 
-Release the backend and the migrated web and mobile consumers together. The demo seed script
-reads all pages. External consumers must deploy the new contract as part of the cutover. The PR
-requires the `api-breaking` label and a `## API breaking change` section in its description.
+The project owner approved the in-place change for #570 and confirmed on 2026-11-20 that
+there is no running production version. The [rollout approval in PR #637](https://github.com/hugiFreezy0815/TrackMyWealth/pull/637#user-content-rollout-approval)
+records the decision. The first supported web and native builds include PR #637 and use a
+backend that includes the same change. Enable those builds once the paged backend is live.
+The demo seed script from that release reads all pages. The PR requires the `api-breaking`
+label and a `## API breaking change` section in its description.
 
 ### Pagination of formerly unbounded lists (#473)
 

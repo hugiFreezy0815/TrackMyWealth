@@ -1,6 +1,8 @@
 package com.trackmywealth.backend.dto;
 
 import java.util.List;
+import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -57,6 +59,14 @@ public final class PagingValues {
           "A fixed-order page must not carry a sort: " + pageable.getSort());
     }
     return pageable;
+  }
+
+  /** JPA accepts an int offset. Count the same result without sending an oversized row offset. */
+  public static <T> Page<T> jpaPage(
+      Pageable pageable, Supplier<Page<T>> query, LongSupplier count) {
+    return pageable.getOffset() > Integer.MAX_VALUE
+        ? new PageImpl<>(List.of(), pageable, count.getAsLong())
+        : query.get();
   }
 
   /** Slices a fully ordered result whose order is computed by business logic. */

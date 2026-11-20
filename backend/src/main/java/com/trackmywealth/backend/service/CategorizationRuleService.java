@@ -57,12 +57,22 @@ public class CategorizationRuleService {
       boolean includeInactive, Pageable pageable, AuthenticatedUserPrincipal actor) {
     accessControlService.requireActingMember(actor);
     PagingValues.requireBoundedFixedOrder(pageable);
+    UUID workspaceId = actor.workspaceId();
     Page<CategorizationRule> rules =
         includeInactive
-            ? ruleRepository.findByWorkspaceIdOrderByPriorityAscCreatedAtAscIdAsc(
-                actor.workspaceId(), pageable)
-            : ruleRepository.findByWorkspaceIdAndActiveTrueOrderByPriorityAscCreatedAtAscIdAsc(
-                actor.workspaceId(), pageable);
+            ? PagingValues.jpaPage(
+                pageable,
+                () ->
+                    ruleRepository.findByWorkspaceIdOrderByPriorityAscCreatedAtAscIdAsc(
+                        workspaceId, pageable),
+                () -> ruleRepository.countByWorkspaceId(workspaceId))
+            : PagingValues.jpaPage(
+                pageable,
+                () ->
+                    ruleRepository
+                        .findByWorkspaceIdAndActiveTrueOrderByPriorityAscCreatedAtAscIdAsc(
+                            workspaceId, pageable),
+                () -> ruleRepository.countByWorkspaceIdAndActiveTrue(workspaceId));
     return rules.map(CategorizationRuleService::toResponse);
   }
 

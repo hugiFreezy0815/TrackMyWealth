@@ -148,12 +148,15 @@ public class ImportTemplateService {
       Pageable pageable,
       AuthenticatedUserPrincipal actor) {
     accessControlService.requireActingMember(actor);
-    return templateRepository
-        .findCurrentVisibleTo(
-            actor.workspaceId(),
-            institutionCatalogueId,
-            includeInactive,
-            PagingValues.requireBoundedFixedOrder(pageable))
+    PagingValues.requireBoundedFixedOrder(pageable);
+    return PagingValues.jpaPage(
+            pageable,
+            () ->
+                templateRepository.findCurrentVisibleTo(
+                    actor.workspaceId(), institutionCatalogueId, includeInactive, pageable),
+            () ->
+                templateRepository.countCurrentVisibleTo(
+                    actor.workspaceId(), institutionCatalogueId, includeInactive))
         .map(this::toResponse);
   }
 

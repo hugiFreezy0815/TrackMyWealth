@@ -180,6 +180,14 @@ class CategorizationControllerTest {
             List.of(first.id(), second.id()).stream()
                 .sorted(java.util.Comparator.comparing(UUID::toString))
                 .toList());
+
+    for (boolean includeInactive : List.of(false, true)) {
+      var oversizedOffset =
+          rulePage(token, "?page=2147483647&size=2&includeInactive=" + includeInactive);
+      assertThat(oversizedOffset.content()).isEmpty();
+      assertThat(oversizedOffset.page())
+          .isEqualTo(new PageResponse.PageMetadata(Integer.MAX_VALUE, 2, 2, 1));
+    }
   }
 
   @Test

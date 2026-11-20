@@ -18,6 +18,13 @@ import org.springframework.stereotype.Repository;
 public interface ImportTemplateRepository extends JpaRepository<ImportTemplate, UUID> {
 
   String WORKSPACE_ID = "workspaceId";
+  String INSTITUTION_ID = "institutionId";
+  String INCLUDE_INACTIVE = "includeInactive";
+  String LIST_FILTERS =
+      " FROM ImportTemplate t WHERE t.current = true"
+          + " AND (t.workspaceId IS NULL OR t.workspaceId = :workspaceId)"
+          + " AND (:includeInactive = true OR t.active = true)"
+          + " AND (:institutionId IS NULL OR t.institutionCatalogueId = :institutionId)";
 
   /**
    * The current version of every shipped template and of the workspace's own. Filtered explicitly
@@ -30,17 +37,18 @@ public interface ImportTemplateRepository extends JpaRepository<ImportTemplate, 
           + " ORDER BY t.name, t.id")
   List<ImportTemplate> findCurrentVisibleTo(@Param(WORKSPACE_ID) UUID workspaceId);
 
-  @Query(
-      "SELECT t FROM ImportTemplate t WHERE t.current = true"
-          + " AND (t.workspaceId IS NULL OR t.workspaceId = :workspaceId)"
-          + " AND (:includeInactive = true OR t.active = true)"
-          + " AND (:institutionId IS NULL OR t.institutionCatalogueId = :institutionId)"
-          + " ORDER BY t.name, t.id")
+  @Query("SELECT t" + LIST_FILTERS + " ORDER BY t.name, t.id")
   Page<ImportTemplate> findCurrentVisibleTo(
       @Param(WORKSPACE_ID) UUID workspaceId,
-      @Param("institutionId") UUID institutionCatalogueId,
-      @Param("includeInactive") boolean includeInactive,
+      @Param(INSTITUTION_ID) UUID institutionCatalogueId,
+      @Param(INCLUDE_INACTIVE) boolean includeInactive,
       Pageable pageable);
+
+  @Query("SELECT COUNT(t)" + LIST_FILTERS)
+  long countCurrentVisibleTo(
+      @Param(WORKSPACE_ID) UUID workspaceId,
+      @Param(INSTITUTION_ID) UUID institutionCatalogueId,
+      @Param(INCLUDE_INACTIVE) boolean includeInactive);
 
   /** One version, if the workspace may see it (its own or a shipped one). */
   @Query(

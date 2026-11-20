@@ -85,11 +85,16 @@ public class WorkspaceMemberService {
       throw accessControlService.denyAsNotFound(actor, WORKSPACE_ENTITY_TYPE, actor.workspaceId());
     }
 
+    PagingValues.requireBoundedFixedOrder(pageable);
     Page<WorkspaceMember> members =
-        workspaceMemberRepository.findMembersForListing(
-            actor.workspaceId(),
-            UserRoleValues.SYSTEM_ADMINISTRATOR,
-            PagingValues.requireBoundedFixedOrder(pageable));
+        PagingValues.jpaPage(
+            pageable,
+            () ->
+                workspaceMemberRepository.findMembersForListing(
+                    actor.workspaceId(), UserRoleValues.SYSTEM_ADMINISTRATOR, pageable),
+            () ->
+                workspaceMemberRepository.countMembersForListing(
+                    actor.workspaceId(), UserRoleValues.SYSTEM_ADMINISTRATOR));
     if (members.isEmpty()) {
       return new PageImpl<>(List.of(), pageable, members.getTotalElements());
     }

@@ -103,6 +103,11 @@ class SessionControllerTest {
     assertThat(page0.page().totalElements()).isEqualTo(2);
     assertThat(List.of(page0.content().get(0).id(), page1.content().get(0).id()))
         .containsExactlyElementsOf(expected);
+
+    var oversizedOffset = sessionPage(token, "?page=2147483647&size=2");
+    assertThat(oversizedOffset.content()).isEmpty();
+    assertThat(oversizedOffset.page())
+        .isEqualTo(new PageResponse.PageMetadata(Integer.MAX_VALUE, 2, 2, 1));
   }
 
   @Test

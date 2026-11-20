@@ -57,6 +57,8 @@ public interface UserSessionRepository extends JpaRepository<UserSession, UUID> 
   Page<UserSession> findByUser_IdAndStatusOrderByLastSeenAtDescIdAsc(
       UUID userId, String status, Pageable pageable);
 
+  long countByUser_IdAndStatus(UUID userId, String status);
+
   // US-02-03: scoped to the caller's own id in the query itself, not just checked afterward - a
   // session belonging to someone else looks exactly like a nonexistent one to the caller
   // (FR-TEN-006:

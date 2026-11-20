@@ -240,6 +240,20 @@ class AccountListControllerTest {
   }
 
   @Test
+  void oversizedOffsetKeepsTheRequestedPageAndFilteredWorkspaceTotal() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse own = createPortfolio(token, "Own", "CHF");
+    createAccount(token, cash("Matching", "CHF", own.id()));
+    createAccount(token, cash("Other portfolio", "CHF", null));
+    foreignPortfolioWithAnAccount();
+
+    var result = page(token, "?page=2147483647&size=201&accountType=CASH&portfolioId=" + own.id());
+    assertThat(result.content()).isEmpty();
+    assertThat(result.page())
+        .isEqualTo(new PageResponse.PageMetadata(Integer.MAX_VALUE, 200, 1, 1));
+  }
+
+  @Test
   void anArchivedAccountIsListedOnlyWithArchivedTrue() {
     String token = bootstrapAdministrator();
     UUID active = createAccount(token, cash("Active", "CHF", null)).id();

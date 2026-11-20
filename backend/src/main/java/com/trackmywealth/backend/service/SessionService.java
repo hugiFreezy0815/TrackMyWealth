@@ -41,9 +41,13 @@ public class SessionService {
 
   public Page<SessionSummaryResponse> listSessions(
       UUID callerUserId, UUID callerSessionId, Pageable pageable) {
-    return userSessionRepository
-        .findByUser_IdAndStatusOrderByLastSeenAtDescIdAsc(
-            callerUserId, ACTIVE, PagingValues.requireBoundedFixedOrder(pageable))
+    PagingValues.requireBoundedFixedOrder(pageable);
+    return PagingValues.jpaPage(
+            pageable,
+            () ->
+                userSessionRepository.findByUser_IdAndStatusOrderByLastSeenAtDescIdAsc(
+                    callerUserId, ACTIVE, pageable),
+            () -> userSessionRepository.countByUser_IdAndStatus(callerUserId, ACTIVE))
         .map(session -> toSummary(session, callerSessionId));
   }
 

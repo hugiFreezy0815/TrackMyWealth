@@ -163,10 +163,14 @@ public class PortfolioService {
     accessControlService.requireWorkspaceAccess(actor, actor.workspaceId());
     PagingValues.requireBoundedFixedOrder(pageable);
     Page<Portfolio> page =
-        portfolioRepository.findByWorkspaceIdAndStatus(
-            actor.workspaceId(),
-            ACTIVE,
-            PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), LIST_ORDER));
+        PagingValues.jpaPage(
+            pageable,
+            () ->
+                portfolioRepository.findByWorkspaceIdAndStatus(
+                    actor.workspaceId(),
+                    ACTIVE,
+                    PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), LIST_ORDER)),
+            () -> portfolioRepository.countByWorkspaceIdAndStatus(actor.workspaceId(), ACTIVE));
     if (page.isEmpty()) {
       return new PageImpl<>(List.of(), pageable, page.getTotalElements());
     }

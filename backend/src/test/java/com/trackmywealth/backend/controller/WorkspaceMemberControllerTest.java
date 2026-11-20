@@ -441,6 +441,7 @@ class WorkspaceMemberControllerTest {
     var firstPage = memberPage(token, "?size=201");
     var secondPage = memberPage(token, "?page=1&size=200");
     var afterLast = memberPage(token, "?page=2&size=200");
+    var oversizedOffset = memberPage(token, "?page=2147483647&size=200");
     assertThat(firstPage.page().size()).isEqualTo(200);
     assertThat(firstPage.page().totalElements()).isEqualTo(201);
     assertThat(firstPage.page().totalPages()).isEqualTo(2);
@@ -448,6 +449,9 @@ class WorkspaceMemberControllerTest {
     assertThat(secondPage.content()).hasSize(1);
     assertThat(afterLast.content()).isEmpty();
     assertThat(afterLast.page().totalElements()).isEqualTo(201);
+    assertThat(oversizedOffset.content()).isEmpty();
+    assertThat(oversizedOffset.page())
+        .isEqualTo(new PageResponse.PageMetadata(Integer.MAX_VALUE, 200, 201, 2));
     assertThat(
             Stream.concat(firstPage.content().stream(), secondPage.content().stream())
                 .map(WorkspaceMemberListItemResponse::id)

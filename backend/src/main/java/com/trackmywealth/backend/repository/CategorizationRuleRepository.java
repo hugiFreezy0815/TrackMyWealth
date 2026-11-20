@@ -26,5 +26,9 @@ public interface CategorizationRuleRepository extends JpaRepository<Categorizati
   Page<CategorizationRule> findByWorkspaceIdAndActiveTrueOrderByPriorityAscCreatedAtAscIdAsc(
       UUID workspaceId, Pageable pageable);
 
+  long countByWorkspaceId(UUID workspaceId);
+
+  long countByWorkspaceIdAndActiveTrue(UUID workspaceId);
+
   Optional<CategorizationRule> findByIdAndWorkspaceId(UUID id, UUID workspaceId);
 }

@@ -21,4 +21,6 @@ public interface PortfolioRepository extends JpaRepository<Portfolio, UUID> {
   // the same query: the list shows every total in its currency too.
   @EntityGraph(attributePaths = {"workspace", "catalogueInstitution"})
   Page<Portfolio> findByWorkspaceIdAndStatus(UUID workspaceId, String status, Pageable pageable);
+
+  long countByWorkspaceIdAndStatus(UUID workspaceId, String status);
 }

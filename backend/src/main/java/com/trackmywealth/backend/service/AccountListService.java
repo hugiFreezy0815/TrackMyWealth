@@ -70,10 +70,15 @@ public class AccountListService {
     accessControlService.requireWorkspaceAccess(actor, actor.workspaceId());
     requireValid(filter);
     PagingValues.requireBoundedFixedOrder(pageable);
+    var matching = AccountRepository.listedBy(actor.workspaceId(), filter);
     Page<Account> page =
-        accountRepository.findAll(
-            AccountRepository.listedBy(actor.workspaceId(), filter),
-            PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), LIST_ORDER));
+        PagingValues.jpaPage(
+            pageable,
+            () ->
+                accountRepository.findAll(
+                    matching,
+                    PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), LIST_ORDER)),
+            () -> accountRepository.count(matching));
     if (page.isEmpty()) {
       return new PageImpl<>(List.of(), pageable, page.getTotalElements());
     }

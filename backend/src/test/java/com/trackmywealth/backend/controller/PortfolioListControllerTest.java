@@ -1,6 +1,11 @@
 package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.verify;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
@@ -15,10 +20,13 @@ import com.trackmywealth.backend.dto.PortfolioListItemResponse;
 import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.PortfolioType;
 import com.trackmywealth.backend.dto.PortfolioViewResponse;
+import com.trackmywealth.backend.dto.ReassignAccountPortfolioRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.ValueStatus;
+import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
+import com.trackmywealth.backend.service.AccountValuationService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import jakarta.persistence.EntityManagerFactory;
 import java.math.BigDecimal;
@@ -46,6 +54,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.client.RestTestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -89,6 +98,7 @@ class PortfolioListControllerTest {
   @Autowired DataSource dataSource;
   @Autowired FxRateRepository fxRateRepository;
   @Autowired EntityManagerFactory entityManagerFactory;
+  @MockitoSpyBean AccountValuationService accountValuationService;
 
   @BeforeEach
   void cleanDatabase() throws Exception {
@@ -120,6 +130,92 @@ class PortfolioListControllerTest {
         statement.execute("DELETE FROM " + table);
       }
     }
+  }
+
+  @Test
+  void monthlyChangeUsesMembershipAtEachValuationDateAcrossPortfolioPages() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse source = createPortfolio(token, "Source", "CHF");
+    PortfolioResponse destination = createPortfolio(token, "Destination", "CHF");
+    AccountSummaryResponse moving = createAccount(token, cash("Moving", source.id()));
+    UUID staysInSource = createAccount(token, cash("Source cash", source.id())).id();
+    UUID staysInDestination = createAccount(token, cash("Destination cash", destination.id())).id();
+    LocalDate today = today();
+    LocalDate from = today.minusMonths(1);
+    for (UUID id : List.of(moving.id(), staysInSource, staysInDestination)) {
+      seedOpeningBalance(id, "100.00", from.minusDays(1));
+    }
+
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + moving.id() + "/reassign-portfolio")
+        .header("If-Match", "\"" + moving.version() + "\"")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new ReassignAccountPortfolioRequest(destination.id()))
+        .exchange()
+        .expectStatus()
+        .isOk();
+    // The endpoint records the move. Give both events distinct dates around the period start.
+    String dateEvent =
+        "UPDATE account_history_state SET effective_at = ? WHERE account_id = ? AND portfolio_id = ?";
+    ZoneId zone = ZoneId.of("Europe/Zurich");
+    execute(
+        dateEvent,
+        from.minusDays(1).atStartOfDay(zone).toOffsetDateTime(),
+        moving.id(),
+        source.id());
+    execute(
+        dateEvent,
+        from.plusDays(10).atStartOfDay(zone).toOffsetDateTime(),
+        moving.id(),
+        destination.id());
+
+    clearInvocations(accountValuationService);
+    var sourcePage = page(token, "?page=1&size=1");
+    assertThat(sourcePage.content())
+        .singleElement()
+        .satisfies(
+            row -> {
+              assertThat(row.id()).isEqualTo(source.id());
+              assertThat(row.change().amount()).isEqualByComparingTo("-100.00");
+              assertThat(row.change().percent()).isEqualByComparingTo("-50.00");
+            });
+    verify(accountValuationService)
+        .valueAllInCurrencies(
+            argThat(
+                accounts ->
+                    accounts.stream()
+                        .map(Account::getId)
+                        .collect(Collectors.toSet())
+                        .equals(java.util.Set.of(moving.id(), staysInSource))),
+            anyCollection(),
+            eq(from));
+
+    clearInvocations(accountValuationService);
+    var destinationPage = page(token, "?page=2&size=1");
+    assertThat(destinationPage.content())
+        .singleElement()
+        .satisfies(
+            row -> {
+              assertThat(row.id()).isEqualTo(destination.id());
+              assertThat(row.change().amount()).isEqualByComparingTo("100.00");
+              assertThat(row.change().percent()).isEqualByComparingTo("100.00");
+            });
+    verify(accountValuationService)
+        .valueAllInCurrencies(
+            argThat(
+                accounts ->
+                    accounts.stream()
+                        .map(Account::getId)
+                        .collect(Collectors.toSet())
+                        .equals(java.util.Set.of(staysInDestination))),
+            anyCollection(),
+            eq(from));
+
+    var oversizedOffset = page(token, "?page=2147483647&size=2");
+    assertThat(oversizedOffset.content()).isEmpty();
+    assertThat(oversizedOffset.page())
+        .isEqualTo(new PageResponse.PageMetadata(Integer.MAX_VALUE, 2, 3, 2));
   }
 
   // --- Acceptance criteria -----------------------------------------------------------------
@@ -652,11 +748,15 @@ class PortfolioListControllerTest {
 
   // An opening balance a few days back, in the account's own currency.
   private void seedOpeningBalance(UUID accountId, String balance) throws Exception {
+    seedOpeningBalance(accountId, balance, today().minusDays(3));
+  }
+
+  private void seedOpeningBalance(UUID accountId, String balance, LocalDate date) throws Exception {
     execute(
         "INSERT INTO account_snapshot (workspace_id, account_id, snapshot_date, balance,"
             + " currency, is_opening_balance) SELECT workspace_id, id, ?, ?, native_currency,"
             + " TRUE FROM account WHERE id = ?",
-        today().minusDays(3),
+        date,
         new BigDecimal(balance),
         accountId);
   }
