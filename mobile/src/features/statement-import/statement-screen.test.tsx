@@ -265,6 +265,12 @@ describe('S7 step 1: file and account (#492)', () => {
     await mount();
     await fireEvent.press(screen.getByRole('button', { name: 'Choose file' }));
 
+    // Android labels a CSV in Downloads text/comma-separated-values; the picker must offer it (#636).
+    expect(DocumentPicker.getDocumentAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: expect.arrayContaining(['text/csv', 'text/comma-separated-values']),
+      }),
+    );
     expect(await commitButton(41)).toBeTruthy();
     expect(server.callsOf('upload', '/api/v1/accounts/{accountId}/imports')).toHaveLength(1);
     expect(server.callsOf('post', '/api/v1/accounts/{accountId}/imports/{batchId}/commit')).toEqual(

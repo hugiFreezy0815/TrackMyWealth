@@ -1,3 +1,4 @@
+import { File } from 'expo-file-system';
 import {
   useInfiniteQuery,
   useQuery,
@@ -94,19 +95,29 @@ export function useImportTemplate(templateId: string | null | undefined) {
 }
 
 /**
- * Builds the multipart body: the web picker hands over a browser File; React Native's FormData
- * takes a `{ uri, name, type }` part instead of a Blob.
+ * The picked copy as a multipart part for Expo's native fetch (SDK 58 installs it as the global
+ * fetch): it sends parts that expose `bytes()`, `name` and `type`, and rejects React Native's
+ * `{ uri, name, type }` part before anything is sent. The statement's own name and media type are
+ * kept; an expo-file-system File alone would send the cache copy's generated name.
+ */
+function nativeFilePart(file: StatementFile): Blob {
+  return {
+    name: file.name,
+    type: file.mimeType ?? 'application/octet-stream',
+    bytes: () => new File(file.uri).bytes(),
+  } as unknown as Blob;
+}
+
+/**
+ * Builds the multipart body: the web picker hands over a browser File, sent as it is; on iOS and
+ * Android the picked copy goes as a `bytes()` part (`nativeFilePart`).
  */
 export function statementForm(file: StatementFile): FormData {
   const form = new FormData();
   if (file.webFile) {
     form.append('file', file.webFile, file.name);
   } else {
-    form.append('file', {
-      uri: file.uri,
-      name: file.name,
-      type: file.mimeType ?? 'application/octet-stream',
-    } as unknown as Blob);
+    form.append('file', nativeFilePart(file));
   }
   return form;
 }

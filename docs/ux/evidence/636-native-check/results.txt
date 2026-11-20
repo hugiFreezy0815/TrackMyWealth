@@ -1,0 +1,12 @@
+iOS Simulator (iPhone 17, iOS 27.2)
+  07:17:38Z  upload uuid=e999c8c7-29d1-496a-aca2-7b4c15d50467  status=201  batch=3a3fead1-0517-4001-98d2-d446bd92fdad  answer delivered
+  07:18:21Z  upload uuid=77e545d5-bced-4f60-baa3-0006e63c95aa  status=201  batch=b66e8a3e-e946-4f2b-a5d6-9c2fd613da61  answer DROPPED after commit
+  07:18:22Z  upload uuid=77e545d5-bced-4f60-baa3-0006e63c95aa  status=201  batch=b66e8a3e-e946-4f2b-a5d6-9c2fd613da61  answer delivered
+  07:19:09Z  upload uuid=29f191e5-5a34-4817-b4a5-27511d61e797  status=201  batch=56203098-4cab-425e-a607-36598bfdb159  answer delivered
+
+Android emulator (Pixel 10 Pro, API 37)
+  07:32:16Z  upload uuid=0d733708-4173-498e-96ea-17ab62a7cd3f  status=201  batch=1395014c-708f-4f7c-b033-7bcde2f6422f  answer delivered
+  07:32:48Z  upload uuid=d5af1c09-e8d8-44db-bc00-f77b7e258279  status=201  batch=020c5d76-49fa-495e-b23b-f454267ebcb5  answer DROPPED after commit
+  07:32:51Z  upload uuid=d5af1c09-e8d8-44db-bc00-f77b7e258279  status=201  batch=020c5d76-49fa-495e-b23b-f454267ebcb5  answer delivered
+  07:33:22Z  upload uuid=1d01f351-8106-4c6d-9c4d-f75ea4ce23b8  status=201  batch=3ebcc8e8-87f5-40bb-8f97-21b4b886553c  answer delivered
+
