@@ -129,6 +129,35 @@ class DeprecationHeadersTest {
   }
 
   @Test
+  void countsAVersionWithSurroundingSpaceAsThatVersion() throws Exception {
+    perform(get("/old").header(AppVersion.HEADER, " 1.4.0 "));
+
+    assertThat(count("getOld", "1.4.0")).isEqualTo(1);
+  }
+
+  @Test
+  void countsFurtherVersionsAsOtherOnceTheCapIsReachedSoTheTotalStaysComplete() throws Exception {
+    for (int patch = 0; patch < DeprecationHeaders.MAX_COUNTED_APP_VERSIONS; patch++) {
+      perform(get("/old").header(AppVersion.HEADER, "9.0." + patch));
+    }
+    perform(get("/old").header(AppVersion.HEADER, "1.4.0"));
+    perform(get("/old").header(AppVersion.HEADER, "1.5.0"));
+    perform(get("/old").header(AppVersion.HEADER, "9.0.0"));
+
+    assertThat(count("getOld", DeprecationHeaders.OTHER_VERSION)).isEqualTo(2);
+    assertThat(count("getOld", "1.4.0")).isZero();
+    // A version kept apart before the cap is still counted as itself.
+    assertThat(count("getOld", "9.0.0")).isEqualTo(2);
+    assertThat(registry.find(DeprecationHeaders.METRIC).counters())
+        .hasSize(DeprecationHeaders.MAX_COUNTED_APP_VERSIONS + 1);
+    assertThat(
+            registry.find(DeprecationHeaders.METRIC).counters().stream()
+                .mapToDouble(Counter::count)
+                .sum())
+        .isEqualTo(DeprecationHeaders.MAX_COUNTED_APP_VERSIONS + 3);
+  }
+
+  @Test
   void leavesAHandlerThatIsNoControllerMethodAlone() {
     MockHttpServletResponse response = new MockHttpServletResponse();
 

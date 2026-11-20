@@ -311,6 +311,7 @@ public class ApiDocumentationConfig {
         ResponseHeaderContract.document(responsesOf(operation), headers.value());
       }
       // US-29-16 (#576): last, so the deprecation headers land on the final success responses.
+      Deprecations.requireTraceableBodies(handlerMethod.getMethod());
       Deprecations.of(handlerMethod.getMethod())
           .ifPresent(deprecation -> DeprecationContract.document(operation, deprecation));
       return operation;

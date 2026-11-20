@@ -2,9 +2,7 @@ package com.trackmywealth.backend.config;
 
 import com.trackmywealth.backend.web.DeprecationHeaders;
 import com.trackmywealth.backend.web.PagedArgumentResolver;
-import io.micrometer.core.instrument.config.MeterFilter;
 import java.util.List;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -23,13 +21,6 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class WebMvcConfig implements WebMvcConfigurer {
 
-  /**
-   * How many app versions the deprecation counter keeps apart; calls with further versions are not
-   * counted. The version comes from the client, so without a cap a caller could grow the meter
-   * registry without bound.
-   */
-  static final int MAX_COUNTED_APP_VERSIONS = 100;
-
   private final DeprecationHeaders deprecationHeaders;
 
   public WebMvcConfig(DeprecationHeaders deprecationHeaders) {
@@ -44,14 +35,5 @@ public class WebMvcConfig implements WebMvcConfigurer {
   @Override
   public void addInterceptors(InterceptorRegistry registry) {
     registry.addInterceptor(deprecationHeaders);
-  }
-
-  @Bean
-  static MeterFilter deprecatedRequestVersionCap() {
-    return MeterFilter.maximumAllowableTags(
-        DeprecationHeaders.METRIC,
-        DeprecationHeaders.APP_VERSION_TAG,
-        MAX_COUNTED_APP_VERSIONS,
-        MeterFilter.deny());
   }
 }

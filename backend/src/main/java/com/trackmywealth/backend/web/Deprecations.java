@@ -24,7 +24,9 @@ import org.springframework.web.bind.annotation.RequestPart;
  * US-29-16 (#576): which {@link ApiDeprecation}s affect an operation - its own, and those of every
  * record component reachable from its request and response bodies (through generics such as {@code
  * ResponseEntity<PageResponse<T>>}, lists and nested records) - merged into the one set of headers
- * its responses carry.
+ * its responses carry. Only a field of a body can be deprecated: a deprecated component reached
+ * through any other parameter fails, and so does a body whose type cannot be followed ({@link
+ * #requireTraceableBodies}), so a deprecation is never silently left out.
  */
 public final class Deprecations {
 
@@ -53,15 +55,16 @@ public final class Deprecations {
     List<Parsed> found = new ArrayList<>();
     ApiDeprecation own = handler.getAnnotation(ApiDeprecation.class);
     if (own != null) {
-      found.add(parse(own, handler.getDeclaringClass().getSimpleName() + "." + handler.getName()));
+      found.add(parse(own, where(handler)));
     }
     Set<String> seen = new HashSet<>();
     collect(ResolvableType.forMethodReturnType(handler), found, seen);
     for (int i = 0; i < handler.getParameterCount(); i++) {
       MethodParameter parameter = new MethodParameter(handler, i);
-      if (parameter.hasParameterAnnotation(RequestBody.class)
-          || parameter.hasParameterAnnotation(RequestPart.class)) {
+      if (isBody(parameter)) {
         collect(ResolvableType.forMethodParameter(parameter), found, seen);
+      } else {
+        rejectOutsideABody(handler, parameter);
       }
     }
     if (found.isEmpty()) {
@@ -78,6 +81,63 @@ public final class Deprecations {
     Set<URI> migrations = new LinkedHashSet<>();
     found.forEach(parsed -> migrations.add(parsed.migration()));
     return Optional.of(new Deprecation(own != null, since, sunset, List.copyOf(migrations)));
+  }
+
+  /**
+   * Fails when {@code handler} declares a request or response body whose type cannot be followed
+   * (raw, a wildcard or {@code Object}): a deprecated field in it would be neither marked in the
+   * contract nor announced in the headers. The contract's generation calls it for every API
+   * operation; at run time it is not checked, as framework handlers (the error page, the actuator)
+   * are no API operations.
+   */
+  public static void requireTraceableBodies(Method handler) {
+    requireTraceable(handler, ResolvableType.forMethodReturnType(handler), "its response body");
+    for (int i = 0; i < handler.getParameterCount(); i++) {
+      MethodParameter parameter = new MethodParameter(handler, i);
+      if (isBody(parameter)) {
+        requireTraceable(
+            handler, ResolvableType.forMethodParameter(parameter), "its request body " + i);
+      }
+    }
+  }
+
+  private static void requireTraceable(Method handler, ResolvableType type, String what) {
+    if (type.hasUnresolvableGenerics() || type.toClass() == Object.class) {
+      throw new IllegalStateException(
+          where(handler)
+              + ": declare the type of "
+              + what
+              + " (not raw, ? or Object), or an @ApiDeprecation in it cannot be found (#576)");
+    }
+  }
+
+  private static boolean isBody(MethodParameter parameter) {
+    return parameter.hasParameterAnnotation(RequestBody.class)
+        || parameter.hasParameterAnnotation(RequestPart.class);
+  }
+
+  /**
+   * Only a field of a request or response body can be deprecated: a query or form parameter bound
+   * from a record is not a property in the contract, so it could not be marked there.
+   */
+  private static void rejectOutsideABody(Method handler, MethodParameter parameter) {
+    List<Parsed> outside = new ArrayList<>();
+    collect(ResolvableType.forMethodParameter(parameter), outside, new HashSet<>());
+    if (!outside.isEmpty()) {
+      throw new IllegalStateException(
+          ON
+              + outside.get(0).where()
+              + ": "
+              + where(handler)
+              + " binds it from parameter "
+              + parameter.getParameterIndex()
+              + ", not from a request body, where the contract cannot mark it. Deprecate the"
+              + " operation instead.");
+    }
+  }
+
+  private static String where(Method handler) {
+    return handler.getDeclaringClass().getSimpleName() + "." + handler.getName();
   }
 
   /** The deprecation of one record component, or empty when it is not deprecated. */
@@ -125,7 +185,7 @@ public final class Deprecations {
     }
   }
 
-  private record Parsed(LocalDate since, @Nullable LocalDate sunset, URI migration) {}
+  private record Parsed(LocalDate since, @Nullable LocalDate sunset, URI migration, String where) {}
 
   /**
    * Validates the annotation; a wrong one fails the contract's generation, naming {@code where}.
@@ -151,7 +211,7 @@ public final class Deprecations {
               + ": migration must be an absolute https URL of the migration note, was "
               + annotation.migration());
     }
-    return new Parsed(since, sunset, migration);
+    return new Parsed(since, sunset, migration, where);
   }
 
   private static LocalDate date(String value, String name, String where) {

@@ -307,6 +307,36 @@ describe('secure auth session', () => {
     expect(secureStore.deleteItemAsync).not.toHaveBeenCalled();
   });
 
+  it('keeps the session when the server refuses the app version during a refresh (#576)', async () => {
+    let refuse = true;
+    const fetchMock = serve((url, init) => {
+      if (url.endsWith('/auth/refresh')) {
+        return refuse
+          ? { status: 426, body: { title: 'x', status: 426, code: 'APP_UPDATE_REQUIRED' } }
+          : { status: 200, body: tokens(2) };
+      }
+      if (url.endsWith('/accounts')) {
+        const auth = (init.headers as Record<string, string>).Authorization;
+        return auth === 'Bearer access-2' ? { status: 200, body: ['ok'] } : { status: 401 };
+      }
+      return plainLogin(url) ?? { status: 404 };
+    });
+    await signIn('demo@example.com', 'test');
+
+    await expect(api.get('/api/v1/accounts')).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 426,
+    });
+
+    expect(sessionSnapshot().signedIn).toBe(true);
+    expect(secureStore.deleteItemAsync).not.toHaveBeenCalled();
+
+    // The server's minimum was lowered: the next request renews at once, without a backoff.
+    refuse = false;
+    await expect(api.get('/api/v1/accounts')).resolves.toEqual(['ok']);
+    expect(callsTo(fetchMock, '/auth/refresh')).toHaveLength(2);
+  });
+
   it('keeps the session when the refresh fails only because the server is unreachable', async () => {
     serve((url) => {
       if (url.endsWith('/auth/refresh')) return new TypeError('Network request failed');

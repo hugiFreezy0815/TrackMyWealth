@@ -258,12 +258,19 @@ A handler method or a component of a request or response record marked
   earliest dates, and `Link` lists every note. Success responses document the headers in the
   contract. Error responses carry them too.
 - The backend counts every call in `tmw.api.deprecated.requests`, tagged with `operation` (the
-  `operationId`) and `app_version` (`none` without the header; at most 100 versions are kept
-  apart). An administrator reads it at `/actuator/metrics/tmw.api.deprecated.requests`, for
+  `operationId`) and `app_version` (`none` without the header). At most 100 versions are kept
+  apart, and calls with any further version are counted as `other`, so the totals stay complete.
+  An `other` count above zero means that callers the counter cannot tell apart still use the
+  element. An administrator reads it at `/actuator/metrics/tmw.api.deprecated.requests`, for
   example `?tag=operation:listAccounts`.
 
-A wrong annotation (a malformed date, a sunset that is not after `since`, or a migration note that
-is not an absolute `https` URL) fails the contract's generation and names the element.
+Only a field of a request or response body can be deprecated. To retire a query or form
+parameter, deprecate the operation.
+
+The contract's generation fails and names the element for a wrong annotation (a malformed date, a
+sunset that is not after `since`, or a migration note that is not an absolute `https` URL), for a
+deprecated component bound from a parameter that is not a body, and for an operation whose body
+type cannot be followed (raw, `?` or `Object`), where a deprecated field would go unnoticed.
 
 ### Removing a deprecated element
 

@@ -124,6 +124,17 @@ committed to.
   `since`, the earliest `sunset` and every migration note. Rejected: springdoc's
   `@Schema(deprecated = true)` and Java's `@Deprecated`, which carry no date or note, and a
   hand-kept list of deprecated paths next to the code.
+- **A deprecated field announces itself on its whole operation.** RFC 9745 deprecates a resource,
+  not part of a body, so `Deprecation` on an operation whose body has a deprecated field
+  stretches its meaning. Clients only see the headers per response, though, and the contract
+  names the field. Only a body field can be deprecated: a query or form parameter is not a schema
+  property the contract could mark, so the operation is deprecated instead. The contract's
+  generation fails for a deprecated component outside a body and for a body type it cannot follow
+  (raw, `?` or `Object`), so no deprecation is left out silently.
+- **The counter keeps at most 100 app versions apart and counts the rest as `other`.** The version
+  comes from the client, so the tag values must be bounded. Dropping calls beyond the cap would
+  undercount, and an operator could then wrongly conclude that no app uses the element any more.
+  With `other`, the totals stay complete.
 - **Headers from the marking on, not from the date.** `Deprecation` is sent as soon as the element
   is marked, with its date, which may lie in the future (RFC 9745 allows this). The contract
   shows `deprecated: true` from the same release, so the headers and the contract agree.

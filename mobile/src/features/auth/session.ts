@@ -167,6 +167,10 @@ async function rotate(): Promise<SessionRefreshResult> {
       await clearSession();
       return access;
     }
+    // #576: the server no longer serves this app version (the transport has already reported it).
+    // Keep the stored session for the updated app, and fail the waiting request with the 426
+    // itself: no backoff, so "Try again" after the server's minimum was lowered renews at once.
+    if (error instanceof ApiError && problemReaction(error).reaction === 'UPDATE_APP') throw error;
     const now = Date.now();
     const retryAfter = error instanceof ApiError ? error.retryAfterSeconds : undefined;
     const delay =

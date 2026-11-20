@@ -14,6 +14,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
@@ -35,8 +36,10 @@ import org.springframework.web.servlet.HandlerInterceptor;
  *
  * <p>Set before the handler runs, so an error response of the operation carries them too. The
  * counter {@value #METRIC} is tagged with the operation id and the {@code X-App-Version} sent
- * ({@value #NO_VERSION} without one); its version tag values are capped ({@code WebMvcConfig}), as
- * the header comes from the client.
+ * ({@value #NO_VERSION} without one). The header comes from the client, so at most {@value
+ * #MAX_COUNTED_APP_VERSIONS} versions are kept apart and any further one is counted as {@value
+ * #OTHER_VERSION}: the totals stay complete, and a non-zero {@value #OTHER_VERSION} says that
+ * callers the counter cannot tell apart still use the element.
  */
 @Component
 public class DeprecationHeaders implements HandlerInterceptor {
@@ -53,6 +56,13 @@ public class DeprecationHeaders implements HandlerInterceptor {
   public static final String OPERATION_TAG = "operation";
   public static final String APP_VERSION_TAG = "app_version";
   public static final String NO_VERSION = "none";
+  public static final String OTHER_VERSION = "other";
+
+  /**
+   * How many app versions the counter keeps apart. The version comes from the client, so without a
+   * cap a caller could grow the meter registry without bound.
+   */
+  static final int MAX_COUNTED_APP_VERSIONS = 100;
 
   // RFC 9110's IMF-fixdate: always two-digit days, always GMT.
   private static final DateTimeFormatter HTTP_DATE =
@@ -61,6 +71,7 @@ public class DeprecationHeaders implements HandlerInterceptor {
 
   private final MeterRegistry meterRegistry;
   private final Map<Method, Optional<Deprecation>> byHandler = new ConcurrentHashMap<>();
+  private final Set<String> countedVersions = ConcurrentHashMap.newKeySet();
 
   public DeprecationHeaders(MeterRegistry meterRegistry) {
     this.meterRegistry = meterRegistry;
@@ -109,16 +120,35 @@ public class DeprecationHeaders implements HandlerInterceptor {
   }
 
   private void count(Method handler, HttpServletRequest request) {
+    // Stripped like MinimumAppVersionFilter does, which has already refused a malformed one.
     String version =
-        AppVersion.parse(request.getHeader(AppVersion.HEADER))
+        Optional.ofNullable(request.getHeader(AppVersion.HEADER))
+            .map(String::strip)
+            .flatMap(AppVersion::parse)
             .map(AppVersion::toString)
             .orElse(NO_VERSION);
     Counter.builder(METRIC)
         .description("Calls of an API operation that a deprecation affects (#576)")
         .tag(OPERATION_TAG, operationId(handler))
-        .tag(APP_VERSION_TAG, version)
+        .tag(APP_VERSION_TAG, countedVersion(version))
         .register(meterRegistry)
         .increment();
+  }
+
+  /**
+   * {@code version}, or {@value #OTHER_VERSION} once {@value #MAX_COUNTED_APP_VERSIONS} others are
+   * kept apart. Two first calls racing for the last place may both get it; the cap is a bound, not
+   * an exact count.
+   */
+  private String countedVersion(String version) {
+    if (countedVersions.contains(version)) {
+      return version;
+    }
+    if (countedVersions.size() >= MAX_COUNTED_APP_VERSIONS) {
+      return OTHER_VERSION;
+    }
+    countedVersions.add(version);
+    return version;
   }
 
   private static String operationId(Method handler) {
