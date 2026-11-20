@@ -7,3 +7,9 @@
 # commit removes the literal from source entirely; the fingerprint below only covers that one
 # historical line, so any new key-shaped literal is still caught.
 0c5e25d20351eadf761f26cac328ca72a544211c:backend/src/main/java/com/trackmywealth/backend/service/MfaEncryptionService.java:generic-api-key:40
+
+# PR #630 (US-29-14, #574), commit 2072617 briefly held `static final String KEY = "<uuid>"` in
+# ImportBatchIdempotencyTest: a synthetic Idempotency-Key UUID for the test's uploads, not a
+# credential. The next commit renames it UPLOAD_UUID (no longer key-named); this fingerprint covers
+# only that one historical line, so any new key-shaped literal is still caught.
+20726172e2056ccb5ae8e8e39b66e82735623d19:backend/src/test/java/com/trackmywealth/backend/controller/ImportBatchIdempotencyTest.java:generic-api-key:75

@@ -92,7 +92,8 @@ class CrossTenantIsolationTest {
           "import_file",
           "import_row_raw",
           "import_holding_row",
-          "workspace_security_ticker");
+          "workspace_security_ticker",
+          "idempotency_key");
 
   private UUID workspaceAId;
   private UUID workspaceBId;
@@ -461,6 +462,33 @@ class CrossTenantIsolationTest {
         .isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "account_snapshot", openingBalanceAId))
         .isFalse();
+  }
+
+  // US-29-14 (#574): a stored upload response repeats the created batch; a key of one workspace
+  // never replays in another.
+  @Test
+  void idempotencyKeyRowIsInvisibleAcrossWorkspaces() throws Exception {
+    UUID userId = UUID.randomUUID();
+    try (Connection admin = adminConnection();
+        PreparedStatement statement =
+            admin.prepareStatement(
+                "INSERT INTO app_user (id, email, password_hash) VALUES (?, ?, 'x')")) {
+      statement.setObject(1, userId);
+      statement.setString(2, "idempotency-" + userId + "@example.com");
+      statement.executeUpdate();
+    }
+    UUID keyId = UUID.randomUUID();
+    rowsCommittedUnderContext(
+        workspaceAId,
+        "INSERT INTO idempotency_key (id, workspace_id, user_id, operation_id, idempotency_key,"
+            + " request_fingerprint, expires_at)"
+            + " VALUES (?, ?, ?, 'createImportBatch', 'k', repeat('0', 64), now() + interval '1 day')",
+        keyId,
+        workspaceAId,
+        userId);
+
+    assertThat(rowVisibleUnderContext(workspaceAId, "idempotency_key", keyId)).isTrue();
+    assertThat(rowVisibleUnderContext(workspaceBId, "idempotency_key", keyId)).isFalse();
   }
 
   // US-08-04: a workspace's own categories and its customisation of a shared default are tenant

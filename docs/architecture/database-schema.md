@@ -111,6 +111,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V117` | US-07-38 (#480): `transaction_categorization_log.is_reset` (a member's reset to automatic: requires `assigned_by_user_id`, never `is_user_override`), `assigned_by` value `RESET` for a reset that assigned nothing, `category_id` nullable for such a reset only (`category_id IS NOT NULL OR is_reset`). Index `(transaction_id, assigned_at DESC, id DESC)` for the paged history; it replaces V13's `idx_transaction_categorization_log_transaction`. Existing rows are untouched. |
 | `V118` | #520: extended statistics `st_transaction_account_category (MCV, DEPENDENCIES)` on `transaction(account_id, category_id)`. `UNCATEGORIZED` is one shared system category, so treating the two columns as independent gave every account the database-wide uncategorized share (7,184 estimated rows for an inbox of 500 in `PagedListFixture`) and let page 0 of the inbox walk `idx_transaction_account_date_order` filtering on `category_id`; with the statistics the estimate is 414. Collected by autovacuum's `ANALYZE`. (V117 is left to PR #524; `out-of-order` application allows the gap.) **Tests:** `PagedListPlanTest.accountCategoryStatisticsAreCollected`, and the inbox test's count estimate within 2x of the actual rows |
 | `V119` | #520: `idx_transaction_account_category_order` rebuilt with the same key but **not partial**: V115's predicate columns (`deleted_at`, `voided_at`, `replaces_transaction_id`) move into `INCLUDE`, so the inbox's `count(*)` stays index-only and removed rows are filtered in the index. PostgreSQL ignores extended statistics when it costs a partial index (the predicate enters the estimate as bare clauses), so with V118 alone the partial index kept the old estimate (cost 7,738) and the inbox's last page read `idx_transaction_category` (every workspace's uncategorized rows) and sorted (3,299); non-partial, the index costs 1,117 and serves every page sort-free. Live rows hold `NULL` in the included columns, which costs only the null bitmap. Plain `CREATE INDEX` at application start, as V115 |
+| `V124` | Idempotent creates (US-29-14, #574): `idempotency_key` (workspace, user, operation, key, SHA-256 request fingerprint, `IN_PROGRESS`/`COMPLETED`, stored response status and body, `expires_at`), unique per workspace, user, operation and key; workspace RLS; cascades with its workspace and user. `SECURITY DEFINER` `purge_expired_idempotency_keys(now, limit)`, `EXECUTE` revoked from `PUBLIC` and granted to `trackmywealth_runtime` only (see "Idempotent creates" below). Numbered after #628's `V122`/`V123` |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
 instance as part of this design (including a positive/negative row-level-security test as a
@@ -278,13 +279,44 @@ HTTP path - filter, listener, services - as `trackmywealth_runtime`.
 **Owner and grants.** `SECURITY DEFINER` alone does not bypass FORCE RLS: the functions' owner
 must. Flyway creates them, so they belong to the migration role, which has `BYPASSRLS` (see
 "Database roles" above; ADR 0005 says why no separate owner role). The application connects as
-`trackmywealth_runtime` and gets `EXECUTE` on these two functions only: `V81` grants it when the
+`trackmywealth_runtime` and gets `EXECUTE` on these two functions and on V124's purge
+(see "Idempotent creates") only: `V81` grants it when the
 role exists before Flyway runs (a fresh split installation), and `role-split-database.sql` when an
 existing installation is split later. `V81` revokes PostgreSQL's default `PUBLIC` `EXECUTE`. A
 later migration that replaces a function must keep its grants. Both functions pin `search_path`,
 qualify their tables and set `row_security = off`, so an owner that cannot bypass RLS fails with an
 error instead of silently reading no membership. They are narrowly privileged identity lookups,
 **not** a general way around tenant isolation.
+
+### Idempotent creates (US-29-14, #574)
+
+`idempotency_key` (`V124`) holds one row per `Idempotency-Key` a member sent on a supporting
+creating POST (ADR 0006; the operations are listed in `docs/api/conventions.md`). The key is
+unique per workspace, user and operation, so another user's or workspace's key never replays.
+`IdempotencyService` runs a request in three steps:
+
+1. **Claim**, in a transaction of its own that commits before the create starts: `INSERT ...
+   ON CONFLICT DO NOTHING`, then the row `FOR UPDATE`. A new row is this request's claim
+   (`IN_PROGRESS`). An existing row is taken over when it expired or stayed `IN_PROGRESS` for 15
+   minutes (its server stopped: that transaction rolled back, nothing was created). Otherwise a
+   different request fingerprint is `422 IDEMPOTENCY_KEY_MISMATCH`, `IN_PROGRESS` is `409
+   IDEMPOTENCY_KEY_IN_USE`, and `COMPLETED` replays the stored response.
+2. **Complete**, inside the create's own transaction: the row becomes `COMPLETED` with the
+   response status and JSON body. The resource and its stored response commit together or not at
+   all, so a retry never finds one without the other.
+3. **Release** on failure: the `IN_PROGRESS` row is deleted. Only successes are stored, because a
+   failed create created nothing.
+
+The stored body repeats the created resource, so the table is under workspace RLS like every other
+workspace table. Rows expire after 24 hours; `IdempotencyService.deleteExpiredKeys` deletes them
+hourly (`app.idempotency.cleanup-interval`) in batches of 1,000. The scheduler has no workspace
+context, so the purge goes through `purge_expired_idempotency_keys(now, limit)`, a `SECURITY
+DEFINER` function like V81's lookups (same owner requirement, `search_path` pinned, `row_security =
+off`). It deletes expired rows only and returns a count, never row content. `V124` grants
+`EXECUTE` to `trackmywealth_runtime` when the role exists before Flyway runs, and
+`role-split-database.sql` when an existing installation is split later. `ImportBatchIdempotencyTest`
+covers the statements as an RLS-bound role, `CrossTenantIsolationTest` the policy, and
+`RoleSplitScriptsTest` the grant on both a fresh and an existing installation.
 
 ### Object-level denial audit lifecycle (US-28-02, #205)
 

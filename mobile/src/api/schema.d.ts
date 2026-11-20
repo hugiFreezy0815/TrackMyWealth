@@ -5996,6 +5996,8 @@ export interface operations {
         snapshotDate?: string;
       };
       header?: {
+        /** @description A fresh UUID for each upload, the same UUID on every retry of it (ADR 0006). A retry of the same upload within 24 hours answers the first upload's 201 again and creates no second batch. */
+        'Idempotency-Key'?: string;
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
         /** @description W3C trace context. Invalid or absent values start a trace. */
@@ -6077,6 +6079,7 @@ export interface operations {
       /**
        * @description Problem codes:
        *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+       *     - `IDEMPOTENCY_KEY_IN_USE`: A request with this Idempotency-Key is still running; retry it with the same key to get its result.
        *     - `ACCOUNT_ARCHIVED`: The account is archived; restore it first.
        *     - `IMPORT_TOO_MANY_OPEN_BATCHES`: The account holds as many open import batches as it may (maxOpenBatches); commit or discard one first.
        */
@@ -6084,6 +6087,8 @@ export interface operations {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
+          /** @description Seconds to wait before retrying, when the server can tell. */
+          'Retry-After'?: number;
           traceparent: components['headers']['Traceparent'];
           [name: string]: unknown;
         };
@@ -6108,6 +6113,7 @@ export interface operations {
       };
       /**
        * @description Problem codes:
+       *     - `IDEMPOTENCY_KEY_MISMATCH`: This Idempotency-Key was already used for a different request; a new request needs a new key.
        *     - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
        *     - `IMPORT_TEMPLATE_INVALID`: The import template breaks a rule; field names the template field, detail the rule.
        *     - `IMPORT_TEMPLATE_UNSUPPORTED`: A valid template this release cannot import yet.

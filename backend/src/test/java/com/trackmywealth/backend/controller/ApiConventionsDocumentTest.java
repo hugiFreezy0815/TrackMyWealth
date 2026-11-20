@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.yaml.snakeyaml.Yaml;
 
 /**
- * US-29-01 (#371): {@code docs/api/conventions.md} is what a client developer reads, so its two
+ * US-29-01 (#371): {@code docs/api/conventions.md} is what a client developer reads, so its
  * operation tables must say what {@code api/openapi.yaml} says. A new paged list, a new sort field
  * or a new plain-array list that is not written into the guide fails here and names the difference.
  */
@@ -61,6 +61,20 @@ class ApiConventionsDocumentTest {
     assertThat(documented)
         .as("the array table of %s against the array responses of %s", GUIDE, CONTRACT)
         .isEqualTo(arrayOperationsOfTheContract());
+  }
+
+  /** US-29-14 (#574): a client may rely on the header only where the contract declares it. */
+  @Test
+  void theIdempotencyTableListsEveryOperationThatTakesAnIdempotencyKey() throws IOException {
+    Set<String> documented = new TreeSet<>();
+    for (List<String> row : tableAfter("| Idempotent operation |")) {
+      documented.add(operationIn(row.get(0)));
+    }
+
+    assertThat(documented)
+        .as("the Idempotency-Key table of %s against the header parameters of %s", GUIDE, CONTRACT)
+        .isEqualTo(idempotentOperationsOfTheContract())
+        .isNotEmpty();
   }
 
   /** The cells of each body row of the table whose header line starts with {@code header}. */
@@ -116,6 +130,23 @@ class ApiConventionsDocumentTest {
           }
         });
     return arrays;
+  }
+
+  /** Every operation that declares the {@code Idempotency-Key} request header. */
+  private static Set<String> idempotentOperationsOfTheContract() throws IOException {
+    Set<String> idempotent = new TreeSet<>();
+    forEachOperation(
+        (name, operation) -> {
+          Object parameters = operation.get("parameters");
+          for (Object parameter : parameters instanceof List<?> list ? list : List.of()) {
+            Map<String, Object> declared = map(parameter);
+            if ("header".equals(declared.get("in"))
+                && "Idempotency-Key".equals(declared.get("name"))) {
+              idempotent.add(name);
+            }
+          }
+        });
+    return idempotent;
   }
 
   private static Set<String> sortFields(Map<String, Object> sort) {

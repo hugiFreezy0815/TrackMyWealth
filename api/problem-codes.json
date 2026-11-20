@@ -9,6 +9,8 @@
     "VERSION_REQUIRED": {"statuses": [428], "reaction": "RELOAD_AND_RETRY", "deprecated": false},
     "VERSION_CONFLICT": {"statuses": [412, 409], "reaction": "RELOAD_AND_RETRY", "deprecated": false},
     "RETRY": {"statuses": [409], "reaction": "RETRY", "deprecated": false},
+    "IDEMPOTENCY_KEY_IN_USE": {"statuses": [409], "reaction": "RETRY_LATER", "deprecated": false},
+    "IDEMPOTENCY_KEY_MISMATCH": {"statuses": [422], "reaction": "REPORT", "deprecated": false},
     "ACCOUNT_ARCHIVED": {"statuses": [409], "reaction": "SHOW", "deprecated": false},
     "IMMUTABLE_FIELD": {"statuses": [409], "reaction": "FIX_INPUT", "deprecated": false},
     "UNPROCESSABLE": {"statuses": [422], "reaction": "FIX_INPUT", "deprecated": false},

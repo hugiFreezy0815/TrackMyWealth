@@ -1,5 +1,6 @@
 import { NetworkError } from '@/api/client';
 
+import { problem } from './fake-import-server';
 import { isRetryableUploadError, retryAllowedAt } from './model';
 import { supportsUploadReplay } from './upload-replay';
 
@@ -19,8 +20,14 @@ it('allows a retry after an uncertain upload outcome once replay is supported', 
   expect(retryAllowedAt(timeout)).toBeNull();
 });
 
-it('ships with replay disabled until the backend part of #574 is in', () => {
+it('ships with replay enabled now that the server replays a keyed upload (#574)', () => {
   expect(
     jest.requireActual<typeof import('./upload-replay')>('./upload-replay').supportsUploadReplay(),
-  ).toBe(false);
+  ).toBe(true);
+});
+
+it('retries an upload whose first request with the same key still runs', () => {
+  const inUse = problem('IDEMPOTENCY_KEY_IN_USE', 409, 2);
+  expect(isRetryableUploadError(inUse)).toBe(true);
+  expect(retryAllowedAt(inUse, 1_000)).toBe(3_000);
 });

@@ -67,6 +67,16 @@ public enum ProblemCode {
       ClientReaction.RETRY,
       "A concurrent request won a race for the same key; the retry answers with the winner.",
       HttpStatus.CONFLICT),
+  IDEMPOTENCY_KEY_IN_USE(
+      RETRY_LATER,
+      "A request with this Idempotency-Key is still running; retry it with the same key to get"
+          + " its result.",
+      HttpStatus.CONFLICT),
+  IDEMPOTENCY_KEY_MISMATCH(
+      REPORT,
+      "This Idempotency-Key was already used for a different request; a new request needs a new"
+          + " key.",
+      HttpStatus.UNPROCESSABLE_CONTENT),
   ACCOUNT_ARCHIVED(SHOW, "The account is archived; restore it first.", HttpStatus.CONFLICT),
   IMMUTABLE_FIELD(
       FIX_INPUT,

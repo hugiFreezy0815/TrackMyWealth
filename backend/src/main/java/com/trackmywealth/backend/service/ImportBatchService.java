@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.CanonicalImportRow;
+import com.trackmywealth.backend.dto.IdempotencyClaim;
 import com.trackmywealth.backend.dto.ImportAccountContext;
 import com.trackmywealth.backend.dto.ImportBatchCountsResponse;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
@@ -119,6 +120,7 @@ public class ImportBatchService {
   private final TransactionTemplate readOnlyTransaction;
   private final TransactionTemplate writeTransaction;
   private final int maxOpenBatches;
+  private final IdempotencyService idempotencyService;
 
   public ImportBatchService(
       AccountLookupService accountLookupService,
@@ -143,6 +145,7 @@ public class ImportBatchService {
       MessageSource messageSource,
       EntityManager entityManager,
       PlatformTransactionManager transactionManager,
+      IdempotencyService idempotencyService,
       @Value("${app.import.max-open-batches-per-account}") int maxOpenBatches) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
@@ -169,6 +172,7 @@ public class ImportBatchService {
     this.readOnlyTransaction.setReadOnly(true);
     this.writeTransaction = new TransactionTemplate(transactionManager);
     this.maxOpenBatches = maxOpenBatches;
+    this.idempotencyService = idempotencyService;
   }
 
   /**
@@ -207,6 +211,23 @@ public class ImportBatchService {
       UUID templateId,
       LocalDate snapshotDate,
       AuthenticatedUserPrincipal actor) {
+    return upload(accountId, fileName, mediaType, content, templateId, snapshotDate, actor, null);
+  }
+
+  /**
+   * {@link #upload} under an {@code Idempotency-Key} the request holds (#574): the new batch and
+   * the stored 201 response commit in one transaction, so a retry never finds a batch without its
+   * response or a response without its batch. {@code claim} may be {@code null}.
+   */
+  public ImportBatchResponse upload(
+      UUID accountId,
+      String fileName,
+      String mediaType,
+      byte[] content,
+      UUID templateId,
+      LocalDate snapshotDate,
+      AuthenticatedUserPrincipal actor,
+      IdempotencyClaim claim) {
     ImportAccountContext accountContext =
         readOnlyTransaction.execute(
             status -> {
@@ -270,7 +291,11 @@ public class ImportBatchService {
           } else if (parsed != null) {
             applyParse(batch, account, template, parsed, rates, actor);
           }
-          return summary(batch, account, offered, actor);
+          ImportBatchResponse created = summary(batch, account, offered, actor);
+          if (claim != null) {
+            idempotencyService.complete(claim, HttpStatus.CREATED.value(), created);
+          }
+          return created;
         });
   }
 

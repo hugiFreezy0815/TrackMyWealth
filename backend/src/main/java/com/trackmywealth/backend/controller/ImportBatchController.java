@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.controller;
 
+import com.trackmywealth.backend.dto.IdempotencyClaim;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportErrorExportResponse;
 import com.trackmywealth.backend.dto.ImportParseRequest;
@@ -10,6 +11,7 @@ import com.trackmywealth.backend.dto.ImportRowResponse;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.service.IdempotencyService;
 import com.trackmywealth.backend.service.ImportBatchService;
 import com.trackmywealth.backend.service.ImportCommitService;
 import com.trackmywealth.backend.service.ImportErrorExportService;
@@ -23,6 +25,7 @@ import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -68,21 +71,25 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 public class ImportBatchController {
 
   private static final String BY_ID = "/{batchId}";
+  private static final String UPLOAD_OPERATION = "createImportBatch";
 
   private final ImportBatchService importBatchService;
   private final ImportCommitService importCommitService;
   private final ImportErrorExportService importErrorExportService;
   private final ImportRollbackService importRollbackService;
+  private final IdempotencyService idempotencyService;
 
   public ImportBatchController(
       ImportBatchService importBatchService,
       ImportCommitService importCommitService,
       ImportErrorExportService importErrorExportService,
-      ImportRollbackService importRollbackService) {
+      ImportRollbackService importRollbackService,
+      IdempotencyService idempotencyService) {
     this.importBatchService = importBatchService;
     this.importCommitService = importCommitService;
     this.importErrorExportService = importErrorExportService;
     this.importRollbackService = importRollbackService;
+    this.idempotencyService = idempotencyService;
   }
 
   /**
@@ -94,6 +101,11 @@ public class ImportBatchController {
    * 422 for an empty file, one the template cannot read, or more than 20,000 rows ({@code
    * IMPORT_FILE_TOO_MANY_ROWS}); for a CAMT file also {@code IMPORT_CAMT_UNSUPPORTED}, {@code
    * IMPORT_CAMT_LIMIT_EXCEEDED} and {@code IMPORT_CAMT_MULTIPLE_ACCOUNTS}.
+   *
+   * <p>With an {@code Idempotency-Key} (#574, ADR 0006), a retry of the same upload answers the
+   * first upload's 201 again and creates no second batch: 422 {@code IDEMPOTENCY_KEY_MISMATCH} when
+   * the key was used for a different upload, 409 {@code IDEMPOTENCY_KEY_IN_USE} while the first one
+   * still runs. A key is kept 24 hours; a failed upload does not keep it.
    */
   @SuccessStatus(HttpStatus.CREATED)
   @Operation(operationId = "createImportBatch", summary = "Upload a statement file for import")
@@ -120,7 +132,9 @@ public class ImportBatchController {
     ProblemCode.IMPORT_OCR_FAILED,
     ProblemCode.IMPORT_OCR_UNAVAILABLE,
     ProblemCode.IMPORT_TOO_MANY_OPEN_BATCHES,
-    ProblemCode.ACCOUNT_IDENTIFICATION_UNAVAILABLE
+    ProblemCode.ACCOUNT_IDENTIFICATION_UNAVAILABLE,
+    ProblemCode.IDEMPOTENCY_KEY_IN_USE,
+    ProblemCode.IDEMPOTENCY_KEY_MISMATCH
   })
   @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   @SendsHeaders({ResponseHeader.ETAG, ResponseHeader.LOCATION})
@@ -130,16 +144,43 @@ public class ImportBatchController {
       @RequestParam(required = false) UUID templateId,
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
           LocalDate snapshotDate,
+      @Parameter(
+              description =
+                  "A fresh UUID for each upload, the same UUID on every retry of it (ADR 0006)."
+                      + " A retry of the same upload within 24 hours answers the first upload's"
+                      + " 201 again and creates no second batch.",
+              schema = @Schema(type = "string", format = "uuid"))
+          @RequestHeader(value = IdempotencyService.HEADER, required = false)
+          String idempotencyKey,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    ImportBatchResponse created =
-        importBatchService.upload(
-            accountId,
-            file.getOriginalFilename(),
-            file.getContentType(),
-            bytesOf(file),
-            templateId,
-            snapshotDate,
-            actor);
+    byte[] content = bytesOf(file);
+    String fileName = file.getOriginalFilename();
+    String mediaType = file.getContentType();
+    // An administrator without a workspace has no key scope; the upload refuses them as before.
+    IdempotencyClaim claim =
+        idempotencyKey == null || actor.workspaceId() == null
+            ? null
+            : idempotencyService.claim(
+                UPLOAD_OPERATION,
+                IdempotencyService.normalizedKey(idempotencyKey),
+                IdempotencyService.fingerprint(
+                    content, accountId, templateId, snapshotDate, fileName, mediaType),
+                actor);
+    ImportBatchResponse created;
+    if (claim != null && claim.isReplay()) {
+      created = idempotencyService.replayed(claim, ImportBatchResponse.class);
+    } else {
+      try {
+        created =
+            importBatchService.upload(
+                accountId, fileName, mediaType, content, templateId, snapshotDate, actor, claim);
+      } catch (RuntimeException failure) {
+        if (claim != null) {
+          releaseAfterFailure(claim, failure);
+        }
+        throw failure;
+      }
+    }
     URI location =
         ServletUriComponentsBuilder.fromCurrentRequest()
             .path(BY_ID)
@@ -148,6 +189,16 @@ public class ImportBatchController {
     return ResponseEntity.created(location)
         .eTag(IfMatchVersionParser.toEtag(created.version()))
         .body(created);
+  }
+
+  // A release that fails too must not hide why the upload failed; an unreleased claim is taken
+  // over once it counts as abandoned (IdempotencyService).
+  private void releaseAfterFailure(IdempotencyClaim claim, RuntimeException failure) {
+    try {
+      idempotencyService.release(claim);
+    } catch (RuntimeException releaseFailure) {
+      failure.addSuppressed(releaseFailure);
+    }
   }
 
   /**
