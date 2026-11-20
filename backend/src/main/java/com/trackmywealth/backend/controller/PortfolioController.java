@@ -64,7 +64,7 @@ public class PortfolioController {
   }
 
   /** US-04-05 (#381): the active workspace portfolios with their totals, in tab order. */
-  @ProblemCodes({ProblemCode.VALIDATION_FAILED, ProblemCode.NOT_FOUND})
+  @ProblemCodes({ProblemCode.NOT_FOUND})
   @Operation(
       operationId = "listPortfolios",
       summary = "List the workspace's portfolios with their totals",
