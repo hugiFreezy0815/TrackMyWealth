@@ -79,6 +79,7 @@ describe('UpdateRequiredScreen (#649)', () => {
         }),
     );
     await show({ platform: 'ios', onRetry });
+    await screen.findByRole('header');
 
     const action = screen.getByRole('button', { name: en['error.retry'] });
     fireEvent.press(action);
@@ -99,6 +100,7 @@ describe('UpdateRequiredScreen (#649)', () => {
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce(undefined);
     await show({ platform: 'android', onRetry });
+    await screen.findByRole('header');
     fireEvent.press(screen.getByRole('button', { name: en['error.retry'] }));
     expect(await screen.findByText(en['updateRequired.retryError'])).toBeTruthy();
     await waitFor(() => {
@@ -113,6 +115,7 @@ describe('UpdateRequiredScreen (#649)', () => {
   it('shows localized accessible feedback on network failure and can retry in German', async () => {
     const onRetry = jest.fn().mockRejectedValueOnce(new NetworkError('unreachable'));
     await show({ platform: 'android', onRetry }, de, 'de');
+    await screen.findByRole('header');
 
     fireEvent.press(screen.getByRole('button', { name: de['error.retry'] }));
     const message = await screen.findByText(de['updateRequired.networkError']);
