@@ -101,6 +101,7 @@ export function UpdateRequiredScreen({
             accessible={false}
             // Decorative. On web expo-image renders its <img alt> from accessibilityLabel only (the
             // alt prop is ignored once the source has loaded); empty keeps it out of the a11y tree.
+            // eslint-disable-next-line no-restricted-syntax -- empty, not UI text: hides the image
             accessibilityLabel=""
           />
           <Text
