@@ -5,6 +5,7 @@ import { ActivityIndicator, Platform, ScrollView, Text, View, useWindowDimension
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { APP_VERSION } from '@/api/app-version';
+import { NetworkError } from '@/api/client';
 import { ActionButton } from '@/components/shared';
 import { Layout, Spacing, TypeScale } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -33,6 +34,7 @@ export function UpdateRequiredScreen({
   const web = platform === 'web';
   const phone = width <= Layout.phoneMax;
   const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
   const retryInFlight = useRef(false);
 
   const handleAction = () => {
@@ -43,23 +45,19 @@ export function UpdateRequiredScreen({
     }
     retryInFlight.current = true;
     setRetrying(true);
-    try {
-      // The root currently dismisses the blocking screen synchronously. An asynchronous retry
-      // handler can instead keep it mounted, with the action disabled until the attempt finishes.
-      Promise.resolve(onRetry()).then(
-        () => {
-          retryInFlight.current = false;
-          setRetrying(false);
-        },
-        () => {
-          retryInFlight.current = false;
-          setRetrying(false);
-        },
-      );
-    } catch {
-      retryInFlight.current = false;
-      setRetrying(false);
-    }
+    setRetryError(null);
+    void (async () => {
+      try {
+        await onRetry();
+      } catch (error) {
+        setRetryError(
+          error instanceof NetworkError ? 'updateRequired.networkError' : 'updateRequired.retryError',
+        );
+      } finally {
+        retryInFlight.current = false;
+        setRetrying(false);
+      }
+    })();
   };
 
   return (
@@ -120,6 +118,19 @@ export function UpdateRequiredScreen({
               {intl.formatMessage({ id: 'updateRequired.version' }, { version })}
             </Text>
           ) : null}
+          {retryError ? (
+            <Text
+              accessibilityRole="alert"
+              style={{
+                ...TypeScale.bodyMedium,
+                color: theme.statusLoss,
+                textAlign: 'center',
+                alignSelf: 'stretch',
+              }}
+            >
+              {intl.formatMessage({ id: retryError })}
+            </Text>
+          ) : null}
           <View style={{ width: phone ? '100%' : 240, maxWidth: '100%' }}>
             <ActionButton
               label={intl.formatMessage({ id: web ? 'updateRequired.reload' : 'error.retry' })}
@@ -129,7 +140,7 @@ export function UpdateRequiredScreen({
             />
             {retrying ? (
               <ActivityIndicator
-                accessibilityLabel={intl.formatMessage({ id: 'error.retry' })}
+                accessibilityLabel={intl.formatMessage({ id: 'updateRequired.retrying' })}
                 color={theme.brandPrimary}
                 style={{ marginTop: Spacing.two }}
               />
