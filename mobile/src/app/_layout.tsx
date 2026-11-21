@@ -5,6 +5,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 
 import { configureQueryEnvironment, queryClient } from '@/api/queries/client';
+import { retryAfterUpdateRequired } from '@/features/shell/retry-after-update-required';
 import { AppIntlProvider } from '@/i18n';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -12,11 +13,7 @@ import { View, useColorScheme } from 'react-native';
 import { useIntl } from 'react-intl';
 
 import { loadServerUrl } from '@/api/server-url';
-import {
-  dismissUpdateRequired,
-  subscribeUpdateRequired,
-  updateRequiredSnapshot,
-} from '@/api/update-required';
+import { subscribeUpdateRequired, updateRequiredSnapshot } from '@/api/update-required';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { AppShell } from '@/features/shell/app-shell';
 import { UpdateRequiredScreen } from '@/features/shell/update-required-screen';
@@ -77,13 +74,6 @@ export default function TabLayout() {
       </AppIntlProvider>
     </QueryClientProvider>
   );
-}
-
-// Shows the app again and refetches what failed; a server that still refuses shows the update
-// screen again on its next 426.
-function retryAfterUpdateRequired() {
-  dismissUpdateRequired();
-  void queryClient.invalidateQueries();
 }
 
 function RestoringSession() {
