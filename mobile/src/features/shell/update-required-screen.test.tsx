@@ -101,9 +101,10 @@ describe('UpdateRequiredScreen (#649)', () => {
     await show({ platform: 'android', onRetry });
     fireEvent.press(screen.getByRole('button', { name: en['error.retry'] }));
     expect(await screen.findByText(en['updateRequired.retryError'])).toBeTruthy();
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: en['error.retry'] }).props['aria-disabled']).toBe(false),
-    );
+    await waitFor(() => {
+      const retryButton = screen.getByRole('button', { name: en['error.retry'] });
+      expect(retryButton.props['aria-disabled']).toBe(false);
+    });
     fireEvent.press(screen.getByRole('button', { name: en['error.retry'] }));
     expect(onRetry).toHaveBeenCalledTimes(2);
     await waitFor(() => expect(screen.queryByText(en['updateRequired.retryError'])).toBeNull());
