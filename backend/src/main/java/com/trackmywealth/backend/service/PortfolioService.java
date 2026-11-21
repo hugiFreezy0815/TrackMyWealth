@@ -205,7 +205,13 @@ public class PortfolioService {
 
     Map<UUID, PortfolioPeriodChange> monthlyChanges =
         historyService.monthlyChanges(
-            portfolios, accountRepository.findByWorkspaceId(actor.workspaceId()), asOf);
+            portfolios,
+            // The same access-filtered accounts as the portfolio's own chart, so the row's return
+            // equals its 1M chip.
+            accessControlService.accountsWithAccess(
+                accessControlService.requireActingMember(actor),
+                accountRepository.findByWorkspaceId(actor.workspaceId())),
+            asOf);
     List<PortfolioListItemResponse> rows = new ArrayList<>(portfolios.size());
     for (Portfolio portfolio : portfolios) {
       List<UUID> ids = accountIdsByPortfolio.get(portfolio.getId());

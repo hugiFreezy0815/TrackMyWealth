@@ -136,8 +136,9 @@ public class PeriodReturnService {
    * #645: the return of many scopes at once - the Overview's portfolio rows - each in its own
    * currency, from {@code from} to {@code to}. {@code scopes} maps a scope's id to its currency and
    * {@code included} gives, per scope, whether an account is in it on a day by its effective state
-   * then. Scopes that share a currency share one valuation pass and one cash-flow query, so the
-   * work grows with the number of currencies, never with the number of scopes.
+   * then; it must hold an entry for every scope. Scopes that share a currency share one valuation
+   * pass and one cash-flow query, so the work grows with the number of currencies, never with the
+   * number of scopes.
    */
   @Transactional(readOnly = true)
   public Map<UUID, PeriodReturn> scopeReturns(
@@ -148,6 +149,9 @@ public class PeriodReturnService {
       Map<UUID, LocalDate> inception,
       Map<UUID, List<LocalDate>> stateChangeDays,
       Map<UUID, BiPredicate<UUID, LocalDate>> included) {
+    if (!included.keySet().containsAll(scopes.keySet())) {
+      throw new IllegalArgumentException("Every scope needs an inclusion predicate.");
+    }
     if (scopes.isEmpty()) {
       return Map.of();
     }

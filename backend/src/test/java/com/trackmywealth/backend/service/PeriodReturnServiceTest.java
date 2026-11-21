@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -28,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiPredicate;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -362,6 +364,25 @@ class PeriodReturnServiceTest {
     verify(valuations).valueAll(anyCollection(), eq("CHF"), eq(TODAY));
     verify(cashFlows).datedFlows(anyList(), anyCollection(), any(), any(), eq("CHF"));
     verify(cashFlows, never()).datedFlows(anyList(), anyCollection(), any(), any(), eq("EUR"));
+  }
+
+  @Test
+  void scopeReturnsRejectsAScopeWithoutAnInclusionPredicate() {
+    UUID covered = UUID.randomUUID();
+    UUID missing = UUID.randomUUID();
+    PeriodReturnService service =
+        new PeriodReturnService(
+            mock(ValueHistoryStartRepository.class),
+            mock(AccountValuationService.class),
+            mock(CashFlowService.class));
+    Map<UUID, String> scopes = Map.of(covered, "CHF", missing, "CHF");
+    Map<UUID, BiPredicate<UUID, LocalDate>> included = Map.of(covered, (id, date) -> true);
+
+    assertThatIllegalArgumentException()
+        .isThrownBy(
+            () ->
+                service.scopeReturns(
+                    List.of(), YEAR_AGO, TODAY, scopes, Map.of(), Map.of(), included));
   }
 
   // --- Helpers -----------------------------------------------------------------------------------
