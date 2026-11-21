@@ -248,6 +248,22 @@ describe('shared navigation and financial rows', () => {
     expect(screen.getByLabelText('Return minus 12.3 percent').props.style.flexShrink).toBe(1);
   });
 
+  it('wraps the separator together with the figure, never alone at the line end (#669)', async () => {
+    await renderWithIntl(
+      <ChangeChip
+        amount="482406"
+        currency="CHF"
+        figure={{ text: 'Return −12.3%', label: 'Return minus 12.3 percent', direction: 'down' }}
+      />,
+    );
+    const separator = screen.getByText('·', { includeHiddenElements: true });
+    const figure = screen.getByLabelText('Return minus 12.3 percent');
+    const glyph = screen.getByText('↘', { includeHiddenElements: true });
+    expect(separator.parent).toBe(figure.parent);
+    expect(separator.parent).not.toBe(glyph.parent);
+    expect(separator.parent?.props.style).toMatchObject({ flexDirection: 'row', flexShrink: 1 });
+  });
+
   it('keeps a hidden change neutral and drops its figure', async () => {
     jest.mocked(useAmountsHidden).mockReturnValue(true);
     await renderWithIntl(

@@ -134,7 +134,11 @@ export function ChangeChip({
         style={{ ...TypeScale.numberMedium, fontWeight: '600', color }}
       />
       {shownFigure ? (
-        <>
+        // The separator and the figure are one flex item, so a wrapping chip moves "· Return x %"
+        // to the next line together instead of leaving "·" at the end of the first line (#669).
+        <View
+          style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.one, flexShrink: 1 }}
+        >
           <Text
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
@@ -148,7 +152,7 @@ export function ChangeChip({
           >
             {shownFigure.text}
           </Text>
-        </>
+        </View>
       ) : null}
     </View>
   );

@@ -2,7 +2,7 @@
 // Synthetic demo data (scripts/seed_demo.py); history responses are rewritten so returnFrom lies
 // after from and a return is shown; DE via the member's /users/me language. Widths 320 and 640 px
 // equal 200 % browser zoom on 640 and 1280 px windows (react-native-web sizes text in CSS px).
-//   CREDS=<seed credentials.json> APP=http://localhost:<web> API=http://localhost:<api> OUT=<dir> node chip-label-web.mjs
+//   CREDS=<seed credentials.json> APP=http://localhost:<web> API=http://localhost:<api> OUT=<dir> node chip-web.mjs
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
@@ -15,7 +15,10 @@ const results = [];
 
 async function shiftReturn(route) {
   const response = await route.fetch();
-  const body = await response.json();
+  const body = response.ok() ? await response.json().catch(() => null) : null;
+  // Pass empty or failed history responses through unchanged, so the run fails on the real cause
+  // instead of hanging until the label wait times out.
+  if (!body?.change || !body.from) return route.fulfill({ response });
   const from = new Date(body.from);
   from.setUTCDate(from.getUTCDate() + 3);
   body.change.returnFrom = from.toISOString().slice(0, 10);
@@ -56,6 +59,8 @@ try {
         await page.waitForTimeout(500);
         const m = await label.evaluate((el) => {
           const row = el.parentElement;
+          // "normal" (no explicit line height) parses to NaN: fall back to 20 px.
+          const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 20;
           const chip = row.firstElementChild;
           const l = el.getBoundingClientRect();
           const c = chip.getBoundingClientRect();
@@ -66,8 +71,10 @@ try {
             rowRight: Math.round(r.right),
             rowOverflow: row.scrollWidth - row.clientWidth,
             pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
-            labelLines: Math.round(l.height / parseFloat(getComputedStyle(el).lineHeight || "20")),
+            labelLines: Math.round(l.height / lineHeight),
             labelBelowChip: l.top >= c.bottom - 1,
+            // Label beside the chip on the same line (wide screens): no horizontal overlap.
+            labelBesideChip: l.left >= c.right - 1 && l.top < c.bottom && l.bottom > c.top,
             chipRight: Math.round(c.right),
             chipHeight: Math.round(c.height),
           };
@@ -76,7 +83,9 @@ try {
           m.rowOverflow <= 0 &&
           m.pageOverflow <= 0 &&
           m.chipRight <= m.rowRight + 1 &&
-          m.labelRight <= m.rowRight + 1;
+          m.labelRight <= m.rowRight + 1 &&
+          m.labelLines === 1 &&
+          (m.labelBelowChip || m.labelBesideChip);
         results.push({ lang, width, period, pass, ...m });
         console.log(`${pass ? "PASS" : "FAIL"} ${lang} ${width}px ${period}`, JSON.stringify(m));
         await label.scrollIntoViewIfNeeded();
@@ -86,7 +95,7 @@ try {
             .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
             .analyze();
           const ids = violations.map((v) => `${v.id}(${v.nodes.length})`).join(", ");
-          results.push({ lang, width, period: "axe", pass: true, axe: ids });
+          results.push({ lang, width, period: "axe", pass: violations.length === 0, axe: ids });
           console.log(`AXE ${lang} ${width}px: ${ids || "none"}`);
         }
       }
@@ -97,4 +106,4 @@ try {
   await browser.close();
   writeFileSync(join(OUT, "results.json"), JSON.stringify(results, null, 2));
 }
-process.exit( results.every((r) => r.pass) ? 0 : 1);
+process.exit(results.every((r) => r.pass) ? 0 : 1);
