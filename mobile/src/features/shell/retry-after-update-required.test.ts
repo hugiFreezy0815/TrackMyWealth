@@ -1,3 +1,5 @@
+import { waitFor } from '@testing-library/react-native';
+
 import { ApiError, NetworkError, setAccessToken, setRefreshHandler } from '@/api/client';
 import { queryClient } from '@/api/queries/client';
 import {
@@ -42,7 +44,7 @@ describe('retryAfterUpdateRequired integration (#649)', () => {
 
   it('keeps the barrier and retained token when the server still returns 426', async () => {
     const fetchMock = jest.fn().mockResolvedValue(answer(426));
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     await expect(retryAfterUpdateRequired()).rejects.toMatchObject({
       status: 426,
@@ -69,11 +71,10 @@ describe('retryAfterUpdateRequired integration (#649)', () => {
         }),
     );
     const fetchMock = jest.fn().mockResolvedValue(answer(200));
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const retry = retryAfterUpdateRequired();
-    await Promise.resolve();
-    await Promise.resolve();
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1));
     expect(updateRequiredSnapshot()).toBe(true);
 
     finishRefresh?.();
@@ -83,7 +84,7 @@ describe('retryAfterUpdateRequired integration (#649)', () => {
   });
 
   it.each([401, 403])('recognizes authorization status %s as version accepted', async (status) => {
-    globalThis.fetch = jest.fn().mockResolvedValue(answer(status)) as typeof fetch;
+    globalThis.fetch = jest.fn().mockResolvedValue(answer(status)) as unknown as typeof fetch;
 
     await expect(retryAfterUpdateRequired()).resolves.toBeUndefined();
     expect(updateRequiredSnapshot()).toBe(false);
@@ -95,7 +96,7 @@ describe('retryAfterUpdateRequired integration (#649)', () => {
       .fn()
       .mockRejectedValueOnce(new TypeError('network unavailable'))
       .mockResolvedValueOnce(answer(200));
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     await expect(retryAfterUpdateRequired()).rejects.toBeInstanceOf(NetworkError);
     expect(updateRequiredSnapshot()).toBe(true);
@@ -107,7 +108,7 @@ describe('retryAfterUpdateRequired integration (#649)', () => {
   });
 
   it('does not dismiss for unrelated server errors', async () => {
-    globalThis.fetch = jest.fn().mockResolvedValue(answer(503)) as typeof fetch;
+    globalThis.fetch = jest.fn().mockResolvedValue(answer(503)) as unknown as typeof fetch;
 
     await expect(retryAfterUpdateRequired()).rejects.toMatchObject({ status: 503 });
     expect(updateRequiredSnapshot()).toBe(true);
