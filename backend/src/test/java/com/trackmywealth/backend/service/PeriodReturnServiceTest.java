@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -28,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiPredicate;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -311,6 +313,76 @@ class PeriodReturnServiceTest {
             eq(YEAR_AGO.plusDays(1)),
             eq(TODAY),
             eq("CHF"));
+  }
+
+  @Test
+  void scopesThatShareACurrencyShareOneValuationAndOneCashFlowQuery() {
+    // #645: three portfolio scopes, two in CHF and one in EUR. A is in scope "first", B in "second"
+    // and "euro" holds nothing; each CHF scope keeps its own return.
+    UUID first = UUID.randomUUID();
+    UUID second = UUID.randomUUID();
+    UUID euro = UUID.randomUUID();
+    Account gold = withId(manualValuation(), A);
+    Account car = withId(manualValuation(), B);
+    ValueHistoryStartRepository starts = mock(ValueHistoryStartRepository.class);
+    AccountValuationService valuations = mock(AccountValuationService.class);
+    CashFlowService cashFlows = mock(CashFlowService.class);
+    when(starts.trackingStartSources(anyCollection()))
+        .thenReturn(
+            Map.of(
+                A, new TrackingStartSources(A, null, null, null, YEAR_AGO.minusDays(1), false),
+                B, new TrackingStartSources(B, null, null, null, YEAR_AGO.minusDays(1), false)));
+    when(valuations.historyFromOpeningBalances(anyCollection(), any(), anyList()))
+        .thenReturn(Map.of());
+    when(valuations.valueAll(anyCollection(), eq("CHF"), eq(YEAR_AGO)))
+        .thenReturn(List.of(known(A, "1000"), known(B, "2000")));
+    when(valuations.valueAll(anyCollection(), eq("CHF"), eq(TODAY)))
+        .thenReturn(List.of(known(A, "1100"), known(B, "1900")));
+    when(cashFlows.datedFlows(anyList(), anyCollection(), any(), any(), any()))
+        .thenReturn(new DatedCashFlows(List.of(), List.of()));
+
+    Map<UUID, PeriodReturn> returns =
+        new PeriodReturnService(starts, valuations, cashFlows)
+            .scopeReturns(
+                List.of(gold, car),
+                YEAR_AGO,
+                TODAY,
+                Map.of(first, "CHF", second, "CHF", euro, "EUR"),
+                Map.of(),
+                Map.of(),
+                Map.of(
+                    first, (id, date) -> A.equals(id),
+                    second, (id, date) -> B.equals(id),
+                    euro, (id, date) -> false));
+
+    assertThat(returns)
+        .containsEntry(first, new PeriodReturn(bd("10.00"), YEAR_AGO))
+        .containsEntry(second, new PeriodReturn(bd("-5.00"), YEAR_AGO))
+        .containsEntry(euro, PeriodReturn.NONE);
+    verify(starts).trackingStartSources(anyCollection());
+    verify(valuations).valueAll(anyCollection(), eq("CHF"), eq(YEAR_AGO));
+    verify(valuations).valueAll(anyCollection(), eq("CHF"), eq(TODAY));
+    verify(cashFlows).datedFlows(anyList(), anyCollection(), any(), any(), eq("CHF"));
+    verify(cashFlows, never()).datedFlows(anyList(), anyCollection(), any(), any(), eq("EUR"));
+  }
+
+  @Test
+  void scopeReturnsRejectsAScopeWithoutAnInclusionPredicate() {
+    UUID covered = UUID.randomUUID();
+    UUID missing = UUID.randomUUID();
+    PeriodReturnService service =
+        new PeriodReturnService(
+            mock(ValueHistoryStartRepository.class),
+            mock(AccountValuationService.class),
+            mock(CashFlowService.class));
+    Map<UUID, String> scopes = Map.of(covered, "CHF", missing, "CHF");
+    Map<UUID, BiPredicate<UUID, LocalDate>> included = Map.of(covered, (id, date) -> true);
+
+    assertThatIllegalArgumentException()
+        .isThrownBy(
+            () ->
+                service.scopeReturns(
+                    List.of(), YEAR_AGO, TODAY, scopes, Map.of(), Map.of(), included));
   }
 
   // --- Helpers -----------------------------------------------------------------------------------

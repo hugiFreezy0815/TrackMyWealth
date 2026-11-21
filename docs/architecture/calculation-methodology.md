@@ -592,7 +592,7 @@ unverified lifecycle and portfolio history, so the app does not call the return 
 |---|---|---|---|---|
 | 1. A holds 2,000 all year; B's first balance is 1,000, 30 days ago (1Y) | 2,000 | +1,000, w = 30/365 | 3,000 | **0.00** (with or without B's opening date) |
 | 2. As 1, but A grows to 2,100 by today | 2,000 | +1,000, w = 30/365 | 3,100 | 100 / (2,000 + 30/365 × 1,000) = **4.80** |
-| 3. The workspace's only account has its first balance on 17 Oct 2026 (1Y) | value on 17 Oct | none | same | **0.00**, `returnFrom = 2026-10-17`, chip "since 17 Oct 2026" |
+| 3. The workspace's only account has its first balance on 17 Oct 2026 (1Y) | value on 17 Oct | none | same | **0.00**, `returnFrom = 2026-10-17`, chip "past year · return since 17 Oct 2026" |
 | 4. Salary 5,000 in, spending 3,000 out, no market change | 10,000 | +5,000, −3,000 | 12,000 | **0.00**; the wealth change is +2,000 |
 | 5. Transfer of 5,000 between two tracked accounts of the scope | 10,000 | −5,000 and +5,000 (cancel) | 10,000 | **0.00** |
 | 5a. Transfer of 5,000 to an untracked current account of the scope | 10,000 | −5,000 | 5,000 | **0.00** |

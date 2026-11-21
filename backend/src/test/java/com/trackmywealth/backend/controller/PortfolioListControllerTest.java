@@ -22,6 +22,7 @@ import com.trackmywealth.backend.dto.PortfolioType;
 import com.trackmywealth.backend.dto.PortfolioViewResponse;
 import com.trackmywealth.backend.dto.ReassignAccountPortfolioRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
+import com.trackmywealth.backend.dto.ValueHistoryResponse;
 import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.FxRate;
@@ -579,6 +580,74 @@ class PortfolioListControllerTest {
     assertThat(keptRow.activeAccountCount()).isEqualTo(1);
     assertThat(keptRow.total()).isEqualByComparingTo("700");
     assertThat(keptRow.complete()).isTrue();
+  }
+
+  // --- #645: the row's period return ------------------------------------------------------------
+
+  // #607's AC 1 in one portfolio: B enters with its first balance of 1,000 beside A's 2,000. The
+  // wealth change is +50 %, the return 0 %, as on the portfolio's own 1M chip.
+  @Test
+  void anAccountEnteringAPortfolioWithItsFirstBalanceIsNoReturnInItsRow() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse portfolio = createPortfolio(token, "Savings", "CHF");
+    LocalDate from = today().minusMonths(1);
+    seedOpeningBalance(
+        createAccount(token, cash("Held", portfolio.id())).id(), "2000.0000", from.minusDays(5));
+    seedOpeningBalance(
+        createAccount(token, cash("Entering", portfolio.id())).id(),
+        "1000.0000",
+        today().minusDays(10));
+
+    PortfolioListItemResponse row = byId(list(token)).get(portfolio.id());
+
+    assertThat(row.change().from()).isEqualTo(from);
+    assertThat(row.change().percent()).isEqualByComparingTo("50.00");
+    assertThat(row.change().returnPercent()).isEqualByComparingTo("0.00");
+    assertThat(row.change().returnFrom()).isEqualTo(from);
+    ValueHistoryResponse history =
+        client(token)
+            .get()
+            .uri("/api/v1/portfolios/" + portfolio.id() + "/history?period=1M")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(ValueHistoryResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(history.change().returnPercent()).isEqualByComparingTo(row.change().returnPercent());
+    assertThat(history.change().returnFrom()).isEqualTo(row.change().returnFrom());
+  }
+
+  // A value unknown inside the tracked history leaves the return unknown; a portfolio tracked only
+  // since inside the month returns from that day (the app then shows no percentage); an empty one
+  // has no return at all.
+  @Test
+  void aRowsReturnIsUnknownWithAnUnknownValueAndStartsAtThePortfoliosFirstTrackedDay()
+      throws Exception {
+    String token = bootstrapAdministrator();
+    LocalDate from = today().minusMonths(1);
+    PortfolioResponse unknown = createPortfolio(token, "Unknown", "CHF");
+    UUID giro =
+        createAccount(
+                token,
+                AccountRequests.account("Giro", "CASH", "EUR").portfolioId(unknown.id()).build())
+            .id();
+    seedOpeningBalance(giro, "1000.0000", from.minusDays(5));
+    // No EUR rate: the giro has no value in the portfolio's CHF.
+    PortfolioResponse recent = createPortfolio(token, "Recent", "CHF");
+    LocalDate firstBalance = today().minusDays(10);
+    seedOpeningBalance(
+        createAccount(token, cash("Recent cash", recent.id())).id(), "500.0000", firstBalance);
+    PortfolioResponse empty = createPortfolio(token, "Empty", "CHF");
+
+    Map<UUID, PortfolioListItemResponse> rows = byId(list(token));
+
+    assertThat(rows.get(unknown.id()).change().returnPercent()).isNull();
+    assertThat(rows.get(unknown.id()).change().returnFrom()).isEqualTo(from);
+    assertThat(rows.get(recent.id()).change().returnPercent()).isEqualByComparingTo("0.00");
+    assertThat(rows.get(recent.id()).change().returnFrom()).isEqualTo(firstBalance);
+    assertThat(rows.get(empty.id()).change().returnPercent()).isNull();
+    assertThat(rows.get(empty.id()).change().returnFrom()).isNull();
   }
 
   // --- Helpers ---------------------------------------------------------------------------------
