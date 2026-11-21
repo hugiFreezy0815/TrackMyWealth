@@ -101,6 +101,8 @@ async function accept(tokens: Tokens): Promise<void> {
       await clearSession();
       throw error;
     }
+    // The version gate is still active: leave recovery blocked rather than claiming success.
+    if (error instanceof ApiError && error.status === 426) throw error;
     // Unreachable: the session still exists, and without a verified identity no admin controls
     // are shown. The next rotation verifies it again.
     if (current === generation) {
@@ -203,6 +205,16 @@ export async function restoreSession(): Promise<void> {
   refresh = stored;
   changed();
   await refreshSession();
+}
+
+/**
+ * Following a successful version probe, finish restoring a session whose refresh or identity
+ * verification was interrupted by HTTP 426. Never discard stored credentials on a version error.
+ */
+export async function resumeSessionAfterUpdate(): Promise<void> {
+  if (!refresh || (access && identity)) return;
+  const renewed = await refreshSession();
+  if (renewed instanceof SessionRefreshUnavailableError) throw renewed;
 }
 
 async function clearSession(): Promise<void> {

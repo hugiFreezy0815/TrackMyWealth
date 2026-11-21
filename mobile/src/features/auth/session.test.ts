@@ -1,4 +1,6 @@
 import { Platform } from 'react-native';
+import { dismissUpdateRequired, updateRequiredSnapshot } from '@/api/update-required';
+import { retryAfterUpdateRequired } from '@/features/shell/retry-after-update-required';
 import * as SecureStore from 'expo-secure-store';
 
 import {
@@ -426,6 +428,38 @@ describe('secure auth session', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('restores a retained native session after the minimum version is lowered (#649)', async () => {
+    secureStore.getItemAsync.mockResolvedValueOnce('refresh-stored');
+    let refuse = true;
+    const fetchMock = serve((url, init) => {
+      if (url.endsWith('/auth/refresh')) {
+        return refuse
+          ? { status: 426, body: { status: 426, code: 'APP_UPDATE_REQUIRED' } }
+          : { status: 200, body: tokens(2) };
+      }
+      if (url.endsWith('/users/me')) {
+        const auth = (init.headers as Record<string, string>).Authorization;
+        return auth === 'Bearer access-2'
+          ? { status: 200, body: MEMBER }
+          : { status: 401, body: { code: 'UNAUTHENTICATED' } };
+      }
+      return { status: 404 };
+    });
+
+    await expect(restoreSession()).rejects.toMatchObject({ status: 426 });
+    expect(updateRequiredSnapshot()).toBe(true);
+    expect(sessionSnapshot()).toMatchObject({ signedIn: true, identity: null });
+    expect(secureStore.deleteItemAsync).not.toHaveBeenCalled();
+
+    refuse = false;
+    await retryAfterUpdateRequired();
+    expect(updateRequiredSnapshot()).toBe(false);
+    expect(sessionSnapshot()).toMatchObject({ signedIn: true, identity: MEMBER });
+    expect(callsTo(fetchMock, '/auth/refresh')).toHaveLength(2);
+    expect(secureStore.deleteItemAsync).not.toHaveBeenCalled();
+    dismissUpdateRequired();
   });
 
   it('restores a stored session on start by rotating its refresh token', async () => {
