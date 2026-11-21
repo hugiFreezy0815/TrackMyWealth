@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { IntlProvider } from 'react-intl';
 
+import { NetworkError } from '@/api/client';
+
 import de from '@/i18n/de.json';
 import en from '@/i18n/en.json';
 
@@ -85,9 +87,10 @@ describe('UpdateRequiredScreen (#649)', () => {
     expect(action.props.accessibilityState?.disabled ?? action.props['aria-disabled']).toBe(true);
 
     await act(async () => complete?.());
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: en['error.retry'] }).props['aria-disabled']).toBe(false),
-    );
+    await waitFor(() => {
+      const retryButton = screen.getByRole('button', { name: en['error.retry'] });
+      expect(retryButton.props['aria-disabled']).toBe(false);
+    });
   });
 
   it('keeps the native retry available after an asynchronous failure', async () => {
@@ -107,7 +110,6 @@ describe('UpdateRequiredScreen (#649)', () => {
   });
 
   it('shows localized accessible feedback on network failure and can retry in German', async () => {
-    const { NetworkError } = jest.requireActual('@/api/client') as typeof import('@/api/client');
     const onRetry = jest.fn().mockRejectedValueOnce(new NetworkError('unreachable'));
     await show({ platform: 'android', onRetry }, de, 'de');
 
@@ -120,5 +122,4 @@ describe('UpdateRequiredScreen (#649)', () => {
     await waitFor(() => expect(screen.queryByText(de['updateRequired.networkError'])).toBeNull());
     expect(onRetry).toHaveBeenCalledTimes(2);
   });
-
 });
