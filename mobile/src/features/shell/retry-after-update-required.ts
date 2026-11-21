@@ -1,4 +1,5 @@
-import { ApiError, api } from '@/api/client';
+import { ApiError } from '@/api/client';
+import { typedApi } from '@/api/typed-api';
 import { queryClient } from '@/api/queries/client';
 import { dismissUpdateRequired } from '@/api/update-required';
 import { resumeSessionAfterUpdate } from '@/features/auth/session';
@@ -14,7 +15,7 @@ import { resumeSessionAfterUpdate } from '@/features/auth/session';
  */
 export async function retryAfterUpdateRequired(): Promise<void> {
   try {
-    await api.get('/api/v1/users/me', { renewSession: false });
+    await typedApi.get('/api/v1/users/me', { renewSession: false });
   } catch (error) {
     if (!(error instanceof ApiError && (error.status === 401 || error.status === 403))) {
       throw error;
