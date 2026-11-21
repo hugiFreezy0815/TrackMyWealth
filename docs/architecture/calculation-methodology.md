@@ -570,7 +570,9 @@ already contains that day's bookings.
   leaves a deposit of unknown origin in Market & FX.
 - **Internal transfers**: each leg on a tracked account of the scope is a flow. When both legs
   are in the scope, they cancel out, so a transfer between two tracked accounts changes nothing.
-  When only one leg is, the money entered or left the scope.
+  When only one leg is, the money entered or left the scope. That includes a transfer to or from
+  an untracked account of the same scope (a ledger without an opening balance): the return
+  measures the tracked accounts only, so the move is a flow, not a gain or loss.
 
 **No return (`returnPercent = null`).** The return is unknown, never zero, when:
 
@@ -583,6 +585,8 @@ already contains that day's bookings.
 `INCEPTION_UNCERTAIN` and `VALUE_UNKNOWN` before an account's tracking start make the wealth
 change uncertain, because the net worth before that day may be missing the account's earlier
 balance. They do not affect the return, which never reads values before a tracking start.
+`LIFECYCLE_UNVERIFIED` can affect both: the return's scope on a day comes from the same
+unverified lifecycle and portfolio history, so the app does not call the return unaffected then.
 
 | Worked example | `V_start` | Flows | `V_end` | `returnPercent` |
 |---|---|---|---|---|
@@ -591,6 +595,7 @@ balance. They do not affect the return, which never reads values before a tracki
 | 3. The workspace's only account has its first balance on 17 Oct 2026 (1Y) | value on 17 Oct | none | same | **0.00**, `returnFrom = 2026-10-17`, chip "since 17 Oct 2026" |
 | 4. Salary 5,000 in, spending 3,000 out, no market change | 10,000 | +5,000, −3,000 | 12,000 | **0.00**; the wealth change is +2,000 |
 | 5. Transfer of 5,000 between two tracked accounts of the scope | 10,000 | −5,000 and +5,000 (cancel) | 10,000 | **0.00** |
+| 5a. Transfer of 5,000 to an untracked current account of the scope | 10,000 | −5,000 | 5,000 | **0.00** |
 | 6. An EUR account without a CHF rate today | | | unknown | **null** |
 | 7. The only account starts at an opening balance of 0 | 0 | none | 0 | **null** (denominator 0) |
 | 8. 10,000 all year: interest +100, deposit +5,000 (150 days ago), fee −20, tax bill −1,000 (50 days ago) | 10,000 | +5,000, w = 150/365; −1,000, w = 50/365 | 14,080 | 80 / 11,917.81 = **0.67**; the wealth change is +4,080 |

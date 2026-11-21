@@ -225,6 +225,27 @@ class PeriodReturnServiceTest {
   }
 
   @Test
+  void aTransferToAnUntrackedAccountOfTheScopeIsAFlowNotALoss() {
+    // A (tracked, 10,000) moves 5,000 to B, a current account in the same scope without an opening
+    // balance: B is untracked, so A's leg is money leaving what the return measures.
+    LocalDate start = TODAY.minusDays(10);
+    ReturnScopeContext context =
+        new ReturnScopeContext(start, TODAY, Map.of(A, start), Map.of(), (id, date) -> true);
+    ReturnScopePlan plan = PeriodReturnService.plan(context, Set.of(A));
+    Map<LocalDate, Map<UUID, AccountValuation>> values =
+        Map.of(start, Map.of(A, known("10000")), TODAY, Map.of(A, known("5000")));
+    DatedCashFlows transfer =
+        new DatedCashFlows(
+            List.of(
+                new DatedCashFlows.Flow(A, start.plusDays(5), bd("-5000")),
+                new DatedCashFlows.Flow(B, start.plusDays(5), bd("5000"))),
+            List.of());
+
+    assertThat(PeriodReturnService.result(plan, context, values, transfer).percent())
+        .isEqualByComparingTo("0.00");
+  }
+
+  @Test
   void anUnknownTrackedValueLeavesTheReturnUnknownButKeepsItsStart() {
     LocalDate start = TODAY.minusDays(10);
     ReturnScopeContext context =

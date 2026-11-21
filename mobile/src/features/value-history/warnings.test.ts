@@ -1,6 +1,11 @@
 import de from '@/i18n/de.json';
 import en from '@/i18n/en.json';
-import { changeIsUncertain, historyWarningMessageIds, type HistoryWarningCode } from './warnings';
+import {
+  returnIsUncertain,
+  changeIsUncertain,
+  historyWarningMessageIds,
+  type HistoryWarningCode,
+} from './warnings';
 
 // Every code the contract lists (api/openapi.yaml ValueHistoryResponse.warningCodes).
 const ALL_CODES: HistoryWarningCode[] = [
@@ -68,5 +73,11 @@ describe('history warning codes', () => {
       ]),
     ).toBe(false);
     expect(changeIsUncertain([])).toBe(false);
+  });
+
+  it('treats only an unverified lifecycle as distorting the return too', () => {
+    expect(returnIsUncertain(['LIFECYCLE_UNVERIFIED'])).toBe(true);
+    expect(returnIsUncertain(['VALUE_UNKNOWN', 'INCEPTION_UNCERTAIN'])).toBe(false);
+    expect(returnIsUncertain([])).toBe(false);
   });
 });

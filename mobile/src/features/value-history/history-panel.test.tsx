@@ -170,6 +170,19 @@ describe('HistoryPanel', () => {
     expect(screen.getByText(/may be missing that account's earlier balance/)).toBeTruthy();
   });
 
+  it('does not call the return unaffected when the lifecycle history is unverified', async () => {
+    await renderPanel({
+      data: history({
+        complete: false,
+        change: { ...history().change, returnPercent: '0.50' },
+        warningCodes: ['LIFECYCLE_UNVERIFIED'],
+      }),
+    });
+    expect(screen.getByText('Return +0.5%')).toBeTruthy();
+    expect(screen.getByText(/This change may be off/)).toBeTruthy();
+    expect(screen.queryByText(/The return covers tracked history only/)).toBeNull();
+  });
+
   it('labels the chip "since" when the return starts after the period', async () => {
     const later = history({
       period: '1Y',

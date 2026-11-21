@@ -54,10 +54,13 @@ import org.springframework.transaction.annotation.Transactional;
  * later ({@code returnFrom}). Its external flows are an account entering the tracked scope (with
  * its first known value), a lifecycle or portfolio change in or out of it (with its value that
  * day), and the scope's dated cash flows: external income and spending plus internal-transfer legs,
- * so a transfer between two tracked accounts of the scope cancels out. Interest, dividends, fees
- * and tax on an account holding positions are return, not flows (PO 2026-11-20). A booking counts
- * from the day after the account's tracking start, and only while the account was in the scope the
- * day before: a balance on a day already contains that day's bookings.
+ * so a transfer between two tracked accounts of the scope cancels out. The return measures the
+ * tracked accounts only, so a transfer to or from an untracked account of the scope - a ledger
+ * without an opening balance - is money leaving or entering what is measured, like one to another
+ * scope: a flow, never a gain or loss. Interest, dividends, fees and tax on an account holding
+ * positions are return, not flows (PO 2026-11-20). A booking counts from the day after the
+ * account's tracking start, and only while the account was in the scope the day before: a balance
+ * on a day already contains that day's bookings.
  *
  * <p>The return is unknown - never zero - when a tracked value or a flow is unknown (no FX rate, no
  * resolvable value, a row pending review), when no day has passed, or when the denominator is 0 or

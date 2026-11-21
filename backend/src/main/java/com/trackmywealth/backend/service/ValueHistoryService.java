@@ -310,7 +310,9 @@ public class ValueHistoryService {
   /**
    * #607: the period return of the history's scope and, with {@code placements}, of each section.
    * An account is in the scope on a day by its effective lifecycle and portfolio state then, as for
-   * the chart; its inception is the one the chart uses.
+   * the chart; its inception is the one the chart uses. The chart also leaves an account out before
+   * its inception; the return needs no such check, because every tracking start source is also
+   * inception evidence ({@code firstEvidence}), so it reads no day before an account's inception.
    */
   private PeriodReturns periodReturns(
       List<Account> accounts,
