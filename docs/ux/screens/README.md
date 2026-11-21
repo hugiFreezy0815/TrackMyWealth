@@ -1,9 +1,9 @@
 # Screen specifications: sprint 7 (UX-02, #377)
 
-These specs describe the seven screens the frontend developer builds in sprint 7
-(2026-11-10 to 2026-11-23). Each spec lists every field with its label key, its format and the
-endpoint and response field it comes from. It also covers every state, every action with the
-request it sends, and the accessibility rules.
+These specs describe seven primary workflow screens plus the blocking update-required system
+state for sprint 7 (2026-11-10 to 2026-11-23). Workflow specs list fields, format, endpoint
+sources, states, actions and accessibility rules. The update-required spec documents platform
+variants, localized copy, Figma node IDs and recovery behavior.
 
 | # | Screen | Spec | Figma (EN / DE) |
 |---|---|---|---|
