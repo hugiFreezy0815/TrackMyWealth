@@ -205,7 +205,7 @@ be null and the view must show incomplete-data warnings (from `warningCodes[]`) 
 fabricated market return.
 Historical state recorded before the new lifecycle tracking can be restated and is explicitly
 flagged as uncertain. The chart and change use the period shared with Overview.
-The change chip shows `change.returnPercent` and the "since {date}" label from
+The change chip shows `change.returnPercent` and the "{range} · return since {date}" label from
 `change.returnFrom` exactly as on the Overview (S1 #8, #607). The portfolio's tracked history
 follows dated membership: an account counts from the later of its tracking start and the day it
 joined the portfolio.

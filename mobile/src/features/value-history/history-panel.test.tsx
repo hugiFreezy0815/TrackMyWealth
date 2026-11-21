@@ -190,7 +190,8 @@ describe('HistoryPanel', () => {
       change: { ...history().change, returnPercent: '0.00', returnFrom: '2026-10-17' },
     });
     await renderPanel({ data: later, period: '1Y' });
-    expect(screen.getByText('since 17 Oct 2026')).toBeTruthy();
+    // The amount keeps its period; the "since" date belongs to the return only.
+    expect(screen.getByText('past year · return since 17 Oct 2026')).toBeTruthy();
     expect(screen.queryByText('past year')).toBeNull();
     expect(screen.getByText('Return 0.0%')).toBeTruthy();
     expect(screen.getByText('→', { includeHiddenElements: true }).props.style.color).toBe(
@@ -198,7 +199,7 @@ describe('HistoryPanel', () => {
     );
 
     await renderPanel({ data: later, period: '1Y', locale: 'de' });
-    expect(screen.getByText(/^seit 17/)).toBeTruthy();
+    expect(screen.getByText(/^letztes Jahr · Rendite seit 17/)).toBeTruthy();
     expect(screen.getByText('Rendite 0.0%')).toBeTruthy();
   });
 

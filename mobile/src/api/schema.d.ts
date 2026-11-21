@@ -3385,6 +3385,8 @@ export interface components {
     };
     PortfolioPeriodChange: {
       period: string;
+      /** Format: date */
+      from: string;
       /**
        * Format: decimal
        * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
@@ -3395,6 +3397,13 @@ export interface components {
        * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
        */
       percent: DecimalString | null;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      returnPercent: DecimalString | null;
+      /** Format: date */
+      returnFrom: string | null;
     };
     PortfolioResponse: {
       /** Format: uuid */

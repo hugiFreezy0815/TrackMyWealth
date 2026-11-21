@@ -55,7 +55,11 @@ function returnFigure(
   };
 }
 
-/** The chip's period: "since 17 Oct 2026" when the return starts after the period does. */
+/**
+ * The chip's period. When the return starts after the period does, the "since" date belongs to the
+ * return only: "past year · return since 17 Oct 2026" (PO 2026-11-21, every figure next to the
+ * period it covers).
+ */
 function chipRange(
   intl: ReturnType<typeof useIntl>,
   data: ValueHistory,
@@ -63,7 +67,10 @@ function chipRange(
 ) {
   const returnFrom = data.change.returnFrom;
   return figure && returnFrom && returnFrom > data.from
-    ? msg(intl, 'history.chipSince', { date: formatDate(returnFrom, intl.locale) })
+    ? msg(intl, 'history.chipSince', {
+        range: msg(intl, `history.chipRange.${data.period}`),
+        date: formatDate(returnFrom, intl.locale),
+      })
     : msg(intl, `history.chipRange.${data.period}`);
 }
 
