@@ -39,7 +39,7 @@ jobs:
       # build uses. The key covers .mvn as well, so a Maven version or resolver setting change
       # starts a fresh cache.
       - name: Set up JDK 17
-        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
         with:
           distribution: temurin
           java-version: "17"
@@ -132,7 +132,7 @@ jobs:
       # that finishes first it used to win the save, leaving `verify` to download those plugins
       # from Maven Central on every run.
       - name: Set up JDK 17
-        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
         with:
           distribution: temurin
           java-version: "17"
