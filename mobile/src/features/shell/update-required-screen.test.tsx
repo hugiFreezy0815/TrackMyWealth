@@ -1,6 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { IntlProvider } from 'react-intl';
-import { Platform } from 'react-native';
 
 import de from '@/i18n/de.json';
 import en from '@/i18n/en.json';
@@ -58,12 +57,12 @@ describe('UpdateRequiredScreen (#649)', () => {
   });
 
   it('keeps German informal copy for native and web', async () => {
-    await show({ platform: 'android' }, de, 'de');
+    const { view } = await show({ platform: 'android' }, de, 'de');
     await screen.findByRole('header');
     expect(screen.getByRole('header', { name: 'Update erforderlich' })).toBeTruthy();
     expect(screen.getByText(/Aktualisiere die App/)).toBeTruthy();
     expect(screen.getByText('Installierte Version: 1.0.0')).toBeTruthy();
-    screen.unmount();
+    view.unmount();
 
     await show({ platform: 'web' }, de, 'de');
     expect(screen.getByRole('button', { name: de['updateRequired.reload'] })).toBeTruthy();
@@ -86,7 +85,7 @@ describe('UpdateRequiredScreen (#649)', () => {
     expect(action.props.accessibilityState?.disabled ?? action.props['aria-disabled']).toBe(true);
 
     await act(async () => complete?.());
-    await waitFor(() => expect(screen.getByRole('button', { name: en['error.retry'] })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: en['error.retry'] }).props['aria-disabled']).toBe(false));
   });
 
   it('keeps the native retry available after an asynchronous failure', async () => {
