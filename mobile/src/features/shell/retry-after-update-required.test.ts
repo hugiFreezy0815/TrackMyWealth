@@ -21,7 +21,7 @@ function answer(status: number): Response {
     status,
     headers: { get: () => null },
     json: async () => (status === 426 ? { code: 'APP_UPDATE_REQUIRED' } : {}),
-  } as Response;
+  } as unknown as Response;
 }
 
 describe('retryAfterUpdateRequired integration (#649)', () => {
