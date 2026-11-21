@@ -1,4 +1,10 @@
 import { Platform } from 'react-native';
+import {
+  dismissUpdateRequired,
+  reportUpdateRequired,
+  updateRequiredSnapshot,
+} from '@/api/update-required';
+import { retryAfterUpdateRequired } from '@/features/shell/retry-after-update-required';
 import * as SecureStore from 'expo-secure-store';
 
 import {
@@ -426,6 +432,165 @@ describe('secure auth session', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('restores a retained native session after the minimum version is lowered (#649)', async () => {
+    secureStore.getItemAsync.mockResolvedValueOnce('refresh-stored');
+    let refuse = true;
+    const fetchMock = serve((url, init) => {
+      if (url.endsWith('/auth/refresh')) {
+        return refuse
+          ? { status: 426, body: { status: 426, code: 'APP_UPDATE_REQUIRED' } }
+          : { status: 200, body: tokens(2) };
+      }
+      if (url.endsWith('/users/me')) {
+        const auth = (init.headers as Record<string, string>).Authorization;
+        return auth === 'Bearer access-2'
+          ? { status: 200, body: MEMBER }
+          : { status: 401, body: { code: 'UNAUTHENTICATED' } };
+      }
+      return { status: 404 };
+    });
+
+    await expect(restoreSession()).rejects.toMatchObject({ status: 426 });
+    expect(updateRequiredSnapshot()).toBe(true);
+    expect(sessionSnapshot()).toMatchObject({ signedIn: true, identity: null });
+    expect(secureStore.deleteItemAsync).not.toHaveBeenCalled();
+
+    refuse = false;
+    await retryAfterUpdateRequired();
+    expect(updateRequiredSnapshot()).toBe(false);
+    expect(sessionSnapshot()).toMatchObject({ signedIn: true, identity: MEMBER });
+    expect(callsTo(fetchMock, '/auth/refresh')).toHaveLength(2);
+    expect(secureStore.deleteItemAsync).not.toHaveBeenCalled();
+    dismissUpdateRequired();
+  });
+
+  it('stops verifying but keeps the session when /users/me answers 426 after sign-in (#649)', async () => {
+    serve((url) => {
+      if (url.endsWith('/auth/login'))
+        return { status: 200, body: { mfaRequired: false, tokens: tokens(1) } };
+      if (url.endsWith('/users/me'))
+        return { status: 426, body: { status: 426, code: 'APP_UPDATE_REQUIRED' } };
+      return { status: 404 };
+    });
+
+    await expect(signIn('demo@example.com', 'test')).rejects.toMatchObject({ status: 426 });
+    expect(sessionSnapshot()).toMatchObject({
+      signedIn: true,
+      identity: null,
+      verifyingIdentity: false,
+    });
+    expect(secureStore.deleteItemAsync).not.toHaveBeenCalled();
+    dismissUpdateRequired();
+  });
+
+  it('does not fail a replaced sign-in whose identity check answers 426 late (#649)', async () => {
+    let logins = 0;
+    let refuseFirst: (() => void) | undefined;
+    serve((url, init) => {
+      if (url.endsWith('/auth/login')) {
+        logins++;
+        return { status: 200, body: { mfaRequired: false, tokens: tokens(logins) } };
+      }
+      if (url.endsWith('/users/me')) {
+        const auth = (init.headers as Record<string, string>).Authorization;
+        if (auth === 'Bearer access-1') {
+          return new Promise<Reply>((resolve) => {
+            refuseFirst = () =>
+              resolve({ status: 426, body: { status: 426, code: 'APP_UPDATE_REQUIRED' } });
+          });
+        }
+        return { status: 200, body: MEMBER };
+      }
+      return { status: 404 };
+    });
+
+    const first = signIn('demo@example.com', 'test');
+    while (!refuseFirst) await new Promise((resolve) => setTimeout(resolve, 0));
+    await signIn('demo@example.com', 'test');
+    refuseFirst();
+
+    await expect(first).resolves.toBeUndefined();
+    expect(sessionSnapshot()).toMatchObject({ identity: MEMBER, verifyingIdentity: false });
+    dismissUpdateRequired();
+  });
+
+  it('lifts the barrier after the version is accepted although a refresh backoff runs (#649)', async () => {
+    secureStore.getItemAsync.mockResolvedValueOnce('refresh-stored');
+    const fetchMock = serve((url) => {
+      if (url.endsWith('/auth/refresh')) return { status: 503, retryAfter: '60' };
+      if (url.endsWith('/users/me')) return { status: 401, body: { code: 'UNAUTHENTICATED' } };
+      return { status: 404 };
+    });
+
+    await restoreSession();
+    reportUpdateRequired();
+
+    await expect(retryAfterUpdateRequired()).resolves.toBeUndefined();
+    expect(updateRequiredSnapshot()).toBe(false);
+    expect(sessionSnapshot()).toMatchObject({ signedIn: true });
+    expect(callsTo(fetchMock, '/auth/refresh')).toHaveLength(1);
+    expect(secureStore.deleteItemAsync).not.toHaveBeenCalled();
+  });
+
+  it('fails a restore whose rotation succeeds but whose identity check answers 426 (#649)', async () => {
+    secureStore.getItemAsync.mockResolvedValueOnce('refresh-stored');
+    serve((url) => {
+      if (url.endsWith('/auth/refresh')) return { status: 200, body: tokens(2) };
+      if (url.endsWith('/users/me'))
+        return { status: 426, body: { status: 426, code: 'APP_UPDATE_REQUIRED' } };
+      return { status: 404 };
+    });
+
+    await expect(restoreSession()).rejects.toMatchObject({ status: 426 });
+    expect(sessionSnapshot()).toMatchObject({
+      signedIn: true,
+      identity: null,
+      verifyingIdentity: false,
+    });
+    expect(secureStore.deleteItemAsync).not.toHaveBeenCalled();
+    dismissUpdateRequired();
+  });
+
+  it('fails the waiting request with the 426 from the identity check after a rotation (#649)', async () => {
+    let refuseIdentity = false;
+    const fetchMock = serve((url) => {
+      if (url.endsWith('/auth/refresh')) return { status: 200, body: tokens(2) };
+      if (url.endsWith('/users/me') && refuseIdentity)
+        return { status: 426, body: { status: 426, code: 'APP_UPDATE_REQUIRED' } };
+      if (url.endsWith('/accounts')) return { status: 401 };
+      return plainLogin(url) ?? { status: 404 };
+    });
+    await signIn('demo@example.com', 'test');
+    refuseIdentity = true;
+
+    await expect(api.get('/api/v1/accounts')).rejects.toMatchObject({ status: 426 });
+    // Not replayed as if the rotation had succeeded.
+    expect(callsTo(fetchMock, '/accounts')).toHaveLength(1);
+    expect(sessionSnapshot()).toMatchObject({ signedIn: true, verifyingIdentity: false });
+    dismissUpdateRequired();
+  });
+
+  it('ends the session when Retry passes the gate but the stored token is revoked (#649)', async () => {
+    secureStore.getItemAsync.mockResolvedValueOnce('refresh-stored');
+    let refuse = true;
+    serve((url) => {
+      if (url.endsWith('/auth/refresh')) {
+        return refuse
+          ? { status: 426, body: { status: 426, code: 'APP_UPDATE_REQUIRED' } }
+          : { status: 401, body: { status: 401, code: 'UNAUTHENTICATED' } };
+      }
+      if (url.endsWith('/users/me')) return { status: 401, body: { code: 'UNAUTHENTICATED' } };
+      return { status: 404 };
+    });
+    await expect(restoreSession()).rejects.toMatchObject({ status: 426 });
+
+    refuse = false;
+    await expect(retryAfterUpdateRequired()).resolves.toBeUndefined();
+    expect(updateRequiredSnapshot()).toBe(false);
+    expect(sessionSnapshot().signedIn).toBe(false);
+    expect(secureStore.deleteItemAsync).toHaveBeenCalled();
   });
 
   it('restores a stored session on start by rotating its refresh token', async () => {
