@@ -1,7 +1,14 @@
 import { Image } from 'expo-image';
 import { useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
-import { ActivityIndicator, Platform, ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import {
+  ActivityIndicator,
+  Platform,
+  ScrollView,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { APP_VERSION } from '@/api/app-version';
@@ -50,9 +57,11 @@ export function UpdateRequiredScreen({
       try {
         await onRetry();
       } catch (error) {
-        setRetryError(
-          error instanceof NetworkError ? 'updateRequired.networkError' : 'updateRequired.retryError',
-        );
+        if (error instanceof NetworkError) {
+          setRetryError('updateRequired.networkError');
+        } else {
+          setRetryError('updateRequired.retryError');
+        }
       } finally {
         retryInFlight.current = false;
         setRetrying(false);
