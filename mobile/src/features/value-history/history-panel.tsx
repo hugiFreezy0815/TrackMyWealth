@@ -17,7 +17,7 @@ import { formatDate } from '@/format/date';
 import { InfoText, msg } from '@/features/overview/overview-text';
 import { useTheme } from '@/hooks/use-theme';
 import { isHistoryPeriod, periods, selectHistoryPeriod, type HistoryPeriod } from './period';
-import { changeIsUncertain, historyWarningMessageIds } from './warnings';
+import { changeIsUncertain, historyWarningMessageIds, returnIsUncertain } from './warnings';
 import { ValueChart, type ValueHistory } from './value-chart';
 
 const attribution = [
@@ -56,7 +56,11 @@ function returnFigure(
 }
 
 /** The chip's period: "since 17 Oct 2026" when the return starts after the period does. */
-function chipRange(intl: ReturnType<typeof useIntl>, data: ValueHistory, figure: unknown) {
+function chipRange(
+  intl: ReturnType<typeof useIntl>,
+  data: ValueHistory,
+  figure: ChangeFigure | null,
+) {
   const returnFrom = data.change.returnFrom;
   return figure && returnFrom && returnFrom > data.from
     ? msg(intl, 'history.chipSince', { date: formatDate(returnFrom, intl.locale) })
@@ -172,7 +176,12 @@ export function HistoryPanel({
               </View>
               {uncertain ? (
                 <InfoText warning>
-                  {msg(intl, figure ? 'history.changeUncertainReturn' : 'history.changeUncertain')}
+                  {msg(
+                    intl,
+                    figure && !returnIsUncertain(codes)
+                      ? 'history.changeUncertainReturn'
+                      : 'history.changeUncertain',
+                  )}
                 </InfoText>
               ) : null}
               <ChangeSplit data={data} hidden={hidden} />

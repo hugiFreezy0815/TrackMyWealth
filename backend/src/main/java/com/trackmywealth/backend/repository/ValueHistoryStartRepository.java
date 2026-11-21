@@ -71,7 +71,8 @@ public class ValueHistoryStartRepository {
   /**
    * #607: per account, every dated value source that can start its tracked history, read once for
    * the whole response. Withdrawn snapshots (US-07-12) say nothing; the opening balance is read as
-   * {@code AccountValuationService} reads it.
+   * {@code AccountValuationService} reads it, with no withdrawn filter because it cannot be
+   * withdrawn: it is {@code MANUAL} (V58) and only an imported {@code DOCUMENT} snapshot can (V74).
    */
   private static final String TRACKING_START_SOURCES =
       """

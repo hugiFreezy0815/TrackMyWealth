@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -89,6 +90,17 @@ public class CashFlowService {
 
   private static final Set<String> SPENDING_TYPES =
       Set.of("CREDIT_CARD_PURCHASE", "WITHDRAWAL", "FEE", "EXPENSE", "TAX", "REFUND");
+
+  // #607 (PO 2026-11-20): the period return's external flows. Interest, dividends and fees are
+  // what the money earned or cost, so they are return, not flows; a DEPOSIT of unknown origin is
+  // money entering, as a WITHDRAWAL is money leaving. TAX is a flow (a tax bill), except on an
+  // account holding positions, where it is withholding tax or stamp duty on the investment.
+  private static final Set<String> RETURN_INCOME_FLOW_TYPES = Set.of("INCOME", "DEPOSIT");
+
+  private static final Set<String> RETURN_SPENDING_FLOW_TYPES =
+      Set.of("CREDIT_CARD_PURCHASE", "WITHDRAWAL", "EXPENSE", "REFUND");
+
+  private static final Set<String> TAX_TYPES = Set.of("TAX");
 
   private final AccessControlService accessControlService;
   private final AccountRepository accountRepository;
@@ -296,23 +308,35 @@ public class CashFlowService {
   }
 
   /**
-   * #607: the period return's flows (see {@link DatedCashFlows}), with the same classification as
-   * {@link #portfolioCapitalFlows}: external income and spending, internal-transfer legs, and the
-   * rows pending review. Each account, date and currency is converted once, at that day's rate. The
-   * caller has already authorized the accounts and decides which account days count.
+   * #607: the period return's flows (see {@link DatedCashFlows}): external income and spending
+   * without what the return counts as gain or loss (interest, dividends, fees, and tax on {@code
+   * accountIds} not in {@code taxFlowAccountIds}), a deposit of unknown origin, internal-transfer
+   * legs, and the rows pending review - otherwise with the same rules as {@link
+   * #portfolioCapitalFlows}. Each account, date and currency is converted once, at that day's rate.
+   * The caller has already authorized the accounts and decides which account days count.
    */
   @Transactional(readOnly = true)
   public DatedCashFlows datedFlows(
-      List<UUID> accountIds, LocalDate from, LocalDate to, String currency) {
+      List<UUID> accountIds,
+      Collection<UUID> taxFlowAccountIds,
+      LocalDate from,
+      LocalDate to,
+      String currency) {
     if (accountIds.isEmpty() || from.isAfter(to)) {
       return new DatedCashFlows(List.of(), List.of());
     }
+    List<Object[]> taxFlows =
+        taxFlowAccountIds.isEmpty()
+            ? List.of()
+            : transactionRepository.sumHistorySpendingByAccountDateCurrency(
+                taxFlowAccountIds, TAX_TYPES, from, to);
     List<Object[]> rows =
         Stream.of(
                 transactionRepository.sumHistoryIncomeByAccountDateCurrency(
-                    accountIds, INCOME_TYPES, from, to),
+                    accountIds, RETURN_INCOME_FLOW_TYPES, from, to),
                 transactionRepository.sumHistorySpendingByAccountDateCurrency(
-                    accountIds, SPENDING_TYPES, from, to),
+                    accountIds, RETURN_SPENDING_FLOW_TYPES, from, to),
+                taxFlows,
                 transactionRepository.sumHistoryInternalByAccountDateCurrency(accountIds, from, to))
             .flatMap(List::stream)
             .toList();

@@ -54,9 +54,13 @@ import org.springframework.transaction.annotation.Transactional;
  * later ({@code returnFrom}). Its external flows are an account entering the tracked scope (with
  * its first known value), a lifecycle or portfolio change in or out of it (with its value that
  * day), and the scope's dated cash flows: external income and spending plus internal-transfer legs,
- * so a transfer between two tracked accounts of the scope cancels out. A booking counts from the
- * day after the account's tracking start, and only while the account was in the scope the day
- * before: a balance on a day already contains that day's bookings.
+ * so a transfer between two tracked accounts of the scope cancels out. The return measures the
+ * tracked accounts only, so a transfer to or from an untracked account of the scope - a ledger
+ * without an opening balance - is money leaving or entering what is measured, like one to another
+ * scope: a flow, never a gain or loss. Interest, dividends, fees and tax on an account holding
+ * positions are return, not flows (PO 2026-11-20). A booking counts from the day after the
+ * account's tracking start, and only while the account was in the scope the day before: a balance
+ * on a day already contains that day's bookings.
  *
  * <p>The return is unknown - never zero - when a tracked value or a flow is unknown (no FX rate, no
  * resolvable value, a row pending review), when no day has passed, or when the denominator is 0 or
@@ -139,7 +143,14 @@ public class PeriodReturnService {
         earliest == null
             ? new DatedCashFlows(List.of(), List.of())
             : cashFlowService.datedFlows(
-                List.copyOf(tracked.keySet()), earliest.plusDays(1), to, currency);
+                List.copyOf(tracked.keySet()),
+                tracked.values().stream()
+                    .filter(account -> !account.isHoldsPositions())
+                    .map(Account::getId)
+                    .toList(),
+                earliest.plusDays(1),
+                to,
+                currency);
 
     Map<PortfolioSection, PeriodReturn> sectionReturns = new EnumMap<>(PortfolioSection.class);
     sectionPlans.forEach(
@@ -269,24 +280,44 @@ public class PeriodReturnService {
     return new ReturnScopePlan(start, terms, accountIds);
   }
 
-  // Every value the plans read, one batch valuation per distinct day.
+  // Every value the plans read. Accounts on an opening balance and its ledger - the usual case,
+  // and each tracking start is a day of its own - are valued for all days in one bulk pass, as for
+  // the chart; only the others take one batch valuation per day they are read on.
   private Map<LocalDate, Map<UUID, AccountValuation>> value(
       List<ReturnScopePlan> plans, Map<UUID, Account> accounts, String currency) {
     Map<LocalDate, Map<UUID, Account>> wanted = new TreeMap<>();
+    Map<UUID, Account> read = new HashMap<>();
     for (ReturnScopePlan plan : plans) {
       for (ReturnTerm term : plan.terms()) {
+        Account account = accounts.get(term.accountId());
         wanted
             .computeIfAbsent(term.date(), unused -> new HashMap<>())
-            .put(term.accountId(), accounts.get(term.accountId()));
+            .put(account.getId(), account);
+        read.put(account.getId(), account);
       }
     }
+    Map<LocalDate, Map<UUID, AccountValuation>> bulk =
+        accountValuationService.historyFromOpeningBalances(
+            read.values(), currency, List.copyOf(wanted.keySet()));
     Map<LocalDate, Map<UUID, AccountValuation>> values = new HashMap<>();
     wanted.forEach(
         (date, byId) -> {
           Map<UUID, AccountValuation> onDate = new HashMap<>();
-          for (AccountValuation valuation :
-              accountValuationService.valueAll(byId.values(), currency, date)) {
-            onDate.put(valuation.accountId(), valuation);
+          List<Account> others = new ArrayList<>();
+          Map<UUID, AccountValuation> fromBulk = bulk.getOrDefault(date, Map.of());
+          for (Account account : byId.values()) {
+            AccountValuation valuation = fromBulk.get(account.getId());
+            if (valuation == null) {
+              others.add(account);
+            } else {
+              onDate.put(account.getId(), valuation);
+            }
+          }
+          if (!others.isEmpty()) {
+            for (AccountValuation valuation :
+                accountValuationService.valueAll(others, currency, date)) {
+              onDate.put(valuation.accountId(), valuation);
+            }
           }
           values.put(date, onDate);
         });

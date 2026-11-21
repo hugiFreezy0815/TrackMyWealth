@@ -22,9 +22,9 @@ const OTHER_HISTORY_WARNING = 'history.warning.other';
 
 /**
  * Codes that make the wealth change itself unreliable, not only its split: an account whose value
- * or existence is unknown at one end of the period is left out of that end's sum. They do not
- * touch the return (#607): the server measures it over tracked history only and sends null when it
- * cannot.
+ * or existence is unknown at one end of the period is left out of that end's sum. The return is
+ * measured over tracked history only (#607), and the server sends null when a tracked value is
+ * unknown, so a missing value or inception does not touch it.
  */
 const DISTORTING_CODES: readonly string[] = [
   'VALUE_UNKNOWN',
@@ -41,4 +41,16 @@ export function historyWarningMessageIds(codes: readonly string[]): string[] {
 
 export function changeIsUncertain(codes: readonly string[]): boolean {
   return codes.some((code) => DISTORTING_CODES.includes(code));
+}
+
+/**
+ * Codes that can distort the return as well: the server decides which accounts are in the return's
+ * scope on a day from the same unverified lifecycle and portfolio history.
+ */
+const RETURN_DISTORTING_CODES: readonly string[] = [
+  'LIFECYCLE_UNVERIFIED',
+] satisfies readonly HistoryWarningCode[];
+
+export function returnIsUncertain(codes: readonly string[]): boolean {
+  return codes.some((code) => RETURN_DISTORTING_CODES.includes(code));
 }

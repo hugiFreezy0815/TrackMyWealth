@@ -252,8 +252,9 @@ be explained through `complete=false` and `warningCodes[]`; never display a miss
 as zero or label it a market gain.
 
 `change.returnPercent` (#607) is the period return, Modified Dietz over each account's tracked
-history (`docs/architecture/calculation-methodology.md`, "Period return"). Net saving and the
-first balance of an account that starts being tracked inside the period are flows, never gain.
+history (`docs/architecture/calculation-methodology.md`, "Period return"). Income, spending,
+deposits and the first balance of an account that starts being tracked inside the period are
+flows, never gain; interest, dividends and fees are return (PO, 2026-11-20).
 `change.returnFrom` is the date the return starts: the period start, or the scope's earliest
 tracking start when that is later; the chip then reads "since {date}". `returnPercent` is null
 when a tracked value or a flow is unknown, or the denominator is 0 or less; the chip then shows

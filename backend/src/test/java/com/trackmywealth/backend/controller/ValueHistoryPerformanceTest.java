@@ -116,18 +116,40 @@ class ValueHistoryPerformanceTest {
 
     // Warm the JIT and connection pool; the planner statistics were refreshed by the seeding step.
     for (int i = 0; i < WARMUP_REQUESTS; i++) {
-      history(client);
+      history(client, "1Y");
     }
+    double p95 = measure(client, "1Y", today, true);
+    assertThat(p95)
+        .as("1Y history p95 for 20 accounts and 50,000 transactions")
+        .isLessThan(MAX_P95_MS);
+
+    // #607: the period return values each account on its tracking start. Opening balances spread
+    // over the year make every one a day of its own, as for a member who added accounts over time.
+    staggerOpeningBalances(accountIds, today);
+    for (String period : List.of("1Y", "MAX")) {
+      for (int i = 0; i < WARMUP_REQUESTS / 4; i++) {
+        history(client, period);
+      }
+      assertThat(measure(client, period, today, false))
+          .as("%s history p95 with %d tracking starts inside the period", period, ACCOUNTS)
+          .isLessThan(MAX_P95_MS);
+    }
+  }
+
+  private double measure(RestTestClient client, String period, LocalDate today, boolean weekly) {
     SessionFactory sessionFactory = entityManagerFactory.unwrap(SessionFactory.class);
     sessionFactory.getStatistics().clear();
     List<Double> samples = new ArrayList<>();
     for (int i = 0; i < MEASURED_REQUESTS; i++) {
       long start = System.nanoTime();
-      ValueHistoryResponse response = history(client);
+      ValueHistoryResponse response = history(client, period);
       double millis = (System.nanoTime() - start) / 1_000_000.0;
       samples.add(millis);
-      assertThat(response.points()).hasSizeBetween(52, 54);
+      if (weekly) {
+        assertThat(response.points()).hasSizeBetween(52, 54);
+      }
       assertThat(response.points().get(response.points().size() - 1).date()).isEqualTo(today);
+      assertThat(response.change().returnFrom()).isNotNull();
     }
     System.out.println("HISTORY_PERF measured requests in order (ms): " + samples);
     Collections.sort(samples);
@@ -135,9 +157,11 @@ class ValueHistoryPerformanceTest {
     double p95 = samples.get((int) Math.ceil(0.95 * samples.size()) - 1);
     long queryCount = sessionFactory.getStatistics().getPrepareStatementCount();
     System.out.printf(
-        "HISTORY_PERF period=1Y p50=%.2fms, p95=%.2fms, min=%.2fms, max=%.2fms, "
+        "HISTORY_PERF period=%s staggered=%s p50=%.2fms, p95=%.2fms, min=%.2fms, max=%.2fms, "
             + "hibernatePreparedStatements=%d, statementsPerRequest=%.1f, "
             + "accounts=%d, transactions=%d%n",
+        period,
+        !weekly,
         p50,
         p95,
         samples.get(0),
@@ -146,15 +170,29 @@ class ValueHistoryPerformanceTest {
         (double) queryCount / samples.size(),
         ACCOUNTS,
         ACCOUNTS * TRANSACTIONS_PER_ACCOUNT);
-    assertThat(p95)
-        .as("1Y history p95 for 20 accounts and 50,000 transactions")
-        .isLessThan(MAX_P95_MS);
+    return p95;
   }
 
-  private ValueHistoryResponse history(RestTestClient client) {
+  // Account i opens 30 + 15·i days ago: twenty distinct tracking starts inside the year.
+  private void staggerOpeningBalances(List<UUID> accountIds, LocalDate today) throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement update =
+            connection.prepareStatement(
+                "UPDATE account_snapshot SET snapshot_date = ?"
+                    + " WHERE account_id = ? AND is_opening_balance")) {
+      for (int i = 0; i < accountIds.size(); i++) {
+        update.setObject(1, today.minusDays(30L + 15L * i));
+        update.setObject(2, accountIds.get(i));
+        assertThat(update.executeUpdate()).isEqualTo(1);
+      }
+    }
+    analyzeSeededTables();
+  }
+
+  private ValueHistoryResponse history(RestTestClient client, String period) {
     return client
         .get()
-        .uri("/api/v1/net-worth/history?period=1Y")
+        .uri("/api/v1/net-worth/history?period=" + period)
         .exchange()
         .expectStatus()
         .isOk()

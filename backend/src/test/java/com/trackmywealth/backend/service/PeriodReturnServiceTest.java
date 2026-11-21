@@ -1,16 +1,27 @@
 package com.trackmywealth.backend.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.DatedAmount;
 import com.trackmywealth.backend.dto.DatedCashFlows;
 import com.trackmywealth.backend.dto.PeriodReturn;
+import com.trackmywealth.backend.dto.PeriodReturns;
 import com.trackmywealth.backend.dto.ReturnScopeContext;
 import com.trackmywealth.backend.dto.ReturnScopePlan;
 import com.trackmywealth.backend.dto.ReturnTerm;
 import com.trackmywealth.backend.dto.TrackingStartSources;
 import com.trackmywealth.backend.entity.Account;
+import com.trackmywealth.backend.repository.ValueHistoryStartRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -18,6 +29,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * #607: known answers for the period return (methodology "Period return"), the tracking start per
@@ -213,6 +225,27 @@ class PeriodReturnServiceTest {
   }
 
   @Test
+  void aTransferToAnUntrackedAccountOfTheScopeIsAFlowNotALoss() {
+    // A (tracked, 10,000) moves 5,000 to B, a current account in the same scope without an opening
+    // balance: B is untracked, so A's leg is money leaving what the return measures.
+    LocalDate start = TODAY.minusDays(10);
+    ReturnScopeContext context =
+        new ReturnScopeContext(start, TODAY, Map.of(A, start), Map.of(), (id, date) -> true);
+    ReturnScopePlan plan = PeriodReturnService.plan(context, Set.of(A));
+    Map<LocalDate, Map<UUID, AccountValuation>> values =
+        Map.of(start, Map.of(A, known("10000")), TODAY, Map.of(A, known("5000")));
+    DatedCashFlows transfer =
+        new DatedCashFlows(
+            List.of(
+                new DatedCashFlows.Flow(A, start.plusDays(5), bd("-5000")),
+                new DatedCashFlows.Flow(B, start.plusDays(5), bd("5000"))),
+            List.of());
+
+    assertThat(PeriodReturnService.result(plan, context, values, transfer).percent())
+        .isEqualByComparingTo("0.00");
+  }
+
+  @Test
   void anUnknownTrackedValueLeavesTheReturnUnknownButKeepsItsStart() {
     LocalDate start = TODAY.minusDays(10);
     ReturnScopeContext context =
@@ -229,6 +262,57 @@ class PeriodReturnServiceTest {
     assertThat(result).isEqualTo(new PeriodReturn(null, start));
   }
 
+  // --- The whole response ------------------------------------------------------------------------
+
+  @Test
+  void accountsOnAnOpeningBalanceAreValuedInBulkAndTaxIsAFlowOnlyWithoutPositions() {
+    // Methodology example 2 with B as a depot: A (a ledger) enters with 1,000 thirty days ago, the
+    // depot grows from 2,000 to 2,100.
+    LocalDate opening = TODAY.minusDays(30);
+    Account cash = withId(ledger(), A);
+    Account securities = withId(depot(), B);
+    ValueHistoryStartRepository starts = mock(ValueHistoryStartRepository.class);
+    AccountValuationService valuations = mock(AccountValuationService.class);
+    CashFlowService cashFlows = mock(CashFlowService.class);
+    when(starts.trackingStartSources(anyCollection()))
+        .thenReturn(
+            Map.of(
+                A, new TrackingStartSources(A, opening, opening, null, null, false),
+                B, new TrackingStartSources(B, null, null, YEAR_AGO.minusDays(5), null, false)));
+    when(valuations.historyFromOpeningBalances(anyCollection(), eq("CHF"), anyList()))
+        .thenReturn(
+            Map.of(opening, Map.of(A, known(A, "1000")), TODAY, Map.of(A, known(A, "1000"))));
+    when(valuations.valueAll(anyCollection(), eq("CHF"), eq(YEAR_AGO)))
+        .thenReturn(List.of(known(B, "2000")));
+    when(valuations.valueAll(anyCollection(), eq("CHF"), eq(TODAY)))
+        .thenReturn(List.of(known(B, "2100")));
+    when(cashFlows.datedFlows(anyList(), anyCollection(), any(), any(), any()))
+        .thenReturn(new DatedCashFlows(List.of(), List.of()));
+
+    PeriodReturns returns =
+        new PeriodReturnService(starts, valuations, cashFlows)
+            .returns(
+                List.of(cash, securities),
+                YEAR_AGO,
+                TODAY,
+                "CHF",
+                Map.of(),
+                Map.of(),
+                (id, date) -> true,
+                Map.of());
+
+    assertThat(returns.total()).isEqualTo(new PeriodReturn(bd("4.80"), YEAR_AGO));
+    verify(valuations, never())
+        .valueAll(argThat(accounts -> accounts.contains(cash)), any(), any());
+    verify(cashFlows)
+        .datedFlows(
+            argThat(ids -> Set.copyOf(ids).equals(Set.of(A, B))),
+            eq(List.of(A)),
+            eq(YEAR_AGO.plusDays(1)),
+            eq(TODAY),
+            eq("CHF"));
+  }
+
   // --- Helpers -----------------------------------------------------------------------------------
 
   private static BigDecimal bd(String value) {
@@ -240,17 +324,26 @@ class PeriodReturnServiceTest {
   }
 
   private static AccountValuation known(String value) {
-    return valuation(true, bd(value));
+    return known(A, value);
+  }
+
+  private static AccountValuation known(UUID id, String value) {
+    return valuation(id, true, bd(value));
   }
 
   private static AccountValuation unknown() {
-    return valuation(false, null);
+    return valuation(A, false, null);
   }
 
-  private static AccountValuation valuation(boolean known, BigDecimal value) {
+  private static AccountValuation valuation(UUID id, boolean known, BigDecimal value) {
     return new AccountValuation(
-        A, "Account", "ASSET", "CHF", "CHF", value, null, null, false, false, known, null, null,
+        id, "Account", "ASSET", "CHF", "CHF", value, null, null, false, false, known, null, null,
         false, List.of());
+  }
+
+  private static Account withId(Account account, UUID id) {
+    ReflectionTestUtils.setField(account, "id", id);
+    return account;
   }
 
   private static Account ledger() {

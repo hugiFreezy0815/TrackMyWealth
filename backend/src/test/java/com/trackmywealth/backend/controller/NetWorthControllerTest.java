@@ -451,6 +451,84 @@ class NetWorthControllerTest {
     assertThat(history.change().returnFrom()).isEqualTo(today().minusDays(3));
   }
 
+  // #607 (PO 2026-11-20): interest and fees are what the money earned or cost - return. A deposit
+  // of unknown origin and a tax bill from a cash account are flows.
+  // 80 / (10,000 + 150/365 × 5,000 − 50/365 × 1,000) = 0.67 %.
+  @Test
+  void interestAndFeesAreReturnWhileDepositsAndTaxBillsAreFlows() throws Exception {
+    String token = bootstrapAdministrator();
+    UUID cash = createAccount(token, AccountRequests.account("Cash", "CASH", "CHF").build()).id();
+    seedOpeningBalance(cash, "10000", today().minusYears(1).minusDays(5));
+    seedBooking(cash, "INTEREST", today().minusDays(200), "100");
+    seedBooking(cash, "DEPOSIT", today().minusDays(150), "5000");
+    seedBooking(cash, "FEE", today().minusDays(100), "-20");
+    seedBooking(cash, "TAX", today().minusDays(50), "-1000");
+
+    ValueHistoryResponse history = history(token, "1Y");
+
+    assertThat(history.change().amount()).isEqualByComparingTo("4080");
+    assertThat(history.change().returnPercent()).isEqualByComparingTo("0.67");
+    // The breakdown keeps #477's net saving: interest in, fee and tax out, the deposit not in it.
+    assertThat(history.change().contributions()).isEqualByComparingTo("-920");
+  }
+
+  // #607: a card without an opening balance is tracked from its inception (its first booking
+  // here), so its fee lowers the return: −20 / (10,000 − 200) = −0.20 %.
+  @Test
+  void aCardWithoutAnOpeningBalanceIsTrackedFromItsInception() throws Exception {
+    String token = bootstrapAdministrator();
+    LocalDate yearStart = today().minusYears(1);
+    UUID cash = createAccount(token, AccountRequests.account("Cash", "CASH", "CHF").build()).id();
+    seedOpeningBalance(cash, "10000", yearStart.minusDays(5));
+    UUID card =
+        createAccount(token, AccountRequests.account("Visa", "CREDIT_CARD", "CHF").build()).id();
+    seedBooking(card, "CREDIT_CARD_PURCHASE", yearStart.minusDays(30), "-200");
+    seedBooking(card, "FEE", today().minusDays(50), "-20");
+
+    ValueHistoryResponse history = history(token, "1Y");
+
+    assertThat(history.change().returnFrom()).isEqualTo(yearStart);
+    assertThat(history.change().returnPercent()).isEqualByComparingTo("-0.20");
+  }
+
+  // #607: each flow converts at its own day's rate, each value at its day's: the EUR 1,000 held
+  // all year gains CHF 200 of FX. 200 / (1,000 + 100/365 × 600) = 17.18 %.
+  @Test
+  void aForeignCurrencyFlowConvertsAtItsBookingDaysRate() throws Exception {
+    String token = bootstrapAdministrator();
+    LocalDate yearStart = today().minusYears(1);
+    seedFxRateOn("EUR", "CHF", yearStart, "1.00");
+    seedFxRateOn("EUR", "CHF", today().minusDays(100), "1.20");
+    seedFxRateOn("EUR", "CHF", today(), "1.20");
+    UUID euro = createAccount(token, AccountRequests.account("Euro", "CASH", "EUR").build()).id();
+    seedOpeningBalance(euro, "1000", yearStart.minusDays(5));
+    seedBooking(euro, "INCOME", today().minusDays(100), "500");
+
+    ValueHistoryResponse history = history(token, "1Y");
+
+    assertThat(history.change().returnPercent()).isEqualByComparingTo("17.18");
+  }
+
+  // #607 AC 3 for a portfolio: its return starts with its own first tracked account, not the
+  // workspace's.
+  @Test
+  void aPortfoliosReturnStartsAtItsOwnEarliestTrackingStart() throws Exception {
+    String token = bootstrapAdministrator();
+    LocalDate yearStart = today().minusYears(1);
+    UUID gold = createAccount(token, customAsset("Gold", "PRECIOUS_METAL")).id();
+    recordValuation(token, gold, yearStart.minusDays(10), "2000.00");
+    UUID portfolio = createPortfolio(token, "Savings", "CHF").id();
+    UUID cash = createAccount(token, cash("Savings cash", portfolio)).id();
+    seedOpeningBalance(cash, "5000", today().minusDays(34));
+
+    ValueHistoryResponse portfolioHistory = portfolioHistory(token, portfolio, "1Y");
+    ValueHistoryResponse workspaceHistory = history(token, "1Y");
+
+    assertThat(portfolioHistory.change().returnFrom()).isEqualTo(today().minusDays(34));
+    assertThat(portfolioHistory.change().returnPercent()).isEqualByComparingTo("0.00");
+    assertThat(workspaceHistory.change().returnFrom()).isEqualTo(yearStart);
+  }
+
   @Test
   void historicalSnapshotValuesAreStepsAndEstimatedBetweenObservations() {
     String token = bootstrapAdministrator();
