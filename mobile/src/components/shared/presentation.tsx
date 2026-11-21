@@ -108,8 +108,11 @@ export function ChangeChip({
         flexDirection: 'row',
         flexWrap: 'wrap',
         alignItems: 'center',
-        // A chip hugs its content instead of stretching across the card.
+        // A chip hugs its content instead of stretching across the card, but never grows wider
+        // than its row (#669): at 320 px or 200 % text "· Return x %" wraps inside the pill.
         alignSelf: 'flex-start',
+        maxWidth: '100%',
+        flexShrink: 1,
         gap: Spacing.one,
         padding: Spacing.two,
         borderRadius: Radii.pill,
@@ -141,7 +144,7 @@ export function ChangeChip({
           </Text>
           <Text
             accessibilityLabel={shownFigure.label}
-            style={{ ...TypeScale.numberMedium, fontWeight: '600', color }}
+            style={{ ...TypeScale.numberMedium, fontWeight: '600', color, flexShrink: 1 }}
           >
             {shownFigure.text}
           </Text>

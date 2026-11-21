@@ -231,6 +231,23 @@ describe('shared navigation and financial rows', () => {
     expect(glyph.props.style.color).toBe('#C42F37');
   });
 
+  it('never grows wider than its row, so the figure wraps inside the pill (#669)', async () => {
+    await renderWithIntl(
+      <ChangeChip
+        amount="482406"
+        currency="CHF"
+        figure={{ text: 'Return −12.3%', label: 'Return minus 12.3 percent', direction: 'down' }}
+      />,
+    );
+    const glyph = screen.getByText('↘', { includeHiddenElements: true });
+    expect(glyph.parent?.props.style).toMatchObject({
+      maxWidth: '100%',
+      flexShrink: 1,
+      flexWrap: 'wrap',
+    });
+    expect(screen.getByLabelText('Return minus 12.3 percent').props.style.flexShrink).toBe(1);
+  });
+
   it('keeps a hidden change neutral and drops its figure', async () => {
     jest.mocked(useAmountsHidden).mockReturnValue(true);
     await renderWithIntl(
