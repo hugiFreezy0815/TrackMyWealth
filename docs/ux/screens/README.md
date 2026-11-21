@@ -14,6 +14,7 @@ request it sends, and the accessibility rules.
 | S5 | Add portfolio (catalogue or own) | [add-portfolio.md](add-portfolio.md) | M14 / W11 |
 | S6 | Add account and its starting value (opening balance or valuation) | [add-account.md](add-account.md) | M17, M16 / dialog like W11 |
 | S7 | Import statement: file, review with duplicates, commit | [import-statement.md](import-statement.md) | M08, M09 / W05 |
+| S8 | Update required: blocking native and web system state (EN/DE, light/dark) | [update-required.md](update-required.md) | M24 / W14 (desktop + phone) |
 
 **Sprint-7 scope (PO decision 2026-11-05).** S1–S7 are in. They cover the first-run journey:
 add a portfolio, add an account, import a statement or enter an opening balance, see the
