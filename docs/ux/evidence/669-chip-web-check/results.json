@@ -11,6 +11,7 @@
     "pageOverflow": 0,
     "labelLines": 1,
     "labelBelowChip": true,
+    "labelBesideChip": false,
     "chipRight": 287,
     "chipHeight": 60
   },
@@ -33,6 +34,7 @@
     "pageOverflow": 0,
     "labelLines": 1,
     "labelBelowChip": true,
+    "labelBesideChip": false,
     "chipRight": 287,
     "chipHeight": 60
   },
@@ -48,6 +50,7 @@
     "pageOverflow": 0,
     "labelLines": 1,
     "labelBelowChip": true,
+    "labelBesideChip": false,
     "chipRight": 299,
     "chipHeight": 36
   },
@@ -63,6 +66,7 @@
     "pageOverflow": 0,
     "labelLines": 1,
     "labelBelowChip": true,
+    "labelBesideChip": false,
     "chipRight": 299,
     "chipHeight": 36
   },
@@ -78,6 +82,7 @@
     "pageOverflow": 0,
     "labelLines": 1,
     "labelBelowChip": false,
+    "labelBesideChip": true,
     "chipRight": 307,
     "chipHeight": 36
   },
@@ -93,6 +98,7 @@
     "pageOverflow": 0,
     "labelLines": 1,
     "labelBelowChip": false,
+    "labelBesideChip": true,
     "chipRight": 307,
     "chipHeight": 36
   },
@@ -108,6 +114,7 @@
     "pageOverflow": 0,
     "labelLines": 1,
     "labelBelowChip": false,
+    "labelBesideChip": true,
     "chipRight": 583,
     "chipHeight": 36
   },
@@ -130,6 +137,7 @@
     "pageOverflow": 0,
     "labelLines": 1,
     "labelBelowChip": false,
+    "labelBesideChip": true,
     "chipRight": 583,
     "chipHeight": 36
   },
@@ -145,6 +153,7 @@
     "pageOverflow": 0,
     "labelLines": 1,
     "labelBelowChip": true,
+    "labelBesideChip": false,
     "chipRight": 287,
     "chipHeight": 60
   },
@@ -167,6 +176,7 @@
     "pageOverflow": 0,
     "labelLines": 1,
     "labelBelowChip": true,
+    "labelBesideChip": false,
     "chipRight": 287,
     "chipHeight": 60
   },
@@ -182,6 +192,7 @@
     "pageOverflow": 0,
     "labelLines": 1,
     "labelBelowChip": true,
+    "labelBesideChip": false,
     "chipRight": 306,
     "chipHeight": 36
   },
@@ -197,6 +208,7 @@
     "pageOverflow": 0,
     "labelLines": 1,
     "labelBelowChip": true,
+    "labelBesideChip": false,
     "chipRight": 306,
     "chipHeight": 36
   },
@@ -212,6 +224,7 @@
     "pageOverflow": 0,
     "labelLines": 1,
     "labelBelowChip": false,
+    "labelBesideChip": true,
     "chipRight": 314,
     "chipHeight": 36
   },
@@ -227,6 +240,7 @@
     "pageOverflow": 0,
     "labelLines": 1,
     "labelBelowChip": false,
+    "labelBesideChip": true,
     "chipRight": 314,
     "chipHeight": 36
   },
@@ -242,6 +256,7 @@
     "pageOverflow": 0,
     "labelLines": 1,
     "labelBelowChip": false,
+    "labelBesideChip": true,
     "chipRight": 590,
     "chipHeight": 36
   },
@@ -264,6 +279,7 @@
     "pageOverflow": 0,
     "labelLines": 1,
     "labelBelowChip": false,
+    "labelBesideChip": true,
     "chipRight": 590,
     "chipHeight": 36
   }
