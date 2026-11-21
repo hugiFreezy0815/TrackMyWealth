@@ -34,7 +34,7 @@
     "react-intl": "12.1.6",
     "@formatjs/intl-numberformat": "10.0.4",
     "@formatjs/intl-datetimeformat": "8.0.2",
-    "@formatjs/intl-pluralrules": "7.0.2",
+    "@formatjs/intl-pluralrules": "7.0.4",
     "@formatjs/intl-displaynames": "8.0.1",
     "expo-document-picker": "58.0.4",
     "@react-native-community/datetimepicker": "9.2.1"
