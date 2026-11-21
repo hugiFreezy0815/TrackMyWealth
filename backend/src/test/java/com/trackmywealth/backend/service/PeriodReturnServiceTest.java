@@ -313,6 +313,57 @@ class PeriodReturnServiceTest {
             eq("CHF"));
   }
 
+  @Test
+  void scopesThatShareACurrencyShareOneValuationAndOneCashFlowQuery() {
+    // #645: three portfolio scopes, two in CHF and one in EUR. A is in scope "first", B in "second"
+    // and "euro" holds nothing; each CHF scope keeps its own return.
+    UUID first = UUID.randomUUID();
+    UUID second = UUID.randomUUID();
+    UUID euro = UUID.randomUUID();
+    Account gold = withId(manualValuation(), A);
+    Account car = withId(manualValuation(), B);
+    ValueHistoryStartRepository starts = mock(ValueHistoryStartRepository.class);
+    AccountValuationService valuations = mock(AccountValuationService.class);
+    CashFlowService cashFlows = mock(CashFlowService.class);
+    when(starts.trackingStartSources(anyCollection()))
+        .thenReturn(
+            Map.of(
+                A, new TrackingStartSources(A, null, null, null, YEAR_AGO.minusDays(1), false),
+                B, new TrackingStartSources(B, null, null, null, YEAR_AGO.minusDays(1), false)));
+    when(valuations.historyFromOpeningBalances(anyCollection(), any(), anyList()))
+        .thenReturn(Map.of());
+    when(valuations.valueAll(anyCollection(), eq("CHF"), eq(YEAR_AGO)))
+        .thenReturn(List.of(known(A, "1000"), known(B, "2000")));
+    when(valuations.valueAll(anyCollection(), eq("CHF"), eq(TODAY)))
+        .thenReturn(List.of(known(A, "1100"), known(B, "1900")));
+    when(cashFlows.datedFlows(anyList(), anyCollection(), any(), any(), any()))
+        .thenReturn(new DatedCashFlows(List.of(), List.of()));
+
+    Map<UUID, PeriodReturn> returns =
+        new PeriodReturnService(starts, valuations, cashFlows)
+            .scopeReturns(
+                List.of(gold, car),
+                YEAR_AGO,
+                TODAY,
+                Map.of(first, "CHF", second, "CHF", euro, "EUR"),
+                Map.of(),
+                Map.of(),
+                Map.of(
+                    first, (id, date) -> A.equals(id),
+                    second, (id, date) -> B.equals(id),
+                    euro, (id, date) -> false));
+
+    assertThat(returns)
+        .containsEntry(first, new PeriodReturn(bd("10.00"), YEAR_AGO))
+        .containsEntry(second, new PeriodReturn(bd("-5.00"), YEAR_AGO))
+        .containsEntry(euro, PeriodReturn.NONE);
+    verify(starts).trackingStartSources(anyCollection());
+    verify(valuations).valueAll(anyCollection(), eq("CHF"), eq(YEAR_AGO));
+    verify(valuations).valueAll(anyCollection(), eq("CHF"), eq(TODAY));
+    verify(cashFlows).datedFlows(anyList(), anyCollection(), any(), any(), eq("CHF"));
+    verify(cashFlows, never()).datedFlows(anyList(), anyCollection(), any(), any(), eq("EUR"));
+  }
+
   // --- Helpers -----------------------------------------------------------------------------------
 
   private static BigDecimal bd(String value) {

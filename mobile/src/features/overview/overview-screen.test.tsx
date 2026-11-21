@@ -68,7 +68,15 @@ const portfolio: Portfolio = {
   valueStatus: 'CURRENT',
   asOf: '2026-11-08',
   institutionName: null,
-  change: { period: '1M', amount: '12.00', percent: '0.51' },
+  // #645: the row shows the return (−0.2 %), never the wealth change (+0.5 %).
+  change: {
+    period: '1M',
+    from: '2026-10-08',
+    amount: '12.00',
+    percent: '0.51',
+    returnPercent: '-0.24',
+    returnFrom: '2026-10-08',
+  },
 };
 const accountValuation: NetWorth['accounts'][number] = {
   accountId: 'account-1',
@@ -299,7 +307,8 @@ describe('Overview S1 (#489)', () => {
     expect(useNetWorthHistory).toHaveBeenLastCalledWith('CHF', '1M', true);
     expect(screen.getByRole('image', { name: /8 Oct 2026.*plus 42.75.*estimated/i })).toBeTruthy();
     expect(screen.getByText('Return +3.2%')).toBeTruthy();
-    expect(screen.getByText('+0.5%')).toBeTruthy();
+    expect(screen.getByText('−0.2%')).toBeTruthy();
+    expect(screen.queryByText('+0.5%')).toBeNull();
     expect(screen.getByLabelText('plus 17.12 Swiss francs')).toBeTruthy();
     // The chip and the section tile both name the period of their change (M03).
     expect(screen.getAllByText('past month')).toHaveLength(2);
@@ -314,7 +323,7 @@ describe('Overview S1 (#489)', () => {
 
     await fireEvent.press(screen.getByRole('radio', { name: '1W, Past week' }));
     expect(useNetWorthHistory).toHaveBeenLastCalledWith('CHF', '1W', true);
-    expect(screen.queryByText('+0.5%')).toBeNull();
+    expect(screen.queryByText('−0.2%')).toBeNull();
     expect(screen.queryByLabelText('plus 17.12 Swiss francs')).toBeNull();
   });
 
@@ -527,6 +536,28 @@ describe('Overview S1 (#489)', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('shows a row the return as its hint, and none when the return starts inside the month', async () => {
+    await renderOverview('en', { onPortfolio: jest.fn() });
+    expect(screen.getByRole('button', { name: 'Euro Bank' }).props.accessibilityHint).toBe(
+      'Return minus 0.2 percent',
+    );
+
+    // Tracked only since 20 Oct: a part-month return must not read as the month's (PO 2026-11-21).
+    jest
+      .mocked(usePortfolios)
+      .mockReturnValue(
+        success([
+          { ...portfolio, change: { ...portfolio.change!, returnFrom: '2026-10-20' } },
+        ]) as unknown as ReturnType<typeof usePortfolios>,
+      );
+    await renderOverview('en', { onPortfolio: jest.fn() });
+    expect(screen.queryByText('−0.2%')).toBeNull();
+    expect(screen.queryByText('+0.5%')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Euro Bank' }).props.accessibilityHint,
+    ).toBeUndefined();
   });
 
   it('does not show the converted line when the portfolio and workspace currency match', async () => {

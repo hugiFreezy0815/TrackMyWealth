@@ -5,6 +5,7 @@ import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.CashFlowContribution;
 import com.trackmywealth.backend.dto.HistoryWarning;
 import com.trackmywealth.backend.dto.MultiCurrencyValuations;
+import com.trackmywealth.backend.dto.PeriodReturn;
 import com.trackmywealth.backend.dto.PeriodReturns;
 import com.trackmywealth.backend.dto.PortfolioCapitalFlows;
 import com.trackmywealth.backend.dto.PortfolioPeriodChange;
@@ -43,6 +44,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.function.BiPredicate;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -324,37 +326,51 @@ public class ValueHistoryService {
       Map<UUID, List<AccountHistoryState>> historyStates,
       Map<UUID, PortfolioPlacement> placements) {
     ZoneId zone = businessDateService.zone();
-    Map<UUID, Account> byId = new HashMap<>();
-    Map<UUID, LocalDate> inceptions = new HashMap<>();
-    Map<UUID, List<LocalDate>> changeDays = new HashMap<>();
+    Map<UUID, Account> byId = byId(accounts);
     Map<UUID, PortfolioSection> sectionOf = new HashMap<>();
-    for (Account account : accounts) {
-      UUID id = account.getId();
-      byId.put(id, account);
-      LocalDate inception = inceptionDate(account, zone, firstEvidence.get(id));
-      if (inception != null) {
-        inceptions.put(id, inception);
-      }
-      changeDays.put(
-          id,
-          historyStates.getOrDefault(id, List.of()).stream()
-              .map(state -> state.effectiveAt().atZoneSameInstant(zone).toLocalDate())
-              .distinct()
-              .toList());
-      PortfolioPlacement placement = placements.get(id);
-      if (placement != null) {
-        sectionOf.put(id, placement.section());
-      }
-    }
+    placements.forEach((id, placement) -> sectionOf.put(id, placement.section()));
     return periodReturnService.returns(
         accounts,
         from,
         today,
         currency,
-        inceptions,
-        changeDays,
+        inceptions(accounts, zone, firstEvidence),
+        changeDays(accounts, zone, historyStates),
         (id, date) -> includedOn(byId.get(id), date, zone, historyStates, portfolioId),
         sectionOf);
+  }
+
+  private static Map<UUID, Account> byId(List<Account> accounts) {
+    Map<UUID, Account> byId = new HashMap<>();
+    accounts.forEach(account -> byId.put(account.getId(), account));
+    return byId;
+  }
+
+  private static Map<UUID, LocalDate> inceptions(
+      List<Account> accounts, ZoneId zone, Map<UUID, LocalDate> firstEvidence) {
+    Map<UUID, LocalDate> inceptions = new HashMap<>();
+    for (Account account : accounts) {
+      LocalDate inception = inceptionDate(account, zone, firstEvidence.get(account.getId()));
+      if (inception != null) {
+        inceptions.put(account.getId(), inception);
+      }
+    }
+    return inceptions;
+  }
+
+  // The business days each account's lifecycle or portfolio state changed.
+  private static Map<UUID, List<LocalDate>> changeDays(
+      List<Account> accounts, ZoneId zone, Map<UUID, List<AccountHistoryState>> historyStates) {
+    Map<UUID, List<LocalDate>> changeDays = new HashMap<>();
+    for (Account account : accounts) {
+      changeDays.put(
+          account.getId(),
+          historyStates.getOrDefault(account.getId(), List.of()).stream()
+              .map(state -> state.effectiveAt().atZoneSameInstant(zone).toLocalDate())
+              .distinct()
+              .toList());
+    }
+    return changeDays;
   }
 
   // In the scope on a day by its effective state then; the current state for pre-tracking data.
@@ -414,10 +430,13 @@ public class ValueHistoryService {
     var end =
         accountValuationService.valueAllInCurrencies(
             atEndByPortfolio.values().stream().flatMap(List::stream).toList(), currencies, today);
+    Map<UUID, PeriodReturn> returns =
+        portfolioReturns(portfolios, accounts, from, today, zone, firstEvidence, historyStates);
     Map<UUID, PortfolioPeriodChange> result = new HashMap<>();
     for (Portfolio portfolio : portfolios) {
       UUID portfolioId = portfolio.getId();
       String currency = portfolio.getPortfolioCurrency();
+      PeriodReturn periodReturn = returns.getOrDefault(portfolioId, PeriodReturn.NONE);
       List<AccountValuation> atStart =
           MultiCurrencyValuations.select(
               atStartByPortfolio.getOrDefault(portfolioId, List.of()).stream()
@@ -432,13 +451,54 @@ public class ValueHistoryService {
               end.byAccountIn(currency));
       if (atStart.stream().anyMatch(v -> !v.valueKnown())
           || atEnd.stream().anyMatch(v -> !v.valueKnown())) {
-        result.put(portfolioId, new PortfolioPeriodChange("1M", null, null));
+        result.put(
+            portfolioId,
+            new PortfolioPeriodChange(
+                "1M", from, null, null, periodReturn.percent(), periodReturn.from()));
         continue;
       }
       Change change = change(sum(atStart), sum(atEnd), null);
-      result.put(portfolioId, new PortfolioPeriodChange("1M", change.amount(), change.percent()));
+      result.put(
+          portfolioId,
+          new PortfolioPeriodChange(
+              "1M",
+              from,
+              change.amount(),
+              change.percent(),
+              periodReturn.percent(),
+              periodReturn.from()));
     }
     return Map.copyOf(result);
+  }
+
+  // #645: each portfolio's return, as its own 1M history response computes it, for all portfolios
+  // in one batch per portfolio currency.
+  private Map<UUID, PeriodReturn> portfolioReturns(
+      Collection<Portfolio> portfolios,
+      List<Account> accounts,
+      LocalDate from,
+      LocalDate today,
+      ZoneId zone,
+      Map<UUID, LocalDate> firstEvidence,
+      Map<UUID, List<AccountHistoryState>> historyStates) {
+    Map<UUID, Account> byId = byId(accounts);
+    Map<UUID, String> currencies = new HashMap<>();
+    Map<UUID, BiPredicate<UUID, LocalDate>> included = new HashMap<>();
+    for (Portfolio portfolio : portfolios) {
+      UUID portfolioId = portfolio.getId();
+      currencies.put(portfolioId, portfolio.getPortfolioCurrency());
+      included.put(
+          portfolioId,
+          (id, date) -> includedOn(byId.get(id), date, zone, historyStates, portfolioId));
+    }
+    return periodReturnService.scopeReturns(
+        accounts,
+        from,
+        today,
+        currencies,
+        inceptions(accounts, zone, firstEvidence),
+        changeDays(accounts, zone, historyStates),
+        included);
   }
 
   private static Map<UUID, List<Account>> accountsInPortfolios(
