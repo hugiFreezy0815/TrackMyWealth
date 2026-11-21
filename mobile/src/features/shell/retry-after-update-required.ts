@@ -1,6 +1,7 @@
 import { ApiError, api } from '@/api/client';
 import { queryClient } from '@/api/queries/client';
 import { dismissUpdateRequired } from '@/api/update-required';
+import { resumeSessionAfterUpdate } from '@/features/auth/session';
 
 /**
  * Keep the full-screen update barrier until a version-bearing API request proves the server
@@ -20,7 +21,9 @@ export async function retryAfterUpdateRequired(): Promise<void> {
     }
   }
 
-  // Mark cached data stale before returning to the app; no background refresh may bypass 426.
+  // A saved session may have failed to refresh or verify its identity while blocked by 426.
+  await resumeSessionAfterUpdate();
+  // Mark cached data stale before returning to the app.
   await queryClient.invalidateQueries();
   dismissUpdateRequired();
 }
