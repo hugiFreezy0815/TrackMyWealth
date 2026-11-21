@@ -85,15 +85,40 @@ describe('UpdateRequiredScreen (#649)', () => {
     expect(action.props.accessibilityState?.disabled ?? action.props['aria-disabled']).toBe(true);
 
     await act(async () => complete?.());
-    await waitFor(() => expect(screen.getByRole('button', { name: en['error.retry'] }).props['aria-disabled']).toBe(false));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: en['error.retry'] }).props['aria-disabled']).toBe(false),
+    );
   });
 
   it('keeps the native retry available after an asynchronous failure', async () => {
-    const onRetry = jest.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undefined);
+    const onRetry = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(undefined);
     await show({ platform: 'android', onRetry });
     fireEvent.press(screen.getByRole('button', { name: en['error.retry'] }));
-    await waitFor(() => expect(screen.getByRole('button', { name: en['error.retry'] })).toBeEnabled());
+    expect(await screen.findByText(en['updateRequired.retryError'])).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: en['error.retry'] }).props['aria-disabled']).toBe(false),
+    );
     fireEvent.press(screen.getByRole('button', { name: en['error.retry'] }));
     expect(onRetry).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.queryByText(en['updateRequired.retryError'])).toBeNull());
   });
+
+  it('shows localized accessible feedback on network failure and can retry in German', async () => {
+    const { NetworkError } = jest.requireActual('@/api/client') as typeof import('@/api/client');
+    const onRetry = jest.fn().mockRejectedValueOnce(new NetworkError('unreachable'));
+    await show({ platform: 'android', onRetry }, de, 'de');
+
+    fireEvent.press(screen.getByRole('button', { name: de['error.retry'] }));
+    const message = await screen.findByText(de['updateRequired.networkError']);
+    expect(message.props.accessibilityRole).toBe('alert');
+    expect(screen.getByRole('button', { name: de['error.retry'] })).toBeTruthy();
+
+    fireEvent.press(screen.getByRole('button', { name: de['error.retry'] }));
+    await waitFor(() => expect(screen.queryByText(de['updateRequired.networkError'])).toBeNull());
+    expect(onRetry).toHaveBeenCalledTimes(2);
+  });
+
 });
