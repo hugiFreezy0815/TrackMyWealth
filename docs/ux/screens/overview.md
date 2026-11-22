@@ -267,3 +267,20 @@ business-date sample. Data from before lifecycle-event tracking may be restated 
 first available state and explicitly warned as incomplete. The section change and period total
 are calculated on the backend; the client must never compute financial returns by subtracting
 two local snapshots.
+
+## Planned update (design round 2026-11-22)
+
+**Figma:** M03r Overview, By type EN [197:983](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=197-983) / DE [197:1294](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=197-1294) on page "🧭 Design round S9–S15 (#680–#683)"; W01r web overview EN [202:2089](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=202-2089) / DE [202:2614](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=202-2614) (header with Import, Data checks and the eye; By type switch; cash-flow and data-checks rail). Dark: M03r [202:3778](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=202-3778), W01r [202:4623](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=202-4623). Each change ships with the story named in the table.
+Until then the sprint-7 behaviour above stays.
+
+| # | Change | Detail | Depends on |
+|---|---|---|---|
+| U1 | Section tiles become links | Tile (field 16) → [S9 Section view](section-view.md) for that section; Depot → [S11](investments.md) once built. A chevron and the accessible hint "Opens {section}" | S9 story |
+| U2 | "By portfolio · By type" switch | A `SectionSwitch` above the list under the tiles (field 17). **By portfolio** = today's portfolio rows. **By type** = one group per `sections[]` entry (server order): header "{section} · {subtotal}" (→ S9), then that section's account rows (`AccountRow` v2: logo, name, "{portfolio} · {type} · {masked identifier}", value, status). The choice is remembered on the device | S9 request 2 (or G9-1) |
+| U3 | Data status banner counts all checks | Field 5 counts the open [S15](data-checks.md) checks that affect a total (unreconciled, unknown value; later G15-1 kinds), not only `UNRECONCILED` accounts. Text `overview.dataStatus.checks` "{n, plural, one {# check affects} other {# checks affect}} your net worth · Review" → S15 | S15 story |
+| U4 | Global header (web) | Adds **Import** (→ [S7 v2](import-statement.md#version-2-design-round-2026-11-22)) and the **Data checks** button with a count. The eye stays. No search, no bell until their stories exist | S7 v2, S15 |
+| U5 | Liabilities line links | "Includes …" (field 15) names link to [S10](loan-detail.md) | S10 story |
+
+**Why both axes:** getquin's overview is by type only (Investments, Cash balance, Liabilities).
+TrackMyWealth is built around portfolios per institution (FR-INS-013, PO-approved IA), so we keep
+that axis and add the type axis as a switch, not as a replacement.

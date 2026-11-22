@@ -16,6 +16,39 @@ variants, localized copy, Figma node IDs and recovery behavior.
 | S7 | Import statement: file, review with duplicates, commit | [import-statement.md](import-statement.md) | M08, M09 / W05 |
 | S8 | Update required: blocking native and web system state (EN/DE, light/dark) | [update-required.md](update-required.md) | M24 / W14 (desktop + phone) |
 
+### Next design round (planned, 2026-11-22)
+
+These specs come from the PO's getquin screenshots of 2026-11-22. getquin served as inspiration only:
+each spec has a "Design decisions" table that says what TrackMyWealth does differently. They are
+**planned**: nothing here is in sprint 7, and the "hidden until the API sends it" rule applies
+to every element.
+
+| # | Screen | Spec | Figma (EN / DE) on page "🧭 Design round S9–S15" |
+|---|---|---|---|
+| S9 | Section view: one account type (cash, cards, mortgage…) across all portfolios | [section-view.md](section-view.md) | M26 190:184 / 190:347 · W15 198:1216 / 198:1740 |
+| S10 | Liability detail: loan schedule, repayments split, card statement (variant of S3) | [loan-detail.md](loan-detail.md) | M27 191:278 / 191:481 · M27b 191:387 / 191:588 |
+| S11 | Investments: depots, positions, performance card, allocation, dividends card | [investments.md](investments.md) | M28 192:405 / 192:628 · W16 198:1484 / 198:2006 |
+| S12 | Position detail: one security across depots | [position-detail.md](position-detail.md) | M29 193:514 / 193:884 |
+| S13 | Performance breakdown sheet | [investments.md](investments.md#s13-performance-sheet-m30) | M30 193:642 / 193:1010 |
+| S14 | Dividends & interest | [investments.md](investments.md#s14-dividends--interest-m31) | M31 193:740 / 193:1105 |
+| S15 | Data checks inbox and units check | [data-checks.md](data-checks.md) | M35 196:843 / 196:1078 · M36 196:972 / 196:1201 · W18 200:1710 / 200:2154 |
+| S7 v2 | Import: several files, column mapping (no LLM), editable rows, trades table | [import-statement.md](import-statement.md#version-2-design-round-2026-11-22) | M32 194:662 / 194:1003 · M33 194:782 / 194:1120 · M34 194:903 / 194:1237 · W17 200:1479 / 200:1927 |
+| S1/S2/S3 | Planned updates: section links, By type switch, masked identifiers, month groups | "Planned update" sections in [overview.md](overview.md), [portfolio-view.md](portfolio-view.md), [account-detail.md](account-detail.md) | M03r 197:983 / 197:1294 · M25r 197:1161 / 197:1470 |
+
+**Dark mode:** "TMW / Color" has a Dark mode with the values from [02-visual-foundations.css](../02-visual-foundations.css). Dark copies of every EN frame are in the sections "EN — Mobile · Dark" and "EN — Web · Dark" on the same page. The web overview revision is W01r (202:2089 / 202:2614), and the web column mapping is W17b (202:1807 / 202:2340).
+
+API gaps of the planned screens and their stories. UI stories: #684 (S9), #685 (S10), #686 (S11/S13), #687 (S12), #688 (S7 v2), #689 (S15), #690 (S3 update). Figma: #680–#683 (sprint 8).
+
+| Gap | Screens |
+|---|---|
+| G9-1 accounts by section with masked identifier and converted value (#691) | S9, S1 U2 |
+| G9-2 workspace transaction list with section / account / type / security filters (#692) | S9, S11, S12, S14 |
+| G10-1/2 payment total on schedule entries; interest and principal per year (#693) | S10 |
+| G11-1 depot value history (#694); G11-2 performance breakdown (#695); G11-3 positions per security and G11-4 allocation (#696); G11-5 income per month (#697); G11-6 security logos (later) | S11–S14 |
+| G12-1 transaction filter by security (#692) | S12 |
+| G7-1 upload without an account (#365); G7-2 member templates and G7-4 row correction (#698); G7-3 trade rows (#274) | S7 v2 |
+| G15-1 data-checks endpoint and G15-3 snapshot confirmation (#699); G15-2 single cost basis write (optional, with #589) | S15 |
+
 **Sprint-7 scope (PO decision 2026-11-05).** S1–S7 are in. They cover the first-run journey:
 add a portfolio, add an account, import a statement or enter an opening balance, see the
 overview. Not in sprint 7 (hidden, never disabled): edit/correct a transaction, add a

@@ -19,7 +19,7 @@ Use these terms on the [Sprint 7 screens](screens/README.md). German addresses t
 | Counter-account / Counterparty | Gegenkonto / Gegenpartei | | The account on the other side of a transfer, or the person or organisation on the other side of a transaction. |
 | Transfer / Card settlement | Umbuchung / Kreditkartenabrechnung | | Money moved between accounts, or a payment applied to a card balance. |
 | Security | Wertpapier | | An identifiable investment instrument, such as a share or fund. |
-| Position / Units | Position / Stück | | The holding of one security in a depot, expressed as a quantity. |
+| Position / Units | Position / Anteile | | The holding of one security in a depot, expressed as a quantity. The app uses "Anteile" (PO 2026-11-22); "Stück" is not used. |
 | Asset / Liability | Vermögenswert / Verbindlichkeit | | Something owned or a financial obligation owed. |
 | Net worth | Nettovermögen | | The server-reported total of assets less liabilities. |
 | Balance / Market value | Saldo / Marktwert | | A monetary account balance, or the value of a holding at the applicable market price. |
@@ -36,6 +36,28 @@ Use these terms on the [Sprint 7 screens](screens/README.md). German addresses t
 | Exchange rate / Original amount | Wechselkurs / Originalbetrag | | The rate used for a currency conversion, or the amount before conversion. |
 | Change history | Änderungsverlauf | | A dated record of changes to a transaction. |
 | Workspace (internal) | — | | The tenant that contains the member's portfolios. It has no UI term. |
+
+### Terms for the planned screens S9–S15 (design round 2026-11-22)
+
+| EN | DE-DE | DE-CH where different | Definition |
+|---|---|---|---|
+| Section / By type | Bereich / Nach Art | | One account type across all portfolios (Cash & savings, Depot, …), and the overview list grouped that way. |
+| Owed | Offen | | The amount still owed on a liability, shown as a magnitude. |
+| Principal / Interest | Tilgung / Zinsen | Amortisation / Zinsen | The part of a loan payment that reduces the debt, and the part that pays for the loan. |
+| Repayment schedule / Next payment | Tilgungsplan / Nächste Rate | Amortisationsplan / Nächste Rate | The dated payments of a loan with their split and the debt left afterwards. |
+| Statement date / Due date | Abrechnungsdatum / Fälligkeit | | The end of a card statement period, and the day the statement must be paid. |
+| Investments | Investments | | The screen for all depots and their positions. The German UI keeps "Investments" (PO 2026-11-22). |
+| Performance (sheet title) | Rendite | | The breakdown of the return of a depot or all depots (S13). |
+| Cost basis | Einstandswert | | What the member paid for a position, as the statement states it. |
+| Unrealised gain / Realised gain | Nicht realisierter Gewinn / Realisierter Gewinn | Buchgewinn / Realisierter Gewinn | The gain of a position still held (value minus cost basis), and the gain fixed by a sale. |
+| Total return | Gesamtrendite | | Gains plus income minus costs, as the server reports it for a period. |
+| Allocation / Asset class | Aufteilung / Anlageklasse | | Shares of the investments by asset class, currency or region. |
+| Dividends & interest | Dividenden & Zinsen | Dividenden & Zinsen | Income paid by securities and accounts. |
+| Tax withheld | Einbehaltene Steuer | Verrechnungssteuer (CH withholding) | Tax deducted at source from a payment. |
+| Data check | Datenprüfung | | An open issue that makes a figure uncertain or incomplete, with a way to fix it. |
+| Units check | Anteile prüfen | | The member compares the units we read with their broker. |
+| Map columns | Spalten zuordnen | | Telling the import which file column means what, for a file no format reads. |
+| Edited (import row) | Bearbeitet | | A preview row the member corrected before the import. |
 
 The first Overview tab uses the member's exact name when set. Its fallback and the name field's placeholder are **All portfolios** / **Alle Portfolios** (`overview.tab.allPortfolios`). Settings uses **Name of your overview** / **Name deiner Übersicht**. Other tabs use the portfolio's own name, followed by **Add portfolio** / **Portfolio hinzufügen**.
 

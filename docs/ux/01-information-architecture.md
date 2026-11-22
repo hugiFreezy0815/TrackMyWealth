@@ -78,6 +78,36 @@ These URLs are **design routes**, not claims that Expo Router already implements
 
 For deep links, restore the session first; an anonymous member returns to the intended route **after** sign-in/MFA. If the account/portfolio is gone or inaccessible, use the S1/S2/S3 documented `NOT_FOUND` treatment and a safe route back to the overview; never expose an existence distinction across workspaces. An archived account uses S3's archived banner, not a deleted route. Back from S4 restores S3's previous filter/page/scroll if still valid; mutations invalidate it and start at page zero. On web, selection is encoded in the URL so reload/back/forward restore the pane.
 
+### Planned navigation after the 2026-11-22 design round
+
+The planned screens S9–S15 ([README](screens/README.md#next-design-round-planned-2026-11-22)) extend
+the tree. Each entry appears only when its screen ships. The sprint-7 rule stays: no disabled tabs,
+no placeholders.
+
+```text
+App
+├─ Overview /overview [S1]
+│  ├─ Section tile or "By type" header → /overview/sections/{section} [S9]
+│  │  └─ account row → S3 / S10 (loan, card) / S11 (depot)
+│  └─ Portfolio tabs [S2] (unchanged)
+├─ Investments /investments [S11]            ← new bottom tab + sidebar entry when S11 ships
+│  ├─ ?account={depotId} (one depot)
+│  ├─ Position → /investments/securities/{securityId} [S12]
+│  ├─ Performance sheet [S13] (sheet / right rail, no own route)
+│  └─ Dividends & interest → /investments/income [S14]
+├─ Data checks /checks [S15]                 ← web header button with count; phone via S1 banner
+│  └─ Units check (sheet) [S15]
+├─ Import /imports/new [S7 v2]               ← web header button, phone "+" menu
+└─ More / Settings (unchanged)
+```
+
+| Destination | Phone | Desktop web |
+|---|---|---|
+| Primary navigation once S11 ships | Bottom tabs **Overview · Investments · More** | Sidebar **Overview · Investments · Settings** |
+| Cash flow | still hidden (no screen planned in this round) | still hidden |
+| Breadcrumbs | none: the back button shows the parent name | `{overview name} › {section}` on S9, `Investments › {security}` on S12 |
+| Global actions | "+" menu: Import statement, Add account | header: Import, Data checks, hide amounts |
+
 ## 3. Responsive navigation and layout
 
 Breakpoints are **CSS viewport widths**, not physical device model names: phone `<600px`, tablet `600–1023px`, desktop web `>=1024px`. Support portrait and landscape. Do not use browser platform to force desktop layout on narrow windows.

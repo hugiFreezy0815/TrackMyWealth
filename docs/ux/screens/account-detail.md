@@ -207,3 +207,22 @@ Errors on these actions:
 - Given `reconciliation.status = OPEN_DIFFERENCE`, the line shows the difference with an icon and
   text, not colour alone.
 - Given an archived account, "Change category" is disabled and Restore sends `If-Match`.
+
+## Planned update (design round 2026-11-22)
+
+**Figma:** M25r Account detail, revised EN [197:1161](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=197-1161) / DE [197:1470](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=197-1470) on page "🧭 Design round S9–S15 (#680–#683)". Sprint-7 behaviour stays until the S3 update story
+ships.
+
+| # | Change | Detail | Source |
+|---|---|---|---|
+| U1 | Masked identifier in the header | Context line becomes "{portfolio} · {type} · •••• 4021" | `AccountRow.maskedIdentifier` (from the S2 cache) |
+| U2 | Month group headers | Rows are grouped under "November 2026" (sticky on phone), and each row shows its day ("19 Nov") in a left date column. "Today" / "Yesterday" remain as the day label | `bookingDate`; grouping follows the sort only |
+| U3 | In/out marker | A direction icon (↙ in, ↗ out) next to the date, with the accessible text "incoming" / "outgoing". The sign on the amount stays | sign of `amount` (reading a sign is not a computation) |
+| U4 | Purpose as a second line | Title = `counterpartyName`, else `merchantDescription`. Subtitle = `merchantDescription` (the bank's purpose text) when the title is the counterparty: two lines, then an ellipsis, with the full text in S4 | `TransactionResponse` |
+| U5 | Row overflow menu | ⋯ on web hover / phone long-press: Change category, Show details (S4), Copy purpose text. Edit and delete stay hidden until M18 / correction ships | – |
+| U6 | Data-check marker | ⚠ on a row a check names, and a banner linking to [S15](data-checks.md) | G15-1 |
+| U7 | Liability panels | Loans and cards add the [S10](loan-detail.md) panels | S10 |
+
+The getquin example shows bank purpose texts with reference numbers and card numbers in full.
+We show what the bank sent, but the subtitle is cut at two lines so that long references do not
+dominate the list.
