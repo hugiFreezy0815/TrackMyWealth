@@ -8,7 +8,10 @@
     "scheme": "trackmywealth",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "infoPlist": {
+        "CFBundleLocalizations": ["en", "de"]
+      }
     },
     "android": {
       "adaptiveIcon": {

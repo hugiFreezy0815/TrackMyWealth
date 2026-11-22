@@ -6,6 +6,7 @@ import { createIntl, createIntlCache } from 'react-intl';
 
 import { PROBLEM_CODE_REACTIONS } from '@/api/problem-codes.generated';
 
+import appConfig from '../../app.json';
 import { DEVICE_LOCALE } from './device-intl';
 import { appLocales, messagesFor, resolveLocale } from './index';
 import de from './de.json';
@@ -94,6 +95,13 @@ describe('locales and ICU messages', () => {
 });
 
 describe('catalogue files', () => {
+  it('declares every shipped base language in the iOS bundle', () => {
+    const baseLanguages = [...new Set(appLocales.map((locale) => locale.split('-')[0]))].sort();
+    const iosLocalizations = appConfig.expo.ios.infoPlist?.CFBundleLocalizations ?? [];
+
+    expect([...iosLocalizations].sort()).toEqual(baseLanguages);
+  });
+
   const catalogueFiles = [
     ...readdirSync(__dirname).filter((name) => name.endsWith('.json')),
     ...readdirSync(join(__dirname, 'fixtures')).map((name) => join('fixtures', name)),
