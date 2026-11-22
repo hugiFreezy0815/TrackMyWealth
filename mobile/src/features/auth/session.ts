@@ -101,6 +101,13 @@ async function accept(tokens: Tokens): Promise<void> {
       await clearSession();
       throw error;
     }
+    // The version gate is still active: leave recovery blocked rather than claiming success. Only
+    // for the session that is still current - a replaced sign-in must not fail its newer successor.
+    if (current === generation && error instanceof ApiError && error.status === 426) {
+      verifyingIdentity = false;
+      changed();
+      throw error;
+    }
     // Unreachable: the session still exists, and without a verified identity no admin controls
     // are shown. The next rotation verifies it again.
     if (current === generation) {
@@ -154,13 +161,9 @@ async function rotate(): Promise<SessionRefreshResult> {
   const remainingSeconds = (refreshNotBefore - Date.now()) / 1000;
   if (remainingSeconds > 0) return new SessionRefreshUnavailableError(remainingSeconds);
   const before = generation;
+  let tokens: Tokens;
   try {
-    const tokens = await typedApi.post('/api/v1/auth/refresh', { body: { refreshToken: refresh } });
-    // A sign-in or sign-out replaced this session meanwhile: the waiting request uses whatever
-    // holds now (null after a sign-out), never the tokens of the session that was replaced.
-    if (before !== generation) return access;
-    await accept(tokens);
-    return access;
+    tokens = await typedApi.post('/api/v1/auth/refresh', { body: { refreshToken: refresh } });
   } catch (error) {
     if (before !== generation) return access;
     if (rejectedByServer(error)) {
@@ -180,6 +183,19 @@ async function rotate(): Promise<SessionRefreshResult> {
     refreshNotBefore = now + delay * 1000;
     return new SessionRefreshUnavailableError(delay);
   }
+  // A sign-in or sign-out replaced this session meanwhile: the waiting request uses whatever
+  // holds now (null after a sign-out), never the tokens of the session that was replaced.
+  if (before !== generation) return access;
+  try {
+    await accept(tokens);
+  } catch (error) {
+    // accept() rethrows a 426 only while its own session is still current: the version gate
+    // still blocks the identity check, so the waiting request fails with it instead of
+    // replaying as if the rotation had succeeded (#649). Any other rejection has already ended
+    // the session; the waiting request then gets the null access token.
+    if (error instanceof ApiError && problemReaction(error).reaction === 'UPDATE_APP') throw error;
+  }
+  return access;
 }
 
 function refreshSession(): Promise<SessionRefreshResult> {
@@ -202,6 +218,17 @@ export async function restoreSession(): Promise<void> {
   if (!stored || refresh) return;
   refresh = stored;
   changed();
+  await refreshSession();
+}
+
+/**
+ * Following a successful version probe, finish restoring a session whose refresh or identity
+ * verification was interrupted by HTTP 426. Never discard stored credentials on a version error.
+ * Only a renewed 426 rejects; a refresh backoff left by an earlier 5xx/429 does not keep the
+ * barrier up - the version is accepted, and the next 401 renews the session once it has run out.
+ */
+export async function resumeSessionAfterUpdate(): Promise<void> {
+  if (!refresh || (access && identity)) return;
   await refreshSession();
 }
 

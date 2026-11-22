@@ -56,11 +56,13 @@ export function ActionButton({
   onPress,
   disabled = false,
   accessibilityHint,
+  minHeight = 44,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
   accessibilityHint?: string;
+  minHeight?: number;
 }) {
   const theme = useTheme();
   return (
@@ -71,7 +73,7 @@ export function ActionButton({
       disabled={disabled}
       onPress={onPress}
       style={{
-        minHeight: 44,
+        minHeight,
         justifyContent: 'center',
         alignItems: 'center',
         borderRadius: Radii.control,
