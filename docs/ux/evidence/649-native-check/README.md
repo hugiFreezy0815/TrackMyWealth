@@ -92,4 +92,9 @@ iOS shows a "Save password?" sheet after the sign-in attempt, sometimes several 
 in the system language. `dismiss-save-password.yaml` waits for it and taps "Später" or
 "Not Now". `ios-1…4` are still from the `97dee898` build.
 
-`./run.sh android de-DE` was not run for this PR.
+### Android result, 2026-11-22
+
+Release APK of the same commit, Pixel 10 Pro emulator, Android API 37:
+`./run.sh android de-DE` passes with German copy throughout (`android-de-DE-1…4`). The runner
+cleared the app data, set the per-app locale to de-DE and set it back to en-GB afterwards. This
+checks the per-app locale only, not the device language (see above).
