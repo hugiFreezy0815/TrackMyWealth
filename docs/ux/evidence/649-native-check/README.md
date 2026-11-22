@@ -10,7 +10,10 @@ the app with Maestro and changes the server between flows: it restarts the backe
 `MINIMUM_APP_VERSION=9.0.0` (the server answers a 1.0.0 app with 426) or empty (served), or
 stops it. Each gate change is confirmed with the server's own answer to
 `GET /users/me` with `X-App-Version: 1.0.0` (426 or 401). Credentials come from the environment. Run it as `run.sh ios|android` with the variables listed
-in its header; Maestro output goes to `out-<platform>/` (gitignored).
+in its header; Maestro output goes to `out-<platform>/` (gitignored). The large-text step expects
+German on both platforms, so on iOS it needs a Release build that contains the #674 fix
+(`CFBundleLocalizations`); an older build such as `97dee898` fails that step on iOS. If a step
+fails, the script restores the text size, the Android app locale and the backend before it exits.
 
 | # | Check | iOS | Android |
 |---|---|---|---|
@@ -52,10 +55,15 @@ the cold-start path was driven).
 ## Rechecking the pre-sign-in language for #674
 
 Build the Release app with the fix and point it at the local Compose backend described above.
-Use a fresh simulator or emulator install with no saved TrackMyWealth session. On iOS, set
-the simulator's preferred system language and region in Settings before each run. Check German
-(Germany) first, then English (United Kingdom) as the control. The locale argument selects
-the expected copy on iOS. On Android, the runner also sets the app locale.
+The runner clears the app's data and any saved session itself. On iOS, set the simulator's
+preferred system language and region in Settings before each run; the runner stops with a message
+if the simulator language does not match the locale argument. Check German (Germany) first, then
+English (United Kingdom) as the control.
+
+On Android the runner sets a per-app locale (`cmd locale set-app-locales`) and resets it to en-GB
+afterwards. That run checks that the app follows Android's app language, not the device
+language, so it is not evidence for the device-language path that #674 is about. The runner has
+no Android check for that path.
 
 ```sh
 ./run.sh ios de-DE

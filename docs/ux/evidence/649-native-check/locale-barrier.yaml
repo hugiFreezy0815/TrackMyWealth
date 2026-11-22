@@ -1,7 +1,20 @@
 # #674: assert the signed-out UI, then trigger a real 426 via sign-in on the local test backend.
 appId: com.anonymous.trackmywealth
 ---
-- launchApp
+# Start signed out: a stored session would open straight on the 426 screen. On Android,
+# run.sh clears the app data before it sets the app locale, so a plain launch keeps it.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - clearKeychain
+      - launchApp:
+          clearState: true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp
 - extendedWaitUntil:
     visible: ${SIGN_IN}
     timeout: 30000
@@ -13,6 +26,10 @@ appId: com.anonymous.trackmywealth
 - pressKey: Enter
 - inputText: locale-smoke
 - pressKey: Enter
+# Enter alone does not always submit on iOS (see signin-ios.yaml).
+- tapOn:
+    text: ${SIGN_IN}
+    optional: true
 - extendedWaitUntil:
     visible: ${UPDATE_TITLE}
     timeout: 30000

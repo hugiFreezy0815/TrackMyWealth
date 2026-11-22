@@ -5,7 +5,9 @@
 # override $OVERRIDE; a Release build (version 1.0.0, EXPO_PUBLIC_API_URL=http://localhost:8093)
 # installed on $DEVICE; EMAIL and PASSWORD of a member without MFA.
 # Usage: run.sh ios|android [de-DE|en-GB]
-# The optional locale check (#674) needs a fresh Release install and no demo credentials.
+# The optional locale check (#674) needs a Release build with the #674 fix and no demo
+# credentials; it clears the app's data itself. On iOS, set the simulator's system language
+# to the locale's language first (the script checks it). On Android it sets the app locale.
 set -eu
 PLATFORM=${1:-}
 LOCALE=${2:-}
@@ -46,9 +48,39 @@ stop_backend() {
   echo "== backend stopped"
   compose stop backend >/dev/null 2>&1
 }
+# Undo the device settings a run may change: text size, and the Android app locale.
+restore_device() {
+  if [[ $PLATFORM == ios ]]; then
+    xcrun simctl ui "$DEVICE" content_size large || true
+  else
+    adb -s "$DEVICE" shell settings put system font_scale 1.0 || true
+    adb -s "$DEVICE" shell cmd locale set-app-locales "$APP" --locales en-GB || true
+  fi
+}
+# If any step fails, restore the device and the local backend before exiting.
+trap 'echo "== restoring after failure" >&2; restore_device; gate "" || true' EXIT
+finish() {
+  restore_device
+  gate ''
+  trap - EXIT
+  echo ALL-FLOWS-PASSED
+}
 
 if [[ -n $LOCALE ]]; then
-  if [[ $PLATFORM == android ]]; then
+  if [[ $PLATFORM == ios ]]; then
+    # The run checks the language the app takes from the device, so the simulator must match.
+    device_language=$(xcrun simctl spawn "$DEVICE" defaults read -g AppleLanguages 2>/dev/null |
+      tr -d ' "()\n' | cut -d, -f1) || device_language=
+    if [[ ${device_language%%-*} != "${LOCALE%%-*}" ]]; then
+      echo "Simulator language is '${device_language:-unknown}', expected ${LOCALE%%-*}." \
+        "Set it in Settings > General > Language & Region, then rerun." >&2
+      trap - EXIT
+      exit 2
+    fi
+  else
+    # Clear the app first (a stored session would open on the 426 screen), then set the
+    # per-app locale, which clearing the data could otherwise reset.
+    adb -s "$DEVICE" shell pm clear "$APP" >/dev/null
     adb -s "$DEVICE" shell cmd locale set-app-locales "$APP" --locales "$LOCALE"
   fi
   if [[ $LOCALE == de-DE ]]; then
@@ -66,15 +98,11 @@ if [[ -n $LOCALE ]]; then
       -e 'OFFLINE=Could not reach the server[.] Check your connection.*'
     )
   fi
-  # Restore the local backend even if an assertion fails.
-  trap 'gate ""' EXIT
   gate 9.0.0
   run locale-barrier.yaml -e PREFIX="$PREFIX" "${labels[@]}"
   stop_backend
   run locale-offline.yaml -e PREFIX="$PREFIX" "${labels[@]}"
-  gate ''
-  trap - EXIT
-  echo ALL-FLOWS-PASSED
+  finish
   exit 0
 fi
 
@@ -100,11 +128,4 @@ else
   adb -s "$DEVICE" shell am start -n $APP/.MainActivity >/dev/null
 fi
 run large-text-de.yaml -e PREFIX="$PREFIX"
-if [[ $PLATFORM == ios ]]; then
-  xcrun simctl ui "$DEVICE" content_size large
-else
-  adb -s "$DEVICE" shell settings put system font_scale 1.0
-  adb -s "$DEVICE" shell cmd locale set-app-locales $APP --locales en-GB
-fi
-gate ''
-echo ALL-FLOWS-PASSED
+finish
