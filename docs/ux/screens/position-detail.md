@@ -96,7 +96,7 @@ per-depot split, and the data that is missing about the security.
 | Gap | Needed for | Owner story |
 |---|---|---|
 | G11-3 position aggregated per security | header total for several depots | see [investments.md](investments.md) |
-| G12-1 transaction filter by `securityId` | Activity | EPIC 07, to be filed |
+| G12-1 transaction filter by `securityId` | Activity | #692 |
 | price history per security | a price chart (later idea, not drawn) | later |
 
 ## Acceptance checks for the UI story

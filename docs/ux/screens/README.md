@@ -35,17 +35,17 @@ to every element.
 | S7 v2 | Import: several files, column mapping (no LLM), editable rows, trades table | [import-statement.md](import-statement.md#version-2-design-round-2026-11-22) | M32–M34 / W17 |
 | S1/S2/S3 | Planned updates: section links, By type switch, masked identifiers, month groups | "Planned update" sections in [overview.md](overview.md), [portfolio-view.md](portfolio-view.md), [account-detail.md](account-detail.md) | M03, M05, M25 / W01, W02, W06 revised |
 
-API gaps of the planned screens (each names its owner story once filed):
+API gaps of the planned screens and their stories. UI stories: #684 (S9), #685 (S10), #686 (S11/S13), #687 (S12), #688 (S7 v2), #689 (S15), #690 (S3 update). Figma: #680–#683 (sprint 8).
 
 | Gap | Screens |
 |---|---|
-| G9-1 accounts by section with masked identifier and converted value | S9, S1 U2 |
-| G9-2 workspace transaction list with section / account / type / security filters | S9, S11, S12, S14 |
-| G10-1/2 payment total on schedule entries; interest and principal per year | S10 |
-| G11-1 depot value history; G11-2 performance breakdown; G11-3 positions per security; G11-4 allocation; G11-5 income per month; G11-6 security logos | S11–S14 |
-| G12-1 transaction filter by security | S12 |
-| G7-1 upload without an account (#365); G7-2 member templates; G7-3 trade rows (#274); G7-4 row correction | S7 v2 |
-| G15-1 data-checks endpoint; G15-2 single cost basis write; G15-3 snapshot confirmation | S15 |
+| G9-1 accounts by section with masked identifier and converted value (#691) | S9, S1 U2 |
+| G9-2 workspace transaction list with section / account / type / security filters (#692) | S9, S11, S12, S14 |
+| G10-1/2 payment total on schedule entries; interest and principal per year (#693) | S10 |
+| G11-1 depot value history (#694); G11-2 performance breakdown (#695); G11-3 positions per security and G11-4 allocation (#696); G11-5 income per month (#697); G11-6 security logos (later) | S11–S14 |
+| G12-1 transaction filter by security (#692) | S12 |
+| G7-1 upload without an account (#365); G7-2 member templates and G7-4 row correction (#698); G7-3 trade rows (#274) | S7 v2 |
+| G15-1 data-checks endpoint and G15-3 snapshot confirmation (#699); G15-2 single cost basis write (optional, with #589) | S15 |
 
 **Sprint-7 scope (PO decision 2026-11-05).** S1–S7 are in. They cover the first-run journey:
 add a portfolio, add an account, import a statement or enter an opening balance, see the

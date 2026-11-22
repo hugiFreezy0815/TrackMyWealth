@@ -143,9 +143,9 @@ Compare with your broker's app or statement.
 
 | Gap | Needed for | Owner story |
 |---|---|---|
-| G15-1 `GET /api/v1/data-checks` (kinds, severity, affected IDs, totals affected, resolved list) | one source, negative units, gaps, duplicates, "Done recently" | new story (EPIC 07/15), to be filed |
+| G15-1 `GET /api/v1/data-checks` (kinds, severity, affected IDs, totals affected, resolved list) | one source, negative units, gaps, duplicates, "Done recently" | #699 |
 | G15-2 write the cost basis of one position without resending the snapshot (optional; the snapshot `PUT` works) | simpler `COST_BASIS_MISSING` fix | EPIC 15, with #589 |
-| G15-3 member confirmation on a holdings snapshot | units check across devices | small, with G15-1 |
+| G15-3 member confirmation on a holdings snapshot | units check across devices | #699 |
 
 ## Acceptance checks for the UI story
 

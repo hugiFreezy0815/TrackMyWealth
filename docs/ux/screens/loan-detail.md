@@ -124,8 +124,8 @@ Activity  (S3 transaction list)
 
 | Gap | Needed for | Owner story |
 |---|---|---|
-| G10-1 payment total on `AmortisationScheduleEntryResponse` (`amount`) | field 2 total | new story (EPIC 12 liabilities), to be filed |
-| G10-2 interest and principal paid per year | field 7 | same story |
+| G10-1 payment total on `AmortisationScheduleEntryResponse` (`amount`) | field 2 total | #693 |
+| G10-2 interest and principal paid per year | field 7 | #693 |
 
 ## Acceptance checks for the UI story
 

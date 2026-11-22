@@ -208,11 +208,11 @@ A full screen from the card (phone push, web main column).
 
 | Gap | Needed for | Owner story |
 |---|---|---|
-| G11-1 value history of the depot section and of one depot account | chart and chip for "All depots" / one depot in a mixed portfolio | extend #477, to be filed |
-| G11-2 performance breakdown per depot and for all depots (invested, unrealised, realised, income, fees, taxes, money-weighted return, plausibility flags) | S13, totals on S11 | EPIC 16, to be filed |
-| G11-3 positions aggregated per security across depots | merged positions | EPIC 15, to be filed |
-| G11-4 allocation shares by asset class, currency and region (from `SecurityResponse.assetClass`, …) | Allocation card | EPIC 16, to be filed |
-| G11-5 income per month and per security | S14 | EPIC 17, to be filed |
+| G11-1 value history of the depot section and of one depot account | chart and chip for "All depots" / one depot in a mixed portfolio | #694 |
+| G11-2 performance breakdown per depot and for all depots (invested, unrealised, realised, income, fees, taxes, money-weighted return, plausibility flags) | S13, totals on S11 | #695 |
+| G11-3 positions aggregated per security across depots | merged positions | #696 |
+| G11-4 allocation shares by asset class, currency and region (from `SecurityResponse.assetClass`, …) | Allocation card | #696 |
+| G11-5 income per month and per security | S14 | #697 |
 | G11-6 security logo URL | row logos | later, low priority |
 | cost basis from statements / currency | fewer "No cost basis" rows | #589, #527 (open) |
 

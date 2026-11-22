@@ -281,7 +281,7 @@ Save as format for: [ PostFinance ⌄ ]  Name [ PostFinance CSV ]
 - Required mappings are marked with * and named in an error ("Map a booking date").
 - PDF files cannot be mapped by members. An unknown PDF shows "We can't read this PDF yet",
   with "Report this format" (FR-NAV-11) and Remove.
-- **Gap G7-2:** confirm that members (not only administrators) may create workspace templates,
+- **Gap G7-2 (#698):** confirm that members (not only administrators) may create workspace templates,
   and name the error codes of `/import-templates/test`.
 
 ### Step 2 v2: review (M34)
@@ -304,7 +304,7 @@ Description (and for trades Units, Price). Saving marks the row `Edited` (badge 
 original" with the raw value). **The duplicate check runs again** on the corrected row: the
 server answers with the new status, and a row that became a duplicate switches off with the
 hint (PO rule).
-- **Gap G7-4:** `PATCH …/rows/{rowNumber}` accepts only `included`. Row correction needs a
+- **Gap G7-4 (#698):** `PATCH …/rows/{rowNumber}` accepts only `included`. Row correction needs a
   server endpoint that stores the override and re-runs the duplicate check.
 
 **Undo for the member.** "Edited" rows can be reset ("Use the file's value").

@@ -149,8 +149,8 @@ NOVEMBER 2026
 
 | Gap | Needed for | Owner story |
 |---|---|---|
-| G9-1 `GET /api/v1/accounts?section=` with `maskedIdentifier`, `portfolioName`, value in the requested currency | one request instead of N; field 9 | new story (EPIC 04), to be filed |
-| G9-2 workspace transaction list with `section` / `accountId[]` filters, paged | Recent activity, "See all" | new story (EPIC 07), to be filed. It is also the base of the later Cash flow tab |
+| G9-1 `GET /api/v1/accounts?section=` with `maskedIdentifier`, `portfolioName`, value in the requested currency | one request instead of N; field 9 | #691 |
+| G9-2 workspace transaction list with `section` / `accountId[]` filters, paged | Recent activity, "See all" | #692 (also the base of the later Cash flow tab) |
 
 ## Acceptance checks for the UI story
 
