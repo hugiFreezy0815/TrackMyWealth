@@ -8,16 +8,15 @@
     "scheme": "trackmywealth",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
+      "icon": "./assets/images/icon.png",
       "infoPlist": {
         "CFBundleLocalizations": ["en", "de"]
       }
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#022F54",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
@@ -35,9 +34,13 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#F4F7F8",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 76,
+          "dark": {
+            "backgroundColor": "#07111F",
+            "image": "./assets/images/splash-icon.png"
+          }
         }
       ],
       "expo-secure-store"
