@@ -304,7 +304,7 @@ figures, text next to every colour, 44 pt targets.
 | Component | Minimal inputs and states | Screen(s) |
 | --- | --- | --- |
 | `Breadcrumb` (web) | items (label, route), current item; truncates the middle items with "…" and a menu | S9, S12 |
-| `SectionSwitch` | two segments ("By portfolio" / "By type"), selected, remembered on the device | S1 U2 |
+| `SectionSwitch` | two segments ("By portfolio" / "By type"), selected, remembered on the device. Selected segment: `brand/subtle` fill, `brand/primary` 1 px outline and text | S1 U2 |
 | `AccountRow` v2 | adds the subtitle "{portfolio} · {type} · {masked identifier}" and an optional card line "Statement … · due …" | S1 U2, S9 |
 | `DepotScopeChips` | "All depots" + one chip per depot (logo, name), selected | S11 |
 | `PositionRow` v2 | name, identifier, units, depot (optional), value + status, `PLChip` or "No cost basis" | S2, S11, S12 |
@@ -317,6 +317,13 @@ figures, text next to every colour, 44 pt targets.
 | `FileCard` | file name, status (uploading · reading · recognised · holdings · needs format · needs account · error), institution · account, action, remove | S7 v2 |
 | `ColumnMappingRow` | file column, example value, "Means" picker, required marker, error | S7 v2 step 1b |
 | `EditableImportRow` | `ImportRow` + ⋯ Correct, "Edited" badge, "Show original" | S7 v2 review |
+
+**Two selected styles, on purpose (PO 2026-11-22).** A `Chip` is a **filter or scope**
+(period 1M, a depot, "Uncategorised"). Its selected state is the navy fill (`bg/inverse`).
+A segmented control (`SectionSwitch`, the Matches/Differs control in `UnitsCheckRow`) chooses
+a **view or an answer**. Its selected segment uses the teal tint (`brand/subtle`) with a
+`brand/primary` outline and text. Do not mix the two: a filter never looks like a view switch.
+Both carry their state as text and `aria-selected` / `aria-pressed`, never as colour alone.
 
 ### Web table and native list — #384 handover
 

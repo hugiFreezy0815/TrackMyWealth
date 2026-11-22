@@ -72,8 +72,11 @@ Activity                                       See all   ← trades, dividends, 
 ### Web (W16)
 
 - Main column: scope chips, the value card with the chart, the check card, the positions
-  table: Security | Depot | Units | Price | Cost basis | Value | Unrealised gain (amount, %) |
-  Status. Column headers sort. A row opens [S12](position-detail.md) in the right panel.
+  table: Security | Units | Cost basis | Value | Unrealised gain (amount, %). The Security cell
+  shows the name and, under it, "{symbol} · price {price}". With "All depots" it also names the
+  depot there, and a value status shows as a badge in the Value cell (PO 2026-11-22: no
+  separate Price, Depot or Status columns, so the table fits beside the 360 px rail). Column
+  headers sort. A row opens [S12](position-detail.md) in the right panel.
 - Right rail (360 px): Performance card (opens S13 in the rail), Allocation, Dividends &
   interest.
 - Below 1024 px the phone order.
@@ -102,13 +105,17 @@ Activity                                       See all   ← trades, dividends, 
 This table is the honest MVP: S11 can ship on the existing API for one depot and as a list for
 all depots. The rest appears when the server sends it.
 
+**PO decision 2026-11-22: ship this partial version in sprint 8** (#686). The Investments tab goes
+live with the one-depot detail and the All-depots list grouped by depot. The hidden parts appear
+when #694–#697 land in sprint 9. No placeholders are shown in the meantime.
+
 ## Positions list (`PositionRow` v2)
 
 | # | Element | Source: `AccountPositionResponse` | Rule |
 |---|---|---|---|
 | 1 | Logo | security logo (G11-6) | initials of `displayName` until logos exist |
 | 2 | Name | `displayName` | one line, ellipsis; full name in the accessible label |
-| 3 | Sub line | ISIN short form or symbol, `quantity` "{n} units" / "{n} Stück", depot name (All depots only) | units with up to 6 decimals as sent, no rounding beyond the format rules |
+| 3 | Sub line | ISIN short form or symbol, `quantity` "{n} units" / "{n} Anteile", depot name (All depots only) | units with up to 6 decimals as sent, no rounding beyond the format rules |
 | 4 | Value | `valueInAccountCurrency` (account currency); `value` + `priceCurrency` `[advanced]` | `valueStatus ≠ CURRENT` ⇒ badge; null ⇒ "–" |
 | 5 | Unrealised gain | `unrealisedGain`, `unrealisedGainPercent` | `PLChip`: arrow + sign + amount, percent one decimal (#440). Null with `costBasis = null` ⇒ text `position.noCostBasis` "No cost basis" (with a link to fix: S15 item). Null for a foreign currency ⇒ `position.costBasisForeign` "Cost basis in {currency}" |
 | 6 | Estimated cost basis | `costBasisEstimated` | `Estimated` badge next to 5 |

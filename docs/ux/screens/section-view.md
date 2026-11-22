@@ -72,9 +72,11 @@ NOVEMBER 2026
 ### Web (W15)
 
 - Breadcrumb "My finances › Cash & savings" above the title.
-- Main column: header card, then the account list as a table (Account | Portfolio | Type |
-  Identifier | Value | Status), then "Recent activity" as a table (Date | Description | Account |
-  Category | Amount).
+- Main column: header card, then the account list as a table (Account | Type | Identifier |
+  Value | Status). The Account cell shows the portfolio logo, the account name and, under it, the
+  portfolio name (PO 2026-11-22: no separate Portfolio column, so the table fits beside the
+  360 px rail). Then "Recent activity" as a table (Date | Description | Account | Category |
+  Amount).
 - Right rail (360 px): "In and out this month" card (S1 fields 23–26, scoped to the section's
   accounts **only when the API offers it**, see gaps), then a "Data checks" card listing the
   section's open issues ([S15](data-checks.md)).

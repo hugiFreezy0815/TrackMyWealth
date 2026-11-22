@@ -19,7 +19,7 @@ Use these terms on the [Sprint 7 screens](screens/README.md). German addresses t
 | Counter-account / Counterparty | Gegenkonto / Gegenpartei | | The account on the other side of a transfer, or the person or organisation on the other side of a transaction. |
 | Transfer / Card settlement | Umbuchung / Kreditkartenabrechnung | | Money moved between accounts, or a payment applied to a card balance. |
 | Security | Wertpapier | | An identifiable investment instrument, such as a share or fund. |
-| Position / Units | Position / Stück | | The holding of one security in a depot, expressed as a quantity. |
+| Position / Units | Position / Anteile | | The holding of one security in a depot, expressed as a quantity. The app uses "Anteile" (PO 2026-11-22); "Stück" is not used. |
 | Asset / Liability | Vermögenswert / Verbindlichkeit | | Something owned or a financial obligation owed. |
 | Net worth | Nettovermögen | | The server-reported total of assets less liabilities. |
 | Balance / Market value | Saldo / Marktwert | | A monetary account balance, or the value of a holding at the applicable market price. |
@@ -46,7 +46,8 @@ Use these terms on the [Sprint 7 screens](screens/README.md). German addresses t
 | Principal / Interest | Tilgung / Zinsen | Amortisation / Zinsen | The part of a loan payment that reduces the debt, and the part that pays for the loan. |
 | Repayment schedule / Next payment | Tilgungsplan / Nächste Rate | Amortisationsplan / Nächste Rate | The dated payments of a loan with their split and the debt left afterwards. |
 | Statement date / Due date | Abrechnungsdatum / Fälligkeit | | The end of a card statement period, and the day the statement must be paid. |
-| Investments | Investments | | The screen for all depots and their positions. |
+| Investments | Investments | | The screen for all depots and their positions. The German UI keeps "Investments" (PO 2026-11-22). |
+| Performance (sheet title) | Rendite | | The breakdown of the return of a depot or all depots (S13). |
 | Cost basis | Einstandswert | | What the member paid for a position, as the statement states it. |
 | Unrealised gain / Realised gain | Nicht realisierter Gewinn / Realisierter Gewinn | Buchgewinn / Realisierter Gewinn | The gain of a position still held (value minus cost basis), and the gain fixed by a sale. |
 | Total return | Gesamtrendite | | Gains plus income minus costs, as the server reports it for a period. |
@@ -54,7 +55,7 @@ Use these terms on the [Sprint 7 screens](screens/README.md). German addresses t
 | Dividends & interest | Dividenden & Zinsen | Dividenden & Zinsen | Income paid by securities and accounts. |
 | Tax withheld | Einbehaltene Steuer | Verrechnungssteuer (CH withholding) | Tax deducted at source from a payment. |
 | Data check | Datenprüfung | | An open issue that makes a figure uncertain or incomplete, with a way to fix it. |
-| Units check | Stückzahl-Prüfung | | The member compares the units we read with their broker. |
+| Units check | Anteile prüfen | | The member compares the units we read with their broker. |
 | Map columns | Spalten zuordnen | | Telling the import which file column means what, for a file no format reads. |
 | Edited (import row) | Bearbeitet | | A preview row the member corrected before the import. |
 
