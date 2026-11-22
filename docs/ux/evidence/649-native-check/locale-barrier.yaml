@@ -30,11 +30,19 @@ appId: com.anonymous.trackmywealth
 - tapOn:
     text: ${SIGN_IN}
     optional: true
+- runFlow:
+    file: dismiss-save-password.yaml
+    env:
+      WAIT_MS: 20000
 - extendedWaitUntil:
     visible: ${UPDATE_TITLE}
     timeout: 30000
 - assertVisible: ${VERSION_LABEL}
 - takeScreenshot: ${PREFIX}-2-update-required
+- runFlow:
+    file: dismiss-save-password.yaml
+    env:
+      WAIT_MS: 1000
 - tapOn: ${RETRY}
 - extendedWaitUntil:
     visible: ${STILL_REQUIRED}

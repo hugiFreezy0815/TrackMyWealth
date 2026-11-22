@@ -21,8 +21,8 @@ fails, the script restores the text size, the Android app locale and the backend
 | 2 | **Try again** while the gate is up: "This version is still not supported…" | Pass | Pass |
 | 3 | **Try again** with the server stopped: "Could not reach the server…"; the barrier stays | Pass | Pass |
 | 4 | Minimum lowered, **Try again**: the app opens signed in (stored session resumed, no sign-in); still signed in after another cold start | Pass | Pass |
-| 5 | Largest text size (iOS accessibility XXXL, Android font scale 2.0): the screen scrolls, **Try again** is reachable and works | Pass (English, see below) | Pass |
-| 6 | German device language: German screen and messages | **Fail: English shown (#674)** | Pass |
+| 5 | Largest text size (iOS accessibility XXXL, Android font scale 2.0): the screen scrolls, **Try again** is reachable and works | Pass (German since #674, see below) | Pass |
+| 6 | German device language: German screen and messages | Pass after PR #677 (was **Fail: English shown, #674**) | Pass |
 | 7 | The screen shows the TrackMyWealth app icon (Figma `75:178`), light and dark | Pass after PR #672 (#673) | not rebuilt |
 
 ## Found by this check
@@ -75,3 +75,21 @@ Each run verifies sign-in, the HTTP 426 screen and continued-426 retry feedback,
 local backend and verifies offline retry feedback. The flow uses synthetic sign-in input that
 the server's version gate rejects. Screenshots go to `out-<platform>-<locale>/` by default.
 Record the build commit and simulator or emulator version when adding the new evidence.
+
+### iOS results, 2026-11-22
+
+Release build of PR #677 at `605745c2` (`CFBundleLocalizations` = en, de in the built
+`Info.plist`), iPhone 18 Pro simulator, iOS 27.2, local Compose backend seeded with
+`scripts/seed_demo.py`.
+
+| Run | Result |
+|---|---|
+| `./run.sh ios de-DE` (simulator language de-DE) | Pass: "Anmelden", "Update erforderlich", "Installierte Version: 1.0.0", German retry and offline messages (`ios-de-DE-1…4`) |
+| `./run.sh ios en-GB` (simulator language en-GB, control) | Pass: English copy throughout (`ios-en-GB-1…4`) |
+| `./run.sh ios` (simulator en-GB, demo partner) | Pass: checks 1–5, with the large-text step in German (`ios-5…7-de-large-text-*`, replacing the English shots) |
+
+iOS shows a "Save password?" sheet after the sign-in attempt, sometimes several seconds later,
+in the system language. `dismiss-save-password.yaml` waits for it and taps "Später" or
+"Not Now". `ios-1…4` are still from the `97dee898` build.
+
+`./run.sh android de-DE` was not run for this PR.
