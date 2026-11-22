@@ -11,6 +11,11 @@
       "icon": "./assets/images/icon.png"
     },
     "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#022F54",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
       "predictiveBackGestureEnabled": false,
       "blockedPermissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
