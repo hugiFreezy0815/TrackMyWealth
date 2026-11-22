@@ -1,0 +1,25 @@
+# #674: assert the signed-out UI, then trigger a real 426 via sign-in on the local test backend.
+appId: com.anonymous.trackmywealth
+---
+- launchApp
+- extendedWaitUntil:
+    visible: ${SIGN_IN}
+    timeout: 30000
+- takeScreenshot: ${PREFIX}-1-sign-in
+- tapOn:
+    text: ${EMAIL_LABEL}
+    index: 1
+- inputText: locale-smoke@example.invalid
+- pressKey: Enter
+- inputText: locale-smoke
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: ${UPDATE_TITLE}
+    timeout: 30000
+- assertVisible: ${VERSION_LABEL}
+- takeScreenshot: ${PREFIX}-2-update-required
+- tapOn: ${RETRY}
+- extendedWaitUntil:
+    visible: ${STILL_REQUIRED}
+    timeout: 20000
+- takeScreenshot: ${PREFIX}-3-still-required

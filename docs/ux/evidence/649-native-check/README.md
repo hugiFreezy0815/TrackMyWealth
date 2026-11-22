@@ -48,3 +48,22 @@ there.
 
 **Not covered.** A physical device; a 426 that arrives while the app is already running (only
 the cold-start path was driven).
+
+## Rechecking the pre-sign-in language for #674
+
+Build the Release app with the fix and point it at the local Compose backend described above.
+Use a fresh simulator or emulator install with no saved TrackMyWealth session. On iOS, set
+the simulator's preferred system language and region in Settings before each run. Check German
+(Germany) first, then English (United Kingdom) as the control. The locale argument selects
+the expected copy on iOS. On Android, the runner also sets the app locale.
+
+```sh
+./run.sh ios de-DE
+./run.sh ios en-GB
+./run.sh android de-DE
+```
+
+Each run verifies sign-in, the HTTP 426 screen and continued-426 retry feedback, then stops the
+local backend and verifies offline retry feedback. The flow uses synthetic sign-in input that
+the server's version gate rejects. Screenshots go to `out-<platform>-<locale>/` by default.
+Record the build commit and simulator or emulator version when adding the new evidence.
