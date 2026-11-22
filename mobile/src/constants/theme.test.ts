@@ -1,3 +1,5 @@
+import appConfig from '../../app.json';
+
 import { Colors, DesignTokens, Radii, Spacing, TypeScale } from './theme';
 
 jest.mock('@/global.css', () => ({}));
@@ -14,6 +16,16 @@ function contrast(a: string, b: string) {
   return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
 }
 describe('canonical UX-03 light and dark tokens', () => {
+  it('uses the same canvas colors for the native splash and app theme', () => {
+    expect(appConfig.expo.plugins).toContainEqual([
+      'expo-splash-screen',
+      expect.objectContaining({
+        backgroundColor: DesignTokens.light.bgCanvas,
+        dark: expect.objectContaining({ backgroundColor: DesignTokens.dark.bgCanvas }),
+      }),
+    ]);
+  });
+
   it('defines the same semantic roles in both themes', () => {
     expect(Object.keys(DesignTokens.light)).toEqual(Object.keys(DesignTokens.dark));
   });
