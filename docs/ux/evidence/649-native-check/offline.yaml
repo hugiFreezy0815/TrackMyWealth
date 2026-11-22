@@ -1,0 +1,10 @@
+# #649: Try again while the server is unreachable (backend container stopped). Env: PREFIX.
+appId: com.anonymous.trackmywealth
+---
+- assertVisible: 'Update required'
+- tapOn: 'Try again'
+- extendedWaitUntil:
+    visible: 'Could not reach the server.*'
+    timeout: 45000
+- assertVisible: 'Update required'
+- takeScreenshot: ${PREFIX}-3-offline

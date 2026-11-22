@@ -1,0 +1,21 @@
+# #649: German device language and the largest accessibility text size, gate up again. The app
+# was launched in German by the run script (no launchApp here). The action stays reachable by
+# scrolling. Env: PREFIX.
+appId: com.anonymous.trackmywealth
+---
+- extendedWaitUntil:
+    visible: 'Update erforderlich'
+    timeout: 30000
+- takeScreenshot: ${PREFIX}-5-de-large-text-top
+- scrollUntilVisible:
+    element: 'Erneut versuchen'
+    direction: DOWN
+    timeout: 10000
+- assertVisible: 'Installierte Version: 1.0.0'
+- takeScreenshot: ${PREFIX}-6-de-large-text-action
+- tapOn: 'Erneut versuchen'
+- scrollUntilVisible:
+    element: 'Diese Version wird weiterhin nicht unterstützt.*'
+    direction: DOWN
+    timeout: 20000
+- takeScreenshot: ${PREFIX}-7-de-large-text-still-required

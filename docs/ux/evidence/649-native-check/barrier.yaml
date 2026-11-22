@@ -1,0 +1,22 @@
+# #649: cold start while the server refuses version 1.0.0 (MINIMUM_APP_VERSION=9.0.0). The stored
+# session's refresh gets 426, so the app opens on the Update required screen. Try again while the
+# gate is still up says so. Env: PREFIX.
+appId: com.anonymous.trackmywealth
+---
+- launchApp:
+    clearState: false
+    stopApp: true
+- extendedWaitUntil:
+    visible: 'Update required'
+    timeout: 30000
+- assertVisible: 'This version of TrackMyWealth is too old for your server. Update the app.*'
+- assertVisible: 'Installed version: 1.0.0'
+- assertNotVisible: 'Sign in'
+- assertNotVisible: 'Net worth'
+- takeScreenshot: ${PREFIX}-1-update-required
+- tapOn: 'Try again'
+- extendedWaitUntil:
+    visible: 'This version is still not supported.*'
+    timeout: 20000
+- assertNotVisible: 'Net worth'
+- takeScreenshot: ${PREFIX}-2-still-required

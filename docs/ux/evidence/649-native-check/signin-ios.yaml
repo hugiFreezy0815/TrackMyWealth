@@ -1,0 +1,29 @@
+# #649 native check: sign in as the demo partner (no MFA) with the version gate off. Env: EMAIL, PASSWORD.
+appId: com.anonymous.trackmywealth
+---
+- launchApp:
+    clearState: true
+- runFlow:
+    when:
+      visible: 'Sign in'
+    commands:
+      - tapOn:
+          text: 'Email'
+          index: 1
+      - inputText: ${EMAIL}
+      - pressKey: Enter
+      - inputText: ${PASSWORD}
+      - pressKey: Enter
+      - tapOn:
+          text: 'Sign in'
+          optional: true
+- extendedWaitUntil:
+    visible: 'Not Now'
+    timeout: 8000
+    optional: true
+- tapOn:
+    text: 'Not Now'
+    optional: true
+- extendedWaitUntil:
+    visible: 'Net worth'
+    timeout: 30000
