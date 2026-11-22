@@ -209,3 +209,12 @@ The change chip shows `change.returnPercent` and the "{range} · return since {d
 `change.returnFrom` exactly as on the Overview (S1 #8, #607). The portfolio's tracked history
 follows dated membership: an account counts from the later of its tracking start and the day it
 joined the portfolio.
+
+## Planned update (design round 2026-11-22)
+
+| # | Change | Detail |
+|---|---|---|
+| U1 | Depot rows lead to Investments | Once [S11](investments.md) ships, a depot row opens S11 filtered to that depot (`?account=`), not S3. S3 stays reachable from S11's ⋯ "Show bookings" |
+| U2 | `PositionRow` v2 | The depot sub-list uses the S11 row: units, value, unrealised gain or "No cost basis" |
+| U3 | Liabilities | Loan and card rows open the [S10](loan-detail.md) variant of S3 and show "Statement {date} · due {date}" for cards |
+| U4 | Section header link | Each section header gets "All {section}" → [S9](section-view.md) (the same type across all portfolios) |
