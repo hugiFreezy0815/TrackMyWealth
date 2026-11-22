@@ -10,16 +10,24 @@ Figma's component has a single raster image and no separable foreground or monoc
 
 Expo writes the Android 12+ splash logo as a 288 dp canvas with the logo at 76 dp in the centre (`drawable-xxxhdpi/splashscreen_logo.png` is 1152 px with a 304 px logo), so the system shows it at the same size as the React Native overlay.
 
-The [PR review](https://github.com/hugiFreezy0815/TrackMyWealth/pull/678#issuecomment-7083324426) reports a passing Android release smoke test after startup. The remaining visual checks need iOS and Android release builds.
+## Release builds
 
-| Capture | iOS | Android |
-| --- | --- | --- |
-| Launcher with the app installed | Home screen | Home screen with themed icons off and on, using a launcher with themed-icon support |
-| Cold start in system light mode | Launch screen and transition recording | Launch screen and transition recording |
-| Cold start in system dark mode | Launch screen and transition recording | Launch screen and transition recording |
+Date: 2026-11-22. Release builds of `main` at `561dee7e` (PR #678 merged), version 1.0.0, prebuilt with Expo's default identifiers (`com.anonymous.trackmywealth`). iOS: `xcodebuild -configuration Release -sdk iphonesimulator` with `CODE_SIGN_IDENTITY=-` on an iPhone 18 Pro simulator (iOS 27.2). Android: `gradlew assembleRelease` (arm64-v8a) on a Pixel 10 Pro emulator (Android 17, API 37, Pixel Launcher). Each app was uninstalled and freshly installed. No backend is needed: the app opens on Sign in.
 
-Start each recording with the app fully stopped. Inspect the frames from the native splash through the React Native fade for a blank frame, canvas color flash, or logo size jump. The overlay waits for the logo to display and fades the same mounted image. If the logo has not displayed after 2 s, the native splash is released and the overlay keeps waiting; after 4 s it fades regardless. The overlay never takes touches and unmounts even when the fade is interrupted. The tests cover the handoff trigger, duplicate events, both timeouts, the image error path, and the interrupted fade. The device recordings are pending.
+| # | Check | iOS | Android |
+| --- | --- | --- | --- |
+| 1 | Launcher icon is the TrackMyWealth app icon | Pass: `ios-1-home-light.png`, `ios-1-home-dark.png` | Pass: `android-1-launcher.png` (+ `-zoom`), `android-1-app-drawer.png` |
+| 1b | Themed icons on: the monochrome layer is used | n/a | Pass: `android-1-launcher-themed.png` (+ `-zoom`), Wallpaper & style → Icons → **Minimal** |
+| 2 | Cold start, light mode: logo on `#F4F7F8` | Pass: `ios-2-splash-light.png` | Pass: `android-2-splash-light.png` |
+| 2b | Cold start, dark mode: logo on `#07111F` | Pass: `ios-2-splash-dark.png` | Pass: `android-2-splash-dark.png` |
+| 3 | Transition from native splash to Sign in: no blank frame, no canvas flash, no logo size jump | Pass: `ios-3-cold-start-{light,dark}-frames.png` | Pass: `android-3-cold-start-{light,dark}-frames.png` |
+
+The `*-3-cold-start-*-frames.png` sheets are every frame at 10 fps of a 4–5 s screen recording (`simctl io recordVideo`, `adb shell screenrecord --size 640x1428`), read left to right: launcher, launch animation, native splash, the overlay fading into Sign in. The logo stays at the same size and position from the native splash through the overlay, and the canvas colour does not change. The single splash screenshots are full-resolution frames from those recordings (iOS) or `adb exec-out screencap` 0.7 s after `am start` (Android), scaled to 50 %.
+
+Android 17's Pixel Launcher applies themed ("Minimal") icons on the home screen only; the app drawer keeps the coloured icons. The emulator was set back to Default afterwards. The Pixel dock's last slot is a suggested-app slot that draws a coloured ring around the suggested app; that ring is not part of the icon.
+
+Not covered: physical devices and other Android launchers (One UI and others mask adaptive icons with their own shapes).
 
 ## Web assets
 
-The static web export emitted 17 routes, each with links to the favicon and the Apple touch icon. Expo emitted an ICO containing 16, 32 and 48 px images. `web-favicon-export-48.png` is the 48 px image extracted from that ICO. The Apple touch icon source is 180 × 180 px. A browser tab screenshot showing the TrackMyWealth favicon is pending. Chromium could not start in the execution sandbox, and the cloud browser could not open the local export.
+The static web export emitted 17 routes, each with links to the favicon and the Apple touch icon. Expo emitted an ICO containing 16, 32 and 48 px images. `web-favicon-export-48.png` is the 48 px image extracted from that ICO. The Apple touch icon source is 180 × 180 px. The favicon shows in a browser tab: `web-1-favicon-safari-tabs.png` (+ `web-1-favicon-zoom.png`) is Safari's tab overview on the iPhone 18 Pro simulator with the static export of `561dee7e` served locally; the tab carries the TrackMyWealth icon next to its title. A desktop browser screenshot was not possible because screen capture is not permitted for the agent session; the Safari tab uses the same `favicon.ico`.
