@@ -1,0 +1,20 @@
+# #649: the server's minimum was lowered (MINIMUM_APP_VERSION empty). Try again resumes the stored
+# session: the app opens signed in, without the sign-in form. Env: PREFIX.
+appId: com.anonymous.trackmywealth
+---
+- assertVisible: 'Update required'
+- tapOn: 'Try again'
+- extendedWaitUntil:
+    visible: 'Net worth'
+    timeout: 45000
+- assertNotVisible: 'Update required'
+- assertNotVisible: 'Sign in'
+- takeScreenshot: ${PREFIX}-4-signed-in
+# Still signed in after a cold start: the stored refresh token survived the 426.
+- launchApp:
+    clearState: false
+    stopApp: true
+- extendedWaitUntil:
+    visible: 'Net worth'
+    timeout: 45000
+- assertNotVisible: 'Sign in'

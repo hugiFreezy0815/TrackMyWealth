@@ -1,0 +1,20 @@
+# #649: the largest accessibility text size, gate up. The run script launched the app (no
+# launchApp here). The action stays reachable by scrolling. Env: PREFIX.
+appId: com.anonymous.trackmywealth
+---
+- extendedWaitUntil:
+    visible: 'Update required'
+    timeout: 30000
+- takeScreenshot: ${PREFIX}-5-large-text-top
+- scrollUntilVisible:
+    element: 'Try again'
+    direction: DOWN
+    timeout: 10000
+- assertVisible: 'Installed version: 1.0.0'
+- takeScreenshot: ${PREFIX}-6-large-text-action
+- tapOn: 'Try again'
+- scrollUntilVisible:
+    element: 'This version is still not supported.*'
+    direction: DOWN
+    timeout: 20000
+- takeScreenshot: ${PREFIX}-7-large-text-still-required

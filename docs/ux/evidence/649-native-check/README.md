@@ -1,0 +1,50 @@
+# #649 native check: Update required screen on iOS Simulator and Android emulator
+
+Date: 2026-11-22. Release builds (version 1.0.0) of `main` at `97dee898`, which contains PR #654. The app icon
+screenshots (`ios-8-*`) are from `main` at `283a2597`, after PR #672.
+iPhone 18 Pro simulator; Pixel 10 Pro emulator, Android API 37.
+
+**Setup.** An own local compose stack (backend on 8093, single database role), seeded with
+`scripts/seed_demo.py`, signed in as the demo partner (no MFA). `run.sh ios|android` drives
+the app with Maestro and changes the server between flows: it restarts the backend with
+`MINIMUM_APP_VERSION=9.0.0` (the server answers a 1.0.0 app with 426) or empty (served), or
+stops it. Each gate change is confirmed with the server's own answer to
+`GET /users/me` with `X-App-Version: 1.0.0` (426 or 401). Credentials come from the environment. Run it as `run.sh ios|android` with the variables listed
+in its header; Maestro output goes to `out-<platform>/` (gitignored).
+
+| # | Check | iOS | Android |
+|---|---|---|---|
+| 1 | Signed in, then the minimum is raised: a cold start opens on **Update required** with the native instruction and "Installed version: 1.0.0"; neither sign-in nor the app is shown | Pass | Pass |
+| 2 | **Try again** while the gate is up: "This version is still not supported…" | Pass | Pass |
+| 3 | **Try again** with the server stopped: "Could not reach the server…"; the barrier stays | Pass | Pass |
+| 4 | Minimum lowered, **Try again**: the app opens signed in (stored session resumed, no sign-in); still signed in after another cold start | Pass | Pass |
+| 5 | Largest text size (iOS accessibility XXXL, Android font scale 2.0): the screen scrolls, **Try again** is reachable and works | Pass (English, see below) | Pass |
+| 6 | German device language: German screen and messages | **Fail: English shown (#674)** | Pass |
+| 7 | The screen shows the TrackMyWealth app icon (Figma `75:178`), light and dark | Pass after PR #672 (#673) | not rebuilt |
+
+## Found by this check
+
+**iOS ignores the device language before sign-in (#674).** With the simulator's system language set to
+de-DE (and also with `-AppleLanguages (de)`), the app showed English. Before sign-in the app's
+language comes from `Intl.DateTimeFormat().resolvedOptions().locale` (`src/i18n/device-intl.ts`).
+The iOS build declares only an `en` localization (no `CFBundleLocalizations`, only `en.lproj`),
+so iOS resolves the app language to English. This affects every screen shown before the
+member's language is known (sign-in, restoring, Update required), not only #649. Android
+resolves the per-app/device locale and shows German.
+
+**Wrong logo (#673, fixed by PR #672).** Screenshots 1–7 still show Expo's placeholder icon (blue
+square, white chevron) that the screen used then. `ios-8-app-icon-light.png` and
+`ios-8-app-icon-dark.png` show the TrackMyWealth app icon after the fix. They were taken with
+`xcrun simctl io booted screenshot` after a cold start: the stored session's refresh got 426 from a
+backend with `MINIMUM_APP_VERSION=9.0.0` (Maestro's iOS driver did not start in that run). The launcher icon, splash and favicon are still placeholders
+(#675).
+
+`android-font-scale-1.0.png` / `-2.0.png` compare Android's default and largest font scale: Android
+14+ scales large text non-linearly, so 2.0 does not double the size.
+
+Screenshots (`ios-*`, `android-*`) show steps 1–5. Android blocks screenshots of signed-in
+screens (#487), so `android-4-signed-in.png` is black; the Maestro assertions are the evidence
+there.
+
+**Not covered.** A physical device; a 426 that arrives while the app is already running (only
+the cold-start path was driven).
