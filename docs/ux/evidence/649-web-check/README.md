@@ -16,6 +16,9 @@ Chrome zoom (EN 640 CSS px wide, DE 390 CSS px wide, device pixel ratio 2):
 - axe: 0 violations in all ten states. The first run found `image-alt` (expo-image renders
   `alt` only from `accessibilityLabel`) and `page-has-heading-one`; both were fixed in the PR.
 
+Screenshots and `results.txt` were re-run on 2026-11-22 after the icon was replaced by the Figma
+app icon (component `75:178`); the earlier run showed Expo's placeholder icon.
+
 `results.txt` is the script's output. Run it with
 `node update-required-649.mjs <webUrl> <apiOrigin> <i18nDir> <outDir>` (playwright-core and
 `@axe-core/playwright`, system Chrome). Native retry, its error messages and session recovery

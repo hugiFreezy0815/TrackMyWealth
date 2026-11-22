@@ -95,8 +95,10 @@ export function UpdateRequiredScreen({
             gap: Spacing.three,
           }}
         >
+          {/* The Figma app icon (component 75:178). assets/images/icon.png is still Expo's
+              placeholder launcher icon. Corners are transparent so dark mode shows no light edge. */}
           <Image
-            source={require('@/assets/images/icon.png')}
+            source={require('@/assets/images/app-icon.png')}
             style={{ width: 48, height: 48 }}
             accessible={false}
             // Decorative. On web expo-image renders its <img alt> from accessibilityLabel only (the
