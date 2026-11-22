@@ -270,7 +270,7 @@ two local snapshots.
 
 ## Planned update (design round 2026-11-22)
 
-**Figma:** M03 / W01 revised (to be drawn). Each change ships with the story named in the table.
+**Figma:** M03r Overview, By type EN [197:983](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=197-983) / DE [197:1294](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=197-1294) on page "🧭 Design round S9–S15 (#680–#683)"; W01 keeps its layout and gets the header changes of U4 (see W15–W18 for the header). Each change ships with the story named in the table.
 Until then the sprint-7 behaviour above stays.
 
 | # | Change | Detail | Depends on |

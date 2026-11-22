@@ -1,6 +1,6 @@
 # S12 Position detail: one security across depots
 
-**Figma:** M29 Position detail (phone) · web: the right panel of W16. To be drawn; DE mirror.
+**Figma** (page "🧭 Design round S9–S15 (#680–#683)"): M29 Position detail EN [193:514](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=193-514) / DE [193:884](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=193-884). Web: the right panel of W16.
 **Requirements:** EPIC 15 (positions, cost basis), FR-SEC (security master data),
 NFR-UX-003/004, FR-API-010.
 **Rules for every screen:** see [README](README.md#rules-for-every-screen).

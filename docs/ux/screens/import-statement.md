@@ -192,8 +192,7 @@ import into that account offers "Continue" for it (see `IMPORT_TOO_MANY_OPEN_BAT
 
 ## Version 2 (design round 2026-11-22)
 
-**Figma:** M32 Import, files (phone) · M33 Import, choose format / map columns · M34 Import,
-review v2 · W17 Import v2 (web). To be drawn; DE mirrors.
+**Figma** (page "🧭 Design round S9–S15 (#680–#683)"): M32 files EN [194:662](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=194-662) / DE [194:1003](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=194-1003) · M33 map columns EN [194:782](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=194-782) / DE [194:1120](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=194-1120) · M34 review EN [194:903](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=194-903) / DE [194:1237](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=194-1237) · W17 EN [200:1479](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=200-1479) / DE [200:1927](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=200-1927).
 **Inspiration:** getquin's file import (screenshots of 2026-11-22): several files at once,
 per-file status, editable rows, separate trade and cash tables. **PO decision 2026-11-22:** no
 LLM ("AI") fallback. A file no template reads goes to a format choice or a column mapping, and

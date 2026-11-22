@@ -1,7 +1,6 @@
 # S10 Liability detail: loan, mortgage and credit card
 
-**Figma:** M27 Liability detail, loan (phone, to be drawn) · M27b Liability detail, credit card
-(phone, to be drawn) · web uses the W06 account layout with the panels below in the right column.
+**Figma** (page "🧭 Design round S9–S15 (#680–#683)"): M27 loan EN [191:278](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=191-278) / DE [191:481](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=191-481) · M27b credit card EN [191:387](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=191-387) / DE [191:588](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=191-588). Web uses the W06 account layout with these panels in the right column.
 **Requirements:** FR-LIAB (loans, amortisation), FR-CARD (statement cycle, settlement),
 FR-REC, NFR-UX-003/004, FR-API-010.
 **Rules for every screen:** see [README](README.md#rules-for-every-screen).

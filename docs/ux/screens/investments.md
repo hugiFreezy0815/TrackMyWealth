@@ -1,7 +1,6 @@
 # S11 Investments, with S13 Performance and S14 Dividends
 
-**Figma:** M28 Investments (phone) · M30 Performance sheet · M31 Dividends · W16 Investments (web).
-All to be drawn; DE mirrors use the same names.
+**Figma** (page "🧭 Design round S9–S15 (#680–#683)"): M28 Investments EN [192:405](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=192-405) / DE [192:628](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=192-628) · M30 Performance sheet EN [193:642](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=193-642) / DE [193:1010](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=193-1010) · M31 Dividends EN [193:740](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=193-740) / DE [193:1105](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=193-1105) · W16 EN [198:1484](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=198-1484) / DE [198:2006](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=198-2006).
 **Requirements:** EPIC 15 (positions, cost basis), EPIC 16 (performance), EPIC 17 (income),
 FR-CON-007 / NFR-UX-004, FR-API-010, NFR-UX-001/003.
 **Rules for every screen:** see [README](README.md#rules-for-every-screen).

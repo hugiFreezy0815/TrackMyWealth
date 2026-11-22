@@ -1,7 +1,6 @@
 # S9 Section view: one account type across all portfolios
 
-**Figma:** M26 Section view (phone, to be drawn) · W15 Section view (web, to be drawn). DE mirrors
-use the same names in the DE sections.
+**Figma** (page "🧭 Design round S9–S15 (#680–#683)"): M26 Section view EN [190:184](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=190-184) / DE [190:347](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=190-347) · W15 EN [198:1216](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=198-1216) / DE [198:1740](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=198-1740).
 **Requirements:** FR-NW (net worth by section), FR-INS-013 (portfolio context), FR-CON-007 /
 NFR-UX-004 (value status), FR-API-010, NFR-UX-001/003/005.
 **Rules for every screen:** see [README](README.md#rules-for-every-screen).

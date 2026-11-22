@@ -210,7 +210,7 @@ Errors on these actions:
 
 ## Planned update (design round 2026-11-22)
 
-**Figma:** M25 / W06 revised (to be drawn). Sprint-7 behaviour stays until the S3 update story
+**Figma:** M25r Account detail, revised EN [197:1161](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=197-1161) / DE [197:1470](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=197-1470) on page "🧭 Design round S9–S15 (#680–#683)". Sprint-7 behaviour stays until the S3 update story
 ships.
 
 | # | Change | Detail | Source |

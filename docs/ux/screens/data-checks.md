@@ -1,7 +1,6 @@
 # S15 Data checks: find and fix what makes a figure unreliable
 
-**Figma:** M35 Data checks (phone) · M36 Units check (phone) · W18 Data checks (web panel). To be
-drawn; DE mirrors. M15 Reconcile (existing) is the fix screen for balance differences.
+**Figma** (page "🧭 Design round S9–S15 (#680–#683)"): M35 Data checks EN [196:843](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=196-843) / DE [196:1078](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=196-1078) · M36 Units check EN [196:972](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=196-972) / DE [196:1201](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=196-1201) · W18 EN [200:1710](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=200-1710) / DE [200:2154](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=200-2154). M15 Reconcile (existing) is the fix screen for balance differences.
 **Requirements:** NFR-UX-003/004 (explainability, value status), FR-REC (reconciliation),
 EPIC 15 (cost basis), US-07-17 (duplicates), FR-API-010.
 **Rules for every screen:** see [README](README.md#rules-for-every-screen).

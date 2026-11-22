@@ -23,17 +23,17 @@ each spec has a "Design decisions" table that says what TrackMyWealth does diffe
 **planned**: nothing here is in sprint 7, and the "hidden until the API sends it" rule applies
 to every element.
 
-| # | Screen | Spec | Figma (EN / DE, to be drawn) |
+| # | Screen | Spec | Figma (EN / DE) on page "🧭 Design round S9–S15" |
 |---|---|---|---|
-| S9 | Section view: one account type (cash, cards, mortgage…) across all portfolios | [section-view.md](section-view.md) | M26 / W15 |
-| S10 | Liability detail: loan schedule, repayments split, card statement (variant of S3) | [loan-detail.md](loan-detail.md) | M27, M27b / W06 |
-| S11 | Investments: depots, positions, performance card, allocation, dividends card | [investments.md](investments.md) | M28 / W16 |
-| S12 | Position detail: one security across depots | [position-detail.md](position-detail.md) | M29 / W16 panel |
-| S13 | Performance breakdown sheet | [investments.md](investments.md#s13-performance-sheet-m30) | M30 / W16 rail |
-| S14 | Dividends & interest | [investments.md](investments.md#s14-dividends--interest-m31) | M31 / W16 |
-| S15 | Data checks inbox and units check | [data-checks.md](data-checks.md) | M35, M36 / W18 |
-| S7 v2 | Import: several files, column mapping (no LLM), editable rows, trades table | [import-statement.md](import-statement.md#version-2-design-round-2026-11-22) | M32–M34 / W17 |
-| S1/S2/S3 | Planned updates: section links, By type switch, masked identifiers, month groups | "Planned update" sections in [overview.md](overview.md), [portfolio-view.md](portfolio-view.md), [account-detail.md](account-detail.md) | M03, M05, M25 / W01, W02, W06 revised |
+| S9 | Section view: one account type (cash, cards, mortgage…) across all portfolios | [section-view.md](section-view.md) | M26 190:184 / 190:347 · W15 198:1216 / 198:1740 |
+| S10 | Liability detail: loan schedule, repayments split, card statement (variant of S3) | [loan-detail.md](loan-detail.md) | M27 191:278 / 191:481 · M27b 191:387 / 191:588 |
+| S11 | Investments: depots, positions, performance card, allocation, dividends card | [investments.md](investments.md) | M28 192:405 / 192:628 · W16 198:1484 / 198:2006 |
+| S12 | Position detail: one security across depots | [position-detail.md](position-detail.md) | M29 193:514 / 193:884 |
+| S13 | Performance breakdown sheet | [investments.md](investments.md#s13-performance-sheet-m30) | M30 193:642 / 193:1010 |
+| S14 | Dividends & interest | [investments.md](investments.md#s14-dividends--interest-m31) | M31 193:740 / 193:1105 |
+| S15 | Data checks inbox and units check | [data-checks.md](data-checks.md) | M35 196:843 / 196:1078 · M36 196:972 / 196:1201 · W18 200:1710 / 200:2154 |
+| S7 v2 | Import: several files, column mapping (no LLM), editable rows, trades table | [import-statement.md](import-statement.md#version-2-design-round-2026-11-22) | M32 194:662 / 194:1003 · M33 194:782 / 194:1120 · M34 194:903 / 194:1237 · W17 200:1479 / 200:1927 |
+| S1/S2/S3 | Planned updates: section links, By type switch, masked identifiers, month groups | "Planned update" sections in [overview.md](overview.md), [portfolio-view.md](portfolio-view.md), [account-detail.md](account-detail.md) | M03r 197:983 / 197:1294 · M25r 197:1161 / 197:1470 |
 
 API gaps of the planned screens and their stories. UI stories: #684 (S9), #685 (S10), #686 (S11/S13), #687 (S12), #688 (S7 v2), #689 (S15), #690 (S3 update). Figma: #680–#683 (sprint 8).
 
