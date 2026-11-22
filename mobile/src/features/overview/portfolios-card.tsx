@@ -15,8 +15,11 @@ import type { Portfolio } from './overview-model';
 import { InfoText, msg } from './overview-text';
 
 /**
- * S1 #17–#22. Show a portfolio's change only when the list provides it for the active period.
- * The "≈" line shows only when the portfolio and overview currencies differ.
+ * S1 #17–#22. A row shows its portfolio's period return (#645), never the wealth change, and only
+ * for the active period. A return that starts after the period does (`returnFrom` > `from`) shows
+ * nothing: the row has no room to say "since", and a part-period return must not read as the
+ * month's (PO 2026-11-21). The "≈" line shows only when the portfolio and overview currencies
+ * differ.
  */
 export function PortfoliosCard({
   items,
@@ -36,14 +39,17 @@ export function PortfoliosCard({
     <SectionCard title={msg(intl, 'overview.portfolios')}>
       {items.length === 0 ? <InfoText>{msg(intl, 'overview.portfolio.empty')}</InfoText> : null}
       {items.map((item) => {
+        const change = item.change;
         const percent =
-          item.valueStatus === 'CURRENT' && item.change?.period === period
-            ? item.change.percent
+          item.valueStatus === 'CURRENT' &&
+          change?.period === period &&
+          change.returnFrom === change.from
+            ? change.returnPercent
             : null;
         const hint =
           onPortfolio && !hidden && percent != null
-            ? msg(intl, 'history.rowChange', {
-                change: figureTexts(intl, { value: percent, kind: 'percent', signRole: 'change' })
+            ? msg(intl, 'history.return', {
+                percent: figureTexts(intl, { value: percent, kind: 'percent', signRole: 'change' })
                   .label,
               })
             : undefined;

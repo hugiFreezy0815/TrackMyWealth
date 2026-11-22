@@ -26794,6 +26794,9 @@ components:
       properties:
         period:
           type: string
+        from:
+          type: string
+          format: date
         amount:
           type:
           - string
@@ -26808,10 +26811,25 @@ components:
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
+        returnPercent:
+          type:
+          - string
+          - "null"
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        returnFrom:
+          type:
+          - string
+          - "null"
+          format: date
       required:
       - amount
+      - from
       - percent
       - period
+      - returnFrom
+      - returnPercent
     PortfolioResponse:
       type: object
       properties:

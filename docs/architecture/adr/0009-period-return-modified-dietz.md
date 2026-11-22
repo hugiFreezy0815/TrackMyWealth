@@ -26,7 +26,8 @@ available" periods (US-16-04). Those daily valuations do not exist yet.
    rests on a recorded balance. An account starting inside the period is a flow, never gain. No
    balance is imputed. This follows US-16-04's "since data available".
 3. **Return start.** `change.returnFrom` is the period start, or the scope's earliest tracking
-   start when that is later. The app then labels the chip "since {date}".
+   start when that is later. The app then labels the chip "{range} · return since {date}": the
+   amount keeps its period, the "since" date belongs to the return (PO 2026-11-21, #645).
 4. **API (ADR 0006, additive).** `returnPercent` and `returnFrom` are new nullable fields on
    `ValueHistoryResponse.Change`, for the whole scope and for each section. `change.percent` stays
    as the wealth change and is not deprecated.
@@ -36,6 +37,12 @@ available" periods (US-16-04). Those daily valuations do not exist yet.
    holds positions, are what the money earned or cost: they are return, not flows. Income,
    spending, a tax bill from a cash account and a deposit of unknown origin are external flows.
    The breakdown line (#477) is unchanged.
+7. **Portfolio rows** (#645). `PortfolioPeriodChange` on the portfolio list gets `from`,
+   `returnPercent` and `returnFrom` (additive); the Overview row shows the return, never the wealth
+   change `percent`. All portfolios are computed together, one batch per portfolio currency, so the
+   list's queries do not grow with the number of portfolios. A row whose return starts after
+   `from` shows no percentage (PO 2026-11-21), as a fund factsheet shows "–" for a period it did
+   not cover.
 
 ## Consequences
 

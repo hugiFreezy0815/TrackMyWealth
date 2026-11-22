@@ -101,9 +101,95 @@ public class PeriodReturnService {
       Map<UUID, List<LocalDate>> stateChangeDays,
       BiPredicate<UUID, LocalDate> included,
       Map<UUID, PortfolioSection> sections) {
+    Map<UUID, LocalDate> trackingStarts = new HashMap<>();
+    Map<UUID, Account> tracked = tracked(accounts, to, inception, trackingStarts);
+    ReturnScopeContext context =
+        new ReturnScopeContext(from, to, trackingStarts, stateChangeDays, included);
+
+    Set<PortfolioSection> sectionSet = EnumSet.noneOf(PortfolioSection.class);
+    sectionSet.addAll(sections.values());
+    List<PortfolioSection> present = List.copyOf(sectionSet);
+    List<ReturnScopeContext> contexts = new ArrayList<>();
+    List<ReturnScopePlan> plans = new ArrayList<>();
+    for (PortfolioSection section : present) {
+      Set<UUID> inSection = new HashSet<>();
+      for (UUID id : tracked.keySet()) {
+        if (section == sections.get(id)) {
+          inSection.add(id);
+        }
+      }
+      contexts.add(context);
+      plans.add(plan(context, inSection));
+    }
+    contexts.add(context);
+    plans.add(plan(context, tracked.keySet()));
+
+    List<PeriodReturn> results = evaluate(contexts, plans, tracked, to, currency);
+    Map<PortfolioSection, PeriodReturn> sectionReturns = new EnumMap<>(PortfolioSection.class);
+    for (int i = 0; i < present.size(); i++) {
+      sectionReturns.put(present.get(i), results.get(i));
+    }
+    return new PeriodReturns(results.get(present.size()), sectionReturns);
+  }
+
+  /**
+   * #645: the return of many scopes at once - the Overview's portfolio rows - each in its own
+   * currency, from {@code from} to {@code to}. {@code scopes} maps a scope's id to its currency and
+   * {@code included} gives, per scope, whether an account is in it on a day by its effective state
+   * then; it must hold an entry for every scope. Scopes that share a currency share one valuation
+   * pass and one cash-flow query, so the work grows with the number of currencies, never with the
+   * number of scopes.
+   */
+  @Transactional(readOnly = true)
+  public Map<UUID, PeriodReturn> scopeReturns(
+      List<Account> accounts,
+      LocalDate from,
+      LocalDate to,
+      Map<UUID, String> scopes,
+      Map<UUID, LocalDate> inception,
+      Map<UUID, List<LocalDate>> stateChangeDays,
+      Map<UUID, BiPredicate<UUID, LocalDate>> included) {
+    if (!included.keySet().containsAll(scopes.keySet())) {
+      throw new IllegalArgumentException("Every scope needs an inclusion predicate.");
+    }
+    if (scopes.isEmpty()) {
+      return Map.of();
+    }
+    Map<UUID, LocalDate> trackingStarts = new HashMap<>();
+    Map<UUID, Account> tracked = tracked(accounts, to, inception, trackingStarts);
+    Map<String, List<UUID>> byCurrency = new TreeMap<>();
+    scopes.forEach(
+        (scope, currency) ->
+            byCurrency.computeIfAbsent(currency, unused -> new ArrayList<>()).add(scope));
+    Map<UUID, PeriodReturn> result = new HashMap<>();
+    byCurrency.forEach(
+        (currency, ids) -> {
+          List<ReturnScopeContext> contexts = new ArrayList<>(ids.size());
+          List<ReturnScopePlan> plans = new ArrayList<>(ids.size());
+          for (UUID scope : ids) {
+            ReturnScopeContext context =
+                new ReturnScopeContext(
+                    from, to, trackingStarts, stateChangeDays, included.get(scope));
+            contexts.add(context);
+            plans.add(plan(context, tracked.keySet()));
+          }
+          List<PeriodReturn> returns = evaluate(contexts, plans, tracked, to, currency);
+          for (int i = 0; i < ids.size(); i++) {
+            result.put(ids.get(i), returns.get(i));
+          }
+        });
+    return Map.copyOf(result);
+  }
+
+  // The accounts with a tracking start on or before the period end, their starts put in {@code
+  // trackingStarts}; read in one query.
+  private Map<UUID, Account> tracked(
+      List<Account> accounts,
+      LocalDate to,
+      Map<UUID, LocalDate> inception,
+      Map<UUID, LocalDate> trackingStarts) {
     Map<UUID, TrackingStartSources> sources =
         historyStartRepository.trackingStartSources(accounts.stream().map(Account::getId).toList());
-    Map<UUID, LocalDate> trackingStarts = new HashMap<>();
     Map<UUID, Account> tracked = new HashMap<>();
     for (Account account : accounts) {
       LocalDate start =
@@ -113,25 +199,17 @@ public class PeriodReturnService {
         tracked.put(account.getId(), account);
       }
     }
-    ReturnScopeContext context =
-        new ReturnScopeContext(from, to, trackingStarts, stateChangeDays, included);
+    return tracked;
+  }
 
-    ReturnScopePlan totalPlan = plan(context, tracked.keySet());
-    Map<PortfolioSection, ReturnScopePlan> sectionPlans = new EnumMap<>(PortfolioSection.class);
-    Set<PortfolioSection> present = EnumSet.noneOf(PortfolioSection.class);
-    present.addAll(sections.values());
-    for (PortfolioSection section : present) {
-      Set<UUID> inSection = new HashSet<>();
-      for (UUID id : tracked.keySet()) {
-        if (section == sections.get(id)) {
-          inSection.add(id);
-        }
-      }
-      sectionPlans.put(section, plan(context, inSection));
-    }
-    List<ReturnScopePlan> plans = new ArrayList<>(sectionPlans.values());
-    plans.add(totalPlan);
-
+  // The plans' returns, in order, from one valuation pass and one cash-flow query in {@code
+  // currency}.
+  private List<PeriodReturn> evaluate(
+      List<ReturnScopeContext> contexts,
+      List<ReturnScopePlan> plans,
+      Map<UUID, Account> tracked,
+      LocalDate to,
+      String currency) {
     Map<LocalDate, Map<UUID, AccountValuation>> values = value(plans, tracked, currency);
     LocalDate earliest =
         plans.stream()
@@ -151,11 +229,11 @@ public class PeriodReturnService {
                 earliest.plusDays(1),
                 to,
                 currency);
-
-    Map<PortfolioSection, PeriodReturn> sectionReturns = new EnumMap<>(PortfolioSection.class);
-    sectionPlans.forEach(
-        (section, plan) -> sectionReturns.put(section, result(plan, context, values, cashFlows)));
-    return new PeriodReturns(result(totalPlan, context, values, cashFlows), sectionReturns);
+    List<PeriodReturn> results = new ArrayList<>(plans.size());
+    for (int i = 0; i < plans.size(); i++) {
+      results.add(result(plans.get(i), contexts.get(i), values, cashFlows));
+    }
+    return results;
   }
 
   /**

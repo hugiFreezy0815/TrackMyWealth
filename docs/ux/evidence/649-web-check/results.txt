@@ -1,0 +1,120 @@
+[en-phone-light] viewport 390x844 dpr 1
+[en-phone-light] heading: true
+[en-phone-light] web body: true
+[en-phone-light] version caption: true
+[en-phone-light] icon: true
+[en-phone-light] reload button 342x48 px, inside viewport: true
+[en-phone-light] horizontal scroll: false
+[en-phone-light] role=alert regions: 0
+[en-phone-light] sign-in form hidden: true
+[en-phone-light] axe violations: 0
+[en-phone-light] first Tab focuses: "Reload page"
+[en-phone-light] reload brings the sign-in back: true
+[en-desktop-light] viewport 1280x800 dpr 1
+[en-desktop-light] heading: true
+[en-desktop-light] web body: true
+[en-desktop-light] version caption: true
+[en-desktop-light] icon: true
+[en-desktop-light] reload button 240x48 px, inside viewport: true
+[en-desktop-light] horizontal scroll: false
+[en-desktop-light] role=alert regions: 0
+[en-desktop-light] sign-in form hidden: true
+[en-desktop-light] axe violations: 0
+[en-desktop-light] first Tab focuses: "Reload page"
+[en-desktop-light] reload brings the sign-in back: true
+[en-phone-dark] viewport 390x844 dpr 1
+[en-phone-dark] heading: true
+[en-phone-dark] web body: true
+[en-phone-dark] version caption: true
+[en-phone-dark] icon: true
+[en-phone-dark] reload button 342x48 px, inside viewport: true
+[en-phone-dark] horizontal scroll: false
+[en-phone-dark] role=alert regions: 0
+[en-phone-dark] sign-in form hidden: true
+[en-phone-dark] axe violations: 0
+[en-phone-dark] first Tab focuses: "Reload page"
+[en-phone-dark] reload brings the sign-in back: true
+[en-desktop-dark] viewport 1280x800 dpr 1
+[en-desktop-dark] heading: true
+[en-desktop-dark] web body: true
+[en-desktop-dark] version caption: true
+[en-desktop-dark] icon: true
+[en-desktop-dark] reload button 240x48 px, inside viewport: true
+[en-desktop-dark] horizontal scroll: false
+[en-desktop-dark] role=alert regions: 0
+[en-desktop-dark] sign-in form hidden: true
+[en-desktop-dark] axe violations: 0
+[en-desktop-dark] first Tab focuses: "Reload page"
+[en-desktop-dark] reload brings the sign-in back: true
+[de-phone-light] viewport 390x844 dpr 1
+[de-phone-light] heading: true
+[de-phone-light] web body: true
+[de-phone-light] version caption: true
+[de-phone-light] icon: true
+[de-phone-light] reload button 342x48 px, inside viewport: true
+[de-phone-light] horizontal scroll: false
+[de-phone-light] role=alert regions: 0
+[de-phone-light] sign-in form hidden: true
+[de-phone-light] axe violations: 0
+[de-phone-light] first Tab focuses: "Seite neu laden"
+[de-phone-light] reload brings the sign-in back: true
+[de-desktop-light] viewport 1280x800 dpr 1
+[de-desktop-light] heading: true
+[de-desktop-light] web body: true
+[de-desktop-light] version caption: true
+[de-desktop-light] icon: true
+[de-desktop-light] reload button 240x48 px, inside viewport: true
+[de-desktop-light] horizontal scroll: false
+[de-desktop-light] role=alert regions: 0
+[de-desktop-light] sign-in form hidden: true
+[de-desktop-light] axe violations: 0
+[de-desktop-light] first Tab focuses: "Seite neu laden"
+[de-desktop-light] reload brings the sign-in back: true
+[de-phone-dark] viewport 390x844 dpr 1
+[de-phone-dark] heading: true
+[de-phone-dark] web body: true
+[de-phone-dark] version caption: true
+[de-phone-dark] icon: true
+[de-phone-dark] reload button 342x48 px, inside viewport: true
+[de-phone-dark] horizontal scroll: false
+[de-phone-dark] role=alert regions: 0
+[de-phone-dark] sign-in form hidden: true
+[de-phone-dark] axe violations: 0
+[de-phone-dark] first Tab focuses: "Seite neu laden"
+[de-phone-dark] reload brings the sign-in back: true
+[de-desktop-dark] viewport 1280x800 dpr 1
+[de-desktop-dark] heading: true
+[de-desktop-dark] web body: true
+[de-desktop-dark] version caption: true
+[de-desktop-dark] icon: true
+[de-desktop-dark] reload button 240x48 px, inside viewport: true
+[de-desktop-dark] horizontal scroll: false
+[de-desktop-dark] role=alert regions: 0
+[de-desktop-dark] sign-in form hidden: true
+[de-desktop-dark] axe violations: 0
+[de-desktop-dark] first Tab focuses: "Seite neu laden"
+[de-desktop-dark] reload brings the sign-in back: true
+[en-zoom200-1280x800] viewport 640x328 dpr 2
+[en-zoom200-1280x800] heading: true
+[en-zoom200-1280x800] web body: true
+[en-zoom200-1280x800] version caption: true
+[en-zoom200-1280x800] icon: true
+[en-zoom200-1280x800] reload button 240x48 px, inside viewport: true
+[en-zoom200-1280x800] horizontal scroll: false
+[en-zoom200-1280x800] role=alert regions: 0
+[en-zoom200-1280x800] sign-in form hidden: true
+[en-zoom200-1280x800] axe violations: 0
+[en-zoom200-1280x800] first Tab focuses: "Reload page"
+[en-zoom200-1280x800] reload brings the sign-in back: true
+[de-zoom200-780x844] viewport 390x350 dpr 2
+[de-zoom200-780x844] heading: true
+[de-zoom200-780x844] web body: true
+[de-zoom200-780x844] version caption: true
+[de-zoom200-780x844] icon: true
+[de-zoom200-780x844] reload button 342x48 px, inside viewport: true
+[de-zoom200-780x844] horizontal scroll: false
+[de-zoom200-780x844] role=alert regions: 0
+[de-zoom200-780x844] sign-in form hidden: true
+[de-zoom200-780x844] axe violations: 0
+[de-zoom200-780x844] first Tab focuses: "Seite neu laden"
+[de-zoom200-780x844] reload brings the sign-in back: true
