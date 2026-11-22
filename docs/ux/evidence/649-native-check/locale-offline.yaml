@@ -1,0 +1,10 @@
+# #674: keep the existing 426 screen open while the runner stops the local backend.
+appId: com.anonymous.trackmywealth
+---
+- assertVisible: ${UPDATE_TITLE}
+- tapOn: ${RETRY}
+- extendedWaitUntil:
+    visible: ${OFFLINE}
+    timeout: 45000
+- assertVisible: ${UPDATE_TITLE}
+- takeScreenshot: ${PREFIX}-4-offline
