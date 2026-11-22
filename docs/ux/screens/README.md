@@ -35,6 +35,8 @@ to every element.
 | S7 v2 | Import: several files, column mapping (no LLM), editable rows, trades table | [import-statement.md](import-statement.md#version-2-design-round-2026-11-22) | M32 194:662 / 194:1003 · M33 194:782 / 194:1120 · M34 194:903 / 194:1237 · W17 200:1479 / 200:1927 |
 | S1/S2/S3 | Planned updates: section links, By type switch, masked identifiers, month groups | "Planned update" sections in [overview.md](overview.md), [portfolio-view.md](portfolio-view.md), [account-detail.md](account-detail.md) | M03r 197:983 / 197:1294 · M25r 197:1161 / 197:1470 |
 
+**Dark mode:** "TMW / Color" has a Dark mode with the values from [02-visual-foundations.css](../02-visual-foundations.css). Dark copies of every EN frame are in the sections "EN — Mobile · Dark" and "EN — Web · Dark" on the same page. The web overview revision is W01r (202:2089 / 202:2614), and the web column mapping is W17b (202:1807 / 202:2340).
+
 API gaps of the planned screens and their stories. UI stories: #684 (S9), #685 (S10), #686 (S11/S13), #687 (S12), #688 (S7 v2), #689 (S15), #690 (S3 update). Figma: #680–#683 (sprint 8).
 
 | Gap | Screens |
