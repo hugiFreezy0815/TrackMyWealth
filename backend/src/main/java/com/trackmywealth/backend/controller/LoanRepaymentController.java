@@ -2,6 +2,7 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.CreateLoanRepaymentRequest;
 import com.trackmywealth.backend.dto.LoanRepaymentResponse;
+import com.trackmywealth.backend.dto.LoanRepaymentYearlyTotalsResponse;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
@@ -87,5 +88,20 @@ public class LoanRepaymentController {
           Pageable pageable,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return PageResponse.of(loanRepaymentService.list(accountId, pageable, actor));
+  }
+
+  @Operation(
+      operationId = "getLoanRepaymentYearlyTotals",
+      summary = "Sum a loan's repayments per calendar year",
+      description =
+          "Principal and interest paid per calendar year of booking date, newest year first, from"
+              + " the repayments the list returns. A payment with an unknown split adds to"
+              + " amountPaid and unknownSplitAmount only; principalPaid and interestPaid are null"
+              + " when no payment of the year has a known split. splitEstimated flags a year with"
+              + " any estimated split.")
+  @GetMapping("/yearly-totals")
+  public LoanRepaymentYearlyTotalsResponse getYearlyTotals(
+      @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return loanRepaymentService.yearlyTotals(accountId, actor);
   }
 }

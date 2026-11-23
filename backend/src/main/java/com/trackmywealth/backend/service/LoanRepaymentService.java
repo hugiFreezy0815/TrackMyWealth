@@ -5,6 +5,9 @@ import com.trackmywealth.backend.dto.LoanPaymentPlan;
 import com.trackmywealth.backend.dto.LoanPaymentSplit;
 import com.trackmywealth.backend.dto.LoanRepaymentResponse;
 import com.trackmywealth.backend.dto.LoanRepaymentSplitValues;
+import com.trackmywealth.backend.dto.LoanRepaymentYearSum;
+import com.trackmywealth.backend.dto.LoanRepaymentYearTotalResponse;
+import com.trackmywealth.backend.dto.LoanRepaymentYearlyTotalsResponse;
 import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountLoan;
@@ -214,19 +217,58 @@ public class LoanRepaymentService {
     Pageable bounded = PagingValues.requireBounded(pageable, "id");
     // Filter the paying account in SQL, not after LIMIT/OFFSET: otherwise totals and page
     // boundaries could disclose inaccessible payments or silently omit readable ones.
-    UUID memberId = accessControlService.requireActingMember(actor);
-    Set<UUID> readablePayerIds =
-        accessControlService
-            .accountsWithAccess(memberId, accountRepository.findByWorkspaceId(actor.workspaceId()))
-            .stream()
-            .map(Account::getId)
-            .collect(Collectors.toSet());
+    Set<UUID> readablePayerIds = readablePayerIds(actor);
     if (readablePayerIds.isEmpty()) {
       return Page.empty(bounded);
     }
     Page<LoanPayment> payments =
         loanPaymentRepository.findVisibleInEffect(loan.getId(), readablePayerIds, bounded);
     return new PageImpl<>(toResponses(payments.getContent()), bounded, payments.getTotalElements());
+  }
+
+  /**
+   * #693: the payments {@link #list} lists, summed per calendar year of their booking date, newest
+   * year first. Principal and interest add up only the parts a split recorded, and stay null when
+   * no payment of the year has a split; an unknown split counts in {@code amountPaid} and {@code
+   * unknownSplitAmount}, and any estimated split flags its year.
+   */
+  @Transactional(readOnly = true)
+  public LoanRepaymentYearlyTotalsResponse yearlyTotals(
+      UUID loanAccountId, AuthenticatedUserPrincipal actor) {
+    Account loan = accountLookupService.findAccountOrThrow(loanAccountId, actor);
+    accessControlService.requireAccountAccess(actor, loan);
+    Set<UUID> readablePayerIds = readablePayerIds(actor);
+    List<LoanRepaymentYearTotalResponse> years =
+        readablePayerIds.isEmpty()
+            ? List.of()
+            : loanPaymentRepository
+                .sumVisibleInEffectByYear(loan.getId(), readablePayerIds)
+                .stream()
+                .map(LoanRepaymentService::toYearTotal)
+                .toList();
+    return new LoanRepaymentYearlyTotalsResponse(loan.getId(), loan.getNativeCurrency(), years);
+  }
+
+  // The workspace's accounts the actor may read: a payment from any other stays out of the list
+  // and the sums alike.
+  private Set<UUID> readablePayerIds(AuthenticatedUserPrincipal actor) {
+    UUID memberId = accessControlService.requireActingMember(actor);
+    return accessControlService
+        .accountsWithAccess(memberId, accountRepository.findByWorkspaceId(actor.workspaceId()))
+        .stream()
+        .map(Account::getId)
+        .collect(Collectors.toSet());
+  }
+
+  private static LoanRepaymentYearTotalResponse toYearTotal(LoanRepaymentYearSum sum) {
+    return new LoanRepaymentYearTotalResponse(
+        sum.year(),
+        sum.amount(),
+        sum.principal(),
+        sum.interest(),
+        Objects.requireNonNullElse(sum.unknownSplitAmount(), BigDecimal.ZERO),
+        sum.payments(),
+        sum.estimatedPayments() > 0);
   }
 
   /**
