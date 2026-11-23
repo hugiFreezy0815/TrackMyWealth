@@ -13,6 +13,8 @@ import com.trackmywealth.backend.dto.CreateLoanRepaymentRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoanRepaymentResponse;
 import com.trackmywealth.backend.dto.LoanRepaymentSplitValues;
+import com.trackmywealth.backend.dto.LoanRepaymentYearTotalResponse;
+import com.trackmywealth.backend.dto.LoanRepaymentYearlyTotalsResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
@@ -593,6 +595,129 @@ class LoanRepaymentControllerTest {
 
     assertThat(deniedRequestsFor(foreign)).isEqualTo(5);
     assertThat(repayments(token, mortgage.id())).isEmpty();
+  }
+
+  // --- #693: yearly totals
+  // -----------------------------------------------------------------------
+
+  @Test
+  void yearlyTotalsSumEachYearsPaymentsNewestYearFirstWithoutRemovedOnes() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse mortgage = createMortgage(token, "480000.00", "2.0");
+    LocalDate lastYear = today().minusYears(1);
+    repay(token, mortgage.id(), paymentOn(current.id(), lastYear, "2000.00", "800.00"));
+    repay(token, mortgage.id(), paymentOn(current.id(), today(), "2000.00", "750.00"));
+    LoanRepaymentResponse estimated =
+        repay(token, mortgage.id(), paymentOn(current.id(), today(), "1500.00", null));
+    LoanRepaymentResponse removed =
+        repay(token, mortgage.id(), paymentOn(current.id(), today(), "999.00", "99.00"));
+    TransactionResponse removedInterest = row(removed, current.id(), EXPENSE);
+    client(token)
+        .delete()
+        .uri(rowUri(current.id(), removedInterest.id()))
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", removedInterest.id()))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    LoanRepaymentYearlyTotalsResponse totals = yearlyTotals(token, mortgage.id());
+
+    assertThat(estimated.splitSource()).isEqualTo(LoanRepaymentSplitValues.ESTIMATED);
+    assertThat(totals.loanAccountId()).isEqualTo(mortgage.id());
+    assertThat(totals.currency()).isEqualTo("CHF");
+    assertThat(totals.years())
+        .extracting(LoanRepaymentYearTotalResponse::year)
+        .containsExactly(today().getYear(), lastYear.getYear());
+    LoanRepaymentYearTotalResponse thisYear = totals.years().get(0);
+    assertThat(thisYear.amountPaid()).isEqualByComparingTo("3500.00");
+    assertThat(thisYear.interestPaid())
+        .isEqualByComparingTo(new BigDecimal("750.00").add(estimated.interestAmount()));
+    assertThat(thisYear.principalPaid())
+        .isEqualByComparingTo(new BigDecimal("1250.00").add(estimated.principalAmount()));
+    assertThat(thisYear.unknownSplitAmount()).isEqualByComparingTo("0");
+    assertThat(thisYear.paymentCount()).isEqualTo(2);
+    assertThat(thisYear.splitEstimated()).isTrue();
+    LoanRepaymentYearTotalResponse previous = totals.years().get(1);
+    assertThat(previous.amountPaid()).isEqualByComparingTo("2000.00");
+    assertThat(previous.interestPaid()).isEqualByComparingTo("800.00");
+    assertThat(previous.principalPaid()).isEqualByComparingTo("1200.00");
+    assertThat(previous.paymentCount()).isEqualTo(1);
+    assertThat(previous.splitEstimated()).isFalse();
+  }
+
+  @Test
+  void anUnknownSplitIsNeitherPrincipalNorInterestButItsOwnAmountAndFlagsItsYear() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse loan = createLoanWithoutRate(token, "20000.00");
+    assertThat(yearlyTotals(token, loan.id()).years()).isEmpty();
+
+    repay(token, loan.id(), payment(current.id(), "500.00", null, null));
+
+    assertThat(yearlyTotals(token, loan.id()).years())
+        .singleElement()
+        .satisfies(
+            year -> {
+              assertThat(year.amountPaid()).isEqualByComparingTo("500.00");
+              assertThat(year.principalPaid()).isNull();
+              assertThat(year.interestPaid()).isNull();
+              assertThat(year.unknownSplitAmount()).isEqualByComparingTo("500.00");
+              assertThat(year.paymentCount()).isEqualTo(1);
+              assertThat(year.splitEstimated()).isTrue();
+            });
+
+    repay(token, loan.id(), payment(current.id(), "300.00", "40.00", null));
+
+    assertThat(yearlyTotals(token, loan.id()).years())
+        .singleElement()
+        .satisfies(
+            year -> {
+              assertThat(year.amountPaid()).isEqualByComparingTo("800.00");
+              assertThat(year.principalPaid()).isEqualByComparingTo("260.00");
+              assertThat(year.interestPaid()).isEqualByComparingTo("40.00");
+              assertThat(year.unknownSplitAmount()).isEqualByComparingTo("500.00");
+              assertThat(year.paymentCount()).isEqualTo(2);
+            });
+  }
+
+  @Test
+  void anotherWorkspacesLoanHasNoYearlyTotals() throws Exception {
+    String token = bootstrapAdministrator();
+    UUID foreign = accountInAnotherWorkspace();
+
+    client(token)
+        .get()
+        .uri("/api/v1/accounts/" + foreign + "/repayments/yearly-totals")
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    assertThat(deniedRequestsFor(foreign)).isEqualTo(1);
+  }
+
+  private LoanRepaymentYearlyTotalsResponse yearlyTotals(String token, UUID loanId) {
+    return client(token)
+        .get()
+        .uri("/api/v1/accounts/" + loanId + "/repayments/yearly-totals")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(LoanRepaymentYearlyTotalsResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private static CreateLoanRepaymentRequest paymentOn(
+      UUID payingAccountId, LocalDate bookingDate, String amount, String interestAmount) {
+    return new CreateLoanRepaymentRequest(
+        payingAccountId,
+        bookingDate,
+        new BigDecimal(amount),
+        "CHF",
+        interestAmount == null ? null : new BigDecimal(interestAmount),
+        "Mortgage payment",
+        null,
+        null);
   }
 
   // --- refusals

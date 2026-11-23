@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.repository;
 
+import com.trackmywealth.backend.dto.LoanRepaymentYearSum;
 import com.trackmywealth.backend.entity.LoanPayment;
 import java.time.LocalDate;
 import java.util.Collection;
@@ -16,6 +17,9 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface LoanPaymentRepository extends JpaRepository<LoanPayment, UUID> {
 
+  String LOAN_ACCOUNT_ID = "loanAccountId";
+  String PAYING_ACCOUNT_IDS = "payingAccountIds";
+
   // A payment is in effect while one of its rows is: removing a payment soft-deletes (or, for an
   // imported row, voids) all of its rows together, and a restore brings them back. The record
   // itself stays (V87). deletedAt is spelled out although Transaction's @SQLRestriction hides
@@ -30,7 +34,7 @@ public interface LoanPaymentRepository extends JpaRepository<LoanPayment, UUID> 
       "select p from LoanPayment p where p.loanAccount.id = :loanAccountId and"
           + IN_EFFECT
           + " order by p.bookingDate desc, p.createdAt desc")
-  List<LoanPayment> findInEffectByLoanAccountId(@Param("loanAccountId") UUID loanAccountId);
+  List<LoanPayment> findInEffectByLoanAccountId(@Param(LOAN_ACCOUNT_ID) UUID loanAccountId);
 
   /** Paged payment history, with the caller-visible paying accounts filtered before counting. */
   @Query(
@@ -38,9 +42,29 @@ public interface LoanPaymentRepository extends JpaRepository<LoanPayment, UUID> 
           + " and p.payingAccount.id in :payingAccountIds and"
           + IN_EFFECT)
   Page<LoanPayment> findVisibleInEffect(
-      @Param("loanAccountId") UUID loanAccountId,
-      @Param("payingAccountIds") Collection<UUID> payingAccountIds,
+      @Param(LOAN_ACCOUNT_ID) UUID loanAccountId,
+      @Param(PAYING_ACCOUNT_IDS) Collection<UUID> payingAccountIds,
       Pageable pageable);
+
+  /**
+   * #693: the loan's payments still in effect from the given paying accounts, summed per calendar
+   * year of their booking date, newest year first - the same payments {@link #findVisibleInEffect}
+   * lists.
+   */
+  @Query(
+      "select new com.trackmywealth.backend.dto.LoanRepaymentYearSum("
+          + "extract(year from p.bookingDate), sum(p.totalAmount), sum(p.principalAmount),"
+          + " sum(p.interestAmount),"
+          + " sum(case when p.principalAmount is null then p.totalAmount end), count(p),"
+          + " sum(case when p.splitEstimated = true then 1 else 0 end))"
+          + " from LoanPayment p where p.loanAccount.id = :loanAccountId"
+          + " and p.payingAccount.id in :payingAccountIds and"
+          + IN_EFFECT
+          + " group by extract(year from p.bookingDate)"
+          + " order by extract(year from p.bookingDate) desc")
+  List<LoanRepaymentYearSum> sumVisibleInEffectByYear(
+      @Param(LOAN_ACCOUNT_ID) UUID loanAccountId,
+      @Param(PAYING_ACCOUNT_IDS) Collection<UUID> payingAccountIds);
 
   /**
    * #337: the loan's payments still in effect booked in [{@code from}, {@code to}], earliest first,
@@ -52,7 +76,7 @@ public interface LoanPaymentRepository extends JpaRepository<LoanPayment, UUID> 
           + IN_EFFECT
           + " order by p.bookingDate, p.createdAt")
   List<LoanPayment> findInEffectByLoanAccountIdBookedBetween(
-      @Param("loanAccountId") UUID loanAccountId,
+      @Param(LOAN_ACCOUNT_ID) UUID loanAccountId,
       @Param("from") LocalDate from,
       @Param("to") LocalDate to);
 
