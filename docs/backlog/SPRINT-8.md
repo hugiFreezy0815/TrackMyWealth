@@ -27,9 +27,9 @@ uploaded from one global Import button finds its own format **and** account, as 
 - Every UI story still renders only what the API on `main` sends ("hidden until the API sends
   it", `docs/ux/screens/README.md`).
 
-## UX (first: the Figma review gates the UI stories)
+## UX (done: frames approved by the PO on 2026-11-23)
 
-The frames are drawn (EN + DE, light and dark). What is left is the PO's frame review.
+The frames are drawn (EN + DE, light and dark) and approved; the issues are closed.
 
 | Issue | Task | Gates |
 |---|---|---|
@@ -81,11 +81,12 @@ leaves room to pull a sprint-9 story forward (the PO decides).
   - #364 (move a batch in one call) is the next step after this sprint and stays unscheduled for
     now.
 - **#527:** option 1 approved (store the cost basis currency, M).
+- **Figma #680–#683:** frames approved "for now" and the issues closed. Changes found while building
+  a story are made in Figma and the spec together.
 
 ## Open PO points
 
-- **Frame review of #680–#683:** all frames are drawn (EN + DE, light and dark). Each issue has a
-  "Ready for PO review" comment with its node IDs. The UI stories close only after the review.
+None at sprint start.
 
 ## Risks
 
