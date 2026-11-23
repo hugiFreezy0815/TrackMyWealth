@@ -115,7 +115,7 @@ Reconciliation line (FR-REC; the wording is a draft for #379):
 
 Rows follow the server sort. Date sorts group by booking month and year, with sticky headers
 on iOS and Android and a day label per row. The day reads "Today" or "Yesterday" when applicable.
-Amount sorts show the date per row, without month headers.
+Amount sorts show the full calendar date per row, without month headers.
 
 | # | Element | Source: `TransactionResponse` → field | Rule |
 |---|---|---|---|

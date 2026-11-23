@@ -41,6 +41,7 @@ import {
 import { Fonts, Spacing, TypeScale, Radii } from '@/constants/theme';
 import { moveAccessibilityFocus } from '@/components/shared/accessibility-focus';
 import { linkKeyProps } from '@/components/shared/link-key';
+import { copyTransactionPurpose } from '@/features/account-detail/copy-purpose';
 import {
   transactionHeading,
   transactionPurpose,
@@ -554,6 +555,15 @@ export function TransactionDetail({
       : null;
   const name = transactionHeading(transaction, intl);
   const purpose = transactionPurpose(transaction);
+  const purposeInHeading = purpose?.trim() === name;
+  const copyPurposeButton = purpose ? (
+    <View style={{ alignSelf: 'flex-start' }}>
+      <ActionButton
+        label={intl.formatMessage({ id: 'account.copyPurpose' })}
+        onPress={() => void copyTransactionPurpose(purpose)}
+      />
+    </View>
+  ) : null;
   const allCategories = historicalCategories.data ?? categories.data ?? [];
   const category = allCategories.find((item) => item.id === transaction.categoryId);
   const parent = allCategories.find((item) => item.id === category?.parentId);
@@ -744,11 +754,12 @@ export function TransactionDetail({
           ref={detailHeading}
           accessibilityRole="header"
           tabIndex={-1}
-          selectable={!!purpose && purpose.trim() === name}
+          selectable={false}
           style={{ ...TypeScale.headingMedium, color: theme.textPrimary }}
         >
           {name}
         </Text>
+        {purposeInHeading ? copyPurposeButton : null}
         <DetailLabel>
           {date(transaction.bookingDate)} ·{' '}
           {transactionTypeLabel(transaction.transactionType, intl)}
@@ -802,12 +813,13 @@ export function TransactionDetail({
           gap: Spacing.two,
         }}
       >
-        {purpose && purpose.trim() !== name ? (
+        {purpose && !purposeInHeading ? (
           <View style={{ gap: Spacing.one }}>
             <DetailLabel>{intl.formatMessage({ id: 'txn.purpose' })}</DetailLabel>
-            <Text selectable style={{ ...TypeScale.bodyMedium, color: theme.textPrimary }}>
+            <Text selectable={false} style={{ ...TypeScale.bodyMedium, color: theme.textPrimary }}>
               {purpose}
             </Text>
+            {copyPurposeButton}
           </View>
         ) : null}
         <KeyValueList items={rows} />

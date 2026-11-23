@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { useState } from 'react';
+import { setStringAsync } from 'expo-clipboard';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Platform, StyleSheet } from 'react-native';
 import { IntlProvider } from 'react-intl';
@@ -12,6 +13,7 @@ import {
   useTransactionHistory,
 } from '@/api/queries/resources';
 import { useConflict } from '@/api/queries/conflict';
+import { showToast } from '@/features/shell/toast';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import type { components } from '@/api/schema';
 import { ApiError } from '@/api/client';
@@ -28,6 +30,8 @@ const searchFocus = (
 ).default.focus;
 
 jest.mock('@/global.css', () => ({}));
+jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn() }));
+jest.mock('@/features/shell/toast', () => ({ showToast: jest.fn() }));
 jest.mock('@/features/privacy/amount-visibility', () => ({
   useAmountsHidden: jest.fn(() => false),
 }));
@@ -221,6 +225,52 @@ describe('S4 transaction detail', () => {
     expect(screen.getByText('Food › Groceries · automatic')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Reset category' })).toBeNull();
     expect(screen.getByText('Bank · Current account')).toBeTruthy();
+  });
+
+  it.each([
+    ['android', 'heading', null],
+    ['android', 'purpose field', 'Synthetic counterparty'],
+    ['ios', 'heading', null],
+    ['ios', 'purpose field', 'Synthetic counterparty'],
+  ] as const)(
+    'copies the full multiline purpose on %s from the %s',
+    async (os, location, counterpartyName) => {
+      const platform = jest.replaceProperty(Platform, 'OS', os);
+      try {
+        const purpose = 'Synthetic purpose\nPayment reference TEST-4021\nEnd of purpose';
+        fixtures({ ...base, counterpartyName, merchantDescription: purpose });
+        jest.mocked(setStringAsync).mockResolvedValueOnce(true);
+        await show();
+
+        const text = screen.getByText(purpose, { normalizer: (value) => value });
+        expect(text).toHaveProp('selectable', false);
+        expect(text).not.toHaveProp('numberOfLines');
+        expect(text.props.accessibilityRole).toBe(location === 'heading' ? 'header' : undefined);
+        expect(setStringAsync).not.toHaveBeenCalled();
+        await fireEvent.press(screen.getByRole('button', { name: 'Copy purpose text' }));
+
+        expect(setStringAsync).toHaveBeenCalledWith(purpose, {
+          android: { isSensitive: true },
+          ios: { localOnly: true },
+        });
+        expect(showToast).toHaveBeenCalledWith('account.purposeCopied');
+      } finally {
+        platform.restore();
+      }
+    },
+  );
+
+  it('reports a clipboard failure without including the purpose in the toast', async () => {
+    jest.mocked(setStringAsync).mockRejectedValueOnce(new Error('Clipboard unavailable'));
+    await show();
+    await fireEvent.press(screen.getByRole('button', { name: 'Copy purpose text' }));
+    expect(showToast).toHaveBeenCalledWith('account.purposeCopyFailed');
+  });
+
+  it('omits the copy action when the server purpose is blank', async () => {
+    fixtures({ ...base, merchantDescription: '  ' });
+    await show();
+    expect(screen.queryByRole('button', { name: 'Copy purpose text' })).toBeNull();
   });
 
   it.each([

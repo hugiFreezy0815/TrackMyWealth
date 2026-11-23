@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react';
-import { setStringAsync } from 'expo-clipboard';
 import { useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { ActivityIndicator, Platform, Pressable, Text, View } from 'react-native';
@@ -69,6 +68,7 @@ import {
   type AccountSummary,
   type Transaction,
 } from './model';
+import { copyTransactionPurpose } from './copy-purpose';
 import { isAccessFailure, isNotFound } from './access';
 import { useReversalDates } from './reversal-dates';
 import { useRowFocus } from './row-focus';
@@ -848,15 +848,7 @@ export function AccountDetail({
           purpose
             ? () => {
                 setActionRowId(null);
-                // Keep the clipboard write inside the original user gesture on web.
-                void setStringAsync(purpose, {
-                  android: { isSensitive: true },
-                  ios: { localOnly: true },
-                }).then(
-                  (copied) =>
-                    showToast(copied ? 'account.purposeCopied' : 'account.purposeCopyFailed'),
-                  () => showToast('account.purposeCopyFailed'),
-                );
+                void copyTransactionPurpose(purpose);
               }
             : undefined
         }

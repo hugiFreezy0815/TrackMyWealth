@@ -102,7 +102,7 @@ export function formatBookingDay(
   withinMonth: boolean,
   today = new Date(),
 ): string {
-  if (!withinMonth) return formatRelativeDay(date, intl, today);
+  if (!withinMonth) return formatDate(date, intl.locale);
   const relative = relativeDay(date, intl, today);
   if (relative) return relative;
   const utc = parseCalendarDate(date);

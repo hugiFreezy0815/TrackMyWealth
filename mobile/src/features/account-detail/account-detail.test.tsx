@@ -305,12 +305,11 @@ describe('S3 account detail updates (#690)', () => {
     }
   });
 
-  it('offers category, details and an explicit copy of the complete purpose on long press', async () => {
-    // Android does not emit Modal.onDismiss. The next action opens as the sheet closes.
-    const platform = jest.replaceProperty(Platform, 'OS', 'android');
+  it.each(['android', 'ios'] as const)('opens native row actions on %s', async (os) => {
+    const platform = jest.replaceProperty(Platform, 'OS', os);
     try {
       const purpose = 'Synthetic purpose with the full reference\nSECOND LINE\nTHIRD LINE';
-      jest.mocked(setStringAsync).mockResolvedValueOnce(true);
+      jest.mocked(setStringAsync).mockClear().mockResolvedValueOnce(true);
       fakeServer(summary(), [txn(0, { counterpartyName: 'Shop', merchantDescription: purpose })]);
       const { onTransaction } = await renderDetail();
       const row = await screen.findByRole('button', { name: /^Shop,/ });
@@ -325,8 +324,17 @@ describe('S3 account detail updates (#690)', () => {
       });
       expect(showToast).toHaveBeenCalledWith('account.purposeCopied');
 
-      await fireEvent(row, 'longPress');
-      await fireEvent.press(screen.getByRole('button', { name: 'Show details' }));
+      async function chooseAction(name: string) {
+        await fireEvent(row, 'longPress');
+        const { onDismiss } = screen.getByTestId('shared-dialog-modal').props;
+        await fireEvent.press(screen.getByRole('button', { name }));
+        if (os === 'ios') await act(() => onDismiss());
+      }
+
+      await chooseAction('Change category');
+      expect(screen.getByTestId('category-picker-list')).toBeTruthy();
+      await fireEvent.press(screen.getByRole('button', { name: 'Close' }));
+      await chooseAction('Show details');
       expect(onTransaction).toHaveBeenCalledWith('t000');
     } finally {
       platform.restore();
