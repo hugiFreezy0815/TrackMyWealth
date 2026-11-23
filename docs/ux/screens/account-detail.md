@@ -89,7 +89,7 @@ Request 3 needs `hasTransactions = true` from request 1. Without it, skip 3 and 
 
 | # | Element | Label key (EN / DE draft) | Format | Source |
 |---|---|---|---|---|
-| 1 | Back + context line | "{portfolio} · {type} · {masked identifier}" | Identifier hidden when absent from the S2 cache | (2) `portfolioName`; `accountType.{code}`; S2 `AccountRow.maskedIdentifier` |
+| 1 | Back + context line | "{portfolio} · {type} · {masked identifier}" | From the S2 cache; S3 loads the S2 view when it is not cached. Hidden while loading, when the account has none, or when archived | (2) `portfolioName`; `accountType.{code}`; S2 `AccountRow.maskedIdentifier` |
 | 2 | Title | | | (1) `name` |
 | 3 | Value label | `account.balance` "Balance" / "Saldo"; for `manualValuation`: `account.value` "Value" / "Wert"; for `holdsPositions`: `account.marketValue` "Market value" / "Marktwert" | | (1) capabilities |
 | 4 | Value | | `Amount`, large | (2) `balance`, `currency`; `valueKnown=false` ⇒ "–" |
@@ -215,7 +215,7 @@ Errors on these actions:
 
 | # | Change | Detail | Source |
 |---|---|---|---|
-| U1 | Masked identifier in the header | Context line becomes "{portfolio} · {type} · •••• 4021" | `AccountRow.maskedIdentifier` (from the S2 cache) |
+| U1 | Masked identifier in the header | Context line becomes "{portfolio} · {type} · •••• 4021" | `AccountRow.maskedIdentifier` (S2 cache, loaded by S3 when missing) |
 | U2 | Month group headers | Rows are grouped under "November 2026" (sticky on phone), and each row shows its day ("19 Nov") in a left date column. "Today" / "Yesterday" remain as the day label | `bookingDate`; grouping follows the sort only |
 | U3 | In/out marker | A direction icon (↙ in, ↗ out) next to the date, with the accessible text "incoming" / "outgoing". The sign on the amount stays | sign of `amount` (reading a sign is not a computation) |
 | U4 | Purpose as a second line | Title = `counterpartyName`, else `merchantDescription`. Subtitle = `merchantDescription` (the bank's purpose text) when the title is the counterparty: two lines, then an ellipsis, with the full text in S4 | `TransactionResponse` |

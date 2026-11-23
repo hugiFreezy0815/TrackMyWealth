@@ -144,12 +144,14 @@ function fakeServer(account: AccountSummary, rows: Transaction[], holdings?: Pos
     account: AccountSummary;
     rows: Transaction[];
     holdings?: PositionsResponse;
+    portfolioView?: unknown;
     beforeRead?: (path: string, options: Options) => void | Promise<void>;
   } = { account, rows, holdings };
   const counted = (row: Transaction) => row.categoryId === 'uncat' && !row.internalTransfer;
   const routes: Record<string, (options: Options) => unknown> = {
     '/api/v1/accounts/{accountId}': () => state.account,
     '/api/v1/accounts/{accountId}/positions': () => state.holdings,
+    '/api/v1/portfolios/{portfolioId}/view': () => state.portfolioView ?? { sections: [] },
     '/api/v1/accounts/{accountId}/transactions/{transactionId}': ({ params }) =>
       state.rows.find((row) => row.id === params?.transactionId) ?? null,
     '/api/v1/accounts': () => collectionPage([listItem]),
@@ -256,28 +258,46 @@ beforeEach(() => {
 });
 
 describe('S3 account detail updates (#690)', () => {
-  it('reads only the matching masked identifier from the S2 cache without a request', async () => {
-    fakeServer(summary(), []);
-    const { client } = await renderDetail();
-    await screen.findByRole('header', { name: 'Girokonto' });
-    expect(screen.queryByText(/••••/)).toBeNull();
-    await act(async () => {
-      client.setQueryData(queryKeys.portfolioView('p1'), {
-        sections: [
-          {
-            accounts: [
-              { accountId: 'other', maskedIdentifier: '•••• 0000' },
-              { accountId: 'acc', maskedIdentifier: '•••• 4021' },
-            ],
-          },
+  const maskedView = {
+    sections: [
+      {
+        accounts: [
+          { accountId: 'other', maskedIdentifier: '•••• 0000' },
+          { accountId: 'acc', maskedIdentifier: '•••• 4021' },
         ],
-      });
-    });
+      },
+    ],
+  };
+  const viewReads = () =>
+    api.get.mock.calls.filter(([path]) => path === '/api/v1/portfolios/{portfolioId}/view');
+
+  it('loads the S2 view for the masked identifier when it is not cached (cold start)', async () => {
+    const server = fakeServer(summary(), []);
+    server.portfolioView = maskedView;
+    await renderDetail();
     expect(await screen.findByText(/Current account · •••• 4021/)).toBeTruthy();
     expect(screen.queryByText(/•••• 0000/)).toBeNull();
-    expect(
-      api.get.mock.calls.some(([path]) => path === '/api/v1/portfolios/{portfolioId}/view'),
-    ).toBe(false);
+    expect(viewReads()).toHaveLength(1);
+  });
+
+  it('shows the header without an identifier when the account has none', async () => {
+    fakeServer(summary(), []);
+    await renderDetail();
+    await screen.findByRole('header', { name: 'Girokonto' });
+    await waitFor(() => expect(viewReads()).toHaveLength(1));
+    expect(screen.queryByText(/••••/)).toBeNull();
+  });
+
+  it('does not load the S2 view for an archived account', async () => {
+    const server = fakeServer(
+      summary({ status: 'ARCHIVED', archivedAt: '2026-10-01T10:00:00Z', version: 5 }),
+      [],
+    );
+    server.portfolioView = maskedView;
+    await renderDetail();
+    expect(await screen.findByTestId('account-archived')).toBeTruthy();
+    expect(viewReads()).toHaveLength(0);
+    expect(screen.queryByText(/••••/)).toBeNull();
   });
 
   it('renders month and day, clamps the purpose and exposes the outgoing label', async () => {

@@ -158,7 +158,8 @@ export function AccountDetail({
   const account = useAccount(accountId);
   const summary = account.data;
   const archived = summary?.status === 'ARCHIVED';
-  const portfolioView = usePortfolioView(summary?.portfolioId ?? '', { enabled: false });
+  // PO 2026-11-23: S3 loads the S2 view itself when it is not cached (cold start, deep link).
+  const portfolioView = usePortfolioView(summary?.portfolioId ?? '', { enabled: !archived });
   const maskedIdentifier =
     !archived && !isAccessFailure(portfolioView.error)
       ? portfolioView.data?.sections
