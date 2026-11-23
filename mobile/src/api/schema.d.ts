@@ -1829,10 +1829,17 @@ export interface components {
        * @description Cost basis as the statement printed it, never converted.
        */
       costBasis: DecimalString | null;
+      /** @description Currency of costBasis; null when unknown (#527). */
+      costBasisCurrency: string | null;
+      /**
+       * Format: decimal
+       * @description For a cost basis in another currency: its cost in the account currency at the purchase-date rate(s), as reported. Never derived at today's rate.
+       */
+      costBasisInAccountCurrency: DecimalString | null;
       costBasisEstimated: boolean;
       /**
        * Format: decimal
-       * @description valueInAccountCurrency minus costBasis. Null without a cost basis or value, and when priceCurrency differs from the account currency: the cost basis carries no currency, so the gain would not be certain.
+       * @description Gain in unrealisedGainCurrency, the cost basis currency: valueInAccountCurrency minus costBasis for a cost basis in the account currency, value minus costBasis for one in priceCurrency. Null without a cost basis, its currency or a value, and for a cost basis in a third currency.
        */
       unrealisedGain: DecimalString | null;
       /**
@@ -1840,6 +1847,18 @@ export interface components {
        * @description unrealisedGain in percent of costBasis; null when unrealisedGain is.
        */
       unrealisedGainPercent: DecimalString | null;
+      /** @description Currency of unrealisedGain; null when unrealisedGain is. */
+      unrealisedGainCurrency: string | null;
+      /**
+       * Format: decimal
+       * @description Gain in the account currency: valueInAccountCurrency minus the cost in the account currency (costBasis when it is in it, else costBasisInAccountCurrency). Includes the FX change since purchase. Null when that cost is unknown.
+       */
+      unrealisedGainInAccountCurrency: DecimalString | null;
+      /**
+       * Format: decimal
+       * @description unrealisedGainInAccountCurrency in percent of the cost in the account currency; null when that gain is.
+       */
+      unrealisedGainInAccountCurrencyPercent: DecimalString | null;
       /** @enum {string} */
       valueStatus: 'CURRENT' | 'ESTIMATED' | 'STALE' | 'UNRECONCILED' | 'UNKNOWN';
     };
@@ -3816,7 +3835,7 @@ export interface components {
        */
       amount: DecimalString;
     };
-    /** @description Omit reportedValue, reportedCurrency and reportedPrice together, or supply reportedValue and reportedCurrency together. When supplying both, reportedPrice is optional. Other combinations return HTTP 422. */
+    /** @description Omit reportedValue, reportedCurrency and reportedPrice together, or supply reportedValue and reportedCurrency together. When supplying both, reportedPrice is optional. Other combinations return HTTP 422, as does reportedCostBasisCurrency or costBasisInAccountCurrency without reportedCostBasis. */
     SnapshotHoldingRequest: {
       /** Format: uuid */
       securityId: string;
@@ -3830,6 +3849,13 @@ export interface components {
        * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
        */
       reportedCostBasis?: DecimalString;
+      /** @description Currency of reportedCostBasis. Defaults to the account currency when the security is in it; required otherwise (400). */
+      reportedCostBasisCurrency?: string;
+      /**
+       * Format: decimal
+       * @description For a cost basis in another currency: its cost in the account currency at the purchase-date rate(s), as the statement prints it. Omit for a cost basis in the account currency.
+       */
+      costBasisInAccountCurrency?: DecimalString;
       costBasisIsEstimated?: boolean;
       /**
        * Format: decimal
@@ -3860,6 +3886,13 @@ export interface components {
        * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
        */
       reportedCostBasis: DecimalString | null;
+      /** @description Currency of reportedCostBasis; null when unknown (#527). */
+      reportedCostBasisCurrency: string | null;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      costBasisInAccountCurrency: DecimalString | null;
       costBasisIsEstimated: boolean;
       /**
        * Format: decimal

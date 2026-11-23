@@ -23,4 +23,10 @@ public interface ReportedHoldingValue {
 
   /** A position's reported cost basis; always null for cash. */
   @Nullable BigDecimal getReportedCostBasis();
+
+  /** #527: the currency of the cost basis; null when unknown, and always for cash. */
+  @Nullable String getReportedCostBasisCurrency();
+
+  /** #527: a foreign cost basis in the account currency at the purchase-date rate(s), if known. */
+  @Nullable BigDecimal getCostBasisInAccountCurrency();
 }

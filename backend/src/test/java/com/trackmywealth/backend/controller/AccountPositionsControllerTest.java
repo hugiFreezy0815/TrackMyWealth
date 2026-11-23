@@ -208,7 +208,8 @@ class AccountPositionsControllerTest {
   // AC 5. The cost basis has no currency of its own, so a USD holding in a CHF depot gets no
   // gain rather than one that mixes currencies (FR-PERF-018).
   @Test
-  void foreignCurrencyHoldingUsesTodaysFxRateAndGetsNoGain() throws SQLException {
+  void foreignCurrencyHoldingUsesTodaysFxRateAgainstACostBasisInTheAccountCurrency()
+      throws SQLException {
     String token = bootstrapAdministrator();
     AccountSummaryResponse depot = createAccount(token, "CHF Depot", "SECURITIES");
     SecurityResponse security = createSecurity(token, "US9220427424", "Vanguard Total World");
@@ -234,8 +235,11 @@ class AccountPositionsControllerTest {
     assertThat(position.valueInAccountCurrency()).isEqualByComparingTo("50");
     assertThat(position.valueStatus()).isEqualTo(ValueStatus.CURRENT);
     assertThat(position.costBasis()).isEqualByComparingTo("75");
-    assertThat(position.unrealisedGain()).isNull();
-    assertThat(position.unrealisedGainPercent()).isNull();
+    // #527: the security is in CHF, so the cost basis defaulted to CHF: today's CHF value counts.
+    assertThat(position.costBasisCurrency()).isEqualTo("CHF");
+    assertThat(position.unrealisedGain()).isEqualByComparingTo("-25");
+    assertThat(position.unrealisedGainCurrency()).isEqualTo("CHF");
+    assertThat(position.unrealisedGainInAccountCurrency()).isEqualByComparingTo("-25");
   }
 
   @Test
@@ -519,6 +523,155 @@ class AccountPositionsControllerTest {
         .getResponseBody();
   }
 
+  // --- #527: the cost basis currency -----------------------------------------------------------
+
+  // AC 1 through the manual API: a USD cost basis gives the gain in USD; with its cost at the
+  // purchase-date rate the CHF gain comes beside it (PO 2026-11-23).
+  @Test
+  void aUsdCostBasisGivesAUsdGainAndItsPurchaseRateCostACurrencyGain() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createAccount(token, "CHF Depot", "SECURITIES");
+    SecurityResponse security =
+        createSecurity(token, "US9220427424", "Vanguard Total World", "USD");
+    saveFxRate(today(), "0.90");
+
+    AccountSnapshotResponse snapshot =
+        recordOk(
+            token,
+            depot.id(),
+            new RecordAccountSnapshotRequest(
+                today(),
+                BigDecimal.ZERO,
+                List.of(costedHolding(security.id(), "75", "USD", "72", "100", "USD"))));
+    AccountPositionResponse position = positions(token, depot.id()).positions().get(0);
+
+    assertThat(snapshot.holdings().get(0).reportedCostBasisCurrency()).isEqualTo("USD");
+    assertThat(snapshot.holdings().get(0).costBasisInAccountCurrency()).isEqualByComparingTo("72");
+    assertThat(position.valueInAccountCurrency()).isEqualByComparingTo("90");
+    assertThat(position.costBasisCurrency()).isEqualTo("USD");
+    assertThat(position.unrealisedGain()).isEqualByComparingTo("25");
+    assertThat(position.unrealisedGainCurrency()).isEqualTo("USD");
+    // 90 CHF today minus 72 CHF paid: the FX change since purchase is in it.
+    assertThat(position.unrealisedGainInAccountCurrency()).isEqualByComparingTo("18");
+  }
+
+  // AC 2: a CHF cost basis of a USD position gives the gain in CHF against today's CHF value.
+  @Test
+  void aChfCostBasisOfAUsdPositionGivesAChfGain() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createAccount(token, "CHF Depot", "SECURITIES");
+    SecurityResponse security =
+        createSecurity(token, "US9220427424", "Vanguard Total World", "USD");
+    saveFxRate(today(), "0.90");
+
+    recordOk(
+        token,
+        depot.id(),
+        new RecordAccountSnapshotRequest(
+            today(),
+            BigDecimal.ZERO,
+            List.of(costedHolding(security.id(), "70", "CHF", null, "100", "USD"))));
+    AccountPositionResponse position = positions(token, depot.id()).positions().get(0);
+
+    assertThat(position.unrealisedGain()).isEqualByComparingTo("20");
+    assertThat(position.unrealisedGainCurrency()).isEqualTo("CHF");
+    assertThat(position.unrealisedGainInAccountCurrency()).isEqualByComparingTo("20");
+  }
+
+  // PO 2026-11-14: without a currency, the cost basis of a security in the account currency is in
+  // the account currency.
+  @Test
+  void aCostBasisWithoutCurrencyOfASecurityInTheAccountCurrencyIsInIt() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createAccount(token, "CHF Depot", "SECURITIES");
+    SecurityResponse security = createSecurity(token, "CH0038863350", "Nestle");
+
+    AccountSnapshotResponse snapshot =
+        recordOk(
+            token,
+            depot.id(),
+            new RecordAccountSnapshotRequest(
+                today(), BigDecimal.ZERO, List.of(holding(security.id(), "1", "80"))));
+
+    assertThat(snapshot.holdings().get(0).reportedCostBasisCurrency()).isEqualTo("CHF");
+    assertThat(positions(token, depot.id()).positions().get(0).costBasisCurrency())
+        .isEqualTo("CHF");
+  }
+
+  // PO 2026-11-14: for a security in another currency nothing is guessed - a 400 names the field,
+  // and nothing is written.
+  @Test
+  void aCostBasisWithoutCurrencyOfAForeignSecurityIsABadRequestNamingTheField() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createAccount(token, "CHF Depot", "SECURITIES");
+    SecurityResponse franc = createSecurity(token, "CH0038863350", "Nestle");
+    SecurityResponse dollar = createSecurity(token, "US9220427424", "Vanguard Total World", "USD");
+
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + depot.id() + "/snapshots")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new RecordAccountSnapshotRequest(
+                today(),
+                BigDecimal.ZERO,
+                List.of(holding(franc.id(), "1", "80"), holding(dollar.id(), "1", "75"))))
+        .exchange()
+        .expectStatus()
+        .isBadRequest()
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VALIDATION_FAILED")
+        .jsonPath("$.errors[0].field")
+        .isEqualTo("holdings[1].reportedCostBasisCurrency")
+        .jsonPath("$.errors.length()")
+        .isEqualTo(1);
+    assertThat(positions(token, depot.id()).positions()).isEmpty();
+  }
+
+  @Test
+  void aCostBasisCurrencyOrAccountCurrencyCostNeedsItsCostBasis() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createAccount(token, "CHF Depot", "SECURITIES");
+    SecurityResponse security =
+        createSecurity(token, "US9220427424", "Vanguard Total World", "USD");
+    List<SnapshotHoldingRequest> refused =
+        List.of(
+            costedHolding(security.id(), null, "USD", null, null, null),
+            costedHolding(security.id(), null, null, "72", null, null),
+            // A cost basis already in the account currency needs no second one.
+            costedHolding(security.id(), "70", "CHF", "72", null, null));
+    for (SnapshotHoldingRequest holding : refused) {
+      client(token)
+          .post()
+          .uri("/api/v1/accounts/" + depot.id() + "/snapshots")
+          .contentType(MediaType.APPLICATION_JSON)
+          .body(new RecordAccountSnapshotRequest(today(), BigDecimal.ZERO, List.of(holding)))
+          .exchange()
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    }
+  }
+
+  private static SnapshotHoldingRequest costedHolding(
+      UUID securityId,
+      String costBasis,
+      String costBasisCurrency,
+      String costInAccountCurrency,
+      String value,
+      String valueCurrency) {
+    return new SnapshotHoldingRequest(
+        securityId,
+        BigDecimal.ONE,
+        costBasis == null ? null : new BigDecimal(costBasis),
+        costBasisCurrency,
+        costInAccountCurrency == null ? null : new BigDecimal(costInAccountCurrency),
+        null,
+        null,
+        value == null ? null : new BigDecimal(value),
+        valueCurrency);
+  }
+
   private static SnapshotHoldingRequest reportedHolding(
       UUID security, String value, String currency) {
     return new SnapshotHoldingRequest(
@@ -592,13 +745,18 @@ class AccountPositionsControllerTest {
   }
 
   private SecurityResponse createSecurity(String token, String isin, String displayName) {
+    return createSecurity(token, isin, displayName, "CHF");
+  }
+
+  private SecurityResponse createSecurity(
+      String token, String isin, String displayName, String currency) {
     return client(token)
         .post()
         .uri("/api/v1/securities")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateSecurityRequest(
-                isin, displayName, "CHF", "EQUITY", "EQUITY", null, null, null, null))
+                isin, displayName, currency, "EQUITY", "EQUITY", null, null, null, null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)

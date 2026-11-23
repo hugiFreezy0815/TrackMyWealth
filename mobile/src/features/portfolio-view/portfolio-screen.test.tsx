@@ -150,22 +150,33 @@ const listItem: PortfolioListItem = {
   institutionName: null,
   logoUrl: null,
 } as unknown as PortfolioListItem;
-const position = (id: string, overrides: Partial<Position> = {}): Position => ({
-  securityId: id,
-  displayName: `Fund ${id}`,
-  isin: `IE00000000${id}`,
-  quantity: '10.000000',
-  price: '10.00',
-  priceCurrency: 'EUR',
-  value: '100.00',
-  valueInAccountCurrency: '100.00',
-  costBasis: '90.00',
-  costBasisEstimated: false,
-  unrealisedGain: '10.00',
-  unrealisedGainPercent: '11.11',
-  valueStatus: 'CURRENT',
-  ...overrides,
-});
+// #527: the gain in the account currency mirrors the gain a test sets, unless it says other.
+const position = (id: string, overrides: Partial<Position> = {}): Position => {
+  const base = {
+    securityId: id,
+    displayName: `Fund ${id}`,
+    isin: `IE00000000${id}`,
+    quantity: '10.000000',
+    price: '10.00',
+    priceCurrency: 'EUR',
+    value: '100.00',
+    valueInAccountCurrency: '100.00',
+    costBasis: '90.00',
+    costBasisCurrency: 'EUR',
+    costBasisInAccountCurrency: null,
+    costBasisEstimated: false,
+    unrealisedGain: '10.00',
+    unrealisedGainPercent: '11.11',
+    valueStatus: 'CURRENT' as Position['valueStatus'],
+    ...overrides,
+  };
+  return {
+    unrealisedGainCurrency: base.unrealisedGain == null ? null : 'EUR',
+    unrealisedGainInAccountCurrency: base.unrealisedGain,
+    unrealisedGainInAccountCurrencyPercent: base.unrealisedGainPercent,
+    ...base,
+  };
+};
 const depotSection = (overrides: Partial<PortfolioAccount> = {}) =>
   makeSection('DEPOT', [
     makeAccount('depot', {
@@ -703,7 +714,7 @@ describe('S2 rows per section type', () => {
 
     expect(
       screen.getByText(
-        /cost basis missing for 1 position · cost basis currency unknown for 2 positions/,
+        /cost basis missing for 1 position · cost basis in EUR missing for 2 positions/,
       ),
     ).toBeTruthy();
     expect(screen.queryByText('Unrealised gain')).toBeNull();
@@ -760,7 +771,12 @@ describe('S2 depot positions (#478)', () => {
     setPositions([
       position('1', { quantity: '1250.500000', unrealisedGainPercent: '11.24' }),
       position('2', { unrealisedGainPercent: '-3.75' }),
-      position('3', { unrealisedGainPercent: null, unrealisedGain: null, priceCurrency: 'USD' }),
+      position('3', {
+        unrealisedGainPercent: null,
+        unrealisedGain: null,
+        priceCurrency: 'USD',
+        costBasisCurrency: null,
+      }),
       position('4', { unrealisedGainPercent: null, unrealisedGain: null, costBasis: null }),
       position('5', { costBasisEstimated: true }),
       position('6'),
@@ -772,7 +788,7 @@ describe('S2 depot positions (#478)', () => {
     expect(screen.getByText("1'250.5 units · IE000000001")).toBeTruthy();
     expect(color(screen.getByText('+11.2%'))).toBe('#007D55');
     expect(color(screen.getByText('−3.8%'))).toBe(LOSS);
-    expect(screen.getByText('Gain not available in USD')).toBeTruthy();
+    expect(screen.getByText('Cost basis currency unknown')).toBeTruthy();
     expect(screen.getByText('No cost basis yet')).toBeTruthy();
     expect(screen.getByText('Estimated cost basis')).toBeTruthy();
     expect(
@@ -788,6 +804,40 @@ describe('S2 depot positions (#478)', () => {
       ['depot', 'positions'],
       ['depot'],
     ]);
+  });
+
+  // #527: a gain is labelled with its own currency - a USD cost basis gives a USD gain in a EUR
+  // depot - and the depot-currency gain wins when its cost there is known.
+  it('labels each gain with its own currency and prefers the depot-currency gain', async () => {
+    setData(view([depotSection()]));
+    setPositions([
+      position('1', {
+        priceCurrency: 'USD',
+        costBasisCurrency: 'USD',
+        unrealisedGain: '25.00',
+        unrealisedGainPercent: '33.33',
+        unrealisedGainCurrency: 'USD',
+        unrealisedGainInAccountCurrency: null,
+        unrealisedGainInAccountCurrencyPercent: null,
+      }),
+      position('2', {
+        priceCurrency: 'USD',
+        costBasisCurrency: 'USD',
+        costBasisInAccountCurrency: '72.00',
+        unrealisedGain: '25.00',
+        unrealisedGainPercent: '33.33',
+        unrealisedGainCurrency: 'USD',
+        unrealisedGainInAccountCurrency: '18.00',
+        unrealisedGainInAccountCurrencyPercent: '25.00',
+      }),
+    ]);
+    await mount();
+
+    expect(screen.getByText('+USD 25.00')).toBeTruthy();
+    expect(screen.getByText('+33.3%')).toBeTruthy();
+    expect(screen.getByText('+EUR 18.00')).toBeTruthy();
+    expect(screen.getByText('+25.0%')).toBeTruthy();
+    expect(screen.queryByText('Cost basis currency unknown')).toBeNull();
   });
 
   it('gives no cost-basis reason for an unpriced position that has a cost basis', async () => {

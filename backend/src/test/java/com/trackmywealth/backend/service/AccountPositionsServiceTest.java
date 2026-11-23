@@ -143,24 +143,91 @@ class AccountPositionsServiceTest {
     assertThat(position.unrealisedGainPercent()).isNull();
   }
 
+  // #527 AC 1: a USD cost basis gives the gain in USD - value minus cost, both as the statement
+  // printed them. Without its cost at the purchase-date rate there is no CHF gain.
   @Test
-  void aForeignHoldingIsConvertedButGetsNoGainBecauseTheCostBasisHasNoCurrency() {
+  void aCostBasisInTheSecuritysCurrencyGivesTheGainInThatCurrency() {
     allowedDepot("CHF");
     holding("Vanguard Total World", "100", "USD", "75");
-    CurrencyConversionResult rate = rate("0.90", false);
-    when(fx.tryGetConversionRate("USD", "CHF", AS_OF, "ECB")).thenReturn(Optional.of(rate));
-    when(fx.applyRate(any(), eq(rate))).thenReturn(new BigDecimal("90.0000"));
+    usdToChfAt("0.90", "90.0000");
 
     AccountPositionsResponse result = read();
     AccountPositionResponse position = result.positions().get(0);
 
     assertThat(result.complete()).isTrue();
-    assertThat(position.value()).isEqualByComparingTo("100");
     assertThat(position.valueInAccountCurrency()).isEqualByComparingTo("90");
     assertThat(position.valueStatus()).isEqualTo(ValueStatus.CURRENT);
+    assertThat(position.costBasisCurrency()).isEqualTo("USD");
+    assertThat(position.unrealisedGain()).isEqualByComparingTo("25");
+    assertThat(position.unrealisedGainCurrency()).isEqualTo("USD");
+    assertThat(position.unrealisedGainPercent()).isEqualByComparingTo("33.33");
+    assertThat(position.unrealisedGainInAccountCurrency()).isNull();
+    assertThat(position.unrealisedGainInAccountCurrencyPercent()).isNull();
+  }
+
+  // #527 AC 2: a CHF cost basis of a USD position gives the gain in CHF, against today's value.
+  @Test
+  void aCostBasisInTheAccountCurrencyGivesTheGainInTheAccountCurrency() {
+    allowedDepot("CHF");
+    holding("Vanguard Total World", "100", "USD", "70").setReportedCostBasisCurrency("CHF");
+    usdToChfAt("0.90", "90.0000");
+
+    AccountPositionResponse position = read().positions().get(0);
+
+    assertThat(position.unrealisedGain()).isEqualByComparingTo("20");
+    assertThat(position.unrealisedGainCurrency()).isEqualTo("CHF");
+    assertThat(position.unrealisedGainInAccountCurrency()).isEqualByComparingTo("20");
+    assertThat(position.unrealisedGainInAccountCurrencyPercent()).isEqualByComparingTo("28.57");
+  }
+
+  // PO 2026-11-23: the cost at the purchase-date rate gives the CHF gain beside the USD one; it
+  // includes the FX change since purchase, which today's rate would leave out.
+  @Test
+  void theCostAtThePurchaseRateGivesTheAccountCurrencyGainBesideTheSecurityCurrencyGain() {
+    allowedDepot("CHF");
+    holding("Vanguard Total World", "100", "USD", "75")
+        .setCostBasisInAccountCurrency(new BigDecimal("72.0000"));
+    usdToChfAt("0.90", "90.0000");
+
+    AccountPositionResponse position = read().positions().get(0);
+
+    assertThat(position.unrealisedGain()).isEqualByComparingTo("25");
+    assertThat(position.unrealisedGainCurrency()).isEqualTo("USD");
+    assertThat(position.costBasisInAccountCurrency()).isEqualByComparingTo("72");
+    assertThat(position.unrealisedGainInAccountCurrency()).isEqualByComparingTo("18");
+    assertThat(position.unrealisedGainInAccountCurrencyPercent()).isEqualByComparingTo("25.00");
+  }
+
+  // #527 AC 3: a cost basis of unknown currency (rows before V125) has no gain at all.
+  @Test
+  void aCostBasisOfUnknownCurrencyHasNoGain() {
+    allowedDepot("CHF");
+    holding("Vanguard Total World", "100", "USD", "75").setReportedCostBasisCurrency(null);
+    usdToChfAt("0.90", "90.0000");
+
+    AccountPositionResponse position = read().positions().get(0);
+
     assertThat(position.costBasis()).isEqualByComparingTo("75");
+    assertThat(position.costBasisCurrency()).isNull();
     assertThat(position.unrealisedGain()).isNull();
     assertThat(position.unrealisedGainPercent()).isNull();
+    assertThat(position.unrealisedGainCurrency()).isNull();
+    assertThat(position.unrealisedGainInAccountCurrency()).isNull();
+  }
+
+  // #527 AC 5: no gain mixes two currencies - a cost basis in a third currency is neither
+  // compared with the USD value nor with the CHF one.
+  @Test
+  void aCostBasisInAThirdCurrencyIsNeverComparedWithAValueInAnother() {
+    allowedDepot("CHF");
+    holding("Vanguard Total World", "100", "USD", "75").setReportedCostBasisCurrency("EUR");
+    usdToChfAt("0.90", "90.0000");
+
+    AccountPositionResponse position = read().positions().get(0);
+
+    assertThat(position.unrealisedGain()).isNull();
+    assertThat(position.unrealisedGainCurrency()).isNull();
+    assertThat(position.unrealisedGainInAccountCurrency()).isNull();
   }
 
   @Test
@@ -354,6 +421,33 @@ class AccountPositionsServiceTest {
     assertThat(summary.foreignCurrencyCostBasisCount()).isEqualTo(1);
   }
 
+  // PO 2026-11-23 (#527): a foreign position counts towards the depot's gain with its cost at the
+  // purchase-date rate - its CHF value today minus that cost, never its USD gain converted today.
+  @Test
+  void aForeignPositionWithItsPurchaseRateCostCountsTowardsTheDepotGain() {
+    usdToChfAt("0.90", "90.0000");
+    statement(
+        reported(false, "0", "CHF"),
+        position("500", "CHF", "410"),
+        new Line(
+            accountId,
+            AS_OF,
+            false,
+            new BigDecimal("100"),
+            "USD",
+            true,
+            new BigDecimal("80"),
+            "USD",
+            new BigDecimal("72")));
+
+    ReportedAccountHoldings summary = summary();
+
+    // (500 - 410) + (90 - 72) = 108 of 482 cost = 22.41 %.
+    assertThat(summary.totalReturn()).isEqualByComparingTo("108");
+    assertThat(summary.totalReturnPercent()).isEqualByComparingTo("22.41");
+    assertThat(summary.foreignCurrencyCostBasisCount()).isNull();
+  }
+
   @Test
   void anUnknownValueKeepsThePositionsCountButNoGainOrCauses() {
     statement(reported(false, null, "CHF"), position("500", "CHF", null));
@@ -376,6 +470,12 @@ class AccountPositionsServiceTest {
 
   // --- Helpers ------------------------------------------------------------------------------
 
+  private void usdToChfAt(String rate, String converted) {
+    CurrencyConversionResult result = rate(rate, false);
+    when(fx.tryGetConversionRate("USD", "CHF", AS_OF, "ECB")).thenReturn(Optional.of(result));
+    when(fx.applyRate(any(), eq(result))).thenReturn(new BigDecimal(converted));
+  }
+
   private void allowedDepot(String currency) {
     Account account = mock(Account.class);
     when(accountLookup.findAccountOrThrow(accountId, actor)).thenReturn(account);
@@ -394,6 +494,8 @@ class AccountPositionsServiceTest {
     }
     if (costBasis != null) {
       holding.setReportedCostBasis(new BigDecimal(costBasis).setScale(4, RoundingMode.UNNECESSARY));
+      // #527: as the statement prints it, in the position's own currency unless a test says other.
+      holding.setReportedCostBasisCurrency(currency);
     }
     rows.add(holding);
     Security security = mock(Security.class);
@@ -449,6 +551,8 @@ class AccountPositionsServiceTest {
         value == null ? null : new BigDecimal(value),
         currency,
         false,
+        null,
+        null,
         null);
   }
 
@@ -460,7 +564,11 @@ class AccountPositionsServiceTest {
         new BigDecimal(value),
         currency,
         true,
-        costBasis == null ? null : new BigDecimal(costBasis));
+        costBasis == null ? null : new BigDecimal(costBasis),
+        // In the quoted currency: certain for a position in the account currency, without a
+        // purchase-rate cost for any other (#527).
+        costBasis == null ? null : currency,
+        null);
   }
 
   private record Line(
@@ -470,8 +578,20 @@ class AccountPositionsServiceTest {
       BigDecimal reportedValue,
       String reportedCurrency,
       boolean holding,
-      BigDecimal reportedCostBasis)
+      BigDecimal reportedCostBasis,
+      String reportedCostBasisCurrency,
+      BigDecimal costBasisInAccountCurrency)
       implements ReportedHoldingValue {
+
+    @Override
+    public String getReportedCostBasisCurrency() {
+      return reportedCostBasisCurrency;
+    }
+
+    @Override
+    public BigDecimal getCostBasisInAccountCurrency() {
+      return costBasisInAccountCurrency;
+    }
 
     @Override
     public boolean isHolding() {

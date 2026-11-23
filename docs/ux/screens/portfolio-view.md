@@ -123,10 +123,19 @@ Every row comes from `sections[].accounts[]` (`AccountRow`) and opens [Account d
 "{quantity} units · {isin}", `valueInAccountCurrency`, and `unrealisedGainPercent` as a
 signed % with gain/loss colour **plus sign**. `costBasisEstimated` adds "Estimated". Without
 a cost basis the % is "–" with the explanation "No cost basis yet" (M24, insufficient data).
-A holding in another currency than the depot (`priceCurrency` ≠ `currency`) has no gain either,
-even with a `costBasis`: the statement's cost basis has no currency of its own, so the server
-sends `null` rather than a figure that may mix currencies (FR-PERF-018). The % is then "–" with
-"Gain not available in {priceCurrency}".
+The gain shown is labelled with its own currency (#527):
+
+- `unrealisedGainInAccountCurrency` (+ its %) in the depot currency when the position's cost
+  there is known. This is the cost basis itself when it is in the depot currency, or
+  `costBasisInAccountCurrency` (the cost at the purchase-date rate). It matches the depot total
+  and includes the FX change since purchase.
+- Otherwise `unrealisedGain` (+ its %) in `unrealisedGainCurrency`, e.g. "+USD 25.00" in a CHF
+  depot for a USD cost basis.
+- A cost basis whose currency is unknown (rows from before #527), or is neither the price nor
+  the depot currency, has no gain: the % is "–" with "Cost basis currency unknown" (FR-PERF-018).
+
+The depot row counts the positions without a cost in the depot currency as
+`foreignCurrencyCostBasisCount`: "cost basis in {currency} missing for {count} positions".
 
 ### Value of a row
 

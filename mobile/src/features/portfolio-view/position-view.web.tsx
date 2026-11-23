@@ -12,6 +12,7 @@ import { useTheme } from '@/hooks/use-theme';
 import {
   PositionList,
   NoGainNote,
+  shownGain,
   usePositionLabel,
   type PositionViewProps,
 } from './position-list';
@@ -154,21 +155,7 @@ export function PositionView(props: PositionViewProps) {
             </td>
             <td style={{ ...cell, ...numeric }}>
               <View style={{ alignItems: 'flex-end', gap: Spacing.one }}>
-                {position.unrealisedGain != null ? (
-                  <Amount
-                    value={position.unrealisedGain}
-                    currency={currency}
-                    signRole="change"
-                    style={TypeScale.bodyMedium}
-                  />
-                ) : null}
-                <Figure
-                  value={position.unrealisedGainPercent}
-                  kind="percent"
-                  signRole="change"
-                  tone="gainLoss"
-                  style={TypeScale.caption}
-                />
+                <GainFigures position={position} currency={currency} />
                 <NoGainNote position={position} currency={currency} />
                 {position.costBasisEstimated ? (
                   <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
@@ -181,5 +168,29 @@ export function PositionView(props: PositionViewProps) {
         ))}
       </tbody>
     </table>
+  );
+}
+
+/** The gain amount in its own currency and its percentage (#527); "–" without a gain. */
+function GainFigures({ position, currency }: { position: Position; currency: string }) {
+  const gain = shownGain(position, currency);
+  return (
+    <>
+      {gain != null ? (
+        <Amount
+          value={gain.amount}
+          currency={gain.currency}
+          signRole="change"
+          style={TypeScale.bodyMedium}
+        />
+      ) : null}
+      <Figure
+        value={gain?.percent ?? null}
+        kind="percent"
+        signRole="change"
+        tone="gainLoss"
+        style={TypeScale.caption}
+      />
+    </>
   );
 }

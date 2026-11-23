@@ -776,6 +776,35 @@ class PortfolioViewControllerTest {
     assertThat(ambiguousBasis.totalReturnPercent()).isNull();
     assertThat(ambiguousBasis.missingCostBasisCount()).isNull();
     assertThat(ambiguousBasis.foreignCurrencyCostBasisCount()).isEqualTo(2);
+
+    // #527: a cost basis of unknown currency (before V125) has no gain either.
+    UUID older = seedSnapshot(depot, date.plusDays(2), "0", false);
+    holding(older, "500", "CHF", "410", null, null);
+
+    AccountRow unknownCurrency = getView(token, portfolio.id()).sections().get(0).accounts().get(0);
+    assertThat(unknownCurrency.totalReturn()).isNull();
+    assertThat(unknownCurrency.foreignCurrencyCostBasisCount()).isEqualTo(1);
+  }
+
+  // PO 2026-11-23 (#527): the USD positions count with their cost at the purchase-date rate -
+  // their CHF value today minus that cost - never with a USD gain converted at today's rate.
+  @Test
+  void foreignPositionsCountWithTheirCostAtThePurchaseRate() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse portfolio = createPortfolio(token, "Investment", "CHF");
+    UUID depot = investmentAccount(token, portfolio, "SECURITIES");
+    LocalDate date = today().minusDays(2);
+    seedFxRate("USD", "CHF", "0.9", date);
+    UUID snapshot = seedSnapshot(depot, date, "0", false);
+    holding(snapshot, "500", "CHF", "410");
+    holding(snapshot, "300", "USD", "250", "USD", "240");
+
+    AccountRow row = getView(token, portfolio.id()).sections().get(0).accounts().get(0);
+
+    // (500 - 410) + (270 - 240) = 120 of 650 cost = 18.46 %.
+    assertThat(row.totalReturn()).isEqualByComparingTo("120");
+    assertThat(row.totalReturnPercent()).isEqualByComparingTo("18.46");
+    assertThat(row.foreignCurrencyCostBasisCount()).isNull();
   }
 
   @Test
@@ -1462,7 +1491,19 @@ class PortfolioViewControllerTest {
     holding(snapshotId, null, null, null);
   }
 
+  // #527: the cost basis is in the position's own currency, as a statement prints it.
   private void holding(UUID snapshotId, String value, String currency, String costBasis)
+      throws Exception {
+    holding(snapshotId, value, currency, costBasis, costBasis == null ? null : currency, null);
+  }
+
+  private void holding(
+      UUID snapshotId,
+      String value,
+      String currency,
+      String costBasis,
+      String costBasisCurrency,
+      String costBasisInAccountCurrency)
       throws Exception {
     UUID security = UUID.randomUUID();
     execute(
@@ -1472,12 +1513,15 @@ class PortfolioViewControllerTest {
         security);
     execute(
         "INSERT INTO snapshot_holding (snapshot_id, security_id, quantity, reported_value,"
-            + " reported_currency, reported_cost_basis) VALUES (?, ?, 1, ?, ?, ?)",
+            + " reported_currency, reported_cost_basis, reported_cost_basis_currency,"
+            + " cost_basis_in_account_currency) VALUES (?, ?, 1, ?, ?, ?, ?, ?)",
         snapshotId,
         security,
         value == null ? null : new BigDecimal(value),
         currency,
-        costBasis == null ? null : new BigDecimal(costBasis));
+        costBasis == null ? null : new BigDecimal(costBasis),
+        costBasisCurrency,
+        costBasisInAccountCurrency == null ? null : new BigDecimal(costBasisInAccountCurrency));
   }
 
   // A second workspace, created directly: V19's trigger gives it its Personal Assets portfolio.

@@ -12,7 +12,9 @@ import com.trackmywealth.backend.entity.AccountSnapshot;
 import com.trackmywealth.backend.entity.Security;
 import com.trackmywealth.backend.entity.SnapshotForeignCash;
 import com.trackmywealth.backend.entity.SnapshotHolding;
+import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ExistingResourceConflictException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.SecurityRepository;
 import com.trackmywealth.backend.repository.SnapshotForeignCashRepository;
@@ -24,6 +26,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -32,6 +35,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -129,6 +133,8 @@ public class AccountSnapshotService {
             request.holdings(),
             request.foreignCashBalances(),
             currency);
+    List<String> costBasisCurrencies =
+        costBasisCurrencies(request.holdings(), securities, currency);
 
     snapshotRepository
         .findByAccountIdAndSnapshotDateAndSourceAndWithdrawnAtIsNull(
@@ -158,7 +164,8 @@ public class AccountSnapshotService {
     // from GlobalExceptionHandler, rather than at commit.
     snapshot = snapshotRepository.saveAndFlush(snapshot);
 
-    List<SnapshotHolding> holdings = saveHoldings(snapshot.getId(), request.holdings());
+    List<SnapshotHolding> holdings =
+        saveHoldings(snapshot.getId(), request.holdings(), costBasisCurrencies);
     List<SnapshotForeignCash> cash = saveCash(snapshot, request.foreignCashBalances());
     reconciliationService.reconcileLatest(account, actor.userId());
     return toResponse(snapshot, holdings, securities, cash);
@@ -205,6 +212,8 @@ public class AccountSnapshotService {
             request.holdings(),
             cashBalances,
             snapshot.getCurrency());
+    List<String> costBasisCurrencies =
+        costBasisCurrencies(request.holdings(), securities, snapshot.getCurrency());
 
     snapshot.setBalance(atScale(request.balance(), FxRateService.MONEY_SCALE));
     // TIMESTAMPTZ keeps microseconds; a Linux clock has nanoseconds. Truncate so this response
@@ -214,7 +223,8 @@ public class AccountSnapshotService {
     snapshot = snapshotRepository.saveAndFlush(snapshot);
 
     holdingRepository.deleteBySnapshotId(snapshotId);
-    List<SnapshotHolding> holdings = saveHoldings(snapshotId, request.holdings());
+    List<SnapshotHolding> holdings =
+        saveHoldings(snapshotId, request.holdings(), costBasisCurrencies);
     List<SnapshotForeignCash> cash = existingCash;
     if (replaceCash) {
       cashRepository.deleteBySnapshotId(snapshotId);
@@ -352,18 +362,79 @@ public class AccountSnapshotService {
     return securities;
   }
 
+  /**
+   * #527: the currency of each position's cost basis, in request order; null for a position without
+   * one. A cost basis without a currency is in the account currency when the security is in it (PO
+   * 2026-11-14); otherwise nothing is guessed.
+   *
+   * @throws ApiException 400 {@code VALIDATION_FAILED} naming {@code
+   *     holdings[i].reportedCostBasisCurrency} when the currency is missing and cannot default
+   * @throws ResponseStatusException 422 for a cost basis currency or account-currency cost without
+   *     a cost basis, or an account-currency cost beside a cost basis already in that currency
+   */
+  private static List<String> costBasisCurrencies(
+      List<SnapshotHoldingRequest> holdings, Map<UUID, Security> securities, String currency) {
+    List<String> currencies = new ArrayList<>(holdings.size());
+    List<Map<String, String>> missing = new ArrayList<>();
+    for (int index = 0; index < holdings.size(); index++) {
+      SnapshotHoldingRequest holding = holdings.get(index);
+      String given = holding.reportedCostBasisCurrency();
+      if (holding.reportedCostBasis() == null) {
+        if (given != null || holding.costBasisInAccountCurrency() != null) {
+          throw unprocessable(
+              "Report reportedCostBasisCurrency and costBasisInAccountCurrency only with"
+                  + " reportedCostBasis.");
+        }
+        currencies.add(null);
+        continue;
+      }
+      String resolved = given;
+      if (resolved == null
+          && currency.equals(securities.get(holding.securityId()).getDenominationCurrency())) {
+        resolved = currency;
+      }
+      if (resolved == null) {
+        missing.add(
+            Map.of(
+                "field",
+                "holdings[" + index + "].reportedCostBasisCurrency",
+                "message",
+                "Give the currency of the cost basis: the security is not in the account"
+                    + " currency."));
+      } else if (currency.equals(resolved) && holding.costBasisInAccountCurrency() != null) {
+        throw unprocessable(
+            "costBasisInAccountCurrency is only for a cost basis in another currency than the"
+                + " account's.");
+      }
+      currencies.add(resolved);
+    }
+    if (!missing.isEmpty()) {
+      ApiException exception =
+          new ApiException(
+              ProblemCode.VALIDATION_FAILED,
+              "A cost basis needs its currency unless the security is in the account currency.");
+      exception.getBody().setProperty("errors", missing);
+      throw exception;
+    }
+    return currencies;
+  }
+
   private List<SnapshotHolding> saveHoldings(
-      UUID snapshotId, List<SnapshotHoldingRequest> requests) {
+      UUID snapshotId, List<SnapshotHoldingRequest> requests, List<String> costBasisCurrencies) {
     List<SnapshotHolding> holdings =
-        requests.stream()
-            .map(
-                request -> {
+        IntStream.range(0, requests.size())
+            .mapToObj(
+                index -> {
+                  SnapshotHoldingRequest request = requests.get(index);
                   SnapshotHolding holding = new SnapshotHolding();
                   holding.setSnapshotId(snapshotId);
                   holding.setSecurityId(request.securityId());
                   holding.setQuantity(atScale(request.quantity(), QUANTITY_SCALE));
                   holding.setReportedCostBasis(
                       atScale(request.reportedCostBasis(), FxRateService.MONEY_SCALE));
+                  holding.setReportedCostBasisCurrency(costBasisCurrencies.get(index));
+                  holding.setCostBasisInAccountCurrency(
+                      atScale(request.costBasisInAccountCurrency(), FxRateService.MONEY_SCALE));
                   holding.setCostBasisEstimated(
                       Boolean.TRUE.equals(request.costBasisIsEstimated()));
                   holding.setReported(
@@ -413,6 +484,8 @@ public class AccountSnapshotService {
                       security.getDisplayName(),
                       holding.getQuantity(),
                       holding.getReportedCostBasis(),
+                      holding.getReportedCostBasisCurrency(),
+                      holding.getCostBasisInAccountCurrency(),
                       holding.isCostBasisEstimated(),
                       holding.getReportedPrice(),
                       holding.getReportedValue(),

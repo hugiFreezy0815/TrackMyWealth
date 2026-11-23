@@ -160,10 +160,11 @@ public class AccountPositionsService {
 
   /**
    * #440: one statement's positions count, its value in the account currency and the unrealised
-   * gain of its positions (statement cash excluded), from the same components as {@link
-   * #reportedValue}. Without a value there is no gain; a position without a known gain (no cost
-   * basis, or a cost basis whose currency is uncertain) leaves both gain figures null rather than a
-   * partial sum (FR-PERF-018), and is counted by cause.
+   * gain of its positions in the account currency (statement cash excluded), from the same
+   * components as {@link #reportedValue}. Without a value there is no gain; a position without a
+   * known account-currency gain (no cost basis, or no cost in the account currency: unknown
+   * currency, or a foreign cost without its purchase-rate cost, #527) leaves both gain figures null
+   * rather than a partial sum (FR-PERF-018), and is counted by cause.
    */
   ReportedAccountHoldings summary(
       List<ReportedHoldingValue> components,
@@ -182,21 +183,29 @@ public class AccountPositionsService {
     int foreignBasis = 0;
     for (ReportedHoldingValue holding : holdings) {
       BigDecimal costBasis = holding.getReportedCostBasis();
-      // Only a position reported in the account currency has a certain gain, so its reported
-      // value is already the value in the account currency.
-      BigDecimal gain =
-          unrealisedGain(
+      String from = holding.getReportedCurrency();
+      BigDecimal valueInAccountCurrency =
+          inAccountCurrency(
               holding.getReportedValue(),
-              holding.getReportedCurrency(),
+              from,
               accountCurrency,
-              costBasis);
+              rate(holding.getReportedValue(), from, accountCurrency, rates));
+      // The depot total sums account-currency gains only: a foreign cost basis counts once its
+      // cost at the purchase-date rate(s) is known (#527), never converted at today's rate.
+      BigDecimal accountCost =
+          accountCost(
+              costBasis,
+              holding.getReportedCostBasisCurrency(),
+              holding.getCostBasisInAccountCurrency(),
+              accountCurrency);
+      BigDecimal gain = difference(valueInAccountCurrency, accountCost);
       if (costBasis == null) {
         missingBasis++;
       } else if (gain == null) {
         foreignBasis++;
       } else {
         totalGain = totalGain.add(gain);
-        totalCostBasis = totalCostBasis.add(costBasis);
+        totalCostBasis = totalCostBasis.add(accountCost);
       }
     }
     boolean gainKnown = missingBasis == 0 && foreignBasis == 0;
@@ -221,10 +230,23 @@ public class AccountPositionsService {
     BigDecimal inAccountCurrency =
         inAccountCurrency(reported, reportedCurrency, accountCurrency, rate);
     BigDecimal costBasis = holding.getReportedCostBasis();
-    BigDecimal gain =
-        unrealisedGain(inAccountCurrency, reportedCurrency, accountCurrency, costBasis);
-    BigDecimal gainPercent =
-        gain == null || costBasis == null ? null : gainPercent(gain, costBasis);
+    String costCurrency = holding.getReportedCostBasisCurrency();
+
+    // The gain in the cost basis' own currency: against the account-currency value for a cost in
+    // the account currency, against the statement's value for a cost in the quoted currency.
+    String gainCurrency = null;
+    BigDecimal gain = null;
+    if (accountCurrency.equals(costCurrency)) {
+      gain = difference(inAccountCurrency, costBasis);
+      gainCurrency = accountCurrency;
+    } else if (costCurrency != null && costCurrency.equals(reportedCurrency)) {
+      gain = difference(reported, costBasis);
+      gainCurrency = reportedCurrency;
+    }
+    BigDecimal accountCost =
+        accountCost(
+            costBasis, costCurrency, holding.getCostBasisInAccountCurrency(), accountCurrency);
+    BigDecimal accountGain = difference(inAccountCurrency, accountCost);
 
     ValueStatus status = status(inAccountCurrency, rate, holding.isCostBasisEstimated());
     return new AccountPositionResponse(
@@ -237,30 +259,40 @@ public class AccountPositionsService {
         reported,
         inAccountCurrency,
         costBasis,
+        costCurrency,
+        holding.getCostBasisInAccountCurrency(),
         holding.isCostBasisEstimated(),
         gain,
-        gainPercent,
+        gain == null ? null : gainPercent(gain, costBasis),
+        gain == null ? null : gainCurrency,
+        accountGain,
+        accountGain == null ? null : gainPercent(accountGain, accountCost),
         status);
   }
 
   /**
-   * The reported cost basis carries no currency of its own (V11): a statement may print it in the
-   * security's or in the account's currency. Only when both are the same is the gain certain;
-   * otherwise there is no figure rather than a wrong one (FR-PERF-018).
+   * #527: the position's cost in the account currency - its cost basis when that is in the account
+   * currency, else the reported cost at the purchase-date rate(s); null when neither is known. A
+   * cost basis of unknown currency (older rows) has none (FR-PERF-018).
    */
-  private static @Nullable BigDecimal unrealisedGain(
-      @Nullable BigDecimal valueInAccountCurrency,
-      @Nullable String reportedCurrency,
-      String accountCurrency,
-      @Nullable BigDecimal costBasis) {
-    if (valueInAccountCurrency == null
-        || costBasis == null
-        || !accountCurrency.equals(reportedCurrency)) {
+  private static @Nullable BigDecimal accountCost(
+      @Nullable BigDecimal costBasis,
+      @Nullable String costBasisCurrency,
+      @Nullable BigDecimal costBasisInAccountCurrency,
+      String accountCurrency) {
+    if (costBasis == null || costBasisCurrency == null) {
       return null;
     }
-    return valueInAccountCurrency
-        .subtract(costBasis)
-        .setScale(FxRateService.MONEY_SCALE, RoundingMode.HALF_UP);
+    return accountCurrency.equals(costBasisCurrency) ? costBasis : costBasisInAccountCurrency;
+  }
+
+  /** Value minus cost, both in one currency; null when either is unknown. */
+  private static @Nullable BigDecimal difference(
+      @Nullable BigDecimal value, @Nullable BigDecimal cost) {
+    if (value == null || cost == null) {
+      return null;
+    }
+    return value.subtract(cost).setScale(FxRateService.MONEY_SCALE, RoundingMode.HALF_UP);
   }
 
   private static @Nullable BigDecimal gainPercent(BigDecimal gain, BigDecimal costBasis) {

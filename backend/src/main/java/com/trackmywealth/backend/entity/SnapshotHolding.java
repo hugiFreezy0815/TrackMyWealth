@@ -13,10 +13,10 @@ import org.hibernate.type.SqlTypes;
 
 /**
  * Maps {@code snapshot_holding} (V11, V33): one reported position of an {@link AccountSnapshot}. At
- * most one line per security per snapshot (V33). {@code reportedCostBasis} is the total cost in the
- * snapshot's currency (the account's native currency), and may be missing: transferred-in positions
- * often arrive without one (FR-REC-008). An imported holding (#273) also keeps the price and value
- * its statement printed, in the currency it printed them in.
+ * most one line per security per snapshot (V33). {@code reportedCostBasis} is the total cost in
+ * {@code reportedCostBasisCurrency} (#527; null when unknown), and may be missing: transferred-in
+ * positions often arrive without one (FR-REC-008). An imported holding (#273) also keeps the price
+ * and value its statement printed, in the currency it printed them in.
  *
  * <p>Not RLS-protected itself (V20): isolation is inherited through {@code snapshot_id}, and it is
  * only ever read by the id of a snapshot already loaded under the caller's workspace. The ids are
@@ -47,6 +47,15 @@ public class SnapshotHolding {
 
   @Column(name = "cost_basis_is_estimated", nullable = false)
   private boolean costBasisEstimated;
+
+  // #527: the currency reportedCostBasis is in (null = unknown, so no gain), and the cost in the
+  // account currency at the purchase-date rate(s) for a cost basis in another currency (V125).
+  @JdbcTypeCode(SqlTypes.CHAR)
+  @Column(name = "reported_cost_basis_currency", length = 3)
+  private String reportedCostBasisCurrency;
+
+  @Column(name = "cost_basis_in_account_currency")
+  private BigDecimal costBasisInAccountCurrency;
 
   // V98 (#273): what an imported statement printed for the position, in its own currency; all
   // null for a holding entered by hand.
@@ -99,6 +108,22 @@ public class SnapshotHolding {
 
   public void setReportedCostBasis(BigDecimal reportedCostBasis) {
     this.reportedCostBasis = reportedCostBasis;
+  }
+
+  public String getReportedCostBasisCurrency() {
+    return reportedCostBasisCurrency;
+  }
+
+  public void setReportedCostBasisCurrency(String reportedCostBasisCurrency) {
+    this.reportedCostBasisCurrency = reportedCostBasisCurrency;
+  }
+
+  public BigDecimal getCostBasisInAccountCurrency() {
+    return costBasisInAccountCurrency;
+  }
+
+  public void setCostBasisInAccountCurrency(BigDecimal costBasisInAccountCurrency) {
+    this.costBasisInAccountCurrency = costBasisInAccountCurrency;
   }
 
   public boolean isCostBasisEstimated() {

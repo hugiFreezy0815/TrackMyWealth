@@ -120,7 +120,10 @@ function HoldingsReturn({ account }: { account: PortfolioAccount }) {
   }
   if (account.foreignCurrencyCostBasisCount != null) {
     reasons.push(
-      msg(intl, 'portfolio.gain.foreignBasis', { count: account.foreignCurrencyCostBasisCount }),
+      msg(intl, 'portfolio.gain.foreignBasis', {
+        count: account.foreignCurrencyCostBasisCount,
+        currency: account.currency,
+      }),
     );
   }
   if (reasons.length === 0) return null;
