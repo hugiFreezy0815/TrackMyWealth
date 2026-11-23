@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { within } from '@testing-library/react-native';
-import { Stack } from 'expo-router';
 import { fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import { useEffect } from 'react';
 import { Platform, Pressable, Text, View, useWindowDimensions } from 'react-native';
 
 import { collectionPage } from '@/api/collection-page.fixture';
@@ -9,6 +9,7 @@ import { typedApi } from '@/api/typed-api';
 import AccountDetailRoute from '@/app/accounts/[accountId]';
 import TransactionDetailRoute from '@/app/accounts/[accountId]/transactions/[transactionId]';
 import { createdAccount } from '@/features/add-flow/test-fixtures';
+import { AppShell } from '@/features/shell/app-shell';
 import type { Repayment } from '@/features/liability-detail/queries';
 import type { TransactionDetailProps } from '@/features/transaction-detail/transaction-detail';
 import { withIntl } from '@/i18n/test-utils';
@@ -19,7 +20,10 @@ jest.mock('@/global.css', () => ({}));
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn() }));
 jest.mock('expo-image', () => ({ Image: 'Image' }));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
-jest.mock('expo-secure-store', () => ({}));
+jest.mock('expo-secure-store', () => ({ getItemAsync: jest.fn(async () => null) }));
+jest.mock('@/features/privacy/screen-protection', () => ({
+  useAppSwitcherProtection: jest.fn(),
+}));
 jest.mock('@/features/auth/use-identity', () => ({ useIdentity: () => null }));
 jest.mock('@/api/typed-api', () => ({ typedApi: { get: jest.fn() } }));
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
@@ -70,10 +74,23 @@ const repayments: Repayment[] = Array.from({ length: 4 }, (_, index) => ({
   createdAt: '2026-10-01T00:00:00Z',
 }));
 
-function renderRoute(initialUrl: string, os: typeof Platform.OS) {
+const accountRouteMounted = jest.fn();
+
+function AccountRouteWithMountProbe() {
+  useEffect(() => {
+    accountRouteMounted();
+  }, []);
+  return <AccountDetailRoute />;
+}
+
+function renderRoute(
+  initialUrl: string,
+  os: typeof Platform.OS,
+  width = os === 'web' ? 1280 : 390,
+) {
   Platform.OS = os;
   jest.mocked(useWindowDimensions).mockReturnValue({
-    width: os === 'web' ? 1280 : 390,
+    width,
     height: 800,
     scale: 1,
     fontScale: 1,
@@ -86,10 +103,10 @@ function renderRoute(initialUrl: string, os: typeof Platform.OS) {
       _layout: () =>
         withIntl(
           <QueryClientProvider client={client}>
-            <Stack screenOptions={{ headerShown: false, animation: 'none' }} />
+            <AppShell identity={null} />
           </QueryClientProvider>,
         ),
-      'accounts/[accountId]/index': AccountDetailRoute,
+      'accounts/[accountId]/index': AccountRouteWithMountProbe,
       'accounts/[accountId]/transactions/[transactionId]': TransactionDetailRoute,
       overview: () => null,
     },
@@ -98,6 +115,7 @@ function renderRoute(initialUrl: string, os: typeof Platform.OS) {
 }
 
 beforeEach(() => {
+  accountRouteMounted.mockClear();
   const read = async (
     path: string,
     options?: { params?: { accountId?: string }; query?: { size?: number } },
@@ -158,17 +176,23 @@ it.each([loanPath, loanTransactionPath])(
   },
 );
 
-it('dismisses a native repayment transaction back to the expanded loan history', async () => {
-  const view = await renderRoute(loanPath, 'ios');
+it.each(['ios', 'web'] as const)(
+  'restores the expanded loan history after Back at phone width on %s',
+  async (os) => {
+    const view = await renderRoute(loanPath, os, 390);
 
-  await openPayingTransaction();
-  expect(view.getPathname()).toBe(payingTransactionPath);
-  await fireEvent.press(screen.getByRole('button', { name: 'Back from transaction' }));
+    await openPayingTransaction();
+    expect(view.getPathname()).toBe(payingTransactionPath);
+    expect(accountRouteMounted).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('account-detail')).toBeNull();
+    await fireEvent.press(screen.getByRole('button', { name: 'Back from transaction' }));
 
-  await waitFor(() => expect(view.getPathname()).toBe(loanPath));
-  expect(await screen.findByRole('button', { name: 'Show recent repayments' })).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Debt repayment' })).toBeTruthy();
-});
+    await waitFor(() => expect(view.getPathname()).toBe(loanPath));
+    expect(await screen.findByRole('button', { name: 'Show recent repayments' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Debt repayment' })).toBeTruthy();
+    expect(accountRouteMounted).toHaveBeenCalledTimes(2);
+  },
+);
 
 it('uses the paying account when a native transaction link has no repayment origin', async () => {
   const view = await renderRoute(payingTransactionPath, 'ios');

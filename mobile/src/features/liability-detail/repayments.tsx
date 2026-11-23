@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useIntl } from 'react-intl';
 import { View } from 'react-native';
 
@@ -19,6 +18,7 @@ import { useTheme } from '@/hooks/use-theme';
 
 import { LiabilityBadge, LiabilityLink, LiabilityPanel } from './panel';
 import { type Repayment, useRecentRepayments, useRepaymentHistory } from './queries';
+import { useRepaymentHistoryView } from './repayment-history-view';
 
 export type OpenRepaymentTransaction = (id: string, accountId: string) => void;
 
@@ -31,7 +31,8 @@ export function RepaymentsPanel({
 }) {
   const intl = useIntl();
   const online = useOnline();
-  const [showAll, setShowAll] = useState(false);
+  const { view, setView } = useRepaymentHistoryView(accountId);
+  const { showAll, expandedIds } = view;
   const recent = useRecentRepayments(accountId);
   const history = useRepaymentHistory(accountId, showAll);
   const query = showAll ? history : recent;
@@ -51,7 +52,14 @@ export function RepaymentsPanel({
         <LiabilityLink
           label={msg(intl, showAll ? 'loan.showRecent' : 'loan.seeAll')}
           expanded={showAll}
-          onPress={() => setShowAll(!showAll)}
+          onPress={() =>
+            setView({
+              showAll: !showAll,
+              expandedIds: showAll
+                ? expandedIds.filter((id) => recent.data?.content.some((row) => row.id === id))
+                : expandedIds,
+            })
+          }
         />
       ) : null}
       {error ? (
@@ -69,9 +77,25 @@ export function RepaymentsPanel({
       ) : null}
       <RefreshingIndicator active={query.isRefetching || (showAll && history.isFetchingNextPage)} />
       {showAll && rows?.length === 0 ? <InfoText>{msg(intl, 'loan.noRepayments')}</InfoText> : null}
-      {rows?.map((repayment) => (
-        <RepaymentRow key={repayment.id} repayment={repayment} onTransaction={onTransaction} />
-      ))}
+      {rows?.map((repayment) => {
+        const expanded = expandedIds.includes(repayment.id);
+        return (
+          <RepaymentRow
+            key={repayment.id}
+            repayment={repayment}
+            onTransaction={onTransaction}
+            expanded={expanded}
+            onToggle={() =>
+              setView({
+                showAll,
+                expandedIds: expanded
+                  ? expandedIds.filter((id) => id !== repayment.id)
+                  : [...expandedIds, repayment.id],
+              })
+            }
+          />
+        );
+      })}
       {showAll && !accessError && history.hasNextPage && !history.isFetchNextPageError ? (
         <ActionButton
           label={msg(intl, 'account.loadMore')}
@@ -86,13 +110,16 @@ export function RepaymentsPanel({
 function RepaymentRow({
   repayment,
   onTransaction,
+  expanded,
+  onToggle,
 }: {
   repayment: Repayment;
   onTransaction?: OpenRepaymentTransaction;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
   const intl = useIntl();
   const theme = useTheme();
-  const [expanded, setExpanded] = useState(false);
   const { currency, amount, bookingDate, principalAmount, interestAmount } = repayment;
   const date = formatDate(bookingDate, intl.locale);
   const principal = <Amount key="principal" value={principalAmount} currency={currency} />;
@@ -155,7 +182,7 @@ function RepaymentRow({
           <LiabilityLink
             label={msg(intl, 'loan.repaymentTransactions', { date })}
             expanded={expanded}
-            onPress={() => setExpanded(!expanded)}
+            onPress={onToggle}
           />
           {expanded
             ? transactions.map((transaction) => (
