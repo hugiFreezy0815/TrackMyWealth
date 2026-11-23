@@ -71,14 +71,21 @@ The tracks are a suggestion; any story may be picked by whoever is free. Capacit
 sprint 7: two frontend developers plus backend. The committed frontend work is about 12 days, which
 leaves room to pull a sprint-9 story forward (the PO decides).
 
+## PO answers (2026-11-23)
+
+- **Who picks the account in #365/#702:** the server routes a file only when it can name the account
+  for certain. If it cannot, the member decides: they pick from the candidates or create a new
+  account.
+  - "Change account" discards the batch and uploads the file again to the chosen account (no new
+    endpoint).
+  - #364 (move a batch in one call) is the next step after this sprint and stays unscheduled for
+    now.
+- **#527:** option 1 approved (store the cost basis currency, M).
+
 ## Open PO points
 
-- **"Change account" in #702:** recommended = discard the batch and upload it again to the chosen
-  account (no new endpoint). #364 (move a batch) would make this one call; it stays unscheduled
-  unless the PO pulls it in.
-- **Frame review of #680–#683:** needed before the UI stories close.
-- **#527:** option 1 (store the currency, M) is assumed in the plan, after the PO comment of
-  2026-11-14; confirm if a smaller option is wanted.
+- **Frame review of #680–#683:** all frames are drawn (EN + DE, light and dark). Each issue has a
+  "Ready for PO review" comment with its node IDs. The UI stories close only after the review.
 
 ## Risks
 
