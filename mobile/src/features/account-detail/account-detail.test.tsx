@@ -292,6 +292,19 @@ describe('S3 account detail updates (#690)', () => {
     ).toBeTruthy();
   });
 
+  it('gives a purpose-only title the two-line purpose preview', async () => {
+    const purpose = 'Card payment for synthetic reference 402100000000';
+    fakeServer(summary(), [txn(0, { counterpartyName: null, merchantDescription: purpose })]);
+    await renderDetail();
+    expect(await screen.findByText(purpose)).toHaveProp('numberOfLines', 2);
+  });
+
+  it('keeps a counterparty title on one line', async () => {
+    fakeServer(summary(), [txn(0, { counterpartyName: 'Shop', merchantDescription: 'Purpose' })]);
+    await renderDetail();
+    expect(await screen.findByText('Shop')).toHaveProp('numberOfLines', 1);
+  });
+
   it('hides transaction direction when amounts are hidden', async () => {
     jest.mocked(useAmountsHidden).mockReturnValue(true);
     try {

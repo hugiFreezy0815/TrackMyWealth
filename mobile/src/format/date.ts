@@ -75,7 +75,8 @@ export function formatInstantDate(timestamp: string, locale: string): string {
   return dateText(instant, locale);
 }
 
-const localDay = (day: Date) =>
+/** The device-local calendar day as YYYY-MM-DD. */
+export const localDay = (day: Date) =>
   [
     day.getFullYear(),
     String(day.getMonth() + 1).padStart(2, '0'),

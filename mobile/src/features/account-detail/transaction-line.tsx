@@ -102,7 +102,15 @@ export function TransactionLine({
           alignItems: 'center',
         }}
       >
-        <View style={{ flexBasis: 68, flexShrink: 1, flexDirection: 'row', gap: Spacing.one }}>
+        <View
+          // Full dates ("01.10.2026") under the amount sort need more room than day labels.
+          style={{
+            flexBasis: byDate ? 68 : 96,
+            flexShrink: 1,
+            flexDirection: 'row',
+            gap: Spacing.one,
+          }}
+        >
           <Text style={{ ...muted, flexShrink: 1 }}>{day}</Text>
           {direction ? (
             <Text style={muted} aria-hidden>
@@ -112,7 +120,8 @@ export function TransactionLine({
         </View>
         <View style={{ flex: 1, gap: Spacing.one }}>
           <Text
-            numberOfLines={1}
+            numberOfLines={view.titleIsPurpose ? 2 : 1}
+            ellipsizeMode="tail"
             style={{ ...TypeScale.bodyMedium, color: theme.textPrimary, fontWeight: '600' }}
           >
             {view.title}

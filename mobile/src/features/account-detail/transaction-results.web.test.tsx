@@ -146,6 +146,7 @@ describe('S3 web table growth with Load more (#494)', () => {
     },
     selected: false,
     byDate: true,
+    today: '2026-11-09',
     onOpen: open,
     onCategory: pick,
     ...other,
@@ -174,5 +175,10 @@ describe('S3 web table growth with Load more (#494)', () => {
     expect(sameRow(before, { ...before, context: { ...before.context, archived: true } })).toBe(
       false,
     );
+  });
+
+  it('re-renders a row at midnight so "Today" becomes "Yesterday"', () => {
+    const before = props(page0[3], page0);
+    expect(sameRow(before, { ...before, today: '2026-11-10' })).toBe(false);
   });
 });

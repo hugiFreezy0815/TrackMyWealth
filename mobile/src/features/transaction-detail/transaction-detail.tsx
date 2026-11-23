@@ -754,7 +754,7 @@ export function TransactionDetail({
           ref={detailHeading}
           accessibilityRole="header"
           tabIndex={-1}
-          selectable={false}
+          selectable={Platform.OS === 'web'}
           style={{ ...TypeScale.headingMedium, color: theme.textPrimary }}
         >
           {name}
@@ -816,7 +816,10 @@ export function TransactionDetail({
         {purpose && !purposeInHeading ? (
           <View style={{ gap: Spacing.one }}>
             <DetailLabel>{intl.formatMessage({ id: 'txn.purpose' })}</DetailLabel>
-            <Text selectable={false} style={{ ...TypeScale.bodyMedium, color: theme.textPrimary }}>
+            <Text
+              selectable={Platform.OS === 'web'}
+              style={{ ...TypeScale.bodyMedium, color: theme.textPrimary }}
+            >
               {purpose}
             </Text>
             {copyPurposeButton}

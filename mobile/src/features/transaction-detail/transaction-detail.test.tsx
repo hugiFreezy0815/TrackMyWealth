@@ -260,6 +260,27 @@ describe('S4 transaction detail', () => {
     },
   );
 
+  it.each([
+    ['heading', null],
+    ['purpose field', 'Synthetic counterparty'],
+  ] as const)(
+    'keeps the purpose selectable on web in the %s',
+    async (_location, counterpartyName) => {
+      const platform = jest.replaceProperty(Platform, 'OS', 'web');
+      try {
+        const purpose = 'Synthetic purpose\nPayment reference TEST-4021';
+        fixtures({ ...base, counterpartyName, merchantDescription: purpose });
+        await show();
+        expect(screen.getByText(purpose, { normalizer: (value) => value })).toHaveProp(
+          'selectable',
+          true,
+        );
+      } finally {
+        platform.restore();
+      }
+    },
+  );
+
   it('reports a clipboard failure without including the purpose in the toast', async () => {
     jest.mocked(setStringAsync).mockRejectedValueOnce(new Error('Clipboard unavailable'));
     await show();

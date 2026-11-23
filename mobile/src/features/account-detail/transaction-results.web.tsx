@@ -7,6 +7,7 @@ import { Fonts } from '@/constants/theme';
 import { layoutFor } from '@/features/shell/navigation';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { formatBookingDay, formatBookingMonth, formatDate } from '@/format/date';
+import { useLocalDay } from '@/hooks/use-local-day';
 import { useTheme } from '@/hooks/use-theme';
 
 import {
@@ -61,6 +62,8 @@ function TransactionTable({
 }: TransactionResultsProps) {
   const intl = useIntl();
   const theme = useTheme();
+  // Memoised rows re-render when the day changes, so their relative day labels stay current.
+  const today = useLocalDay();
   const headerStyle = {
     padding: '8px',
     color: theme.textSecondary,
@@ -127,6 +130,7 @@ function TransactionTable({
                   context={webContext}
                   selected={selectedTransactionId === transaction.id}
                   byDate={byDate}
+                  today={today}
                   onOpen={onOpen ? openRow : undefined}
                   onCategory={categoryRow}
                   onActions={onActions ? actionRow : undefined}
@@ -145,6 +149,8 @@ type TableRowProps = {
   context: RowContext;
   selected: boolean;
   byDate: boolean;
+  /** Local day (YYYY-MM-DD); a new day re-renders the row so "Today" moves on. */
+  today: string;
   onOpen?: (id: string) => void;
   onCategory: (transaction: Transaction) => void;
   onActions?: (transaction: Transaction) => void;
@@ -161,6 +167,7 @@ export function sameRow(prev: TableRowProps, next: TableRowProps): boolean {
     prev.transaction === next.transaction &&
     prev.selected === next.selected &&
     prev.byDate === next.byDate &&
+    prev.today === next.today &&
     prev.onActions === next.onActions &&
     prev.onOpen === next.onOpen &&
     prev.onCategory === next.onCategory &&

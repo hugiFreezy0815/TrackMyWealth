@@ -273,6 +273,8 @@ export type RowPresentation = {
   title: string;
   typeLabel: string;
   purpose: string | null;
+  /** No counterparty: the purpose is the title, so the title gets the two-line purpose preview. */
+  titleIsPurpose: boolean;
   categoryLabel: string | null;
   uncategorized: boolean;
   canCategorize: boolean;
@@ -323,6 +325,7 @@ export function presentTransaction(
     typeLabel,
     purpose:
       !row.reconciliationAdjustment && counterparty && purpose?.trim() !== title ? purpose : null,
+    titleIsPurpose: !row.reconciliationAdjustment && !counterparty && !!purpose?.trim(),
     categoryLabel,
     uncategorized,
     canCategorize:

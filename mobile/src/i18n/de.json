@@ -498,7 +498,7 @@
   "transactionType.PENSION_CONTRIBUTION": "Vorsorgeeinzahlung",
   "transactionType.CREDIT_CARD_PURCHASE": "Kartenzahlung",
   "transactionType.SETTLEMENT": "Kartenabrechnung",
-  "transactionType.VALUATION_ADJUSTMENT": "Auszugskorrektur",
+  "transactionType.VALUATION_ADJUSTMENT": "Auszugsanpassung",
   "transactionType.CORPORATE_ACTION": "Kapitalmaßnahme",
   "account.heading": "Kontodetails",
   "account.back": "Zurück zur Übersicht",
