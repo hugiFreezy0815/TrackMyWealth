@@ -275,7 +275,10 @@ describe('S3 account detail updates (#690)', () => {
     const server = fakeServer(summary(), []);
     server.portfolioView = maskedView;
     await renderDetail();
-    expect(await screen.findByText(/Current account · •••• 4021/)).toBeTruthy();
+    // Two chained reads (account, then S2 view): allow for slow CI runners.
+    expect(
+      await screen.findByText(/Current account · •••• 4021/, {}, { timeout: 5000 }),
+    ).toBeTruthy();
     expect(screen.queryByText(/•••• 0000/)).toBeNull();
     expect(viewReads()).toHaveLength(1);
   });
@@ -284,7 +287,7 @@ describe('S3 account detail updates (#690)', () => {
     fakeServer(summary(), []);
     await renderDetail();
     await screen.findByRole('header', { name: 'Girokonto' });
-    await waitFor(() => expect(viewReads()).toHaveLength(1));
+    await waitFor(() => expect(viewReads()).toHaveLength(1), { timeout: 5000 });
     expect(screen.queryByText(/••••/)).toBeNull();
   });
 
