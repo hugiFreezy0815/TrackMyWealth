@@ -113,7 +113,7 @@ export function AppShell({
               Without an identity after verification (server unreachable), the route shows
               ungated rather than locking the member out.
             */}
-            <RepaymentHistoryProvider>
+            <RepaymentHistoryProvider resetKey={identity?.userId}>
               <Navigator activityDefaultThreshold={1}>
                 {identity && !isAdministrator(identity) ? (
                   <OverviewSetupGate userId={identity.userId}>

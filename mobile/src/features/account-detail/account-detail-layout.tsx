@@ -45,7 +45,10 @@ export function AccountDetailLayout({
   const hasLiabilityPanels =
     desktop && summary && (summary.hasAmortisation || summary.hasStatementCycle);
   const [selection, setSelection] = useState<TransactionSelection | null>(null);
-  const selected = desktop && !accountUnavailable ? (selection ?? linkedTransaction) : undefined;
+  const current = desktop ? (selection ?? linkedTransaction) : undefined;
+  // Only a transaction on the unavailable account is hidden. A repayment's paying transaction lives
+  // on another account, which the member may still read.
+  const selected = accountUnavailable && current?.accountId === accountId ? undefined : current;
   const titleRef = useRef<ComponentRef<typeof Text>>(null);
   const panelFocus = usePanelFocusReturn(!!selection && !!selected, titleRef);
 
@@ -69,8 +72,10 @@ export function AccountDetailLayout({
     }
   };
   const openActivity = (transactionId: string) => {
-    if (desktop && !selection && linkedTransaction?.accountId === accountId) {
-      onRelatedLinkedTransaction?.(transactionId);
+    if (desktop && linkedTransaction?.accountId === accountId && onRelatedLinkedTransaction) {
+      // The URL owns the open transaction on this route, so Back in the panel closes it.
+      setSelection(null);
+      onRelatedLinkedTransaction(transactionId);
     } else {
       showTransaction(transactionId, accountId, false);
     }

@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { type InfiniteData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 
 import { ApiError } from '@/api/client';
 import { queryKeys } from '@/api/queries/keys';
@@ -25,6 +25,17 @@ function validPage<T extends { content: unknown[]; page: { number: number; total
   return response;
 }
 
+type SchedulePage = { content: ScheduleEntry[]; page: { number: number; totalPages: number } };
+
+function isComplete(pages: readonly SchedulePage[] | undefined) {
+  const last = pages?.at(-1)?.page;
+  return !!last && last.number + 1 >= last.totalPages;
+}
+
+/**
+ * Loads every schedule page. A refresh restarts the list at page 0, so the last complete schedule
+ * stays on screen until the reload has all its pages again (also while the reload is offline).
+ */
 export function useLoanSchedule(accountId: string) {
   const query = useInfiniteQuery({
     queryKey: queryKeys.amortisationSchedule(accountId),
@@ -38,10 +49,8 @@ export function useLoanSchedule(accountId: string) {
         }),
         pageParam,
       ),
-    getNextPageParam: ({ page }) => {
-      const next = page.number + 1;
-      return next < Math.min(page.totalPages, 3) ? next : undefined;
-    },
+    getNextPageParam: ({ page }) =>
+      page.number + 1 < page.totalPages ? page.number + 1 : undefined,
   });
   const { data, fetchNextPage, hasNextPage, fetchStatus, isError } = query;
   useEffect(() => {
@@ -49,7 +58,16 @@ export function useLoanSchedule(accountId: string) {
       void fetchNextPage({ cancelRefetch: false });
     }
   }, [data, fetchNextPage, hasNextPage, fetchStatus, isError]);
-  return query;
+
+  const [kept, setKept] = useState<{
+    accountId: string;
+    data: InfiniteData<SchedulePage>;
+  } | null>(null);
+  if (data && isComplete(data.pages) && kept?.data !== data) setKept({ accountId, data });
+  const refilling =
+    !isComplete(data?.pages) && !isError && kept?.accountId === accountId && query.isSuccess;
+  const pages = refilling ? kept.data.pages : data?.pages;
+  return { query, pages, complete: isComplete(pages) };
 }
 
 async function repayments(accountId: string, page: number, size: number, signal: AbortSignal) {

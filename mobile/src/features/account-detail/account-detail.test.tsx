@@ -7,6 +7,7 @@ import { Platform, StyleSheet } from 'react-native';
 
 import { ApiError, NetworkError, setRefreshHandler } from '@/api/client';
 import { typedApi } from '@/api/typed-api';
+import { invalidateFinancialData } from '@/api/queries/invalidation';
 import { queryKeys } from '@/api/queries/keys';
 import type { components } from '@/api/schema';
 import type { Repayment, ScheduleEntry } from '@/features/liability-detail/queries';
@@ -394,6 +395,68 @@ describe('S10 liability detail (#685)', () => {
     expect(pages).toEqual([0, 1, 1]);
   });
 
+  it('keeps the complete schedule on screen while a refresh reloads its later pages', async () => {
+    const server = fakeServer(summary({ hasAmortisation: true }), []);
+    server.schedulePages = [
+      [scheduleEntry('today', localDay(new Date()), '439.80')],
+      [scheduleEntry('final', '2099-01-01', '0.00')],
+    ];
+    const { client } = await renderDetail();
+    expect(await screen.findByText('Paid off on 1 Jan 2099')).toBeTruthy();
+
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.beforeRead = (path, options) =>
+      path === schedulePath && options.query?.page === 1 ? held : undefined;
+    await act(() => {
+      void invalidateFinancialData(client);
+    });
+    await waitFor(() =>
+      expect(
+        api.get.mock.calls.filter(
+          ([path, options]) =>
+            path === schedulePath && (options as { query: { page: number } }).query.page === 1,
+        ),
+      ).toHaveLength(2),
+    );
+    expect(
+      client.getQueryData<InfiniteData<unknown>>(queryKeys.amortisationSchedule('acc'))?.pages,
+    ).toHaveLength(1);
+    expect(screen.getByText('Paid off on 1 Jan 2099')).toBeTruthy();
+    expect(screen.queryByText(/Showing the first part/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Incomplete schedule/ })).toBeNull();
+
+    await act(async () => release());
+    await waitFor(() =>
+      expect(
+        client.getQueryData<InfiniteData<unknown>>(queryKeys.amortisationSchedule('acc'))?.pages,
+      ).toHaveLength(2),
+    );
+    expect(screen.getByText('Paid off on 1 Jan 2099')).toBeTruthy();
+  });
+
+  it('loads a schedule longer than three pages to its end', async () => {
+    const server = fakeServer(summary({ hasAmortisation: true }), []);
+    server.schedulePages = [
+      [scheduleEntry('today', localDay(new Date()), '1600.00')],
+      [scheduleEntry('p1', '2096-01-01', '1200.00')],
+      [scheduleEntry('p2', '2097-01-01', '800.00')],
+      [scheduleEntry('p3', '2098-01-01', '400.00')],
+      [scheduleEntry('final', '2099-01-01', '0.00')],
+    ];
+    await renderDetail();
+
+    expect(await screen.findByText('Paid off on 1 Jan 2099')).toBeTruthy();
+    expect(screen.queryByText(/Showing the first part/)).toBeNull();
+    expect(
+      api.get.mock.calls
+        .filter(([path]) => path === schedulePath)
+        .map(([, options]) => (options as { query: { page: number } }).query.page),
+    ).toEqual([0, 1, 2, 3, 4]);
+  });
+
   it('hides an earlier schedule page when a later request denies access', async () => {
     const server = fakeServer(summary({ hasAmortisation: true }), []);
     server.schedulePages = [
@@ -500,6 +563,38 @@ describe('S10 liability detail (#685)', () => {
       { page: 0, size: 50, sort: ['bookingDate,desc'] },
       { page: 1, size: 50, sort: ['bookingDate,desc'] },
     ]);
+  });
+
+  it('keeps Show recent repayments usable when the recent list loses access', async () => {
+    const server = fakeServer(summary({ nature: 'LIABILITY', hasAmortisation: true }), []);
+    server.repayments = Array.from({ length: 4 }, (_, index) =>
+      repayment(`r${index}`, `2026-10-0${4 - index}`),
+    );
+    const { client } = await renderDetail();
+    await fireEvent.press(await screen.findByRole('button', { name: 'See all' }));
+    expect(await screen.findByRole('button', { name: 'Show recent repayments' })).toBeTruthy();
+
+    let denied = true;
+    server.beforeRead = (path, options) => {
+      if (path === repaymentPath && options.query?.size === 3 && denied) {
+        throw new ApiError('forbidden', 403, {
+          status: 403,
+          title: 'Forbidden',
+          code: 'FORBIDDEN',
+        });
+      }
+    };
+    await act(() => client.refetchQueries({ queryKey: queryKeys.loanRepayments('acc', 3) }));
+    expect(await screen.findByText('You are not allowed to do this.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Show recent repayments' })).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Show recent repayments' }));
+    expect(screen.queryByRole('button', { name: 'Show recent repayments' })).toBeNull();
+
+    denied = false;
+    await act(() => client.refetchQueries({ queryKey: queryKeys.loanRepayments('acc', 3) }));
+    expect(await screen.findByRole('button', { name: 'See all' })).toBeTruthy();
+    expect(screen.queryByText('You are not allowed to do this.')).toBeNull();
   });
 
   it('shows the unpaid status and unknown statement amount as text and hides a revoked statement', async () => {

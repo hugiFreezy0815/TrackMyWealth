@@ -1,9 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { within } from '@testing-library/react-native';
-import { fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import { router } from 'expo-router';
+import { act, fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
 import { useEffect } from 'react';
 import { Platform, Pressable, Text, View, useWindowDimensions } from 'react-native';
 
+import { ApiError } from '@/api/client';
 import { collectionPage } from '@/api/collection-page.fixture';
 import { typedApi } from '@/api/typed-api';
 import AccountDetailRoute from '@/app/accounts/[accountId]';
@@ -74,6 +76,29 @@ const repayments: Repayment[] = Array.from({ length: 4 }, (_, index) => ({
   createdAt: '2026-10-01T00:00:00Z',
 }));
 
+const loanActivity = ['loan-payment', 'loan-fee'].map(
+  (id, index) =>
+    ({
+      ...transaction,
+      id,
+      accountId: 'loan',
+      bookingDate: `2026-09-0${index + 1}`,
+      transactionType: 'FEE',
+      merchantDescription: id === 'loan-fee' ? 'Loan fee' : 'Loan payment',
+      counterpartyName: null,
+      categoryId: null,
+      internalTransfer: false,
+      voidedAt: null,
+      replacesTransactionId: null,
+      correctsTransactionId: null,
+      reconciliationAdjustment: null,
+      amountInAccountCurrency: null,
+      fxRateEstimated: false,
+      warnings: [],
+      version: 0,
+    }) as Transaction,
+);
+
 const accountRouteMounted = jest.fn();
 
 function AccountRouteWithMountProbe() {
@@ -123,10 +148,11 @@ beforeEach(() => {
     const { params, query } = options ?? {};
     switch (path) {
       case '/api/v1/accounts/{accountId}':
+        if (params?.accountId === 'gone') throw new ApiError('not found', 404);
         return createdAccount({
           id: params?.accountId,
           name: params?.accountId === 'loan' ? 'Home loan' : 'Paying account',
-          hasTransactions: false,
+          hasTransactions: params?.accountId === 'loan',
           nature: params?.accountId === 'loan' ? 'LIABILITY' : 'ASSET',
           hasAmortisation: params?.accountId === 'loan',
         });
@@ -134,6 +160,10 @@ beforeEach(() => {
         const size = query?.size ?? 3;
         return collectionPage(repayments.slice(0, size), 0, size, repayments.length);
       }
+      case '/api/v1/accounts/{accountId}/transactions':
+        return params?.accountId === 'loan'
+          ? collectionPage(loanActivity, 0, 50, loanActivity.length)
+          : collectionPage([]);
       case '/api/v1/portfolios/{portfolioId}/view':
         return { sections: [] };
       default:
@@ -198,4 +228,38 @@ it('uses the paying account when a native transaction link has no repayment orig
   const view = await renderRoute(payingTransactionPath, 'ios');
   await fireEvent.press(await screen.findByRole('button', { name: 'Back from transaction' }));
   await waitFor(() => expect(view.getPathname()).toBe('/accounts/payer'));
+});
+
+it('shows the paying transaction on desktop when the repayment origin cannot be read', async () => {
+  await renderRoute(`${payingTransactionPath}?repaymentFromAccountId=gone`, 'web');
+  expect(await screen.findByText(/This account no longer exists/)).toBeTruthy();
+  const panel = within(screen.getByTestId('shell-detail-panel'));
+  expect(panel.getByText('payer/paying-payment')).toBeTruthy();
+});
+
+it('opens a loan activity row through the URL on the desktop transaction route', async () => {
+  const view = await renderRoute(loanTransactionPath, 'web');
+  const panel = within(await screen.findByTestId('shell-detail-panel'));
+  await openPayingTransaction(panel);
+
+  await fireEvent.press(await within(screen.getByTestId('account-detail')).findByText('Loan fee'));
+  await waitFor(() => expect(view.getPathname()).toBe('/accounts/loan/transactions/loan-fee'));
+  // The replaced route renders a new side column.
+  expect(await screen.findByText('loan/loan-fee')).toBeTruthy();
+  expect(screen.queryByText('payer/paying-payment')).toBeNull();
+  await fireEvent.press(screen.getByRole('button', { name: 'Back from transaction' }));
+  await waitFor(() => expect(view.getPathname()).toBe(loanPath));
+  expect(screen.queryByText(/^loan\/loan-/)).toBeNull();
+});
+
+it('opens the loan with recent repayments when it is reached other than by Back', async () => {
+  const view = await renderRoute(loanPath, 'ios', 390);
+  await openPayingTransaction();
+
+  await act(() => router.push('/overview'));
+  await waitFor(() => expect(view.getPathname()).toBe('/overview'));
+  await act(() => router.push(loanPath));
+  await waitFor(() => expect(view.getPathname()).toBe(loanPath));
+  expect(await screen.findByRole('button', { name: 'See all' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Show recent repayments' })).toBeNull();
 });

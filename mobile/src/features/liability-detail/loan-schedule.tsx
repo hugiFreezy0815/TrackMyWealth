@@ -24,11 +24,11 @@ import { type ScheduleEntry, useLoanSchedule } from './queries';
 
 export function LoanSchedulePanel({ accountId }: { accountId: string }) {
   const intl = useIntl();
-  const schedule = useLoanSchedule(accountId);
-  const pages = isAccessFailure(schedule.error) ? undefined : schedule.data?.pages;
+  const loaded = useLoanSchedule(accountId);
+  const schedule = loaded.query;
+  const pages = isAccessFailure(schedule.error) ? undefined : loaded.pages;
   const entries = pages?.flatMap(({ content }) => content) ?? [];
-  const lastPage = pages?.at(-1)?.page;
-  const complete = !!lastPage && lastPage.number + 1 >= lastPage.totalPages;
+  const complete = !!pages && loaded.complete;
   const today = localDay(new Date());
   const next = entries.find(({ dueDate }) => isValidIsoDate(dueDate) && dueDate >= today);
   const last = complete ? entries.at(-1) : undefined;

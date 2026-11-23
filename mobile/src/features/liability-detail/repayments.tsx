@@ -31,7 +31,7 @@ export function RepaymentsPanel({
 }) {
   const intl = useIntl();
   const online = useOnline();
-  const { view, setView } = useRepaymentHistoryView(accountId);
+  const { view, setView, saveForBack } = useRepaymentHistoryView(accountId);
   const { showAll, expandedIds } = view;
   const recent = useRecentRepayments(accountId);
   const history = useRepaymentHistory(accountId, showAll);
@@ -48,7 +48,8 @@ export function RepaymentsPanel({
   const canExpand = showAll || (recent.data?.page.totalPages ?? 0) > 1;
   return (
     <LiabilityPanel title={msg(intl, 'loan.repayments')}>
-      {canExpand && !accessError ? (
+      {/* With the full history open, the way back to the recent rows must survive an error. */}
+      {canExpand && (showAll || !accessError) ? (
         <LiabilityLink
           label={msg(intl, showAll ? 'loan.showRecent' : 'loan.seeAll')}
           expanded={showAll}
@@ -66,8 +67,12 @@ export function RepaymentsPanel({
         <ErrorBanner
           error={error}
           onRetry={() => {
+            // Retry the request that owns the error, also when the access error came from the
+            // other list.
+            if (recent.isError) void recent.refetch();
             if (showAll && history.isFetchNextPageError) void history.fetchNextPage();
-            else void query.refetch();
+            else if (showAll && history.isError) void history.refetch();
+            else if (!recent.isError) void query.refetch();
           }}
         />
       ) : null}
@@ -83,7 +88,13 @@ export function RepaymentsPanel({
           <RepaymentRow
             key={repayment.id}
             repayment={repayment}
-            onTransaction={onTransaction}
+            onTransaction={
+              onTransaction &&
+              ((id, transactionAccountId) => {
+                saveForBack();
+                onTransaction(id, transactionAccountId);
+              })
+            }
             expanded={expanded}
             onToggle={() =>
               setView({
