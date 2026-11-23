@@ -7,3 +7,14 @@
   --font-rounded: 'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif;
   --font-serif: Georgia, 'Times New Roman', serif;
 }
+
+@media (hover: hover) and (pointer: fine) {
+  .account-transaction-actions {
+    opacity: 0;
+  }
+
+  .account-transaction-row:hover .account-transaction-actions,
+  .account-transaction-row:focus-within .account-transaction-actions {
+    opacity: 1;
+  }
+}

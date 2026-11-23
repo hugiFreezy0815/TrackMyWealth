@@ -2,7 +2,8 @@ import type { IntlShape } from 'react-intl';
 
 import { labelFor } from '@/api/enum-label';
 import type { components } from '@/api/schema';
-import { formatDate, formatRelativeDay } from '@/format/date';
+import { formatDate } from '@/format/date';
+import { isPlainDecimal } from '@/format/decimal-parts';
 
 export type Transaction = components['schemas']['TransactionResponse'];
 export type Category = components['schemas']['CategoryResponse'];
@@ -147,28 +148,44 @@ export function categoryName(
   return parent ? `${german ? parent.nameDe : parent.nameEn} › ${name}` : name;
 }
 
-/** Sorting by amount is server-side; date headings would imply a chronology that is not there. */
+/** Preserve the server order, including amount sorts that have no month headings. */
 export function groupedTransactions(
   transactions: Transaction[],
   byDate: boolean,
-): { date: string | null; rows: Transaction[] }[] {
-  if (!byDate) return [{ date: null, rows: transactions }];
-  const groups: { date: string | null; rows: Transaction[] }[] = [];
+): { month: string | null; rows: Transaction[] }[] {
+  if (!byDate) return [{ month: null, rows: transactions }];
+  const groups: { month: string | null; rows: Transaction[] }[] = [];
   for (const transaction of transactions) {
+    const month = transaction.bookingDate.slice(0, 7);
     const last = groups[groups.length - 1];
-    if (last && last.date === transaction.bookingDate) last.rows.push(transaction);
-    else groups.push({ date: transaction.bookingDate, rows: [transaction] });
+    if (last?.month === month) last.rows.push(transaction);
+    else groups.push({ month, rows: [transaction] });
   }
   return groups;
 }
 
-/** "Today · 20 Oct 2026", "Yesterday · 19 Oct 2026", else just the date. */
-export function groupHeading(date: string, intl: Intl, today = new Date()): string {
-  const formatted = formatDate(date, intl.locale);
-  const relative = formatRelativeDay(date, intl, today);
-  return relative === formatted
-    ? formatted
-    : intl.formatMessage({ id: 'account.groupRelative' }, { day: relative, date: formatted });
+/** Use the exact ledger sign, even when the formatted amount rounds to zero. */
+export function transactionDirection(amount: Transaction['amount']) {
+  if (!isPlainDecimal(amount) || !/[1-9]/.test(amount)) return null;
+  return amount.startsWith('-')
+    ? { icon: '↗', messageId: 'account.outgoing' }
+    : { icon: '↙', messageId: 'account.incoming' };
+}
+
+export function transactionPurpose(transaction: Transaction): string | null {
+  const purpose = transaction.merchantDescription;
+  return typeof purpose === 'string' && purpose.trim() ? purpose : null;
+}
+
+export function transactionHeading(transaction: Transaction, intl: Intl): string {
+  if (transaction.reconciliationAdjustment) {
+    return intl.formatMessage({ id: 'transactionType.VALUATION_ADJUSTMENT' });
+  }
+  return (
+    transaction.counterpartyName?.trim() ||
+    transactionPurpose(transaction)?.trim() ||
+    transactionTypeLabel(transaction.transactionType, intl)
+  );
 }
 
 export function accountValuation(
@@ -255,8 +272,9 @@ export type RowContext = {
 export type RowPresentation = {
   title: string;
   typeLabel: string;
-  /** The counterparty when it differs from the title. */
-  counterparty: string | null;
+  purpose: string | null;
+  /** No counterparty: the purpose is the title, so the title gets the two-line purpose preview. */
+  titleIsPurpose: boolean;
   categoryLabel: string | null;
   uncategorized: boolean;
   canCategorize: boolean;
@@ -276,10 +294,9 @@ export function presentTransaction(
   const german = intl.locale.startsWith('de');
   const category = categoryFor(row, context.categories);
   const typeLabel = transactionTypeLabel(row.transactionType, intl);
-  const title = row.reconciliationAdjustment
-    ? intl.formatMessage({ id: 'transactionType.VALUATION_ADJUSTMENT' })
-    : row.merchantDescription?.trim() || row.counterpartyName?.trim() || typeLabel;
   const counterparty = row.counterpartyName?.trim() || null;
+  const purpose = transactionPurpose(row);
+  const title = transactionHeading(row, intl);
   const uncategorized = isUncategorized(row, context.categories);
   const categoryLabel = row.internalTransfer
     ? intl.formatMessage({ id: 'account.internalTransfer' })
@@ -306,12 +323,15 @@ export function presentTransaction(
   return {
     title,
     typeLabel,
-    counterparty: counterparty !== null && counterparty !== title ? counterparty : null,
+    purpose:
+      !row.reconciliationAdjustment && counterparty && purpose?.trim() !== title ? purpose : null,
+    titleIsPurpose: !row.reconciliationAdjustment && !counterparty && !!purpose?.trim(),
     categoryLabel,
     uncategorized,
     canCategorize:
       !context.archived &&
       !row.voidedAt &&
+      !row.deletedAt &&
       !row.internalTransfer &&
       !row.reconciliationAdjustment &&
       row.categoryId !== null,

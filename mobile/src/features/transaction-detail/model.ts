@@ -5,14 +5,6 @@ export type Transaction = components['schemas']['TransactionResponse'];
 export type Category = components['schemas']['CategoryResponse'];
 export type HistoryEntry = components['schemas']['TransactionHistoryEntryResponse'];
 
-export function transactionTitle(transaction: Transaction): string {
-  return transaction.reconciliationAdjustment
-    ? 'VALUATION_ADJUSTMENT'
-    : transaction.merchantDescription?.trim() ||
-        transaction.counterpartyName?.trim() ||
-        transaction.transactionType;
-}
-
 export function canChangeCategory(transaction: Transaction, archived: boolean): boolean {
   return (
     !archived &&

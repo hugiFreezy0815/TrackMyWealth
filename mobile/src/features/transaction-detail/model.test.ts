@@ -1,12 +1,6 @@
 // S4 acceptance: keep lifecycle and category rules independent of presentation.
 import type { Category, Transaction, HistoryEntry } from './model';
-import {
-  canChangeCategory,
-  canRemove,
-  categoryLabel,
-  historyDescription,
-  transactionTitle,
-} from './model';
+import { canChangeCategory, canRemove, categoryLabel, historyDescription } from './model';
 
 const transaction = (changes: Partial<Transaction> = {}): Transaction =>
   ({
@@ -39,13 +33,6 @@ describe('S4 transaction detail rules', () => {
     expect(canRemove(transaction({ voidedAt: '2026-11-09T09:00:00Z' }), false)).toBe(false);
     expect(canRemove(transaction({ reconciliationAdjustment: 'ADJUSTMENT' }), false)).toBe(false);
     expect(canRemove(transaction(), true)).toBe(false);
-  });
-
-  it('uses an adjustment title and never mistakes it for a merchant', () => {
-    expect(transactionTitle(transaction())).toBe('Migros');
-    expect(transactionTitle(transaction({ reconciliationAdjustment: 'ADJUSTMENT' }))).toBe(
-      'VALUATION_ADJUSTMENT',
-    );
   });
 
   it('formats the two-level category tree in either language', () => {

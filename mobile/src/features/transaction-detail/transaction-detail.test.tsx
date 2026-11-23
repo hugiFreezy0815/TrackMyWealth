@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { useState } from 'react';
+import { setStringAsync } from 'expo-clipboard';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Platform, StyleSheet } from 'react-native';
 import { IntlProvider } from 'react-intl';
@@ -12,6 +13,7 @@ import {
   useTransactionHistory,
 } from '@/api/queries/resources';
 import { useConflict } from '@/api/queries/conflict';
+import { showToast } from '@/features/shell/toast';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import type { components } from '@/api/schema';
 import { ApiError } from '@/api/client';
@@ -28,6 +30,8 @@ const searchFocus = (
 ).default.focus;
 
 jest.mock('@/global.css', () => ({}));
+jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn() }));
+jest.mock('@/features/shell/toast', () => ({ showToast: jest.fn() }));
 jest.mock('@/features/privacy/amount-visibility', () => ({
   useAmountsHidden: jest.fn(() => false),
 }));
@@ -215,10 +219,79 @@ describe('S4 transaction detail', () => {
 
   it('shows automatic category provenance and current server values', async () => {
     await show();
-    expect(screen.getByText('Migros')).toBeTruthy();
+    expect(screen.getByRole('header', { name: 'Migros AG' })).toBeTruthy();
+    expect(screen.getByText('Purpose')).toBeTruthy();
+    expect(screen.getByText('Migros')).not.toHaveProp('numberOfLines');
     expect(screen.getByText('Food › Groceries · automatic')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Reset category' })).toBeNull();
     expect(screen.getByText('Bank · Current account')).toBeTruthy();
+  });
+
+  it.each([
+    ['android', 'heading', null],
+    ['android', 'purpose field', 'Synthetic counterparty'],
+    ['ios', 'heading', null],
+    ['ios', 'purpose field', 'Synthetic counterparty'],
+  ] as const)(
+    'copies the full multiline purpose on %s from the %s',
+    async (os, location, counterpartyName) => {
+      const platform = jest.replaceProperty(Platform, 'OS', os);
+      try {
+        const purpose = 'Synthetic purpose\nPayment reference TEST-4021\nEnd of purpose';
+        fixtures({ ...base, counterpartyName, merchantDescription: purpose });
+        jest.mocked(setStringAsync).mockResolvedValueOnce(true);
+        await show();
+
+        const text = screen.getByText(purpose, { normalizer: (value) => value });
+        expect(text).toHaveProp('selectable', false);
+        expect(text).not.toHaveProp('numberOfLines');
+        expect(text.props.accessibilityRole).toBe(location === 'heading' ? 'header' : undefined);
+        expect(setStringAsync).not.toHaveBeenCalled();
+        await fireEvent.press(screen.getByRole('button', { name: 'Copy purpose text' }));
+
+        expect(setStringAsync).toHaveBeenCalledWith(purpose, {
+          android: { isSensitive: true },
+          ios: { localOnly: true },
+        });
+        expect(showToast).toHaveBeenCalledWith('account.purposeCopied');
+      } finally {
+        platform.restore();
+      }
+    },
+  );
+
+  it.each([
+    ['heading', null],
+    ['purpose field', 'Synthetic counterparty'],
+  ] as const)(
+    'keeps the purpose selectable on web in the %s',
+    async (_location, counterpartyName) => {
+      const platform = jest.replaceProperty(Platform, 'OS', 'web');
+      try {
+        const purpose = 'Synthetic purpose\nPayment reference TEST-4021';
+        fixtures({ ...base, counterpartyName, merchantDescription: purpose });
+        await show();
+        expect(screen.getByText(purpose, { normalizer: (value) => value })).toHaveProp(
+          'selectable',
+          true,
+        );
+      } finally {
+        platform.restore();
+      }
+    },
+  );
+
+  it('reports a clipboard failure without including the purpose in the toast', async () => {
+    jest.mocked(setStringAsync).mockRejectedValueOnce(new Error('Clipboard unavailable'));
+    await show();
+    await fireEvent.press(screen.getByRole('button', { name: 'Copy purpose text' }));
+    expect(showToast).toHaveBeenCalledWith('account.purposeCopyFailed');
+  });
+
+  it('omits the copy action when the server purpose is blank', async () => {
+    fixtures({ ...base, merchantDescription: '  ' });
+    await show();
+    expect(screen.queryByRole('button', { name: 'Copy purpose text' })).toBeNull();
   });
 
   it.each([
@@ -904,7 +977,7 @@ describe('S4 transaction detail', () => {
   });
 
   it.each([
-    ['the detail heading while the transaction reloads', true, 'Migros'],
+    ['the detail heading while the transaction reloads', true, 'Migros AG'],
     ['Change category once the transaction has reloaded', false, 'Change category'],
   ] as const)(
     'on web, moves focus after a discarded conflict has closed to %s',

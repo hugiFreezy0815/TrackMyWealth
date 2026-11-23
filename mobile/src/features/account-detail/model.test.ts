@@ -1,5 +1,6 @@
 import { createIntl, createIntlCache } from 'react-intl';
 
+import { formatBookingDay, formatBookingMonth } from '@/format/date';
 import de from '@/i18n/de.json';
 import en from '@/i18n/en.json';
 
@@ -10,13 +11,13 @@ import {
   categoryFor,
   categoryName,
   convertedAmount,
-  groupHeading,
   groupedTransactions,
   hasUnknownCategory,
   isUncategorized,
   presentTransaction,
   reconciliationLine,
   reversalOf,
+  transactionDirection,
   transactionTypeLabel,
   uniqueTransactions,
   valueBasisExplanation,
@@ -89,22 +90,42 @@ describe('S3 account detail view model', () => {
     ).toEqual(['a', 'b', 'c']);
   });
 
-  it('groups only adjacent dates and never invents amounts or chronology', () => {
-    const input = [row('a', '2026-11-09'), row('b', '2026-11-09'), row('c', '2026-11-08')];
-    expect(
-      groupedTransactions(input, true).map((group) => [group.date, group.rows.length]),
-    ).toEqual([
-      ['2026-11-09', 2],
-      ['2026-11-08', 1],
+  it('groups different days and overlapping pages by month in server order', () => {
+    const input = uniqueTransactions([
+      { content: [row('a', '2026-12-02'), row('b', '2026-12-01')] },
+      { content: [row('b', '2026-12-01'), row('c', '2026-11-30'), row('d', '2025-12-01')] },
     ]);
-    expect(groupedTransactions(input, false)).toEqual([{ date: null, rows: input }]);
+    expect(groupedTransactions(input, true).map(({ month, rows }) => [month, rows.length])).toEqual(
+      [
+        ['2026-12', 2],
+        ['2026-11', 1],
+        ['2025-12', 1],
+      ],
+    );
+    expect(groupedTransactions(input.toReversed(), true).map(({ month }) => month)).toEqual([
+      '2025-12',
+      '2026-11',
+      '2026-12',
+    ]);
+    expect(groupedTransactions(input, false)).toEqual([{ month: null, rows: input }]);
   });
 
-  it('heads groups "Today · date", "Yesterday · date", else the date alone', () => {
-    const today = new Date(2026, 9, 20, 12, 0);
-    expect(groupHeading('2026-10-20', enIntl, today)).toBe('Today · 20 Oct 2026');
-    expect(groupHeading('2026-10-19', deIntl, today)).toBe('Gestern · 19.10.2026');
-    expect(groupHeading('2026-10-18', enIntl, today)).toBe('18 Oct 2026');
+  it('formats the month and localized row days across a month boundary', () => {
+    const today = new Date(2026, 10, 1, 12);
+    expect(formatBookingMonth('2026-11', 'en')).toBe('November 2026');
+    expect(formatBookingMonth('2026-10', 'de-CH')).toBe('Oktober 2026');
+    expect(formatBookingDay('2026-11-01', enIntl, true, today)).toBe('Today');
+    expect(formatBookingDay('2026-10-31', deIntl, true, today)).toBe('Gestern');
+    expect(formatBookingDay('2026-10-19', enIntl, true, today)).toBe('19 Oct');
+    expect(formatBookingDay('2026-10-19', deIntl, true, today)).toBe('19.10.');
+    expect(formatBookingDay('2026-10-19', enIntl, false, today)).toBe('19 Oct 2026');
+  });
+
+  it('reads the exact decimal sign and omits direction for zero or invalid values', () => {
+    expect(transactionDirection('0.0000001')?.messageId).toBe('account.incoming');
+    expect(transactionDirection('-0.0000001')?.messageId).toBe('account.outgoing');
+    expect(transactionDirection('-0.000')).toBeNull();
+    expect(transactionDirection('unknown')).toBeNull();
   });
 
   it('only treats the shipped default as uncategorized, not null or a transfer', () => {
@@ -345,18 +366,25 @@ describe('S3 account detail view model', () => {
       ]);
     });
 
-    it('shows the counterparty only when it differs from the title', () => {
-      expect(
-        presentTransaction(
-          row('c', '2026-11-09', { merchantDescription: null, counterpartyName: 'Anna' }),
-          context(),
-          enIntl,
-        ).counterparty,
-      ).toBeNull();
-      expect(
-        presentTransaction(row('c', '2026-11-09', { counterpartyName: 'Anna' }), context(), enIntl)
-          .counterparty,
-      ).toBe('Anna');
+    it('prioritizes counterparty and displays a distinct bank purpose as the subtitle', () => {
+      const party = { counterpartyName: 'Anna' };
+      expect(presentTransaction(row('c', undefined, party), context(), enIntl)).toMatchObject({
+        title: 'Anna',
+        purpose: 'Shop c',
+      });
+      for (const merchantDescription of [null, '   ', 'Anna']) {
+        expect(
+          presentTransaction(
+            row('c', undefined, { ...party, merchantDescription }),
+            context(),
+            enIntl,
+          ),
+        ).toMatchObject({ title: 'Anna', purpose: null });
+      }
+      expect(presentTransaction(row('c'), context(), enIntl)).toMatchObject({
+        title: 'Shop c',
+        purpose: null,
+      });
     });
 
     it('disables category changes on an archived account', () => {

@@ -29,12 +29,12 @@ export const usePortfolios = () =>
     queryFn: ({ signal }) =>
       readAllPages((page) => typedApi.get('/api/v1/portfolios', { query: { page }, signal })),
   });
-export const usePortfolioView = (portfolioId: string) =>
+export const usePortfolioView = (portfolioId: string, { enabled = true }: QueryGate = {}) =>
   useQuery({
     queryKey: queryKeys.portfolioView(portfolioId),
     queryFn: () =>
       typedApi.get('/api/v1/portfolios/{portfolioId}/view', { params: { portfolioId } }),
-    enabled: !!portfolioId,
+    enabled: enabled && !!portfolioId,
   });
 /** `enabled: false` holds the request back, e.g. until the scope currency is known (S1). */
 export type QueryGate = { enabled?: boolean };

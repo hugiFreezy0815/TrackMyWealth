@@ -1,12 +1,13 @@
 import { focusAdjacentTransaction, revealFocusedRow } from './transaction-keyboard.web';
 
 /** A table row whose open button is focusable unless `disabled` (no DOM in jest-expo). */
-function row(disabled = false) {
+function row(disabled = false, heading = false) {
   const button = { focus: jest.fn() };
   const self = {
     button,
     previousElementSibling: null as unknown,
     nextElementSibling: null as unknown,
+    matches: (selector: string) => heading && selector === '[data-transaction-month]',
     querySelector: jest.fn((selector: string) =>
       selector === 'button[data-transaction-open]:enabled' && !disabled ? button : null,
     ),
@@ -46,6 +47,15 @@ describe('focusAdjacentTransaction (web transaction table, #494)', () => {
 
     expect(press(second, 'ArrowUp')).toHaveBeenCalledTimes(1);
     expect(first.button.focus).toHaveBeenCalledTimes(1);
+  });
+
+  it('moves focus across month headings in both directions', () => {
+    const [first, heading, second] = table(row(), row(true, true), row());
+    press(first, 'ArrowDown');
+    expect(second.button.focus).toHaveBeenCalledTimes(1);
+    press(second, 'ArrowUp');
+    expect(first.button.focus).toHaveBeenCalledTimes(1);
+    expect(heading.button.focus).not.toHaveBeenCalled();
   });
 
   it('keeps focus at the first and last row without scrolling the page', () => {

@@ -1,11 +1,15 @@
+import type { ReactNode } from 'react';
+import { IntlProvider } from 'react-intl';
 import { fireEvent, screen } from '@testing-library/react-native';
 
+import en from '@/i18n/en.json';
 import { renderWithIntl } from '@/i18n/test-utils';
 import type { RowContext, Transaction } from './model';
 import { TransactionResults as NativeResults } from './transaction-results.native';
 import { sameRow, TransactionResults as WebResults } from './transaction-results.web';
 
 jest.mock('@/global.css', () => ({}));
+jest.mock('@/features/privacy/amount-visibility', () => ({ useAmountsHidden: () => false }));
 const mockWindow = { width: 390, height: 844, scale: 1, fontScale: 1 };
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
   __esModule: true,
@@ -76,7 +80,7 @@ async function showEveryRow(Results: typeof WebResults) {
       onEndReached={onEndReached}
     />,
   );
-  // One date section: flat index 0 is its header, rows start at 1.
+  // One month section: flat index 0 is its header, rows start at 1.
   const viewableItems = rows.map((item, index) => ({
     isViewable: true,
     item,
@@ -100,6 +104,37 @@ describe('S3 paging on web at phone width (#494)', () => {
   });
 });
 
+it('presents month headings, direction and overflow in the desktop table', () => {
+  const { renderToStaticMarkup } = jest.requireActual<{
+    renderToStaticMarkup: (node: ReactNode) => string;
+  }>('react-dom/server');
+  const purpose = 'Synthetic reference from the bank';
+  const recent = row(0, { counterpartyName: 'Stationery', merchantDescription: purpose });
+  const older = row(1, { bookingDate: '2026-10-30', amount: '10.00' });
+  mockWindow.width = 1280;
+  try {
+    const html = renderToStaticMarkup(
+      <IntlProvider locale="en" messages={en}>
+        <WebResults
+          transactions={[recent, older]}
+          context={context}
+          byDate
+          onCategory={jest.fn()}
+          onActions={jest.fn()}
+        />
+      </IntlProvider>,
+    );
+    expect(html).toMatch(/November 2026.*Stationery.*October 2026.*Shop 1/);
+    expect(html).toContain('-webkit-line-clamp:2');
+    expect(html).toContain(purpose);
+    expect(html).toContain('Outgoing');
+    expect(html).toContain('Incoming');
+    expect(html).toContain('aria-label="Actions for Stationery"');
+  } finally {
+    mockWindow.width = 390;
+  }
+});
+
 describe('S3 web table growth with Load more (#494)', () => {
   const open = jest.fn();
   const pick = jest.fn();
@@ -110,6 +145,8 @@ describe('S3 web table growth with Load more (#494)', () => {
       reversalDates: new Map(loaded.map((item) => [item.id, item.bookingDate])),
     },
     selected: false,
+    byDate: true,
+    today: '2026-11-09',
     onOpen: open,
     onCategory: pick,
     ...other,
@@ -138,5 +175,10 @@ describe('S3 web table growth with Load more (#494)', () => {
     expect(sameRow(before, { ...before, context: { ...before.context, archived: true } })).toBe(
       false,
     );
+  });
+
+  it('re-renders a row at midnight so "Today" becomes "Yesterday"', () => {
+    const before = props(page0[3], page0);
+    expect(sameRow(before, { ...before, today: '2026-11-10' })).toBe(false);
   });
 });

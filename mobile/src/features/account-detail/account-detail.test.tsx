@@ -1,8 +1,9 @@
 import { collectionPage } from '@/api/collection-page.fixture';
+import { setStringAsync } from 'expo-clipboard';
 import { QueryClient, QueryClientProvider, type InfiniteData } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import { IntlProvider, createIntl, createIntlCache } from 'react-intl';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 
 import { ApiError, NetworkError, setRefreshHandler } from '@/api/client';
 import { typedApi } from '@/api/typed-api';
@@ -10,6 +11,7 @@ import { queryKeys } from '@/api/queries/keys';
 import type { Position, PositionsResponse } from '@/features/portfolio-view/model';
 import { amountTexts } from '@/components/shared';
 import { restoreSession, signIn, signOut } from '@/features/auth/session';
+import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { showToast } from '@/features/shell/toast';
 import en from '@/i18n/en.json';
 
@@ -17,6 +19,7 @@ import { AccountDetail, useAccountRefresh, type AccountDetailProps } from './acc
 import type { AccountListItem, AccountSummary, Category, Transaction } from './model';
 
 jest.mock('@/global.css', () => ({}));
+jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn() }));
 jest.mock('expo-image', () => ({ Image: 'Image' }));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 jest.mock('expo-secure-store', () => ({
@@ -152,12 +155,14 @@ function fakeServer(account: AccountSummary, rows: Transaction[], holdings?: Pos
     account: AccountSummary;
     rows: Transaction[];
     holdings?: PositionsResponse;
+    portfolioView?: unknown;
     beforeRead?: (path: string, options: Options) => void | Promise<void>;
   } = { account, rows, holdings };
   const counted = (row: Transaction) => row.categoryId === 'uncat' && !row.internalTransfer;
   const routes: Record<string, (options: Options) => unknown> = {
     '/api/v1/accounts/{accountId}': () => state.account,
     '/api/v1/accounts/{accountId}/positions': () => state.holdings,
+    '/api/v1/portfolios/{portfolioId}/view': () => state.portfolioView ?? { sections: [] },
     '/api/v1/accounts/{accountId}/transactions/{transactionId}': ({ params }) =>
       state.rows.find((row) => row.id === params?.transactionId) ?? null,
     '/api/v1/accounts': () => collectionPage([listItem]),
@@ -230,6 +235,7 @@ async function renderDetail(
     },
   });
   const onBack = props.onBack ?? jest.fn();
+  const onTransaction = jest.fn();
   if (props.cachedAccounts) client.setQueryData(queryKeys.accounts({}), props.cachedAccounts);
   await render(
     <QueryClientProvider client={client}>
@@ -238,13 +244,13 @@ async function renderDetail(
           accountId="acc"
           initialTab={props.initialTab}
           onBack={onBack}
-          onTransaction={jest.fn()}
+          onTransaction={onTransaction}
           onImport={jest.fn()}
         />
       </IntlProvider>
     </QueryClientProvider>,
   );
-  return { onBack, client };
+  return { onBack, onTransaction, client };
 }
 
 async function changeCategory(currentLabel: string, pick: string) {
@@ -260,6 +266,127 @@ beforeEach(() => {
   api.post.mockReset();
   api.put.mockReset();
   jest.mocked(showToast).mockReset();
+});
+
+describe('S3 account detail updates (#690)', () => {
+  const maskedView = {
+    sections: [
+      {
+        accounts: [
+          { accountId: 'other', maskedIdentifier: '•••• 0000' },
+          { accountId: 'acc', maskedIdentifier: '•••• 4021' },
+        ],
+      },
+    ],
+  };
+  const viewReads = () =>
+    api.get.mock.calls.filter(([path]) => path === '/api/v1/portfolios/{portfolioId}/view');
+
+  it('loads the S2 view for the masked identifier when it is not cached (cold start)', async () => {
+    const server = fakeServer(summary(), []);
+    server.portfolioView = maskedView;
+    await renderDetail();
+    // Two chained reads (account, then S2 view): allow for slow CI runners.
+    expect(
+      await screen.findByText(/Current account · •••• 4021/, {}, { timeout: 5000 }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/•••• 0000/)).toBeNull();
+    expect(viewReads()).toHaveLength(1);
+  });
+
+  it('shows the header without an identifier when the account has none', async () => {
+    fakeServer(summary(), []);
+    await renderDetail();
+    await screen.findByRole('header', { name: 'Girokonto' });
+    await waitFor(() => expect(viewReads()).toHaveLength(1), { timeout: 5000 });
+    expect(screen.queryByText(/••••/)).toBeNull();
+  });
+
+  it('does not load the S2 view for an archived account', async () => {
+    const server = fakeServer(
+      summary({ status: 'ARCHIVED', archivedAt: '2026-10-01T10:00:00Z', version: 5 }),
+      [],
+    );
+    server.portfolioView = maskedView;
+    await renderDetail();
+    expect(await screen.findByTestId('account-archived')).toBeTruthy();
+    expect(viewReads()).toHaveLength(0);
+    expect(screen.queryByText(/••••/)).toBeNull();
+  });
+
+  it('renders month and day, clamps the purpose and exposes the outgoing label', async () => {
+    const purpose = 'Card payment for synthetic reference 402100000000';
+    fakeServer(summary(), [txn(0, { counterpartyName: 'Shop', merchantDescription: purpose })]);
+    await renderDetail();
+    expect(await screen.findByRole('header', { name: 'September 2026' })).toBeTruthy();
+    expect(screen.getByText('1 Sep')).toBeTruthy();
+    expect(screen.getByText(purpose)).toHaveProp('numberOfLines', 2);
+    expect(
+      screen.getByRole('button', { name: /Shop.*Outgoing.*synthetic reference/ }),
+    ).toBeTruthy();
+  });
+
+  it('gives a purpose-only title the two-line purpose preview', async () => {
+    const purpose = 'Card payment for synthetic reference 402100000000';
+    fakeServer(summary(), [txn(0, { counterpartyName: null, merchantDescription: purpose })]);
+    await renderDetail();
+    expect(await screen.findByText(purpose)).toHaveProp('numberOfLines', 2);
+  });
+
+  it('keeps a counterparty title on one line', async () => {
+    fakeServer(summary(), [txn(0, { counterpartyName: 'Shop', merchantDescription: 'Purpose' })]);
+    await renderDetail();
+    expect(await screen.findByText('Shop')).toHaveProp('numberOfLines', 1);
+  });
+
+  it('hides transaction direction when amounts are hidden', async () => {
+    jest.mocked(useAmountsHidden).mockReturnValue(true);
+    try {
+      fakeServer(summary(), [txn(0)]);
+      await renderDetail();
+      expect(await screen.findByRole('button', { name: /Shop 000.*hidden/i })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /Shop 000.*Outgoing/ })).toBeNull();
+      expect(screen.queryByText('↗')).toBeNull();
+    } finally {
+      jest.mocked(useAmountsHidden).mockReturnValue(false);
+    }
+  });
+
+  it.each(['android', 'ios'] as const)('opens native row actions on %s', async (os) => {
+    const platform = jest.replaceProperty(Platform, 'OS', os);
+    try {
+      const purpose = 'Synthetic purpose with the full reference\nSECOND LINE\nTHIRD LINE';
+      jest.mocked(setStringAsync).mockClear().mockResolvedValueOnce(true);
+      fakeServer(summary(), [txn(0, { counterpartyName: 'Shop', merchantDescription: purpose })]);
+      const { onTransaction } = await renderDetail();
+      const row = await screen.findByRole('button', { name: /^Shop,/ });
+      await fireEvent(row, 'longPress');
+      expect(screen.getByRole('button', { name: 'Change category' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Show details' })).toBeEnabled();
+      expect(setStringAsync).not.toHaveBeenCalled();
+      await fireEvent.press(screen.getByRole('button', { name: 'Copy purpose text' }));
+      expect(setStringAsync).toHaveBeenCalledWith(purpose, {
+        android: { isSensitive: true },
+        ios: { localOnly: true },
+      });
+      expect(showToast).toHaveBeenCalledWith('account.purposeCopied');
+
+      async function chooseAction(name: string) {
+        await fireEvent(row, 'longPress');
+        const { onDismiss } = screen.getByTestId('shared-dialog-modal').props;
+        await fireEvent.press(screen.getByRole('button', { name }));
+        if (os === 'ios') await act(() => onDismiss());
+      }
+
+      await chooseAction('Change category');
+      expect(screen.getByTestId('category-picker-list')).toBeTruthy();
+      await fireEvent.press(screen.getByRole('button', { name: 'Close' }));
+      await chooseAction('Show details');
+      expect(onTransaction).toHaveBeenCalledWith('t000');
+    } finally {
+      platform.restore();
+    }
+  });
 });
 
 describe('S3 account detail acceptance checks (#494)', () => {
@@ -921,7 +1048,7 @@ describe('S3 account detail acceptance checks (#494)', () => {
 
     // Card payments read their type, never the API code.
     expect(screen.queryByText(/CREDIT_CARD_PURCHASE/)).toBeNull();
-    expect(screen.getByText('Main · Current account · EUR')).toBeTruthy();
+    expect(screen.getByText('Main · Current account')).toBeTruthy();
   });
 
   it('shows the original booking date before the original transaction page is loaded', async () => {

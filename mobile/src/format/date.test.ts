@@ -2,7 +2,13 @@ import { createIntl, createIntlCache } from 'react-intl';
 
 import de from '@/i18n/de.json';
 import en from '@/i18n/en.json';
-import { formatDate, formatDateTime, formatInstantDate, formatRelativeDay } from './date';
+import {
+  formatBookingDay,
+  formatDate,
+  formatDateTime,
+  formatInstantDate,
+  formatRelativeDay,
+} from './date';
 
 const deIntl = createIntl({ locale: 'de-CH', messages: { ...en, ...de } }, createIntlCache());
 const enIntl = createIntl({ locale: 'en', messages: en }, createIntlCache());
@@ -46,6 +52,20 @@ describe('date formatting', () => {
     expect(formatInstantDate('2026-11-08T12:00:00Z', 'de-CH')).toMatch(/^\d{2}\.11\.2026$/);
     expect(formatInstantDate('not a time', 'en')).toBe('–');
   });
+
+  it.each([
+    ['en', enIntl, '1 Mar 2026', '28 Feb 2026', 'Today', 'Yesterday'],
+    ['de-CH', deIntl, '01.03.2026', '28.02.2026', 'Heute', 'Gestern'],
+  ])(
+    'uses full dates for amount sorts in %s',
+    (_locale, intl, todayDate, yesterdayDate, todayLabel, yesterdayLabel) => {
+      const today = new Date(2026, 2, 1, 12);
+      expect(formatBookingDay('2026-03-01', intl, false, today)).toBe(todayDate);
+      expect(formatBookingDay('2026-02-28', intl, false, today)).toBe(yesterdayDate);
+      expect(formatBookingDay('2026-03-01', intl, true, today)).toBe(todayLabel);
+      expect(formatBookingDay('2026-02-28', intl, true, today)).toBe(yesterdayLabel);
+    },
+  );
 
   it('says today and yesterday from the catalogue, else the date', () => {
     const today = new Date(2026, 2, 1, 0, 30); // local midnight, the day after Feb 28

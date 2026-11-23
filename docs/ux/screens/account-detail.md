@@ -89,7 +89,7 @@ Request 3 needs `hasTransactions = true` from request 1. Without it, skip 3 and 
 
 | # | Element | Label key (EN / DE draft) | Format | Source |
 |---|---|---|---|---|
-| 1 | Back + context line | `account.context` "{portfolio} · {type} · {currency}" | | (2) `portfolioName`; `accountType.{code}`; (1) `nativeCurrency` |
+| 1 | Back + context line | "{portfolio} · {type} · {masked identifier}" | From the S2 cache; S3 loads the S2 view when it is not cached. Hidden while loading, when the account has none, or when archived | (2) `portfolioName`; `accountType.{code}`; S2 `AccountRow.maskedIdentifier` |
 | 2 | Title | | | (1) `name` |
 | 3 | Value label | `account.balance` "Balance" / "Saldo"; for `manualValuation`: `account.value` "Value" / "Wert"; for `holdsPositions`: `account.marketValue` "Market value" / "Marktwert" | | (1) capabilities |
 | 4 | Value | | `Amount`, large | (2) `balance`, `currency`; `valueKnown=false` ⇒ "–" |
@@ -113,18 +113,18 @@ Reconciliation line (FR-REC; the wording is a draft for #379):
 
 ## Transaction list
 
-`TransactionRow`, grouped by `bookingDate` under headers "Today · {date}", "Yesterday · {date}"
-and then "{date}". The grouping only follows the sort; it adds up nothing. When the list is
-sorted by amount, the date headers are dropped and each row shows its date.
+Rows follow the server sort. Date sorts group by booking month and year, with sticky headers
+on iOS and Android and a day label per row. The day reads "Today" or "Yesterday" when applicable.
+Amount sorts show the full calendar date per row, without month headers.
 
 | # | Element | Source: `TransactionResponse` → field | Rule |
 |---|---|---|---|
 | 1 | Icon | `transactionType`, `internalTransfer` | type icon; transfer arrows for `internalTransfer`; warning icon if uncategorised |
-| 2 | Title | `merchantDescription`, else `counterpartyName`, else the type label | one line, ellipsis; full text in the accessible label |
-| 3 | Subtitle | type label `transactionType.{code}`; `counterpartyName` when it differs from the title | |
+| 2 | Title | `counterpartyName`, else `merchantDescription`, else the type label | Full accessible title; the phone preview uses one line |
+| 3 | Purpose and type | `merchantDescription` and `transactionType.{code}` | Show a distinct purpose below the counterparty, capped at two lines. S4 shows the full purpose. |
 | 4 | Category chip | `categoryId` → `GET /categories` item: `nameDe`/`nameEn` by app language, "{parent} › {name}" on web | The category with `code = UNCATEGORIZED` (the shipped default; `categoryAssignedBy` is `null`) shows "Uncategorised" in warning style. `categoryId = null` means a type that is never categorised (settlement, trade, dividend), so there is no chip. `internalTransfer` shows "Internal transfer · excluded" (teal). A `categoryId` missing from the cached list triggers one reload of `/categories`, then "Category" as a fallback |
 | 4a | Lifecycle | `voidedAt`, `replacesTransactionId`, `correctsTransactionId`, `restoresTransactionId`, `reconciliationAdjustment` | A voided original stays listed: amount struck through, badge "Voided" / "Storniert", and the accessible label says "voided, not counted". A reversing row (`replacesTransactionId`) shows "Reversal of {date}". A correction (`correctsTransactionId`) shows "Corrected". A reconciliation adjustment has no `merchantDescription`: its title is `transactionType.VALUATION_ADJUSTMENT` "Statement adjustment" |
-| 5 | Amount | `amount`, `currency` | signed `Amount`; positive with "+" and gain colour; the sign is always shown |
+| 5 | Amount and direction | `amount`, `currency` | Signed `Amount`; ↙ incoming, ↗ outgoing, with accessible text. No marker for zero or when amounts are hidden. |
 | 6 | Converted amount `[advanced]` | **delivered by #479** `amountInAccountCurrency` | "≈ {amount}" only when `currency ≠` the account currency |
 | 7 | Estimated FX | `fxRateEstimated` | "Estimated" badge next to 6 |
 | 8 | Warnings | `warnings[]` | ⚠ icon. `BOOKED_BEFORE_OPENING_BALANCE` reads "Before the opening balance: not counted in the balance". Other codes use the glossary text (#379), or a generic "Check this transaction" for an unknown code |
@@ -155,7 +155,8 @@ sorted by amount, the date headers are dropped and each row shows its date.
 | Action | Result | Request |
 |---|---|---|
 | Tap a row | S4 (phone: push; web: right panel) | - |
-| Category chip ⌄ (web) / long-press → "Change category" (phone) | `CategoryPicker` | `PUT /api/v1/accounts/{accountId}/transactions/{transactionId}/category` `{categoryId}` with `If-Match: "{transaction.version}"` → updated `TransactionResponse` replaces the row; reload request 4 |
+| Category chip ⌄ or row actions → "Change category" | `CategoryPicker` | `PUT /api/v1/accounts/{accountId}/transactions/{transactionId}/category` `{categoryId}` with `If-Match: "{transaction.version}"` → updated `TransactionResponse` replaces the row; reload request 4 |
+| Row actions (⋯ on web, long press or accessibility action on native) | Change category when permitted, show details (S4), or copy the full bank purpose when present | Copy writes to the local clipboard following the member’s action |
 | Uncategorised banner "Review" | Turns the Uncategorised filter on | |
 | ⋯ → Archive account | Confirmation: "Archive {name}? It stays in your history but no longer counts towards your totals." | `POST /api/v1/accounts/{accountId}/archive` with `If-Match: "{version}"`. Afterwards reload 1–2, and S1/S2 must reload |
 | Archived banner → Restore | | `POST /api/v1/accounts/{accountId}/restore` with `If-Match` |
@@ -208,14 +209,13 @@ Errors on these actions:
   text, not colour alone.
 - Given an archived account, "Change category" is disabled and Restore sends `If-Match`.
 
-## Planned update (design round 2026-11-22)
+## Design round 2026-11-22
 
-**Figma:** M25r Account detail, revised EN [197:1161](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=197-1161) / DE [197:1470](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=197-1470) on page "🧭 Design round S9–S15 (#680–#683)". Sprint-7 behaviour stays until the S3 update story
-ships.
+**Figma:** M25r Account detail, revised EN [197:1161](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=197-1161) / DE [197:1470](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=197-1470) on page "🧭 Design round S9–S15 (#680–#683)". U1–U5 ship with US-05-09 (#690). U6 and U7 are planned.
 
 | # | Change | Detail | Source |
 |---|---|---|---|
-| U1 | Masked identifier in the header | Context line becomes "{portfolio} · {type} · •••• 4021" | `AccountRow.maskedIdentifier` (from the S2 cache) |
+| U1 | Masked identifier in the header | Context line becomes "{portfolio} · {type} · •••• 4021" | `AccountRow.maskedIdentifier` (S2 cache, loaded by S3 when missing) |
 | U2 | Month group headers | Rows are grouped under "November 2026" (sticky on phone), and each row shows its day ("19 Nov") in a left date column. "Today" / "Yesterday" remain as the day label | `bookingDate`; grouping follows the sort only |
 | U3 | In/out marker | A direction icon (↙ in, ↗ out) next to the date, with the accessible text "incoming" / "outgoing". The sign on the amount stays | sign of `amount` (reading a sign is not a computation) |
 | U4 | Purpose as a second line | Title = `counterpartyName`, else `merchantDescription`. Subtitle = `merchantDescription` (the bank's purpose text) when the title is the counterparty: two lines, then an ellipsis, with the full text in S4 | `TransactionResponse` |

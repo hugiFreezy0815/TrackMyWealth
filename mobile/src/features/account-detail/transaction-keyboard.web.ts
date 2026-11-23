@@ -20,7 +20,9 @@ export function focusAdjacentTransaction(event: ArrowKeyEvent): void {
 
   event.preventDefault();
   const row = currentTarget.closest('tr');
-  const nextRow = key === 'ArrowUp' ? row?.previousElementSibling : row?.nextElementSibling;
+  const step = key === 'ArrowUp' ? 'previousElementSibling' : 'nextElementSibling';
+  let nextRow = row?.[step];
+  if (nextRow?.matches('[data-transaction-month]')) nextRow = nextRow[step];
   nextRow?.querySelector<HTMLButtonElement>('button[data-transaction-open]:enabled')?.focus();
 }
 

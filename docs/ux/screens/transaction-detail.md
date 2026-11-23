@@ -87,6 +87,7 @@ marked as voided.
 | 7 | Account | `txn.account` "Account" / "Konto" | "{portfolio} · {account}" | **delivered by #479** `portfolioName`; `accountName` |
 | 8 | Category | `txn.category` "Category" / "Kategorie" | "{parent} › {name}" + "(by you)" / "(automatic)" | `categoryId` → `/categories`; `categoryAssignedBy = USER` ⇒ "by you" (`txn.category.member`), any other value ⇒ "automatic" (`txn.category.automatic`). Row hidden when `categoryId = null` (type not categorised). `internalTransfer` ⇒ "Internal transfer: not counted as income or spending", no picker |
 | 9 | Booking date | `txn.bookingDate` | long date | `bookingDate` |
+| 9a | Purpose | `txn.purpose` "Purpose" / "Verwendungszweck" | Full bank text with a copy action. If used as the heading, show it there in full with the same action. | `merchantDescription`; hidden when empty |
 | 10 | Counterparty | `txn.counterparty` "Counterparty" / "Gegenpartei" | | `counterpartyName`; hidden if `null` |
 | 11 | Transfer to/from | `txn.transferAccount` "Other account" | link to S3 | **delivered by #479** `counterpartyAccountName`; `counterpartyAccountId`. Hidden if `null` |
 | 12 | Notes | `txn.notes` | multi-line | `notes`; "–" if `null` |

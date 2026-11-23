@@ -1,14 +1,23 @@
 import { useIntl } from 'react-intl';
-import { memo, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, memo, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useWindowDimensions } from 'react-native';
 
 import { Amount } from '@/components/shared';
 import { Fonts } from '@/constants/theme';
 import { layoutFor } from '@/features/shell/navigation';
-import { formatDate } from '@/format/date';
+import { useAmountsHidden } from '@/features/privacy/amount-visibility';
+import { formatBookingDay, formatBookingMonth, formatDate } from '@/format/date';
+import { useLocalDay } from '@/hooks/use-local-day';
 import { useTheme } from '@/hooks/use-theme';
 
-import { presentTransaction, reversalOf, type RowContext, type Transaction } from './model';
+import {
+  groupedTransactions,
+  presentTransaction,
+  reversalOf,
+  transactionDirection,
+  type RowContext,
+  type Transaction,
+} from './model';
 import { transactionElementId } from './row-focus';
 import { TransactionResults as PhoneResults } from './transaction-results.native';
 import { focusAdjacentTransaction, revealFocusedRow } from './transaction-keyboard.web';
@@ -19,6 +28,7 @@ export type TransactionResultsProps = {
   byDate: boolean;
   onOpen?: (id: string) => void;
   onCategory: (transaction: Transaction) => void;
+  onActions?: (transaction: Transaction) => void;
   selectedTransactionId?: string | null;
   listHeader?: ReactNode;
   listFooter?: ReactNode;
@@ -46,10 +56,14 @@ function TransactionTable({
   context,
   onOpen,
   onCategory,
+  onActions,
+  byDate,
   selectedTransactionId,
 }: TransactionResultsProps) {
   const intl = useIntl();
   const theme = useTheme();
+  // Memoised rows re-render when the day changes, so their relative day labels stay current.
+  const today = useLocalDay();
   const headerStyle = {
     padding: '8px',
     color: theme.textSecondary,
@@ -60,12 +74,13 @@ function TransactionTable({
   // W06: the web category cell shows "{parent} › {name}".
   const webContext = { ...context, includeParent: true };
   // Stable handlers, so appending a page re-renders only the new rows (memoised TableRow).
-  const handlers = useRef({ onOpen, onCategory });
+  const handlers = useRef({ onOpen, onCategory, onActions });
   useLayoutEffect(() => {
-    handlers.current = { onOpen, onCategory };
+    handlers.current = { onOpen, onCategory, onActions };
   });
   const [openRow] = useState(() => (id: string) => handlers.current.onOpen?.(id));
   const [categoryRow] = useState(() => (row: Transaction) => handlers.current.onCategory(row));
+  const [actionRow] = useState(() => (row: Transaction) => handlers.current.onActions?.(row));
   return (
     <div style={{ width: '100%', overflowX: 'auto' }}>
       <table
@@ -97,15 +112,31 @@ function TransactionTable({
           </tr>
         </thead>
         <tbody>
-          {transactions.map((transaction) => (
-            <TableRow
-              key={transaction.id}
-              transaction={transaction}
-              context={webContext}
-              selected={selectedTransactionId === transaction.id}
-              onOpen={onOpen ? openRow : undefined}
-              onCategory={categoryRow}
-            />
+          {groupedTransactions(transactions, byDate).map(({ month, rows }) => (
+            <Fragment key={month ?? 'amount'}>
+              {month ? (
+                <tr data-transaction-month>
+                  <td colSpan={4} style={headerStyle}>
+                    <span role="heading" aria-level={3}>
+                      {formatBookingMonth(month, intl.locale)}
+                    </span>
+                  </td>
+                </tr>
+              ) : null}
+              {rows.map((transaction) => (
+                <TableRow
+                  key={transaction.id}
+                  transaction={transaction}
+                  context={webContext}
+                  selected={selectedTransactionId === transaction.id}
+                  byDate={byDate}
+                  today={today}
+                  onOpen={onOpen ? openRow : undefined}
+                  onCategory={categoryRow}
+                  onActions={onActions ? actionRow : undefined}
+                />
+              ))}
+            </Fragment>
           ))}
         </tbody>
       </table>
@@ -117,8 +148,12 @@ type TableRowProps = {
   transaction: Transaction;
   context: RowContext;
   selected: boolean;
+  byDate: boolean;
+  /** Local day (YYYY-MM-DD); a new day re-renders the row so "Today" moves on. */
+  today: string;
   onOpen?: (id: string) => void;
   onCategory: (transaction: Transaction) => void;
+  onActions?: (transaction: Transaction) => void;
 };
 
 /**
@@ -131,6 +166,9 @@ export function sameRow(prev: TableRowProps, next: TableRowProps): boolean {
   return (
     prev.transaction === next.transaction &&
     prev.selected === next.selected &&
+    prev.byDate === next.byDate &&
+    prev.today === next.today &&
+    prev.onActions === next.onActions &&
     prev.onOpen === next.onOpen &&
     prev.onCategory === next.onCategory &&
     a.categories === b.categories &&
@@ -145,11 +183,14 @@ const TableRow = memo(function TableRow({
   transaction,
   context,
   selected,
+  byDate,
   onOpen,
   onCategory,
+  onActions,
 }: TableRowProps) {
   const intl = useIntl();
   const theme = useTheme();
+  const hidden = useAmountsHidden();
   const cellStyle = {
     padding: '12px 8px',
     verticalAlign: 'top',
@@ -157,9 +198,19 @@ const TableRow = memo(function TableRow({
     borderBottom: `1px solid ${theme.borderDefault}`,
   };
   const view = presentTransaction(transaction, context, intl);
+  const direction = hidden ? null : transactionDirection(transaction.amount);
   return (
-    <tr onFocus={revealFocusedRow}>
-      <td style={cellStyle}>{formatDate(transaction.bookingDate, intl.locale)}</td>
+    <tr className="account-transaction-row" onFocus={revealFocusedRow}>
+      <td style={cellStyle}>
+        <span aria-hidden="true">{formatBookingDay(transaction.bookingDate, intl, byDate)}</span>
+        <span style={visuallyHidden}>{formatDate(transaction.bookingDate, intl.locale)}</span>
+        {direction ? (
+          <>
+            <span aria-hidden="true"> {direction.icon}</span>
+            <span style={visuallyHidden}> {intl.formatMessage({ id: direction.messageId })}</span>
+          </>
+        ) : null}
+      </td>
       <td style={cellStyle}>
         <button
           type="button"
@@ -189,9 +240,21 @@ const TableRow = memo(function TableRow({
         >
           {view.title}
         </button>
-        <div style={{ color: theme.textSecondary }}>
-          {[view.typeLabel, view.counterparty].filter(Boolean).join(' · ')}
-        </div>
+        {view.purpose ? (
+          <div
+            style={{
+              color: theme.textSecondary,
+              display: '-webkit-box',
+              WebkitBoxOrient: 'vertical',
+              WebkitLineClamp: 2,
+              overflow: 'hidden',
+              whiteSpace: 'pre-line',
+            }}
+          >
+            {view.purpose}
+          </div>
+        ) : null}
+        <div style={{ color: theme.textSecondary }}>{view.typeLabel}</div>
         {view.voided ? (
           <div style={{ color: theme.statusWarning }}>
             {intl.formatMessage({ id: 'account.voided' })}
@@ -264,6 +327,29 @@ const TableRow = memo(function TableRow({
               ? ` · ${intl.formatMessage({ id: 'account.estimated' })}`
               : ''}
           </div>
+        ) : null}
+        {onActions ? (
+          <button
+            className="account-transaction-actions"
+            type="button"
+            aria-haspopup="dialog"
+            aria-label={intl.formatMessage({ id: 'account.rowActions' }, { title: view.title })}
+            style={{
+              minHeight: 44,
+              minWidth: 44,
+              border: 0,
+              background: 'transparent',
+              color: theme.brandLink,
+              cursor: 'pointer',
+              font: 'inherit',
+            }}
+            onClick={(event) => {
+              event.currentTarget.focus();
+              onActions(transaction);
+            }}
+          >
+            ⋯
+          </button>
         ) : null}
       </td>
     </tr>

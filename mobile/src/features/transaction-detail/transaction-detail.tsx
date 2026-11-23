@@ -41,7 +41,13 @@ import {
 import { Fonts, Spacing, TypeScale, Radii } from '@/constants/theme';
 import { moveAccessibilityFocus } from '@/components/shared/accessibility-focus';
 import { linkKeyProps } from '@/components/shared/link-key';
-import { transactionTypeLabel, transactionWarningTexts } from '@/features/account-detail/model';
+import { copyTransactionPurpose } from '@/features/account-detail/copy-purpose';
+import {
+  transactionHeading,
+  transactionPurpose,
+  transactionTypeLabel,
+  transactionWarningTexts,
+} from '@/features/account-detail/model';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { formatDate, formatDateTime } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
@@ -50,7 +56,6 @@ import {
   canRemove,
   categoryLabel,
   historyDescription,
-  transactionTitle,
   type Category,
 } from './model';
 import { CategoryOptions } from './category-options';
@@ -548,10 +553,17 @@ export function TransactionDetail({
     conversion && !hidden && transaction.fxRateToAccountCurrency != null
       ? figureTexts(intl, { kind: 'rate', value: transaction.fxRateToAccountCurrency })
       : null;
-  const name =
-    transactionTitle(transaction) === transaction.transactionType
-      ? transactionTypeLabel(transaction.transactionType, intl)
-      : transactionTitle(transaction);
+  const name = transactionHeading(transaction, intl);
+  const purpose = transactionPurpose(transaction);
+  const purposeInHeading = purpose?.trim() === name;
+  const copyPurposeButton = purpose ? (
+    <View style={{ alignSelf: 'flex-start' }}>
+      <ActionButton
+        label={intl.formatMessage({ id: 'account.copyPurpose' })}
+        onPress={() => void copyTransactionPurpose(purpose)}
+      />
+    </View>
+  ) : null;
   const allCategories = historicalCategories.data ?? categories.data ?? [];
   const category = allCategories.find((item) => item.id === transaction.categoryId);
   const parent = allCategories.find((item) => item.id === category?.parentId);
@@ -742,12 +754,12 @@ export function TransactionDetail({
           ref={detailHeading}
           accessibilityRole="header"
           tabIndex={-1}
+          selectable={Platform.OS === 'web'}
           style={{ ...TypeScale.headingMedium, color: theme.textPrimary }}
         >
-          {name === 'VALUATION_ADJUSTMENT'
-            ? intl.formatMessage({ id: 'account.statementAdjustment' })
-            : name}
+          {name}
         </Text>
+        {purposeInHeading ? copyPurposeButton : null}
         <DetailLabel>
           {date(transaction.bookingDate)} ·{' '}
           {transactionTypeLabel(transaction.transactionType, intl)}
@@ -801,6 +813,18 @@ export function TransactionDetail({
           gap: Spacing.two,
         }}
       >
+        {purpose && !purposeInHeading ? (
+          <View style={{ gap: Spacing.one }}>
+            <DetailLabel>{intl.formatMessage({ id: 'txn.purpose' })}</DetailLabel>
+            <Text
+              selectable={Platform.OS === 'web'}
+              style={{ ...TypeScale.bodyMedium, color: theme.textPrimary }}
+            >
+              {purpose}
+            </Text>
+            {copyPurposeButton}
+          </View>
+        ) : null}
         <KeyValueList items={rows} />
         {transaction.counterpartyAccountId && onAccount ? (
           <ActionButton
