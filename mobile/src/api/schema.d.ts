@@ -2722,7 +2722,7 @@ export interface components {
       value?: string;
       currency?: string;
       cashAmount?: string;
-      /** @description Optional: the average purchase price per unit (US-15-08). */
+      /** @description Optional: the average purchase price (US-15-08), quoted as the price is; needs price. */
       averagePrice?: string;
       /** @description Optional: the position's total cost (US-15-08). */
       costBasis?: string;
@@ -2736,7 +2736,7 @@ export interface components {
       value: string | null;
       currency: string;
       cashAmount: string | null;
-      /** @description Optional: the average purchase price per unit (US-15-08). */
+      /** @description Optional: the average purchase price (US-15-08), quoted as the price is; needs price. */
       averagePrice: string | null;
       /** @description Optional: the position's total cost (US-15-08). */
       costBasis: string | null;
@@ -2785,7 +2785,7 @@ export interface components {
       dateFormat?: string;
       /** @description PDF, optional: RE2 pattern with the one named group currency, starting a section of positions quoted in it, e.g. ^Aktien in (?P<currency>[A-Z]{3})$. */
       sectionPattern?: string;
-      /** @description PDF: RE2 patterns of a position line, with the named groups quantity and value, isin and/or symbol, optionally price, name and currency, and at most one of averagePrice and costBasis. */
+      /** @description PDF: RE2 patterns of a position line, with the named groups quantity and value, isin and/or symbol, optionally price, name and currency, and at most one of averagePrice (with price) and costBasis. */
       positionPatterns?: string[];
       /** @description PDF, optional: RE2 pattern of a cash balance line with the named groups currency and amount. */
       cashPattern?: string;
@@ -2801,7 +2801,7 @@ export interface components {
       dateFormat: string | null;
       /** @description PDF, optional: RE2 pattern with the one named group currency, starting a section of positions quoted in it, e.g. ^Aktien in (?P<currency>[A-Z]{3})$. */
       sectionPattern: string | null;
-      /** @description PDF: RE2 patterns of a position line, with the named groups quantity and value, isin and/or symbol, optionally price, name and currency, and at most one of averagePrice and costBasis. */
+      /** @description PDF: RE2 patterns of a position line, with the named groups quantity and value, isin and/or symbol, optionally price, name and currency, and at most one of averagePrice (with price) and costBasis. */
       positionPatterns: string[];
       /** @description PDF, optional: RE2 pattern of a cash balance line with the named groups currency and amount. */
       cashPattern: string | null;
