@@ -16,6 +16,7 @@ import { amountTexts } from '@/components/shared';
 import { restoreSession, signIn, signOut } from '@/features/auth/session';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { showToast } from '@/features/shell/toast';
+import de from '@/i18n/de.json';
 import en from '@/i18n/en.json';
 
 import { AccountDetail, useAccountRefresh, type AccountDetailProps } from './account-detail';
@@ -255,6 +256,7 @@ async function renderDetail(
     cachedAccounts?: AccountListItem[];
     initialTab?: 'positions' | 'activity';
     staleTime?: number;
+    locale?: 'en' | 'de';
   } = {},
 ) {
   const client = new QueryClient({
@@ -269,7 +271,7 @@ async function renderDetail(
   if (props.cachedAccounts) client.setQueryData(queryKeys.accounts({}), props.cachedAccounts);
   await render(
     <QueryClientProvider client={client}>
-      <IntlProvider locale="en" messages={en}>
+      <IntlProvider locale={props.locale ?? 'en'} messages={props.locale === 'de' ? de : en}>
         <RefreshableAccountDetail
           accountId="acc"
           initialTab={props.initialTab}
@@ -364,9 +366,87 @@ describe('S10 liability detail (#685)', () => {
     expect(screen.getByText(/Balances from the loan repayment schedule/)).toBeTruthy();
   });
 
+  it('keeps the first schedule page visible and retries only the failed page', async () => {
+    const server = fakeServer(summary({ hasAmortisation: true }), []);
+    const today = localDay(new Date());
+    server.schedulePages = [
+      [scheduleEntry('today', today, '439.80')],
+      [scheduleEntry('final', '2099-01-01', '0.00')],
+    ];
+    const pages: unknown[] = [];
+    server.beforeRead = (path, options) => {
+      if (path !== schedulePath) return;
+      const page = options.query?.page;
+      pages.push(page);
+      if (page === 1 && pages.length === 2) throw new ApiError('unavailable', 503);
+    };
+    await renderDetail();
+
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    expect(screen.getByText(formatDate(today, 'en'))).toBeTruthy();
+    expect(screen.getByText('EUR 439.80')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Incomplete schedule/ })).toBeTruthy();
+    expect(screen.queryByText(/Paid off on/)).toBeNull();
+
+    await fireEvent.press(retry);
+    expect(await screen.findByText('Paid off on 1 Jan 2099')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Incomplete schedule/ })).toBeNull();
+    expect(pages).toEqual([0, 1, 1]);
+  });
+
+  it('hides an earlier schedule page when a later request denies access', async () => {
+    const server = fakeServer(summary({ hasAmortisation: true }), []);
+    server.schedulePages = [
+      [scheduleEntry('today', localDay(new Date()), '439.80')],
+      [scheduleEntry('final', '2099-01-01', '0.00')],
+    ];
+    server.beforeRead = (path, options) => {
+      if (path === schedulePath && options.query?.page === 1) {
+        throw new ApiError('forbidden', 403, {
+          status: 403,
+          title: 'Forbidden',
+          code: 'FORBIDDEN',
+        });
+      }
+    };
+    await renderDetail();
+
+    expect(await screen.findByText('You are not allowed to do this.')).toBeTruthy();
+    expect(screen.queryByText('EUR 439.80')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Incomplete schedule/ })).toBeNull();
+  });
+
+  it.each([
+    { locale: 'en', balance: '400.00', trend: 'decreases from' },
+    { locale: 'en', balance: '500.00', trend: 'increases from' },
+    { locale: 'en', balance: '439.800', trend: 'stays flat at' },
+    { locale: 'de', balance: '400.00', trend: 'sinkt von' },
+    { locale: 'de', balance: '500.00', trend: 'steigt von' },
+    { locale: 'de', balance: '439.800', trend: 'bleibt unverändert bei' },
+  ] as const)(
+    'announces the balance trend in $locale when it $trend',
+    async ({ locale, balance, trend }) => {
+      const server = fakeServer(summary({ hasAmortisation: true }), []);
+      server.schedulePages = [
+        [
+          scheduleEntry('first', '2099-01-01', '439.80'),
+          scheduleEntry('last', '2099-02-01', balance),
+        ],
+      ];
+      await renderDetail({ locale });
+
+      expect(await screen.findByRole('button', { name: new RegExp(trend) })).toBeTruthy();
+    },
+  );
+
   it('masks the schedule figures and chart when amounts are hidden', async () => {
     const server = fakeServer(summary({ hasAmortisation: true }), []);
-    server.schedulePages = [[scheduleEntry('upcoming', '2099-01-01', '439.80')]];
+    server.schedulePages = [
+      [
+        scheduleEntry('upcoming', '2099-01-01', '439.80'),
+        scheduleEntry('last', '2099-02-01', '400.00'),
+      ],
+    ];
     jest.mocked(useAmountsHidden).mockReturnValue(true);
     try {
       await renderDetail();
@@ -375,7 +455,8 @@ describe('S10 liability detail (#685)', () => {
       expect(screen.queryByLabelText(/439.80 euros/)).toBeNull();
       await fireEvent.press(chart);
       expect(screen.getByText(/Balances from the loan repayment schedule/)).toBeTruthy();
-      expect(screen.queryByText(/439.80 euros/)).toBeNull();
+      expect(screen.queryByText(/439.80 euros|decreases from/)).toBeNull();
+      expect(screen.queryByRole('button', { name: /decreases from/ })).toBeNull();
     } finally {
       jest.mocked(useAmountsHidden).mockReturnValue(false);
     }

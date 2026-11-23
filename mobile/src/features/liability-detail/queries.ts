@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 
 import { ApiError } from '@/api/client';
@@ -25,25 +26,30 @@ function validPage<T extends { content: unknown[]; page: { number: number; total
 }
 
 export function useLoanSchedule(accountId: string) {
-  return useQuery({
+  const query = useInfiniteQuery({
     queryKey: queryKeys.amortisationSchedule(accountId),
-    queryFn: async ({ signal }) => {
-      const entries: ScheduleEntry[] = [];
-      for (let page = 0; page < 3; page++) {
-        const response = validPage(
-          await typedApi.get('/api/v1/accounts/{accountId}/amortisation-schedule', {
-            params: { accountId },
-            query: { page, size: 200, sort: ['dueDate,asc'] },
-            signal,
-          }),
-          page,
-        );
-        entries.push(...response.content);
-        if (page + 1 >= response.page.totalPages) return { entries, complete: true };
-      }
-      return { entries, complete: false };
+    initialPageParam: 0,
+    queryFn: async ({ pageParam, signal }) =>
+      validPage(
+        await typedApi.get('/api/v1/accounts/{accountId}/amortisation-schedule', {
+          params: { accountId },
+          query: { page: pageParam, size: 200, sort: ['dueDate,asc'] },
+          signal,
+        }),
+        pageParam,
+      ),
+    getNextPageParam: ({ page }) => {
+      const next = page.number + 1;
+      return next < Math.min(page.totalPages, 3) ? next : undefined;
     },
   });
+  const { data, fetchNextPage, hasNextPage, fetchStatus, isError } = query;
+  useEffect(() => {
+    if (data && hasNextPage && fetchStatus === 'idle' && !isError) {
+      void fetchNextPage({ cancelRefetch: false });
+    }
+  }, [data, fetchNextPage, hasNextPage, fetchStatus, isError]);
+  return query;
 }
 
 async function repayments(accountId: string, page: number, size: number, signal: AbortSignal) {

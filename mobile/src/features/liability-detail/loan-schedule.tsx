@@ -25,10 +25,13 @@ import { type ScheduleEntry, useLoanSchedule } from './queries';
 export function LoanSchedulePanel({ accountId }: { accountId: string }) {
   const intl = useIntl();
   const schedule = useLoanSchedule(accountId);
-  const data = isAccessFailure(schedule.error) ? undefined : schedule.data;
+  const pages = isAccessFailure(schedule.error) ? undefined : schedule.data?.pages;
+  const entries = pages?.flatMap(({ content }) => content) ?? [];
+  const lastPage = pages?.at(-1)?.page;
+  const complete = !!lastPage && lastPage.number + 1 >= lastPage.totalPages;
   const today = localDay(new Date());
-  const next = data?.entries.find(({ dueDate }) => isValidIsoDate(dueDate) && dueDate >= today);
-  const last = data?.complete ? data.entries.at(-1) : undefined;
+  const next = entries.find(({ dueDate }) => isValidIsoDate(dueDate) && dueDate >= today);
+  const last = complete ? entries.at(-1) : undefined;
   const usableEnd = last && isValidIsoDate(last.dueDate) && isPlainDecimal(last.remainingBalance);
   const paidOff = !!usableEnd && /^-?0+(\.0+)?$/.test(last.remainingBalance);
   const date = (value: string) => formatDate(value, intl.locale);
@@ -36,14 +39,23 @@ export function LoanSchedulePanel({ accountId }: { accountId: string }) {
   return (
     <LiabilityPanel title={msg(intl, 'loan.nextPayment')}>
       {schedule.isError ? (
-        <ErrorBanner error={schedule.error} onRetry={() => void schedule.refetch()} />
+        <ErrorBanner
+          error={schedule.error}
+          onRetry={() => {
+            if (schedule.isFetchNextPageError && !isAccessFailure(schedule.error)) {
+              void schedule.fetchNextPage({ cancelRefetch: false });
+            } else {
+              void schedule.refetch();
+            }
+          }}
+        />
       ) : null}
       {schedule.isPending && schedule.isFetching ? <LoadingSkeleton count={2} /> : null}
       {schedule.isPending && schedule.isPaused ? (
         <InfoText>{msg(intl, 'loan.scheduleOffline')}</InfoText>
       ) : null}
-      <RefreshingIndicator active={schedule.isRefetching} />
-      {data && !data.entries.length ? <InfoText>{msg(intl, 'loan.noSchedule')}</InfoText> : null}
+      <RefreshingIndicator active={schedule.isRefetching || schedule.isFetchingNextPage} />
+      {complete && !entries.length ? <InfoText>{msg(intl, 'loan.noSchedule')}</InfoText> : null}
       {next ? (
         <>
           <InfoText>{date(next.dueDate)}</InfoText>
@@ -76,8 +88,10 @@ export function LoanSchedulePanel({ accountId }: { accountId: string }) {
           </InfoText>
         </>
       ) : null}
-      {data?.entries.length ? <ScheduleChart entries={data.entries} paidOff={paidOff} /> : null}
-      {data && !data.complete ? <InfoText>{msg(intl, 'loan.schedulePartial')}</InfoText> : null}
+      {entries.length ? (
+        <ScheduleChart entries={entries} paidOff={paidOff} complete={complete} />
+      ) : null}
+      {pages && !complete ? <InfoText>{msg(intl, 'loan.schedulePartial')}</InfoText> : null}
       {usableEnd ? (
         <InfoText>
           {paidOff
@@ -101,7 +115,26 @@ export function LoanSchedulePanel({ accountId }: { accountId: string }) {
   );
 }
 
-function ScheduleChart({ entries, paidOff }: { entries: ScheduleEntry[]; paidOff: boolean }) {
+/** Compare chart endpoints at the same decimal scale without rounding the server's amounts. */
+function balanceTrend(start: string, end: string) {
+  const fractionLength = (value: string) => value.split('.')[1]?.length ?? 0;
+  const scale = Math.max(fractionLength(start), fractionLength(end));
+  const scaled = (value: string) =>
+    BigInt(value.replace('.', '') + '0'.repeat(scale - fractionLength(value)));
+  const first = scaled(start);
+  const last = scaled(end);
+  return last < first ? 'decreases' : last > first ? 'increases' : 'flat';
+}
+
+function ScheduleChart({
+  entries,
+  paidOff,
+  complete,
+}: {
+  entries: ScheduleEntry[];
+  paidOff: boolean;
+  complete: boolean;
+}) {
   const intl = useIntl();
   const theme = useTheme();
   const hidden = useAmountsHidden();
@@ -122,20 +155,25 @@ function ScheduleChart({ entries, paidOff }: { entries: ScheduleEntry[]; paidOff
   const currency = entries[0].currency;
   const from = formatDate(first.date, intl.locale);
   const to = formatDate(last.date, intl.locale);
+  const amountLabel = (value: string) => amountTexts(intl, { value, currency }).label;
   const summary = hidden
     ? msg(intl, 'loan.chartHidden')
-    : msg(intl, 'loan.chartSummary', {
-        from,
-        to,
-        start: amountTexts(intl, { value: first.value, currency }).label,
-        end: amountTexts(intl, { value: last.value, currency }).label,
-      });
+    : coordinates.length === 1
+      ? msg(intl, 'loan.chartPointSummary', { date: from, amount: amountLabel(first.value) })
+      : msg(intl, 'loan.chartSummary', {
+          from,
+          to,
+          start: amountLabel(first.value),
+          end: amountLabel(last.value),
+          trend: balanceTrend(first.value, last.value),
+        });
+  const chartLabel = complete ? summary : msg(intl, 'loan.chartPartial', { summary });
 
   return (
     <>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={summary}
+        accessibilityLabel={chartLabel}
         accessibilityHint={msg(intl, 'loan.chartExplain')}
         onPress={() => setExplaining(true)}
         style={{ minHeight: 44, justifyContent: 'center' }}
@@ -161,7 +199,7 @@ function ScheduleChart({ entries, paidOff }: { entries: ScheduleEntry[]; paidOff
         onClose={() => setExplaining(false)}
       >
         <InfoText>{msg(intl, 'loan.chartSource', { from, to, currency })}</InfoText>
-        <InfoText>{summary}</InfoText>
+        <InfoText>{chartLabel}</InfoText>
       </BottomSheet>
     </>
   );
