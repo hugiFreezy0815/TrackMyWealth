@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react';
+import { setStringAsync } from 'expo-clipboard';
 import { useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { ActivityIndicator, Platform, Pressable, Text, View } from 'react-native';
@@ -17,6 +18,7 @@ import {
   useAccounts,
   useArchivedAccounts,
   useCategories,
+  usePortfolioView,
   useChangeTransactionCategory,
   useUncategorizedCount,
   useUpdateAccountOpeningDate,
@@ -50,6 +52,7 @@ import {
   ArchiveDialog,
   CategoryPickerDialog,
   SortDialog,
+  TransactionActionsDialog,
   ValueExplanationSheet,
   sortMessageId,
 } from './account-dialogs';
@@ -60,6 +63,8 @@ import {
   valueBasisExplanation,
   hasUnknownCategory,
   uniqueTransactions,
+  presentTransaction,
+  transactionPurpose,
   type AccountListItem,
   type AccountSummary,
   type Transaction,
@@ -131,6 +136,8 @@ export function AccountDetail({
   const [uncategorized, setUncategorized] = useState(false);
   const [sort, setSort] = useState<TransactionSort>('bookingDate,desc');
   const [tab, setTab] = useState(initialTab);
+  const [actionRowId, setActionRowId] = useState<string | null>(null);
+  const deferredRowAction = useRef<(() => void) | null>(null);
   const [categoryTarget, setCategoryTarget] = useState<Transaction | null>(null);
   const [pendingCategoryId, setPendingCategoryId] = useState<string | null>(null);
   const [reloadingConflict, setReloadingConflict] = useState(false);
@@ -151,6 +158,13 @@ export function AccountDetail({
   const account = useAccount(accountId);
   const summary = account.data;
   const archived = summary?.status === 'ARCHIVED';
+  const portfolioView = usePortfolioView(summary?.portfolioId ?? '', { enabled: false });
+  const maskedIdentifier =
+    !archived && !isAccessFailure(portfolioView.error)
+      ? portfolioView.data?.sections
+          .flatMap((section) => section.accounts)
+          .find((row) => row.accountId === accountId)?.maskedIdentifier
+      : null;
   const hasLedger = !!summary?.hasTransactions;
   const showingPositions = !!summary?.holdsPositions && tab === 'positions';
   const showingTransactions = hasLedger && !showingPositions;
@@ -191,6 +205,9 @@ export function AccountDetail({
     records,
     showingTransactions && !isAccessFailure(account.error) && !isAccessFailure(transactions.error),
   );
+  const readableTransactions = showingTransactions && !isAccessFailure(transactions.error);
+  const actionRow =
+    readableTransactions && actionRowId ? records.find((row) => row.id === actionRowId) : undefined;
   const recordIds = records.map((record) => record.id);
   const headingRef = useRef<ComponentRef<typeof Text>>(null);
   const rowFocus = useRowFocus(recordIds, !transactions.isFetching, headingRef);
@@ -476,6 +493,21 @@ export function AccountDetail({
     includeParent: false,
   };
 
+  function openCategoryPicker(target: Transaction) {
+    setPendingCategoryId(null);
+    setCategoryTarget(target);
+  }
+
+  function afterRowActions(action: () => void) {
+    setActionRowId(null);
+    // Let iOS finish dismissing its modal and web return focus to the opener.
+    if (Platform.OS === 'ios' || Platform.OS === 'web') deferredRowAction.current = action;
+    else action();
+  }
+
+  const actionView = actionRow ? presentTransaction(actionRow, context, intl) : null;
+  const purpose = actionRow ? transactionPurpose(actionRow) : null;
+
   // The header and controls scroll WITH the transactions on native. This keeps one
   // virtualized scroll owner (SectionList) rather than nesting a list in ShellScreen's ScrollView.
   const accountHeader = (
@@ -522,11 +554,11 @@ export function AccountDetail({
         <View style={{ flex: 1 }}>
           <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
             {intl.formatMessage(
-              { id: 'account.context' },
+              { id: maskedIdentifier ? 'account.contextMasked' : 'account.context' },
               {
                 portfolio: value?.portfolioName ?? '–',
                 type: accountTypeLabel(summary.accountType, intl),
-                currency: summary.nativeCurrency,
+                identifier: maskedIdentifier ?? '',
               },
             )}
           </Text>
@@ -736,15 +768,13 @@ export function AccountDetail({
           {accountHeader}
           {showingTransactions ? (
             <TransactionResults
-              transactions={records}
+              transactions={readableTransactions ? records : []}
               selectedTransactionId={selectedTransactionId}
               context={context}
               byDate={sort.startsWith('bookingDate')}
               onOpen={onTransaction}
-              onCategory={(target) => {
-                setPendingCategoryId(null);
-                setCategoryTarget(target);
-              }}
+              onCategory={openCategoryPicker}
+              onActions={(target) => setActionRowId(target.id)}
               onEndReached={onEndReached}
             />
           ) : null}
@@ -752,15 +782,13 @@ export function AccountDetail({
         </>
       ) : (
         <TransactionResults
-          transactions={showingTransactions ? records : []}
+          transactions={readableTransactions ? records : []}
           selectedTransactionId={selectedTransactionId}
           context={context}
           byDate={sort.startsWith('bookingDate')}
           onOpen={onTransaction}
-          onCategory={(target) => {
-            setPendingCategoryId(null);
-            setCategoryTarget(target);
-          }}
+          onCategory={openCategoryPicker}
+          onActions={(target) => setActionRowId(target.id)}
           onEndReached={onEndReached}
           listHeader={accountHeader}
           listFooter={accountFooter}
@@ -796,6 +824,42 @@ export function AccountDetail({
           changeActivityView(uncategorized, next);
           setDialog(null);
         }}
+      />
+      <TransactionActionsDialog
+        visible={!!actionRow}
+        onClose={() => setActionRowId(null)}
+        onDismiss={() => {
+          const action = deferredRowAction.current;
+          deferredRowAction.current = null;
+          if (readableTransactions) action?.();
+        }}
+        onDetails={
+          actionRow && onTransaction
+            ? () => afterRowActions(() => onTransaction(actionRow.id))
+            : undefined
+        }
+        onCategory={
+          actionRow && actionView?.canCategorize
+            ? () => afterRowActions(() => openCategoryPicker(actionRow))
+            : undefined
+        }
+        categoryDisabled={locked}
+        onCopy={
+          purpose
+            ? () => {
+                setActionRowId(null);
+                // Keep the clipboard write inside the original user gesture on web.
+                void setStringAsync(purpose, {
+                  android: { isSensitive: true },
+                  ios: { localOnly: true },
+                }).then(
+                  (copied) =>
+                    showToast(copied ? 'account.purposeCopied' : 'account.purposeCopyFailed'),
+                  () => showToast('account.purposeCopyFailed'),
+                );
+              }
+            : undefined
+        }
       />
       <CategoryPickerDialog
         visible={categoryTarget !== null}

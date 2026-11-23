@@ -215,7 +215,9 @@ describe('S4 transaction detail', () => {
 
   it('shows automatic category provenance and current server values', async () => {
     await show();
-    expect(screen.getByText('Migros')).toBeTruthy();
+    expect(screen.getByRole('header', { name: 'Migros AG' })).toBeTruthy();
+    expect(screen.getByText('Purpose')).toBeTruthy();
+    expect(screen.getByText('Migros')).not.toHaveProp('numberOfLines');
     expect(screen.getByText('Food › Groceries · automatic')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Reset category' })).toBeNull();
     expect(screen.getByText('Bank · Current account')).toBeTruthy();
@@ -904,7 +906,7 @@ describe('S4 transaction detail', () => {
   });
 
   it.each([
-    ['the detail heading while the transaction reloads', true, 'Migros'],
+    ['the detail heading while the transaction reloads', true, 'Migros AG'],
     ['Change category once the transaction has reloaded', false, 'Change category'],
   ] as const)(
     'on web, moves focus after a discarded conflict has closed to %s',

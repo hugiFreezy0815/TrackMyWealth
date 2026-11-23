@@ -130,6 +130,52 @@ export function SortDialog({
   );
 }
 
+export function TransactionActionsDialog({
+  visible,
+  onClose,
+  onDismiss,
+  onCategory,
+  categoryDisabled,
+  onDetails,
+  onCopy,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onDismiss: () => void;
+  onCategory?: () => void;
+  categoryDisabled: boolean;
+  onDetails?: () => void;
+  onCopy?: () => void;
+}) {
+  const intl = useIntl();
+  const Container = Platform.OS === 'web' ? Dialog : BottomSheet;
+  return (
+    <Container
+      visible={visible}
+      title={intl.formatMessage({ id: 'account.transactionActions' })}
+      onClose={onClose}
+      onDismiss={onDismiss}
+    >
+      {onCategory ? (
+        <ActionButton
+          label={intl.formatMessage({ id: 'account.changeCategory' })}
+          disabled={categoryDisabled}
+          onPress={onCategory}
+        />
+      ) : null}
+      {onDetails ? (
+        <ActionButton
+          label={intl.formatMessage({ id: 'account.showDetails' })}
+          onPress={onDetails}
+        />
+      ) : null}
+      {onCopy ? (
+        <ActionButton label={intl.formatMessage({ id: 'account.copyPurpose' })} onPress={onCopy} />
+      ) : null}
+    </Container>
+  );
+}
+
 export function CategoryPickerDialog({
   visible,
   categories,

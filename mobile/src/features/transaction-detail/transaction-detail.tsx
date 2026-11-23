@@ -41,7 +41,12 @@ import {
 import { Fonts, Spacing, TypeScale, Radii } from '@/constants/theme';
 import { moveAccessibilityFocus } from '@/components/shared/accessibility-focus';
 import { linkKeyProps } from '@/components/shared/link-key';
-import { transactionTypeLabel, transactionWarningTexts } from '@/features/account-detail/model';
+import {
+  transactionHeading,
+  transactionPurpose,
+  transactionTypeLabel,
+  transactionWarningTexts,
+} from '@/features/account-detail/model';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { formatDate, formatDateTime } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
@@ -50,7 +55,6 @@ import {
   canRemove,
   categoryLabel,
   historyDescription,
-  transactionTitle,
   type Category,
 } from './model';
 import { CategoryOptions } from './category-options';
@@ -548,10 +552,8 @@ export function TransactionDetail({
     conversion && !hidden && transaction.fxRateToAccountCurrency != null
       ? figureTexts(intl, { kind: 'rate', value: transaction.fxRateToAccountCurrency })
       : null;
-  const name =
-    transactionTitle(transaction) === transaction.transactionType
-      ? transactionTypeLabel(transaction.transactionType, intl)
-      : transactionTitle(transaction);
+  const name = transactionHeading(transaction, intl);
+  const purpose = transactionPurpose(transaction);
   const allCategories = historicalCategories.data ?? categories.data ?? [];
   const category = allCategories.find((item) => item.id === transaction.categoryId);
   const parent = allCategories.find((item) => item.id === category?.parentId);
@@ -742,11 +744,10 @@ export function TransactionDetail({
           ref={detailHeading}
           accessibilityRole="header"
           tabIndex={-1}
+          selectable={!!purpose && purpose.trim() === name}
           style={{ ...TypeScale.headingMedium, color: theme.textPrimary }}
         >
-          {name === 'VALUATION_ADJUSTMENT'
-            ? intl.formatMessage({ id: 'account.statementAdjustment' })
-            : name}
+          {name}
         </Text>
         <DetailLabel>
           {date(transaction.bookingDate)} ·{' '}
@@ -801,6 +802,14 @@ export function TransactionDetail({
           gap: Spacing.two,
         }}
       >
+        {purpose && purpose.trim() !== name ? (
+          <View style={{ gap: Spacing.one }}>
+            <DetailLabel>{intl.formatMessage({ id: 'txn.purpose' })}</DetailLabel>
+            <Text selectable style={{ ...TypeScale.bodyMedium, color: theme.textPrimary }}>
+              {purpose}
+            </Text>
+          </View>
+        ) : null}
         <KeyValueList items={rows} />
         {transaction.counterpartyAccountId && onAccount ? (
           <ActionButton

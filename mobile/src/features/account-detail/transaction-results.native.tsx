@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { SectionList, Text, View } from 'react-native';
+import { Platform, SectionList, Text, View } from 'react-native';
 import { useIntl } from 'react-intl';
 
-import { TypeScale } from '@/constants/theme';
+import { Spacing, TypeScale } from '@/constants/theme';
+import { formatBookingMonth } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
 
-import { groupHeading, groupedTransactions, type RowContext, type Transaction } from './model';
+import { groupedTransactions, type RowContext, type Transaction } from './model';
 import { nextPageTrigger } from './pagination';
 import { TransactionLine } from './transaction-line';
 
@@ -15,6 +16,7 @@ export type TransactionResultsProps = {
   byDate: boolean;
   onOpen?: (id: string) => void;
   onCategory: (transaction: Transaction) => void;
+  onActions?: (transaction: Transaction) => void;
   selectedTransactionId?: string | null;
   onEndReached?: () => void;
   /** The account controls are part of the same virtualized scroll content, not a parent ScrollView. */
@@ -31,6 +33,7 @@ export function TransactionResults({
   byDate,
   onOpen,
   onCategory,
+  onActions,
   onEndReached,
   listHeader,
   listFooter,
@@ -63,9 +66,9 @@ export function TransactionResults({
   );
   const sections = useMemo(
     () =>
-      groupedTransactions(transactions, byDate).map((group, index) => ({
-        key: group.date ?? `unsorted-${index}`,
-        date: group.date,
+      groupedTransactions(transactions, byDate).map((group) => ({
+        key: group.month ?? 'amount',
+        month: group.month,
         data: group.rows,
       })),
     [transactions, byDate],
@@ -80,12 +83,17 @@ export function TransactionResults({
       ListHeaderComponent={listHeader ? <View style={{ gap: 12 }}>{listHeader}</View> : undefined}
       ListFooterComponent={listFooter ? <View style={{ gap: 12 }}>{listFooter}</View> : undefined}
       renderSectionHeader={({ section }) =>
-        section.date ? (
+        section.month ? (
           <Text
             accessibilityRole="header"
-            style={{ ...TypeScale.labelMedium, color: theme.textSecondary }}
+            style={{
+              ...TypeScale.labelMedium,
+              color: theme.textSecondary,
+              backgroundColor: theme.bgCanvas,
+              paddingVertical: Spacing.one,
+            }}
           >
-            {groupHeading(section.date, intl)}
+            {formatBookingMonth(section.month, intl.locale)}
           </Text>
         ) : null
       }
@@ -93,9 +101,10 @@ export function TransactionResults({
         <TransactionLine
           transaction={item}
           context={context}
-          showDate={!byDate}
+          byDate={byDate}
           onOpen={onOpen}
           onCategory={onCategory}
+          onActions={onActions}
         />
       )}
       onViewableItemsChanged={onViewableItemsChanged}
@@ -103,7 +112,7 @@ export function TransactionResults({
       initialNumToRender={12}
       maxToRenderPerBatch={12}
       windowSize={7}
-      stickySectionHeadersEnabled={false}
+      stickySectionHeadersEnabled={byDate && Platform.OS !== 'web'}
       refreshing={refreshing}
       onRefresh={onRefresh}
       keyboardShouldPersistTaps="handled"
