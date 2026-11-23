@@ -271,6 +271,12 @@ public class ImportSnapshotCompletionService {
             position.price(),
             position.value().setScale(FxRateService.MONEY_SCALE),
             position.currency());
+        // US-15-08: the cost basis as printed, in the position's currency; never estimated.
+        BigDecimal costBasis = position.costBasis();
+        if (costBasis != null) {
+          holding.setReportedCostBasis(costBasis.setScale(FxRateService.MONEY_SCALE));
+          holding.setReportedCostBasisCurrency(position.currency());
+        }
         holding.setImportBatchId(batch.getId());
         rows.add(holding);
       }

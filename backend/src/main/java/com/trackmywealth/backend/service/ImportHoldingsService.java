@@ -184,6 +184,8 @@ public class ImportHoldingsService {
               row.getReportedPrice(),
               row.getReportedValue(),
               row.getCurrency(),
+              row.getReportedCostBasis(),
+              row.getReportedCostBasis() == null ? null : row.getCurrency(),
               securityId == null ? ImportHoldingsValues.UNRESOLVED : ImportHoldingsValues.RESOLVED,
               securityId,
               row.getWarningCodes().stream().map(code -> message(code, locale)).toList()));
@@ -307,7 +309,8 @@ public class ImportHoldingsService {
                         position.getQuantity(),
                         position.getReportedPrice(),
                         position.getReportedValue(),
-                        position.getCurrency()))
+                        position.getCurrency(),
+                        position.getReportedCostBasis()))
             .toList();
     batch.setHoldingsSnapshot(
         completionService.commit(
@@ -442,6 +445,7 @@ public class ImportHoldingsService {
     row.setQuantity(line.quantity());
     row.setReportedPrice(line.price());
     row.setReportedValue(line.value());
+    row.setReportedCostBasis(line.costBasis());
     row.setCurrency(line.currency());
     row.setAmount(line.amount());
     row.setRawText(line.rawText());

@@ -45,6 +45,10 @@ import org.springframework.web.server.ResponseStatusException;
  * since the snapshot would then miss what it held. Each number is bounded by the column it is
  * stored in: quantity {@code NUMERIC(28,10)}, price {@code NUMERIC(20,10)}, value and cash {@code
  * NUMERIC(20,4)}.
+ *
+ * <p>A position's cost basis (US-15-08, #589) is never guessed: read only where the rule maps it,
+ * and a blank or unreadable one leaves the position without a cost basis and with a warning - the
+ * line still counts, since its quantity and value were read.
  */
 @Service
 public class ImportHoldingsReaderService {
@@ -79,6 +83,8 @@ public class ImportHoldingsReaderService {
   private static final int VALUE_CELL = 5;
   private static final int CURRENCY_CELL = 6;
   private static final int CASH_AMOUNT_CELL = 7;
+  private static final int AVERAGE_PRICE_CELL = 8;
+  private static final int COST_BASIS_CELL = 9;
   private static final Set<String> POSITION_GROUPS =
       Set.of(
           ImportHoldingsRule.ISIN_GROUP,
@@ -87,7 +93,9 @@ public class ImportHoldingsReaderService {
           ImportHoldingsRule.QUANTITY_GROUP,
           ImportHoldingsRule.PRICE_GROUP,
           ImportHoldingsRule.VALUE_GROUP,
-          ImportHoldingsRule.CURRENCY_GROUP);
+          ImportHoldingsRule.CURRENCY_GROUP,
+          ImportHoldingsRule.AVERAGE_PRICE_GROUP,
+          ImportHoldingsRule.COST_BASIS_GROUP);
   private static final Set<String> CASH_GROUPS =
       Set.of(ImportHoldingsRule.CURRENCY_GROUP, ImportHoldingsRule.AMOUNT_GROUP);
 
@@ -162,7 +170,12 @@ public class ImportHoldingsReaderService {
         throw invalid(
             field,
             "A position pattern needs the named groups quantity and value, isin and/or symbol,"
-                + " and may have price, name and currency - no others.");
+                + " and may have price, name, currency, and averagePrice or costBasis - no"
+                + " others.");
+      }
+      if (groups.contains(ImportHoldingsRule.AVERAGE_PRICE_GROUP)
+          && groups.contains(ImportHoldingsRule.COST_BASIS_GROUP)) {
+        throw invalid(field, "A position's cost basis is read from averagePrice or costBasis.");
       }
     }
     if (rule.cashPattern() != null) {
@@ -204,6 +217,13 @@ public class ImportHoldingsReaderService {
     if (columns.currency() == null) {
       throw invalid(FIELD + ".columns.currency", "Map the currency column.");
     }
+    if (columns.mapsCostBasis()
+        && (!columns.mapsPositions()
+            || columns.averagePrice() != null && columns.costBasis() != null)) {
+      throw invalid(
+          COLUMNS_FIELD,
+          "A position's cost basis is read from one column: averagePrice or costBasis.");
+    }
     List<String> mapped = mappedColumns(columns);
     for (String column : mapped) {
       if (column.isBlank()) {
@@ -228,7 +248,9 @@ public class ImportHoldingsReaderService {
           columns.price(),
           columns.value(),
           columns.currency(),
-          columns.cashAmount()
+          columns.cashAmount(),
+          columns.averagePrice(),
+          columns.costBasis()
         }) {
       if (column != null && !mapped.contains(column)) {
         mapped.add(column);
@@ -397,7 +419,9 @@ public class ImportHoldingsReaderService {
       indexOf(columns.price(), header),
       indexOf(columns.value(), header),
       indexOf(columns.currency(), header),
-      indexOf(columns.cashAmount(), header)
+      indexOf(columns.cashAmount(), header),
+      indexOf(columns.averagePrice(), header),
+      indexOf(columns.costBasis(), header)
     };
     List<ImportHoldingsStatement.Line> read = new ArrayList<>();
     Set<String> seen = new HashSet<>();
@@ -463,6 +487,8 @@ public class ImportHoldingsReaderService {
             quantity,
             cell(row, at[PRICE_CELL]),
             cell(row, at[VALUE_CELL]),
+            mapped(row, at[AVERAGE_PRICE_CELL]),
+            mapped(row, at[COST_BASIS_CELL]),
             currencyCode(cell(row, at[CURRENCY_CELL]).text()),
             template);
       } catch (ImportRowRejectedException e) {
@@ -502,6 +528,8 @@ public class ImportHoldingsReaderService {
           text(group(matcher, ImportHoldingsRule.QUANTITY_GROUP)),
           text(group(matcher, ImportHoldingsRule.PRICE_GROUP)),
           text(group(matcher, ImportHoldingsRule.VALUE_GROUP)),
+          mapped(matcher, ImportHoldingsRule.AVERAGE_PRICE_GROUP),
+          mapped(matcher, ImportHoldingsRule.COST_BASIS_GROUP),
           ownCurrency == null ? sectionCurrency : currencyCode(ownCurrency),
           template);
     } catch (ImportRowRejectedException e) {
@@ -518,6 +546,8 @@ public class ImportHoldingsReaderService {
       SpreadsheetCell quantityCell,
       SpreadsheetCell priceCell,
       SpreadsheetCell valueCell,
+      SpreadsheetCell averagePriceCell,
+      SpreadsheetCell costBasisCell,
       String currency,
       ImportTemplateDefinition template) {
     if (isin != null && !IsinValidator.isValidIsin(isin)) {
@@ -539,12 +569,48 @@ public class ImportHoldingsReaderService {
       return ImportHoldingsStatement.Line.error(
           number, rawText, ImportHoldingsValues.ERROR_CURRENCY_MISSING);
     }
-    List<String> warnings =
-        price != null && mismatched(quantity, price, value)
-            ? List.of(ImportHoldingsValues.WARNING_VALUE_MISMATCH)
-            : List.of();
+    List<String> warnings = new ArrayList<>();
+    if (price != null && mismatched(quantity, price, value)) {
+      warnings.add(ImportHoldingsValues.WARNING_VALUE_MISMATCH);
+    }
+    BigDecimal costBasis = null;
+    if (averagePriceCell != null || costBasisCell != null) {
+      try {
+        costBasis = costBasis(quantity, averagePriceCell, costBasisCell, template);
+      } catch (ImportRowRejectedException e) {
+        warnings.add(ImportHoldingsValues.WARNING_COST_BASIS_UNREADABLE);
+      }
+    }
     return ImportHoldingsStatement.Line.position(
-        number, isin, symbol, name(name), quantity, price, value, currency, warnings);
+        number, isin, symbol, name(name), quantity, price, value, costBasis, currency, warnings);
+  }
+
+  // US-15-08: the position's total cost - quantity x the average price, rounded to the cost
+  // column's scale, or the total as printed. Blank, negative or out of range is unreadable.
+  private static BigDecimal costBasis(
+      BigDecimal quantity,
+      SpreadsheetCell averagePriceCell,
+      SpreadsheetCell costBasisCell,
+      ImportTemplateDefinition template) {
+    BigDecimal cost;
+    if (averagePriceCell == null) {
+      cost = number(costBasisCell, template, MONEY_INTEGER_DIGITS, MONEY_FRACTION_DIGITS);
+    } else {
+      BigDecimal averagePrice =
+          number(averagePriceCell, template, PRICE_INTEGER_DIGITS, PRICE_FRACTION_DIGITS);
+      cost =
+          quantity
+              .multiply(averagePrice)
+              .setScale(MONEY_FRACTION_DIGITS, RoundingMode.HALF_UP)
+              .stripTrailingZeros();
+      if (cost.scale() < 0) {
+        cost = cost.setScale(0);
+      }
+    }
+    if (cost.signum() < 0 || cost.precision() - cost.scale() > MONEY_INTEGER_DIGITS) {
+      throw new ImportRowRejectedException(ImportHoldingsValues.ERROR_VALUE_UNREADABLE, Map.of());
+    }
+    return cost;
   }
 
   private static ImportHoldingsStatement.Line cashLine(
@@ -652,6 +718,16 @@ public class ImportHoldingsReaderService {
   // A named group's text, or null when the pattern has no such group or it did not take part.
   private static String group(Matcher matcher, String name) {
     return matcher.pattern().namedGroups().containsKey(name) ? matcher.group(name) : null;
+  }
+
+  // A cost basis cell the rule maps (blank when this row leaves it empty), or null when unmapped.
+  private static SpreadsheetCell mapped(List<SpreadsheetCell> row, int index) {
+    return index < 0 ? null : cell(row, index);
+  }
+
+  // A cost basis group the pattern has (blank when it did not take part), or null without one.
+  private static SpreadsheetCell mapped(Matcher matcher, String name) {
+    return matcher.pattern().namedGroups().containsKey(name) ? text(matcher.group(name)) : null;
   }
 
   private static SpreadsheetCell text(String value) {

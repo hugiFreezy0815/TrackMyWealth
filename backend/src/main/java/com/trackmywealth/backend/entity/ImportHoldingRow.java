@@ -58,6 +58,10 @@ public class ImportHoldingRow {
   @Column(name = "reported_value")
   private BigDecimal reportedValue;
 
+  // US-15-08 (V126): the position's total cost in its currency, as the statement prints it.
+  @Column(name = "reported_cost_basis")
+  private BigDecimal reportedCostBasis;
+
   @JdbcTypeCode(SqlTypes.CHAR)
   @Column(length = 3)
   private String currency;
@@ -156,6 +160,14 @@ public class ImportHoldingRow {
 
   public void setReportedValue(BigDecimal reportedValue) {
     this.reportedValue = reportedValue;
+  }
+
+  public BigDecimal getReportedCostBasis() {
+    return reportedCostBasis;
+  }
+
+  public void setReportedCostBasis(BigDecimal reportedCostBasis) {
+    this.reportedCostBasis = reportedCostBasis;
   }
 
   public String getCurrency() {

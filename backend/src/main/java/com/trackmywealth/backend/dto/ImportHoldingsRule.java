@@ -23,7 +23,8 @@ import org.jspecify.annotations.Nullable;
  *       matches is a position, with the named groups {@value #QUANTITY_GROUP} and {@value
  *       #VALUE_GROUP}, at least one of {@value #ISIN_GROUP} and {@value #SYMBOL_GROUP}, and
  *       optionally {@value #PRICE_GROUP}, {@value #NAME_GROUP} and {@value #CURRENCY_GROUP} (else
- *       the section's currency);
+ *       the section's currency), and at most one of {@value #AVERAGE_PRICE_GROUP} and {@value
+ *       #COST_BASIS_GROUP} (US-15-08, below);
  *   <li>{@code cashPattern}, optional, the named groups {@value #CURRENCY_GROUP} and {@value
  *       #AMOUNT_GROUP}: a cash balance.
  * </ul>
@@ -32,6 +33,12 @@ import org.jspecify.annotations.Nullable;
  * position, one with a cash amount and a currency code is a cash balance, any other row (a group
  * heading, a subtotal) is passed over. The date is the one the member enters at upload: a
  * spreadsheet export states none.
+ *
+ * <p><b>Cost basis</b> (US-15-08, #589), optional: the statement's average purchase price per unit
+ * ({@value #AVERAGE_PRICE_GROUP}; cost basis = quantity x average price) or its total cost ({@value
+ * #COST_BASIS_GROUP}), as a named group or a column. It is in the position's currency - the row's,
+ * else the section's - as the price and value are. A position whose cost basis cannot be read keeps
+ * no cost basis and gets a warning; it does not block the commit (FR-PERF-018: no guessing).
  *
  * <p>Amounts are read with the template's separators. A line or row a pattern took for a position
  * or a cash balance but whose values cannot be read is never dropped: it blocks the commit.
@@ -58,7 +65,8 @@ public record ImportHoldingsRule(
     @Schema(
             description =
                 "PDF: RE2 patterns of a position line, with the named groups quantity and value,"
-                    + " isin and/or symbol, and optionally price, name and currency.")
+                    + " isin and/or symbol, optionally price, name and currency, and at most one of"
+                    + " averagePrice and costBasis.")
         @Size(max = MAX_POSITION_PATTERNS)
         List<@Size(max = ImportPdfLayout.MAX_PATTERN_LENGTH) String> positionPatterns,
     @Schema(
@@ -80,6 +88,13 @@ public record ImportHoldingsRule(
   public static final String PRICE_GROUP = "price";
   public static final String VALUE_GROUP = "value";
   public static final String AMOUNT_GROUP = "amount";
+
+  /** US-15-08: the average purchase price per unit; cost basis = quantity x average price. */
+  public static final String AVERAGE_PRICE_GROUP = "averagePrice";
+
+  /** US-15-08: the total cost of the position. */
+  public static final String COST_BASIS_GROUP = "costBasis";
+
   public static final int MAX_POSITION_PATTERNS = 5;
 
   public ImportHoldingsRule {
@@ -93,7 +108,9 @@ public record ImportHoldingsRule(
   /**
    * US-07-13: the header cells of a spreadsheet holdings statement. {@code quantity} and {@code
    * value} are mapped together, with {@code currency} and at least one of {@code isin} and {@code
-   * symbol}; {@code cashAmount} with {@code currency}. At least one of the two is mapped.
+   * symbol}; {@code cashAmount} with {@code currency}. At least one of the two is mapped. US-15-08:
+   * a position's cost basis, optionally, from at most one of {@code averagePrice} and {@code
+   * costBasis}.
    */
   public record ImportHoldingsColumns(
       @Size(max = MAX_COLUMN_LENGTH) @Nullable String isin,
@@ -103,7 +120,13 @@ public record ImportHoldingsRule(
       @Size(max = MAX_COLUMN_LENGTH) @Nullable String price,
       @Size(max = MAX_COLUMN_LENGTH) @Nullable String value,
       @Size(max = MAX_COLUMN_LENGTH) String currency,
-      @Size(max = MAX_COLUMN_LENGTH) @Nullable String cashAmount) {
+      @Size(max = MAX_COLUMN_LENGTH) @Nullable String cashAmount,
+      @Schema(description = "Optional: the average purchase price per unit (US-15-08).")
+          @Size(max = MAX_COLUMN_LENGTH)
+          @Nullable String averagePrice,
+      @Schema(description = "Optional: the position's total cost (US-15-08).")
+          @Size(max = MAX_COLUMN_LENGTH)
+          @Nullable String costBasis) {
 
     public static final int MAX_COLUMN_LENGTH = 200;
 
@@ -115,6 +138,11 @@ public record ImportHoldingsRule(
     /** Whether a row can be a cash balance. */
     public boolean mapsCash() {
       return cashAmount != null;
+    }
+
+    /** Whether a position's cost basis is read: from its average price or its total cost. */
+    public boolean mapsCostBasis() {
+      return averagePrice != null || costBasis != null;
     }
   }
 }

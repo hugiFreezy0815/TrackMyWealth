@@ -82,7 +82,7 @@ class ImportRoutingControllerTest {
   private static final String CARD = "1234 56** **** 7890";
   // The shipped Swissquote holdings statement template (V100, a SNAPSHOT PDF template).
   private static final UUID SWISSQUOTE_HOLDINGS =
-      UUID.fromString("003878c0-995e-4801-96d3-3e431c5095a2");
+      UUID.fromString("24803064-3f64-4856-b79a-a2b33e4c37c2");
 
   @Container
   static PostgreSQLContainer<?> postgres =

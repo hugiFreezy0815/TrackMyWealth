@@ -71,7 +71,9 @@ public record ImportHoldingsResponse(
 
   /**
    * One position: as the statement reports it, and the security it resolves to ({@code securityId}
-   * while {@code RESOLVED}).
+   * while {@code RESOLVED}). US-15-08: {@code reportedCostBasis} is the total cost the commit
+   * stores, in {@code reportedCostBasisCurrency}; both null when the statement prints none or it is
+   * unreadable (then a warning says so).
    */
   public record Position(
       int rowNumber,
@@ -82,6 +84,10 @@ public record ImportHoldingsResponse(
       BigDecimal reportedPrice,
       BigDecimal reportedValue,
       String reportedCurrency,
+      @Schema(description = "US-15-08: the total cost the commit stores, as printed.")
+          @Nullable BigDecimal reportedCostBasis,
+      @Schema(description = "US-15-08: the currency of reportedCostBasis.")
+          @Nullable String reportedCostBasisCurrency,
       @Schema(allowableValues = {"RESOLVED", "UNRESOLVED"}) String resolution,
       @Nullable UUID securityId,
       List<ImportRowErrorResponse> warnings) {

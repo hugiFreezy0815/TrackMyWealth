@@ -26,9 +26,11 @@ public record ImportHoldingsStatement(LocalDate date, String dateSource, List<Li
 
   /**
    * One line as read. A position has an ISIN or a symbol (or both), a quantity, a value and their
-   * currency, and possibly a name and a price; a cash balance a currency and an amount; an {@code
-   * ERROR} line its text and error code only.
+   * currency, and possibly a name, a price and a cost basis; a cash balance a currency and an
+   * amount; an {@code ERROR} line its text and error code only.
    *
+   * @param costBasis US-15-08: a position's total cost in its {@code currency}, as the statement
+   *     prints it (or quantity x its average price); null when it prints none or it is unreadable
    * @param rawText what the line said: a PDF line or a row's cells, for an unreadable line only
    * @param warnings warning codes ({@link ImportHoldingsValues#WARNING_VALUE_MISMATCH})
    */
@@ -41,6 +43,7 @@ public record ImportHoldingsStatement(LocalDate date, String dateSource, List<Li
       BigDecimal quantity,
       BigDecimal price,
       BigDecimal value,
+      BigDecimal costBasis,
       String currency,
       BigDecimal amount,
       String rawText,
@@ -59,6 +62,7 @@ public record ImportHoldingsStatement(LocalDate date, String dateSource, List<Li
         BigDecimal quantity,
         BigDecimal price,
         BigDecimal value,
+        BigDecimal costBasis,
         String currency,
         List<String> warnings) {
       return new Line(
@@ -70,6 +74,7 @@ public record ImportHoldingsStatement(LocalDate date, String dateSource, List<Li
           quantity,
           price,
           value,
+          costBasis,
           currency,
           null,
           null,
@@ -87,6 +92,7 @@ public record ImportHoldingsStatement(LocalDate date, String dateSource, List<Li
           null,
           null,
           null,
+          null,
           currency,
           amount,
           null,
@@ -98,6 +104,7 @@ public record ImportHoldingsStatement(LocalDate date, String dateSource, List<Li
       return new Line(
           rowNumber,
           ImportHoldingsValues.KIND_ERROR,
+          null,
           null,
           null,
           null,

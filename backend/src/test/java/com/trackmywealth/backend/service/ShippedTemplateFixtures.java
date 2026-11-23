@@ -504,22 +504,7 @@ public final class ShippedTemplateFixtures {
   public static byte[] postfinancePositionsWorkbook() throws IOException {
     try (Workbook workbook = new XSSFWorkbook()) {
       Sheet sheet = workbook.createSheet("Positionen");
-      row(
-          sheet,
-          0,
-          "",
-          "Symbol",
-          "Anzahl",
-          "Einstandskurs",
-          "Totalwert",
-          "Tagesveränderung",
-          "Diff. Vortag %",
-          "Preis",
-          "Währung",
-          "G&V Nominalwert CHF",
-          "G&V % CHF",
-          "Totalwert CHF",
-          "Positionen %");
+      positionsHeaderRow(sheet);
       row(sheet, 1, "Aktien");
       row(
           sheet,
@@ -587,6 +572,129 @@ public final class ShippedTemplateFixtures {
           1174.31,
           0.1);
       row(sheet, 7, "", "Gesamt", "", "", "", "", "", "", "", 650.35, 0.08, 8204.51, 1.0);
+      return bytes(workbook);
+    }
+  }
+
+  // The shipped PF-5 header row (V100).
+  private static void positionsHeaderRow(Sheet sheet) {
+    row(
+        sheet,
+        0,
+        "",
+        "Symbol",
+        "Anzahl",
+        "Einstandskurs",
+        "Totalwert",
+        "Tagesveränderung",
+        "Diff. Vortag %",
+        "Preis",
+        "Währung",
+        "G&V Nominalwert CHF",
+        "G&V % CHF",
+        "Totalwert CHF",
+        "Positionen %");
+  }
+
+  // --- cost basis (US-15-08, #589; V126) ---------------------------------------------------
+
+  /**
+   * A one-page statement in the Swissquote layout: the Yuh-style crypto line (no purchase price), a
+   * USD position of 10 at an average price of 75.00, valued 1'000.00 (cost basis 750.00 USD), and a
+   * CHF position whose average price is no number.
+   */
+  public static byte[] swissquoteCostBasisHoldings() throws IOException {
+    List<List<Cell>> page = new ArrayList<>();
+    page.add(List.of(at(40, "Portfolio-Wertentwicklung per " + HOLDING_DATE)));
+    page.add(holdingsHeading());
+    page.add(List.of(at(40, "Kryptowährungen")));
+    page.add(List.of(at(40, "Währung Beschreibung Wert Wechselkurs (1) Bewertung in CHF %")));
+    page.add(
+        List.of(
+            at(
+                40,
+                HOLDING_CRYPTO
+                    + " Position in "
+                    + HOLDING_CRYPTO
+                    + " 12.5000000 3.1415926 39.27 0.33")));
+    page.add(List.of(at(40, "Aktien in USD")));
+    page.add(List.of(at(40, positionsHeader("USD") + " Wechselkurs Bewertung in CHF %")));
+    page.add(
+        List.of(
+            at(
+                40,
+                "10 COST EXAMPLE INC "
+                    + HOLDING_ISIN_USD
+                    + " 75.00 100.00 30.12.2031 1'000.00 800.00 49.67")));
+    page.add(List.of(at(40, "Aktien in CHF")));
+    page.add(List.of(at(40, positionsHeader("CHF"))));
+    page.add(
+        List.of(
+            at(
+                40,
+                "25 INVENTED HOLDING AG N "
+                    + HOLDING_ISIN_CHF
+                    + " n/a 113.400 30.12.2031 2'835.00 49.67")));
+    page.add(List.of(atFoot(40, "Invented Bank AG, Beispielweg 1"), at(480, "Seite 1 / 1")));
+    return SyntheticStatements.statement(List.of(page));
+  }
+
+  /**
+   * A PF-5 positions export whose rows print the Einstandskurs: 20 at 50.00 CHF, valued 1'100.00
+   * (cost basis 1'000.00 CHF), a USD row with a blank and an ETF row with an unreadable one.
+   */
+  public static byte[] postfinanceCostBasisWorkbook() throws IOException {
+    try (Workbook workbook = new XSSFWorkbook()) {
+      Sheet sheet = workbook.createSheet("Positionen");
+      positionsHeaderRow(sheet);
+      row(
+          sheet,
+          1,
+          "",
+          WORKBOOK_TICKER_CHF,
+          20,
+          50.0,
+          1100.0,
+          "",
+          "",
+          55.0,
+          "CHF",
+          100.0,
+          0.1,
+          1100.0,
+          0.15);
+      row(
+          sheet,
+          2,
+          "",
+          WORKBOOK_TICKER_USD,
+          1200,
+          "",
+          5244.0,
+          "",
+          "",
+          4.37,
+          "USD",
+          254.4,
+          0.06,
+          4195.2,
+          0.7);
+      row(
+          sheet,
+          3,
+          "",
+          WORKBOOK_TICKER_ETF,
+          12.3456,
+          "n/a",
+          1174.31,
+          "",
+          "",
+          95.12,
+          "CHF",
+          92.2,
+          0.09,
+          1174.31,
+          0.15);
       return bytes(workbook);
     }
   }

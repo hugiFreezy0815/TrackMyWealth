@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.groups.Tuple.tuple;
 
 import com.trackmywealth.backend.dto.AccountListItemResponse;
+import com.trackmywealth.backend.dto.AccountPositionResponse;
 import com.trackmywealth.backend.dto.AccountPositionsResponse;
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
@@ -17,6 +18,7 @@ import com.trackmywealth.backend.dto.ImportHoldingsResponse;
 import com.trackmywealth.backend.dto.ImportHoldingsValues;
 import com.trackmywealth.backend.dto.ImportRollbackRequest;
 import com.trackmywealth.backend.dto.ImportRollbackResponse;
+import com.trackmywealth.backend.dto.ImportRowErrorResponse;
 import com.trackmywealth.backend.dto.ImportSnapshotValues;
 import com.trackmywealth.backend.dto.ImportStatementBalanceResponse;
 import com.trackmywealth.backend.dto.ImportStatementBalanceRule;
@@ -91,9 +93,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class HoldingsImportControllerTest {
 
   private static final String PASSWORD = "correct-horse-battery-staple";
-  private static final UUID SWISSQUOTE = UUID.fromString("003878c0-995e-4801-96d3-3e431c5095a2");
+  private static final UUID SWISSQUOTE = UUID.fromString("24803064-3f64-4856-b79a-a2b33e4c37c2");
   private static final UUID POSITIONS_XLSX =
-      UUID.fromString("41aff7f6-3fc8-4206-ae61-dc4bf3fdad53");
+      UUID.fromString("cd83acd5-0e83-4433-bda7-4813133a6582");
   private static final UUID CASH_XLS = UUID.fromString("1dcaf9a1-3aab-4b56-8e44-1a252821ca23");
   private static final LocalDate STATEMENT_DATE = LocalDate.of(2031, 12, 31);
   private static final LocalDate EXPORT_DATE = LocalDate.of(2031, 11, 30);
@@ -613,6 +615,129 @@ class HoldingsImportControllerTest {
     assertThat(get(depot, again.id()).holdings().readyToCommit()).isTrue();
     assertThat(commit(get(depot, again.id())).holdings().snapshot())
         .isEqualTo(ImportSnapshotValues.RECORDED);
+  }
+
+  // --- cost basis (US-15-08, #589) ----------------------------------------------------------
+
+  @Test
+  void aSwissquoteAveragePriceBecomesTheCostBasisAndTheGain() throws Exception {
+    UUID usd = createSecurity(ShippedTemplateFixtures.HOLDING_ISIN_USD, null, "EQUITY", "USD");
+    UUID chf = createSecurity(ShippedTemplateFixtures.HOLDING_ISIN_CHF, null, "EQUITY", "CHF");
+    UUID coin = createSecurity(null, ShippedTemplateFixtures.HOLDING_CRYPTO, "CRYPTO", "CHF");
+
+    ImportBatchResponse preview =
+        upload(depot, ShippedTemplateFixtures.swissquoteCostBasisHoldings(), null);
+
+    // The preview says what the commit stores: 10 x 75.00 = 750 USD; nothing for the crypto line
+    // (no purchase price printed) or the CHF line (unreadable: a warning, not a blocker).
+    assertThat(preview.holdings().positions())
+        .extracting(
+            ImportHoldingsResponse.Position::securityId,
+            ImportHoldingsResponse.Position::reportedCostBasis,
+            ImportHoldingsResponse.Position::reportedCostBasisCurrency)
+        .containsExactly(
+            tuple(coin, null, null),
+            tuple(usd, new BigDecimal("750"), "USD"),
+            tuple(chf, null, null));
+    assertThat(preview.holdings().positions().get(2).warnings())
+        .extracting(ImportRowErrorResponse::code)
+        .containsExactly(ImportHoldingsValues.WARNING_COST_BASIS_UNREADABLE);
+    assertThat(preview.holdings().positions().get(2).warnings().get(0).message())
+        .contains("purchase price");
+    assertThat(preview.holdings().readyToCommit()).isTrue();
+
+    commit(preview);
+
+    assertThat(snapshots(depot).get(0).holdings())
+        .extracting(
+            SnapshotHoldingResponse::securityId,
+            SnapshotHoldingResponse::reportedCostBasis,
+            SnapshotHoldingResponse::reportedCostBasisCurrency,
+            SnapshotHoldingResponse::costBasisIsEstimated)
+        .containsExactlyInAnyOrder(
+            tuple(coin, null, null, false),
+            tuple(usd, new BigDecimal("750.0000"), "USD", false),
+            tuple(chf, null, null, false));
+    assertThat(positions().positions())
+        .extracting(
+            AccountPositionResponse::securityId,
+            AccountPositionResponse::unrealisedGain,
+            AccountPositionResponse::unrealisedGainCurrency)
+        .containsExactlyInAnyOrder(
+            tuple(coin, null, null),
+            tuple(usd, new BigDecimal("250.0000"), "USD"),
+            tuple(chf, null, null));
+  }
+
+  @Test
+  void aPositionsWorkbooksEinstandskursBecomesTheCostBasis() throws Exception {
+    createWorkbookSecurities();
+
+    ImportBatchResponse preview =
+        upload(depot, ShippedTemplateFixtures.postfinanceCostBasisWorkbook(), EXPORT_DATE);
+
+    assertThat(preview.holdings().positions())
+        .extracting(
+            ImportHoldingsResponse.Position::symbol,
+            ImportHoldingsResponse.Position::reportedCostBasis,
+            ImportHoldingsResponse.Position::reportedCostBasisCurrency,
+            position -> position.warnings().stream().map(ImportRowErrorResponse::code).toList())
+        .containsExactly(
+            tuple(
+                ShippedTemplateFixtures.WORKBOOK_TICKER_CHF,
+                new BigDecimal("1000"),
+                "CHF",
+                List.of()),
+            tuple(
+                ShippedTemplateFixtures.WORKBOOK_TICKER_USD,
+                null,
+                null,
+                List.of(ImportHoldingsValues.WARNING_COST_BASIS_UNREADABLE)),
+            tuple(
+                ShippedTemplateFixtures.WORKBOOK_TICKER_ETF,
+                null,
+                null,
+                List.of(ImportHoldingsValues.WARNING_COST_BASIS_UNREADABLE)));
+    assertThat(preview.holdings().readyToCommit()).isTrue();
+
+    commit(preview);
+
+    assertThat(
+            rowsOf(
+                "SELECT h.reported_cost_basis, h.reported_cost_basis_currency"
+                    + " FROM snapshot_holding h WHERE h.reported_cost_basis IS NOT NULL"))
+        .singleElement()
+        .satisfies(
+            row -> {
+              assertThat((BigDecimal) row.get("reported_cost_basis"))
+                  .isEqualByComparingTo("1000.00");
+              assertThat(row.get("reported_cost_basis_currency")).isEqualTo("CHF");
+            });
+    assertThat(count("SELECT count(*) FROM snapshot_holding")).isEqualTo(3);
+    assertThat(positions().positions())
+        .filteredOn(position -> position.unrealisedGain() != null)
+        .singleElement()
+        .satisfies(
+            position -> {
+              assertThat(position.unrealisedGain()).isEqualByComparingTo("100");
+              assertThat(position.unrealisedGainCurrency()).isEqualTo("CHF");
+            });
+  }
+
+  @Test
+  void theSameStatementWithItsCostBasisImportedTwiceRecordsNothingTwice() throws Exception {
+    createAllSecurities();
+    byte[] statement = ShippedTemplateFixtures.swissquoteCostBasisHoldings();
+    commit(upload(depot, statement, null));
+
+    ImportBatchResponse again = upload(depot, statement, null);
+
+    assertThat(again.holdings().snapshot()).isEqualTo(ImportSnapshotValues.ALREADY_RECORDED);
+    expectProblem(commitRequest(again), 409, ProblemCode.IMPORT_SNAPSHOT_ALREADY_RECORDED);
+    assertThat(count("SELECT count(*) FROM account_snapshot")).isEqualTo(1);
+    assertThat(count("SELECT count(*) FROM snapshot_holding")).isEqualTo(3);
+    assertThat(count("SELECT count(*) FROM snapshot_holding WHERE reported_cost_basis IS NOT NULL"))
+        .isEqualTo(1);
   }
 
   // --- spreadsheets --------------------------------------------------------------------------

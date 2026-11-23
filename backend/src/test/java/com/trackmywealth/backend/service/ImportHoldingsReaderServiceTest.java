@@ -41,7 +41,7 @@ class ImportHoldingsReaderServiceTest {
           "Bewertung in (?P<currency>[A-Z]{3})",
           List.of(
               "^(?P<quantity>[0-9][0-9'.]*) (?P<name>.+) (?P<isin>[A-Z]{2}[A-Z0-9]{9}[0-9])"
-                  + " [0-9'.]+ (?P<price>[0-9'.]+) [0-9]{2}[.][0-9]{2}[.][0-9]{4}"
+                  + " (?P<averagePrice>\\S+) (?P<price>[0-9'.]+) [0-9]{2}[.][0-9]{2}[.][0-9]{4}"
                   + " (?P<value>[0-9'.]+)(?: [0-9'.]+)? -?[0-9.]+$",
               "^(?P<symbol>[A-Z0-9]{2,10}) Position in [A-Z0-9]{2,10} (?P<quantity>[0-9'.]+)"
                   + " (?P<price>[0-9'.]+) (?P<value>[0-9'.]+) -?[0-9.]+$"),
@@ -50,9 +50,19 @@ class ImportHoldingsReaderServiceTest {
           null);
   static final ImportHoldingsColumns POSITIONS =
       new ImportHoldingsColumns(
-          null, "Symbol", null, "Anzahl", "Preis", "Totalwert", "Währung", null);
+          null,
+          "Symbol",
+          null,
+          "Anzahl",
+          "Preis",
+          "Totalwert",
+          "Währung",
+          null,
+          "Einstandskurs",
+          null);
   static final ImportHoldingsColumns CASH =
-      new ImportHoldingsColumns(null, null, null, null, null, null, "Währung", "Kontosaldo");
+      new ImportHoldingsColumns(
+          null, null, null, null, null, null, "Währung", "Kontosaldo", null, null);
   private static final LocalDate MEMBER_DATE = LocalDate.of(2031, 12, 31);
 
   private final PdfImportReaderService pdf =
@@ -269,7 +279,8 @@ class ImportHoldingsReaderServiceTest {
             () ->
                 ImportHoldingsReaderService.validate(
                     sheetTemplate(POSITIONS),
-                    List.of("", "Symbol", "Anzahl", "Preis", "Totalwert", "Währung")))
+                    List.of(
+                        "", "Symbol", "Anzahl", "Einstandskurs", "Preis", "Totalwert", "Währung")))
         .doesNotThrowAnyException();
     assertThatCode(() -> ImportHoldingsReaderService.validate(sheetTemplate(CASH), null))
         .doesNotThrowAnyException();
@@ -319,12 +330,188 @@ class ImportHoldingsReaderServiceTest {
         "holdingsRule");
     assertInvalid(
         sheetTemplate(
-            new ImportHoldingsColumns(null, "Symbol", null, "Anzahl", null, null, "Währung", null)),
+            new ImportHoldingsColumns(
+                null, "Symbol", null, "Anzahl", null, null, "Währung", null, null, null)),
         "holdingsRule.columns");
     assertInvalid(
         sheetTemplate(
-            new ImportHoldingsColumns(null, null, null, null, null, null, null, "Kontosaldo")),
+            new ImportHoldingsColumns(
+                null, null, null, null, null, null, null, "Kontosaldo", null, null)),
         "holdingsRule.columns.currency");
+  }
+
+  // --- cost basis (US-15-08, #589) ----------------------------------------------------------
+
+  @Test
+  void aSwissquoteAveragePriceTimesTheQuantityIsTheCostBasisInTheSectionsCurrency()
+      throws Exception {
+    ImportHoldingsStatement statement =
+        reader.read(
+            ShippedTemplateFixtures.swissquoteCostBasisHoldings(), pdfTemplate(SWISSQUOTE), null);
+
+    // The crypto line prints no purchase price: no cost basis, and no warning either. The CHF
+    // line's average price is no number: still a position, without a cost basis, with a warning.
+    assertThat(statement.linesOf(ImportHoldingsValues.KIND_POSITION))
+        .extracting(Line::symbol, Line::isin, Line::costBasis, Line::currency, Line::warnings)
+        .containsExactly(
+            tuple("XQZ", null, null, "CHF", List.of()),
+            tuple(
+                null,
+                ShippedTemplateFixtures.HOLDING_ISIN_USD,
+                new BigDecimal("750"),
+                "USD",
+                List.of()),
+            tuple(
+                null,
+                ShippedTemplateFixtures.HOLDING_ISIN_CHF,
+                null,
+                "CHF",
+                List.of(ImportHoldingsValues.WARNING_COST_BASIS_UNREADABLE)));
+    assertThat(statement.linesOf(ImportHoldingsValues.KIND_ERROR)).isEmpty();
+  }
+
+  @Test
+  void theShippedSwissquoteStatementGetsACostBasisForEveryPositionWithAnAveragePrice()
+      throws Exception {
+    ImportHoldingsStatement statement =
+        reader.read(ShippedTemplateFixtures.swissquoteHoldings(), pdfTemplate(SWISSQUOTE), null);
+
+    assertThat(statement.linesOf(ImportHoldingsValues.KIND_POSITION))
+        .extracting(Line::costBasis)
+        .containsExactly(
+            null,
+            new BigDecimal("2531.25"),
+            new BigDecimal("4926"),
+            // 12.3456 x 87.650 = 1082.091840, rounded to the cost column's four decimals.
+            new BigDecimal("1082.0918"));
+  }
+
+  @Test
+  void aPositionsExportReadsTheEinstandskursAndWarnsOnABlankOrUnreadableOne() throws Exception {
+    ImportHoldingsStatement statement =
+        reader.read(
+            ShippedTemplateFixtures.postfinanceCostBasisWorkbook(),
+            sheetTemplate(POSITIONS),
+            MEMBER_DATE);
+
+    assertThat(statement.linesOf(ImportHoldingsValues.KIND_POSITION))
+        .extracting(Line::symbol, Line::costBasis, Line::currency, Line::warnings)
+        .containsExactly(
+            tuple(
+                ShippedTemplateFixtures.WORKBOOK_TICKER_CHF,
+                new BigDecimal("1000"),
+                "CHF",
+                List.of()),
+            tuple(
+                ShippedTemplateFixtures.WORKBOOK_TICKER_USD,
+                null,
+                "USD",
+                List.of(ImportHoldingsValues.WARNING_COST_BASIS_UNREADABLE)),
+            tuple(
+                ShippedTemplateFixtures.WORKBOOK_TICKER_ETF,
+                null,
+                "CHF",
+                List.of(ImportHoldingsValues.WARNING_COST_BASIS_UNREADABLE)));
+    assertThat(statement.linesOf(ImportHoldingsValues.KIND_ERROR)).isEmpty();
+  }
+
+  @Test
+  void aTotalCostIsTakenAsPrintedAndANegativeOrOversizedOneIsUnreadable() {
+    ImportHoldingsRule total =
+        rule(
+            List.of(
+                "^(?P<quantity>[0-9]+) (?P<isin>[A-Z0-9]{12}) (?P<costBasis>\\S+)"
+                    + " (?P<value>[0-9.]+) (?P<currency>[A-Z]{3})$"));
+    stubText(
+        "Portfolio-Wertentwicklung per 31.12.2031",
+        "10 " + ShippedTemplateFixtures.HOLDING_ISIN_USD + " 812.40 1000.00 USD",
+        "5 " + ShippedTemplateFixtures.HOLDING_ISIN_CHF + " -3.00 50.00 CHF",
+        "1 " + ShippedTemplateFixtures.HOLDING_ISIN_FUND + " 12345678901234567.00 9.00 CHF");
+
+    assertThat(readStubbed(pdfTemplate(total)).linesOf(ImportHoldingsValues.KIND_POSITION))
+        .extracting(Line::costBasis, Line::warnings)
+        .containsExactly(
+            tuple(new BigDecimal("812.40"), List.of()),
+            tuple(null, List.of(ImportHoldingsValues.WARNING_COST_BASIS_UNREADABLE)),
+            tuple(null, List.of(ImportHoldingsValues.WARNING_COST_BASIS_UNREADABLE)));
+  }
+
+  @Test
+  void anAveragePriceWhoseProductOverflowsTheCostColumnIsUnreadable() {
+    ImportHoldingsRule average =
+        rule(
+            List.of(
+                "^(?P<quantity>[0-9]+) (?P<isin>[A-Z0-9]{12}) (?P<averagePrice>\\S+)"
+                    + " (?P<value>[0-9.]+) (?P<currency>[A-Z]{3})$"));
+    stubText(
+        "Portfolio-Wertentwicklung per 31.12.2031",
+        "100000000000 " + ShippedTemplateFixtures.HOLDING_ISIN_USD + " 9999999.00 5.00 USD");
+
+    assertThat(readStubbed(pdfTemplate(average)).linesOf(ImportHoldingsValues.KIND_POSITION))
+        .singleElement()
+        .satisfies(
+            line -> {
+              assertThat(line.costBasis()).isNull();
+              assertThat(line.warnings())
+                  .contains(ImportHoldingsValues.WARNING_COST_BASIS_UNREADABLE);
+            });
+  }
+
+  @Test
+  void aCostBasisIsReadFromOneSourceOnly() {
+    assertInvalid(
+        pdfTemplate(
+            rule(
+                List.of(
+                    "^(?P<quantity>[0-9]+) (?P<isin>[A-Z0-9]{12}) (?P<averagePrice>\\S+)"
+                        + " (?P<costBasis>\\S+) (?P<value>[0-9.]+)$"))),
+        "holdingsRule.positionPatterns[0]");
+    assertInvalid(
+        sheetTemplate(
+            new ImportHoldingsColumns(
+                null,
+                "Symbol",
+                null,
+                "Anzahl",
+                null,
+                "Totalwert",
+                "Währung",
+                null,
+                "Einstandskurs",
+                "Einstandswert")),
+        "holdingsRule.columns");
+    // A cost basis belongs to a position: a cash-only rule cannot read one.
+    assertInvalid(
+        sheetTemplate(
+            new ImportHoldingsColumns(
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "Währung",
+                "Kontosaldo",
+                null,
+                "Einstandswert")),
+        "holdingsRule.columns");
+    assertThatCode(
+            () ->
+                ImportHoldingsReaderService.validate(
+                    sheetTemplate(
+                        new ImportHoldingsColumns(
+                            null,
+                            "Symbol",
+                            null,
+                            "Anzahl",
+                            null,
+                            "Totalwert",
+                            "Währung",
+                            null,
+                            null,
+                            "Einstandswert")),
+                    List.of("Symbol", "Anzahl", "Totalwert", "Währung", "Einstandswert")))
+        .doesNotThrowAnyException();
   }
 
   // --- helpers -----------------------------------------------------------------------------

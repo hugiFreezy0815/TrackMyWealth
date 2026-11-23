@@ -25153,6 +25153,16 @@ components:
           type: string
           maxLength: 200
           minLength: 0
+        averagePrice:
+          type: string
+          description: "Optional: the average purchase price per unit (US-15-08)."
+          maxLength: 200
+          minLength: 0
+        costBasis:
+          type: string
+          description: "Optional: the position's total cost (US-15-08)."
+          maxLength: 200
+          minLength: 0
     ImportHoldingsColumnsResponse:
       type: object
       properties:
@@ -25202,8 +25212,24 @@ components:
           - "null"
           maxLength: 200
           minLength: 0
+        averagePrice:
+          type:
+          - string
+          - "null"
+          description: "Optional: the average purchase price per unit (US-15-08)."
+          maxLength: 200
+          minLength: 0
+        costBasis:
+          type:
+          - string
+          - "null"
+          description: "Optional: the position's total cost (US-15-08)."
+          maxLength: 200
+          minLength: 0
       required:
+      - averagePrice
       - cashAmount
+      - costBasis
       - currency
       - isin
       - name
@@ -25328,8 +25354,8 @@ components:
         positionPatterns:
           type: array
           description: "PDF: RE2 patterns of a position line, with the named groups\
-            \ quantity and value, isin and/or symbol, and optionally price, name and\
-            \ currency."
+            \ quantity and value, isin and/or symbol, optionally price, name and currency,\
+            \ and at most one of averagePrice and costBasis."
           items:
             type: string
             maxLength: 1000
@@ -25382,8 +25408,8 @@ components:
         positionPatterns:
           type: array
           description: "PDF: RE2 patterns of a position line, with the named groups\
-            \ quantity and value, isin and/or symbol, and optionally price, name and\
-            \ currency."
+            \ quantity and value, isin and/or symbol, optionally price, name and currency,\
+            \ and at most one of averagePrice and costBasis."
           items:
             type: string
             maxLength: 1000
@@ -25824,6 +25850,7 @@ components:
           - HOLDING_IDENTIFIER_INVALID
           - HOLDING_DUPLICATE
           - HOLDING_VALUE_MISMATCH
+          - HOLDING_COST_BASIS_UNREADABLE
         args:
           type: object
           additionalProperties:
@@ -27477,6 +27504,17 @@ components:
             on requests; JSON numbers remain accepted for compatibility.
         reportedCurrency:
           type: string
+        reportedCostBasis:
+          type:
+          - string
+          - "null"
+          format: decimal
+          description: "US-15-08: the total cost the commit stores, as printed."
+        reportedCostBasisCurrency:
+          type:
+          - string
+          - "null"
+          description: "US-15-08: the currency of reportedCostBasis."
         resolution:
           type: string
           enum:
@@ -27495,6 +27533,8 @@ components:
       - isin
       - name
       - quantity
+      - reportedCostBasis
+      - reportedCostBasisCurrency
       - reportedCurrency
       - reportedPrice
       - reportedValue

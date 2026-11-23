@@ -106,7 +106,8 @@
     "HOLDING_CURRENCY_MISSING": {"kind": "HOLDINGS_LINE_ERROR", "deprecated": false},
     "HOLDING_IDENTIFIER_INVALID": {"kind": "HOLDINGS_LINE_ERROR", "deprecated": false},
     "HOLDING_DUPLICATE": {"kind": "HOLDINGS_LINE_ERROR", "deprecated": false},
-    "HOLDING_VALUE_MISMATCH": {"kind": "HOLDINGS_LINE_WARNING", "deprecated": false}
+    "HOLDING_VALUE_MISMATCH": {"kind": "HOLDINGS_LINE_WARNING", "deprecated": false},
+    "HOLDING_COST_BASIS_UNREADABLE": {"kind": "HOLDINGS_LINE_WARNING", "deprecated": false}
   },
   "retiredImportRowCodes": []
 }
