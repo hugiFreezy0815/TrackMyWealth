@@ -38,7 +38,7 @@ The route stays `/accounts/{accountId}`. S10 is a variant of S3, not a new route
 │ ✓ Reconciled · matches the statement of 30 Oct 2026  │
 └──────────────────────────────────────────────────────┘
 ┌ NEXT PAYMENT                                         ┐
-│ 30 Nov 2026                                          │
+│ 30 Nov 2026                           EUR 650.00     │   ← entry amount
 │ Principal EUR 520.00 · Interest EUR 130.00           │   ← schedule entry, as sent
 │ Owed afterwards EUR 51'880.00                        │
 │ ▁▂▃▄▅▆▇ remaining balance until 2034 (chart)         │   ← schedule remainingBalance points
@@ -76,18 +76,22 @@ Activity  (S3 transaction list)
    `LoanRepaymentResponse[]` (`amount`, `principalAmount`, `interestAmount`, `splitEstimated`,
    `splitSource`).
 4. Card: `GET /api/v1/accounts/{cardAccountId}/statement` → `CardStatementResponse`.
+5. Loan: `GET /api/v1/accounts/{accountId}/repayments/yearly-totals` →
+   `LoanRepaymentYearlyTotalsResponse` (`currency`, `years[]` newest first, each `year`,
+   `amountPaid`, `principalPaid`, `interestPaid`, `paymentCount`, `splitEstimated`). "This year" is
+   the entry whose `year` is the current calendar year; no entry ⇒ nothing paid this year.
 
 ## Fields
 
 | # | Element | Label key (EN / DE) | Source | Rule |
 |---|---|---|---|---|
 | 1 | Value label | `account.owed` "Owed" / "Offen" | `nature = LIABILITY` | replaces "Balance"; magnitude shown as sent |
-| 2 | Next payment date + amount | `loan.nextPayment` "Next payment" / "Nächste Rate" | (2) entry `dueDate`, `principalComponent`, `interestComponent` | the total is **not** added in the app. Show the line "Principal … · Interest …" only. **Gap G10-1**: an `amount` field on the entry (or the sum sent by the server) is needed to show the payment total. Until then the header shows the date and the split |
+| 2 | Next payment date + amount | `loan.nextPayment` "Next payment" / "Nächste Rate" | (2) entry `dueDate`, `amount`, `principalComponent`, `interestComponent` | the total is the entry's `amount` (G10-1, #693), never added in the app; below it the line "Principal … · Interest …" |
 | 3 | Owed afterwards | `loan.remainingAfter` "Owed afterwards" / "Danach offen" | entry `remainingBalance` | |
 | 4 | Balance chart | text alternative `loan.chartSummary` "From {first} to {last}: {start} down to {end}" | (2) points | `ValueChart` in liability colour, no fill |
 | 5 | Paid off on | `loan.paidOffOn` "Paid off on {date}" / "Abbezahlt am {date}" | last entry `dueDate` | hidden when the last `remainingBalance ≠ 0`; then `loan.scheduleEnds` "Schedule ends {date}, {remaining} still owed" |
 | 6 | Repayment row | `loan.repayment.split` "Principal {p} · Interest {i}" / "Tilgung {p} · Zinsen {i}" | (3) | `splitEstimated` ⇒ `Estimated split` badge with the explanation "The split was estimated from the schedule ({splitSource})" |
-| 7 | Interest this year | `loan.interestYtd` | **Gap G10-2** | a year sum is a computation: needs a server field; hidden until then |
+| 7 | Interest this year | `loan.interestYtd` | (5) `interestPaid` of the current year (G10-2, #693) | hidden when the year has no entry; `splitEstimated` ⇒ `Estimated split` badge, as on a repayment row. A payment with an unknown split is in `amountPaid` only |
 | 8 | Card statement period | `card.statement.period` "{from} – {to}" | (4) `periodStart`, `periodEnd` | |
 | 9 | Card statement amount | | (4) `closingBalance`, `currency` | null ⇒ `card.statement.amountUnknown` |
 | 10 | Card due | `card.statement.due` "Due {date}" / "Fällig am {date}" | (4) `dueDate`, `paid` | badge `card.paid` / `card.notPaid` |
@@ -123,8 +127,8 @@ Activity  (S3 transaction list)
 
 | Gap | Needed for | Owner story |
 |---|---|---|
-| G10-1 payment total on `AmortisationScheduleEntryResponse` (`amount`) | field 2 total | #693 |
-| G10-2 interest and principal paid per year | field 7 | #693 |
+| G10-1 payment total on `AmortisationScheduleEntryResponse` (`amount`) | field 2 total | #693 (done) |
+| G10-2 interest and principal paid per year (`/repayments/yearly-totals`) | field 7 | #693 (done) |
 
 ## Acceptance checks for the UI story
 

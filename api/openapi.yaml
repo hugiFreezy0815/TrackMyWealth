@@ -7313,6 +7313,137 @@ paths:
       - UNPROCESSABLE
       - APP_UPDATE_REQUIRED
       - INTERNAL
+  /api/v1/accounts/{accountId}/repayments/yearly-totals:
+    get:
+      tags:
+      - Loans
+      summary: Sum a loan's repayments per calendar year
+      description: "Principal and interest paid per calendar year of booking date,\
+        \ newest year first, from the repayments the list returns. A payment with\
+        \ an unknown split adds to amountPaid only; splitEstimated flags a year with\
+        \ any estimated split."
+      operationId: getLoanRepaymentYearlyTotals
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: X-Correlation-Id
+        in: header
+        description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
+          \ otherwise the server generates a UUID."
+        required: false
+        schema:
+          type: string
+          maxLength: 64
+          minLength: 8
+          pattern: "[A-Za-z0-9._-]{8,64}"
+      - $ref: "#/components/parameters/Traceparent"
+      - $ref: "#/components/parameters/AppVersion"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanRepaymentYearlyTotalsResponse"
+        "400":
+          description: |-
+            Problem codes:
+            - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "401":
+          description: |-
+            Problem codes:
+            - `UNAUTHENTICATED`: No valid access token, or a sign-in was refused.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "404":
+          description: |-
+            Problem codes:
+            - `NOT_FOUND`: Not found, or not visible to the caller; the two are never told apart.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "426":
+          description: |-
+            Problem codes:
+            - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "500":
+          description: |-
+            Problem codes:
+            - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+            traceparent:
+              $ref: "#/components/headers/Traceparent"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        default:
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
+      x-problem-codes:
+      - VALIDATION_FAILED
+      - UNAUTHENTICATED
+      - NOT_FOUND
+      - APP_UPDATE_REQUIRED
+      - INTERNAL
   /api/v1/accounts/{accountId}/restore:
     post:
       tags:
@@ -23584,6 +23715,11 @@ components:
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
+        amount:
+          type: string
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
         remainingBalance:
           type: string
           format: decimal
@@ -23599,6 +23735,7 @@ components:
           format: date-time
       required:
       - accountId
+      - amount
       - createdAt
       - currency
       - dueDate
@@ -26576,6 +26713,55 @@ components:
       - splitEstimated
       - splitSource
       - transactions
+    LoanRepaymentYearTotalResponse:
+      type: object
+      properties:
+        year:
+          type: integer
+          format: int32
+        amountPaid:
+          type: string
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        principalPaid:
+          type: string
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        interestPaid:
+          type: string
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        paymentCount:
+          type: integer
+          format: int64
+        splitEstimated:
+          type: boolean
+      required:
+      - amountPaid
+      - interestPaid
+      - paymentCount
+      - principalPaid
+      - splitEstimated
+      - year
+    LoanRepaymentYearlyTotalsResponse:
+      type: object
+      properties:
+        loanAccountId:
+          type: string
+          format: uuid
+        currency:
+          type: string
+        years:
+          type: array
+          items:
+            $ref: "#/components/schemas/LoanRepaymentYearTotalResponse"
+      required:
+      - currency
+      - loanAccountId
+      - years
     LoginRequest:
       type: object
       properties:
