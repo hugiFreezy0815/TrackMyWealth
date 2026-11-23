@@ -8,6 +8,7 @@ import { typedApi } from '@/api/typed-api';
 
 export type ScheduleEntry = components['schemas']['AmortisationScheduleEntryResponse'];
 export type Repayment = components['schemas']['LoanRepaymentResponse'];
+export type RepaymentYear = components['schemas']['LoanRepaymentYearTotalResponse'];
 
 function validPage<T extends { content: unknown[]; page: { number: number; totalPages: number } }>(
   response: T,
@@ -96,6 +97,26 @@ export function useRepaymentHistory(accountId: string, enabled: boolean) {
     queryFn: ({ pageParam, signal }) => repayments(accountId, pageParam, 50, signal),
     getNextPageParam: ({ page }) =>
       page.number + 1 < page.totalPages ? page.number + 1 : undefined,
+  });
+}
+
+/** Interest and principal paid per calendar year, summed by the server (newest year first). */
+export function useRepaymentYearlyTotals(accountId: string) {
+  return useQuery({
+    queryKey: queryKeys.loanYearlyTotals(accountId),
+    queryFn: async ({ signal }) => {
+      const totals = await typedApi.get('/api/v1/accounts/{accountId}/repayments/yearly-totals', {
+        params: { accountId },
+        signal,
+      });
+      if (
+        !Array.isArray(totals?.years) ||
+        totals.years.some((year) => !year || !Number.isInteger(year.year))
+      ) {
+        throw new Error('Invalid repayment yearly totals response');
+      }
+      return totals;
+    },
   });
 }
 

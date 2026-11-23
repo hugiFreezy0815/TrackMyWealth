@@ -169,6 +169,7 @@ function fakeServer(account: AccountSummary, rows: Transaction[], holdings?: Pos
     portfolioView?: unknown;
     schedulePages?: ScheduleEntry[][];
     repayments?: Repayment[];
+    yearlyTotals?: components['schemas']['LoanRepaymentYearlyTotalsResponse'];
     statement?: components['schemas']['CardStatementResponse'];
     statementConfig?: components['schemas']['StatementConfigResponse'];
     beforeRead?: (path: string, options: Options) => void | Promise<void>;
@@ -190,6 +191,8 @@ function fakeServer(account: AccountSummary, rows: Transaction[], holdings?: Pos
     },
     '/api/v1/accounts/{accountId}/repayments': ({ query }) =>
       paginate(state.repayments ?? [], query),
+    '/api/v1/accounts/{accountId}/repayments/yearly-totals': () =>
+      state.yearlyTotals ?? { loanAccountId: 'acc', currency: 'EUR', years: [] },
     '/api/v1/accounts/{cardAccountId}/statement': () => state.statement,
     '/api/v1/accounts/{cardAccountId}/statement-config': () => state.statementConfig,
     '/api/v1/accounts/{accountId}/positions': () => state.holdings,
@@ -312,6 +315,8 @@ describe('S10 liability detail (#685)', () => {
     dueDate,
     principalComponent: '518.70',
     interestComponent: '131.30',
+    // Not the sum of the split, so a test can tell a sent total from one added in the app.
+    amount: '655.00',
     remainingBalance,
     currency: 'EUR',
     version: 1,
@@ -334,7 +339,7 @@ describe('S10 liability detail (#685)', () => {
     createdAt: '2026-10-01T00:00:00Z',
   });
 
-  it('pages the schedule, selects an entry due today and uses server amounts without a payment total', async () => {
+  it('pages the schedule, selects an entry due today and shows the payment total as sent', async () => {
     const server = fakeServer(summary({ nature: 'LIABILITY', hasAmortisation: true }), [txn(0)]);
     const today = localDay(new Date());
     server.schedulePages = [
@@ -352,6 +357,7 @@ describe('S10 liability detail (#685)', () => {
     expect(screen.getByText('EUR 518.70')).toBeTruthy();
     expect(screen.getByText('EUR 131.30')).toBeTruthy();
     expect(screen.getByText('EUR 439.80')).toBeTruthy();
+    expect(screen.getByText('EUR 655.00')).toBeTruthy();
     expect(screen.queryByText('EUR 650.00')).toBeNull();
     expect(screen.getByText('Shop 000')).toBeTruthy();
     expect(
@@ -595,6 +601,62 @@ describe('S10 liability detail (#685)', () => {
     await act(() => client.refetchQueries({ queryKey: queryKeys.loanRepayments('acc', 3) }));
     expect(await screen.findByRole('button', { name: 'See all' })).toBeTruthy();
     expect(screen.queryByText('You are not allowed to do this.')).toBeNull();
+  });
+
+  describe('interest this year', () => {
+    const thisYear = Number(localDay(new Date()).slice(0, 4));
+    const year = (
+      value: number,
+      other: Partial<components['schemas']['LoanRepaymentYearTotalResponse']> = {},
+    ) => ({
+      year: value,
+      amountPaid: '1650.00',
+      principalPaid: '1400.00',
+      interestPaid: '250.00',
+      unknownSplitAmount: '0.00',
+      paymentCount: 2,
+      splitEstimated: false,
+      ...other,
+    });
+    const renderYears = async (years: ReturnType<typeof year>[]) => {
+      const server = fakeServer(summary({ nature: 'LIABILITY', hasAmortisation: true }), []);
+      server.repayments = [repayment('r0', '2026-10-01')];
+      server.yearlyTotals = { loanAccountId: 'acc', currency: 'EUR', years };
+      await renderDetail();
+      expect(await screen.findByText('EUR 825.40')).toBeTruthy();
+    };
+
+    it('shows the sent interest of the current year', async () => {
+      await renderYears([year(thisYear, { interestPaid: '251.15' }), year(thisYear - 1)]);
+      expect(await screen.findByText('EUR 251.15')).toBeTruthy();
+      expect(screen.getByText(/^Interest this year:/)).toBeTruthy();
+    });
+
+    it('says Not known instead of 0 when no payment of the year has a known split', async () => {
+      await renderYears([
+        year(thisYear, { interestPaid: null, principalPaid: null, unknownSplitAmount: '1650.00' }),
+      ]);
+      expect(await screen.findByText('Interest this year: Not known')).toBeTruthy();
+      expect(screen.queryByText('EUR 0.00')).toBeNull();
+    });
+
+    it('marks an estimated year sum', async () => {
+      await renderYears([year(thisYear, { splitEstimated: true })]);
+      expect(await screen.findByText('EUR 250.00')).toBeTruthy();
+      // One badge for the year sum, one for the estimated repayment row.
+      expect(screen.getAllByText('Estimated split')).toHaveLength(2);
+    });
+
+    it('is hidden when nothing was paid this year', async () => {
+      await renderYears([year(thisYear - 1)]);
+      await waitFor(() =>
+        expect(
+          api.get.mock.calls.some(([path]) => String(path).endsWith('/repayments/yearly-totals')),
+        ).toBe(true),
+      );
+      expect(screen.queryByText(/Interest this year/)).toBeNull();
+      expect(screen.queryByText('EUR 250.00')).toBeNull();
+    });
   });
 
   it('shows the unpaid status and unknown statement amount as text and hides a revoked statement', async () => {

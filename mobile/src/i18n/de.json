@@ -572,6 +572,8 @@
   "loan.repaymentsOffline": "Rückzahlungen sind offline nicht verfügbar.",
   "loan.seeAll": "Alle anzeigen",
   "loan.showRecent": "Letzte Rückzahlungen anzeigen",
+  "loan.interestYtd": "Zinsen dieses Jahr: {amount}",
+  "loan.interestUnknown": "Unbekannt",
   "loan.estimatedSplit": "Geschätzte Aufteilung",
   "loan.splitSchedule": "Die Aufteilung wurde anhand des Tilgungsplans geschätzt.",
   "loan.splitRate": "Die Aufteilung wurde anhand der Restschuld und des Zinssatzes geschätzt.",

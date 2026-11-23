@@ -572,6 +572,8 @@
   "loan.repaymentsOffline": "Repayments are unavailable offline.",
   "loan.seeAll": "See all",
   "loan.showRecent": "Show recent repayments",
+  "loan.interestYtd": "Interest this year: {amount}",
+  "loan.interestUnknown": "Not known",
   "loan.estimatedSplit": "Estimated split",
   "loan.splitSchedule": "The split was estimated from the repayment schedule.",
   "loan.splitRate": "The split was estimated using the outstanding balance and the interest rate.",

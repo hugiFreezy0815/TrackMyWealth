@@ -9,7 +9,7 @@ import {
   RefreshingIndicator,
 } from '@/components/shared';
 import { Spacing } from '@/constants/theme';
-import { formatDate } from '@/format/date';
+import { formatDate, localDay } from '@/format/date';
 import { isAccessFailure } from '@/features/account-detail/access';
 import { transactionTypeLabel } from '@/features/account-detail/model';
 import { InfoText, msg } from '@/features/overview/overview-text';
@@ -17,7 +17,12 @@ import { useOnline } from '@/hooks/use-online';
 import { useTheme } from '@/hooks/use-theme';
 
 import { LiabilityBadge, LiabilityLink, LiabilityPanel } from './panel';
-import { type Repayment, useRecentRepayments, useRepaymentHistory } from './queries';
+import {
+  type Repayment,
+  useRecentRepayments,
+  useRepaymentHistory,
+  useRepaymentYearlyTotals,
+} from './queries';
 import { useRepaymentHistoryView } from './repayment-history-view';
 
 export type OpenRepaymentTransaction = (id: string, accountId: string) => void;
@@ -48,6 +53,7 @@ export function RepaymentsPanel({
   const canExpand = showAll || (recent.data?.page.totalPages ?? 0) > 1;
   return (
     <LiabilityPanel title={msg(intl, 'loan.repayments')}>
+      {accessError ? null : <InterestThisYear accountId={accountId} />}
       {/* With the full history open, the way back to the recent rows must survive an error. */}
       {canExpand && (showAll || !accessError) ? (
         <LiabilityLink
@@ -115,6 +121,43 @@ export function RepaymentsPanel({
         />
       ) : null}
     </LiabilityPanel>
+  );
+}
+
+/**
+ * Field 7: the server's interest sum for the current calendar year. Hidden when nothing was paid
+ * this year or the sum cannot be loaded; an unknown split is "Not known", never 0.
+ */
+function InterestThisYear({ accountId }: { accountId: string }) {
+  const intl = useIntl();
+  const totals = useRepaymentYearlyTotals(accountId);
+  if (isAccessFailure(totals.error)) return null;
+  const year = Number(localDay(new Date()).slice(0, 4));
+  const current = totals.data?.years.find((entry) => entry.year === year);
+  if (!current || !totals.data) return null;
+  return (
+    <>
+      <InfoText>
+        {intl.formatMessage(
+          { id: 'loan.interestYtd' },
+          {
+            amount:
+              current.interestPaid == null ? (
+                msg(intl, 'loan.interestUnknown')
+              ) : (
+                <Amount
+                  key="interest"
+                  value={current.interestPaid}
+                  currency={totals.data.currency}
+                />
+              ),
+          },
+        )}
+      </InfoText>
+      {current.splitEstimated ? (
+        <LiabilityBadge tone="warning" label={msg(intl, 'loan.estimatedSplit')} />
+      ) : null}
+    </>
   );
 }
 

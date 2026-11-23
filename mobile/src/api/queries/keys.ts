@@ -36,6 +36,8 @@ export const queryKeys = {
   amortisationSchedule: (id: string) => [queryRoots.accounts, id, 'amortisation-schedule'] as const,
   loanRepayments: (id: string, size: number) =>
     [queryRoots.accounts, id, 'repayments', size] as const,
+  loanYearlyTotals: (id: string) =>
+    [queryRoots.accounts, id, 'repayments', 'yearly-totals'] as const,
   cardStatement: (id: string) => [queryRoots.accounts, id, 'statement'] as const,
   transaction: (accountId: string, transactionId: string) =>
     [queryRoots.accounts, accountId, 'transactions', transactionId] as const,

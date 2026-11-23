@@ -11,6 +11,7 @@ import {
   LoadingSkeleton,
   RefreshingIndicator,
 } from '@/components/shared';
+import { Spacing } from '@/constants/theme';
 import { formatDate, localDay } from '@/format/date';
 import { isPlainDecimal } from '@/format/decimal-parts';
 import { isAccessFailure } from '@/features/account-detail/access';
@@ -58,7 +59,18 @@ export function LoanSchedulePanel({ accountId }: { accountId: string }) {
       {complete && !entries.length ? <InfoText>{msg(intl, 'loan.noSchedule')}</InfoText> : null}
       {next ? (
         <>
-          <InfoText>{date(next.dueDate)}</InfoText>
+          <View
+            style={{
+              flexDirection: 'row',
+              flexWrap: 'wrap',
+              justifyContent: 'space-between',
+              gap: Spacing.two,
+            }}
+          >
+            <InfoText>{date(next.dueDate)}</InfoText>
+            {/* The payment total is the entry's amount as sent, never principal + interest. */}
+            <Amount value={next.amount} currency={next.currency} />
+          </View>
           <InfoText>
             {intl.formatMessage(
               { id: 'loan.split' },
