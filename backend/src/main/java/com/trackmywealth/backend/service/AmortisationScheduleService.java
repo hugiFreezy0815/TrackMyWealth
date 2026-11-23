@@ -216,6 +216,7 @@ public class AmortisationScheduleService {
         entry.getDueDate(),
         entry.getInterestComponent(),
         entry.getPrincipalComponent(),
+        entry.getInterestComponent().add(entry.getPrincipalComponent()),
         entry.getRemainingBalance(),
         entry.getAccount().getNativeCurrency(),
         VersionPreconditionService.persistedVersion(entry.getVersion(), RESOURCE_NAME),

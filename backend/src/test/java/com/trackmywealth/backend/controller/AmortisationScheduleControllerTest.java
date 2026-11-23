@@ -150,6 +150,8 @@ class AmortisationScheduleControllerTest {
         .extracting(AmortisationScheduleEntryResponse::dueDate)
         .containsExactly(MARCH, APRIL);
     assertThat(april.currency()).isEqualTo("CHF");
+    // #693: the instalment is sent, so the app never adds interest and principal itself.
+    assertThat(april.amount()).isEqualByComparingTo("2000.00");
 
     AmortisationScheduleEntryResponse replaced =
         client(token)
@@ -165,6 +167,7 @@ class AmortisationScheduleControllerTest {
             .returnResult()
             .getResponseBody();
     assertThat(replaced.interestComponent()).isEqualByComparingTo("797.50");
+    assertThat(replaced.amount()).isEqualByComparingTo("2000.00");
     assertThat(replaced.version()).isGreaterThan(april.version());
 
     client(token)
@@ -175,8 +178,12 @@ class AmortisationScheduleControllerTest {
         .expectStatus()
         .isNoContent();
     assertThat(list(token, mortgage))
-        .extracting(AmortisationScheduleEntryResponse::dueDate)
-        .containsExactly(MARCH);
+        .singleElement()
+        .satisfies(
+            march -> {
+              assertThat(march.dueDate()).isEqualTo(MARCH);
+              assertThat(march.amount()).isEqualByComparingTo("2000.00");
+            });
   }
 
   @Test
