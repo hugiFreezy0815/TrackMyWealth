@@ -730,6 +730,7 @@
   "portfolio.gain.foreignBasis": "Einstandswert in {currency} fehlt für {count, plural, one {# Position} other {# Positionen}}",
   "portfolio.positions.all": "Alle {count} Positionen anzeigen",
   "portfolio.position.unknownBasisCurrency": "Währung des Einstandswerts unbekannt",
+  "portfolio.position.noGainInBasisCurrency": "Kein Gewinn verfügbar für einen Einstandswert in {currency}",
   "portfolio.position.noBasis": "Noch kein Einstandswert",
   "portfolio.position.estimated": "Geschätzter Einstandswert",
   "portfolio.empty.title": "Noch keine Konten in {name}",

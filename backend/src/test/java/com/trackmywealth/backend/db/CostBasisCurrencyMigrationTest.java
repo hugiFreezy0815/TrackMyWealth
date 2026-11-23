@@ -21,10 +21,11 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * #527: V125 gives a cost basis its currency. A position whose security and reported value are in
- * the account currency had a certain gain before, so its cost basis is in that currency; every
- * other cost basis stays of unknown currency (PO 2026-11-23). Migrates to just before V125, seeds
- * positions, then applies V125.
+ * #527: V125 gives a cost basis its currency. A position whose reported value is in the account
+ * currency had a gain before, whatever its security's currency, and so had one without a value
+ * whose security is in that currency: their cost basis is in that currency, so today's gains stay;
+ * every other cost basis stays of unknown currency (PO 2026-11-23). Migrates to just before V125,
+ * seeds positions, then applies V125.
  */
 @Testcontainers
 class CostBasisCurrencyMigrationTest {
@@ -42,6 +43,7 @@ class CostBasisCurrencyMigrationTest {
   private static UUID francEtf;
   private static UUID francEtfWithoutValue;
   private static UUID dollarEtf;
+  private static UUID dollarEtfValuedInFrancs;
   private static UUID francEtfQuotedInDollars;
   private static UUID withoutCostBasis;
 
@@ -70,6 +72,7 @@ class CostBasisCurrencyMigrationTest {
     francEtf = holding("CHF", "100", "CHF", "80");
     francEtfWithoutValue = holding("CHF", null, null, "80");
     dollarEtf = holding("USD", "100", "USD", "75");
+    dollarEtfValuedInFrancs = holding("USD", "100", "CHF", "410");
     francEtfQuotedInDollars = holding("CHF", "100", "USD", "80");
     withoutCostBasis = holding("CHF", "100", "CHF", null);
 
@@ -85,6 +88,11 @@ class CostBasisCurrencyMigrationTest {
   void aCostBasisOfAPositionInTheAccountCurrencyIsInTheAccountCurrency() throws Exception {
     assertThat(costBasisCurrency(francEtf)).isEqualTo("CHF");
     assertThat(costBasisCurrency(francEtfWithoutValue)).isEqualTo("CHF");
+  }
+
+  @Test
+  void aForeignSecurityValuedInTheAccountCurrencyKeepsItsGain() throws Exception {
+    assertThat(costBasisCurrency(dollarEtfValuedInFrancs)).isEqualTo("CHF");
   }
 
   @Test
@@ -110,6 +118,24 @@ class CostBasisCurrencyMigrationTest {
                     dollarEtf))
         .isInstanceOf(SQLException.class)
         .hasMessageContaining("chk_snapshot_holding_cost_basis_in_account_currency");
+  }
+
+  @Test
+  void anAccountCurrencyCostIsOnlyForACostBasisInAnotherCurrency() throws Exception {
+    assertThatThrownBy(
+            () ->
+                update(
+                    "UPDATE snapshot_holding SET cost_basis_in_account_currency = 72 WHERE id = ?",
+                    francEtf))
+        .isInstanceOf(SQLException.class)
+        .hasMessageContaining("snapshot_holding_account_cost");
+
+    UUID foreign = holding("USD", "100", "USD", "75");
+    update(
+        "UPDATE snapshot_holding SET reported_cost_basis_currency = 'USD',"
+            + " cost_basis_in_account_currency = 70 WHERE id = ?",
+        foreign);
+    assertThat(costBasisCurrency(foreign)).isEqualTo("USD");
   }
 
   private static UUID holding(

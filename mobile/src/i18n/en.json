@@ -730,6 +730,7 @@
   "portfolio.gain.foreignBasis": "cost basis in {currency} missing for {count, plural, one {# position} other {# positions}}",
   "portfolio.positions.all": "Show all {count} positions",
   "portfolio.position.unknownBasisCurrency": "Cost basis currency unknown",
+  "portfolio.position.noGainInBasisCurrency": "Gain not available for a cost basis in {currency}",
   "portfolio.position.noBasis": "No cost basis yet",
   "portfolio.position.estimated": "Estimated cost basis",
   "portfolio.empty.title": "No accounts in {name} yet",

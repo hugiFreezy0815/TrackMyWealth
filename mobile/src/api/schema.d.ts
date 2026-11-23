@@ -3849,7 +3849,7 @@ export interface components {
        * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
        */
       reportedCostBasis?: DecimalString;
-      /** @description Currency of reportedCostBasis. Defaults to the account currency when the security is in it; required otherwise (400). */
+      /** @description Currency of reportedCostBasis. Defaults to the account currency when the security or reportedCurrency is in it. On a replace, an unchanged cost basis whose currency is unknown may be sent back without one and stays unknown. Required otherwise (400). */
       reportedCostBasisCurrency?: string;
       /**
        * Format: decimal
@@ -3890,7 +3890,7 @@ export interface components {
       reportedCostBasisCurrency: string | null;
       /**
        * Format: decimal
-       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       * @description For a cost basis in another currency: its cost in the account currency at the purchase-date rate(s), as reported. Never derived at today's rate; null for a cost basis in the account currency or when not reported (#527).
        */
       costBasisInAccountCurrency: DecimalString | null;
       costBasisIsEstimated: boolean;

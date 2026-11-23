@@ -131,8 +131,11 @@ The gain shown is labelled with its own currency (#527):
   and includes the FX change since purchase.
 - Otherwise `unrealisedGain` (+ its %) in `unrealisedGainCurrency`, e.g. "+USD 25.00" in a CHF
   depot for a USD cost basis.
-- A cost basis whose currency is unknown (rows from before #527), or is neither the price nor
-  the depot currency, has no gain: the % is "–" with "Cost basis currency unknown" (FR-PERF-018).
+- A cost basis whose currency is unknown (rows from before #527) has no gain: the % is "–" with
+  "Cost basis currency unknown" (FR-PERF-018).
+- A cost basis in a known currency that gives no gain (neither the price nor the depot currency,
+  or a foreign one without its cost in the depot currency): "–" with "Gain not available for a
+  cost basis in {currency}".
 
 The depot row counts the positions without a cost in the depot currency as
 `foreignCurrencyCostBasisCount`: "cost basis in {currency} missing for {count} positions".

@@ -16,13 +16,14 @@ import java.util.UUID;
  *
  * <p>{@code reportedCostBasis} is the total cost as printed on the statement, in {@code
  * reportedCostBasisCurrency}; leave both out when the statement has none (FR-REC-008). Without a
- * currency, the cost basis is taken to be in the account currency when the security is in it;
- * otherwise the request is a 400 (#527). For a cost basis in another currency, {@code
- * costBasisInAccountCurrency} is the cost in the account currency at the purchase-date rate(s), as
- * the statement prints it; it is never derived at today's rate. {@code costBasisIsEstimated} marks
- * a figure the user worked out rather than copied (PR-011) and defaults to {@code false}. The
- * statement's market value and currency are optional and supplied together. A unit price may
- * accompany the market value.
+ * currency, the cost basis is taken to be in the account currency when the security or the
+ * statement value is in it; a replace may also send back unchanged a cost basis whose currency is
+ * unknown (a row from before #527), which then stays unknown; otherwise the request is a 400. For a
+ * cost basis in another currency, {@code costBasisInAccountCurrency} is the cost in the account
+ * currency at the purchase-date rate(s), as the statement prints it; it is never derived at today's
+ * rate. {@code costBasisIsEstimated} marks a figure the user worked out rather than copied (PR-011)
+ * and defaults to {@code false}. The statement's market value and currency are optional and
+ * supplied together. A unit price may accompany the market value.
  */
 @Schema(
     description =
@@ -37,7 +38,9 @@ public record SnapshotHoldingRequest(
     @Schema(
             description =
                 "Currency of reportedCostBasis. Defaults to the account currency when the security"
-                    + " is in it; required otherwise (400).")
+                    + " or reportedCurrency is in it. On a replace, an unchanged cost basis whose"
+                    + " currency is unknown may be sent back without one and stays unknown."
+                    + " Required otherwise (400).")
         @ValidCurrencyCode
         String reportedCostBasisCurrency,
     @Schema(

@@ -134,7 +134,7 @@ public class AccountSnapshotService {
             request.foreignCashBalances(),
             currency);
     List<String> costBasisCurrencies =
-        costBasisCurrencies(request.holdings(), securities, currency);
+        costBasisCurrencies(request.holdings(), securities, currency, Map.of());
 
     snapshotRepository
         .findByAccountIdAndSnapshotDateAndSourceAndWithdrawnAtIsNull(
@@ -213,7 +213,11 @@ public class AccountSnapshotService {
             cashBalances,
             snapshot.getCurrency());
     List<String> costBasisCurrencies =
-        costBasisCurrencies(request.holdings(), securities, snapshot.getCurrency());
+        costBasisCurrencies(
+            request.holdings(),
+            securities,
+            snapshot.getCurrency(),
+            unknownCurrencyCostBases(snapshotId));
 
     snapshot.setBalance(atScale(request.balance(), FxRateService.MONEY_SCALE));
     // TIMESTAMPTZ keeps microseconds; a Linux clock has nanoseconds. Truncate so this response
@@ -363,9 +367,28 @@ public class AccountSnapshotService {
   }
 
   /**
+   * #527: the stored cost basis of each position of a snapshot whose cost basis currency is unknown
+   * (a row from before V125), by security.
+   */
+  private Map<UUID, BigDecimal> unknownCurrencyCostBases(UUID snapshotId) {
+    return holdingRepository.findBySnapshotId(snapshotId).stream()
+        .filter(
+            holding ->
+                holding.getReportedCostBasis() != null
+                    && holding.getReportedCostBasisCurrency() == null)
+        .collect(
+            Collectors.toMap(
+                SnapshotHolding::getSecurityId,
+                SnapshotHolding::getReportedCostBasis,
+                (first, second) -> first));
+  }
+
+  /**
    * #527: the currency of each position's cost basis, in request order; null for a position without
-   * one. A cost basis without a currency is in the account currency when the security is in it (PO
-   * 2026-11-14); otherwise nothing is guessed.
+   * one. A cost basis without a currency is in the account currency when the security or the
+   * statement value is in it (PO 2026-11-14; the same rule V125 backfilled). A replace may send
+   * back unchanged a cost basis whose currency is unknown ({@code unknownCurrencyCostBases}, by
+   * security): it stays unknown. Otherwise nothing is guessed.
    *
    * @throws ApiException 400 {@code VALIDATION_FAILED} naming {@code
    *     holdings[i].reportedCostBasisCurrency} when the currency is missing and cannot default
@@ -373,7 +396,10 @@ public class AccountSnapshotService {
    *     a cost basis, or an account-currency cost beside a cost basis already in that currency
    */
   private static List<String> costBasisCurrencies(
-      List<SnapshotHoldingRequest> holdings, Map<UUID, Security> securities, String currency) {
+      List<SnapshotHoldingRequest> holdings,
+      Map<UUID, Security> securities,
+      String currency,
+      Map<UUID, BigDecimal> unknownCurrencyCostBases) {
     List<String> currencies = new ArrayList<>(holdings.size());
     List<Map<String, String>> missing = new ArrayList<>();
     for (int index = 0; index < holdings.size(); index++) {
@@ -390,8 +416,13 @@ public class AccountSnapshotService {
       }
       String resolved = given;
       if (resolved == null
-          && currency.equals(securities.get(holding.securityId()).getDenominationCurrency())) {
+          && (currency.equals(securities.get(holding.securityId()).getDenominationCurrency())
+              || currency.equals(holding.reportedCurrency()))) {
         resolved = currency;
+      }
+      if (resolved == null && keepsUnknownCurrency(holding, unknownCurrencyCostBases)) {
+        currencies.add(null);
+        continue;
       }
       if (resolved == null) {
         missing.add(
@@ -399,8 +430,8 @@ public class AccountSnapshotService {
                 "field",
                 "holdings[" + index + "].reportedCostBasisCurrency",
                 "message",
-                "Give the currency of the cost basis: the security is not in the account"
-                    + " currency."));
+                "Give the currency of the cost basis: neither the security nor the value is in"
+                    + " the account currency."));
       } else if (currency.equals(resolved) && holding.costBasisInAccountCurrency() != null) {
         throw unprocessable(
             "costBasisInAccountCurrency is only for a cost basis in another currency than the"
@@ -412,11 +443,21 @@ public class AccountSnapshotService {
       ApiException exception =
           new ApiException(
               ProblemCode.VALIDATION_FAILED,
-              "A cost basis needs its currency unless the security is in the account currency.");
+              "A cost basis needs its currency unless the security or its value is in the account"
+                  + " currency.");
       exception.getBody().setProperty("errors", missing);
       throw exception;
     }
     return currencies;
+  }
+
+  /** An unchanged cost basis of unknown currency, sent back without one and without its cost. */
+  private static boolean keepsUnknownCurrency(
+      SnapshotHoldingRequest holding, Map<UUID, BigDecimal> unknownCurrencyCostBases) {
+    BigDecimal stored = unknownCurrencyCostBases.get(holding.securityId());
+    return stored != null
+        && holding.costBasisInAccountCurrency() == null
+        && stored.compareTo(holding.reportedCostBasis()) == 0;
   }
 
   private List<SnapshotHolding> saveHoldings(

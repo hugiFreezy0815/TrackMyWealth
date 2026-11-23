@@ -49,15 +49,25 @@ export function shownGain(position: Position, currency: string): ShownGain | nul
   return null;
 }
 
+/** A message id and its values. */
+export type NoGainReason = { id: string; values?: Record<string, string> };
+
 /**
  * Why a position shows "–" as its gain (spec S2, M24), or null when it has a gain or its value is
- * unknown (the value-status badge says so): no cost basis yet, or a cost basis whose currency is
- * unknown or matches neither the price nor the depot currency (FR-PERF-018, #527).
+ * unknown (the value-status badge says so): no cost basis yet, a cost basis whose currency is
+ * unknown, or one in a known currency that gives no gain - a third currency, or a foreign one
+ * without its cost in the depot currency (FR-PERF-018, #527).
  */
-export function noGainReason(position: Position, currency: string): string | null {
+export function noGainReason(position: Position, currency: string): NoGainReason | null {
   if (shownGain(position, currency)) return null;
-  if (position.costBasis == null) return 'portfolio.position.noBasis';
-  return isValueKnown(position.valueStatus) ? 'portfolio.position.unknownBasisCurrency' : null;
+  if (position.costBasis == null) return { id: 'portfolio.position.noBasis' };
+  if (!isValueKnown(position.valueStatus)) return null;
+  return position.costBasisCurrency
+    ? {
+        id: 'portfolio.position.noGainInBasisCurrency',
+        values: { currency: position.costBasisCurrency },
+      }
+    : { id: 'portfolio.position.unknownBasisCurrency' };
 }
 
 /** The explanation line under a position without a gain; nothing when there is no reason. */
@@ -67,7 +77,9 @@ export function NoGainNote({ position, currency }: { position: Position; currenc
   const reason = noGainReason(position, currency);
   if (!reason) return null;
   return (
-    <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>{msg(intl, reason)}</Text>
+    <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
+      {msg(intl, reason.id, reason.values)}
+    </Text>
   );
 }
 
@@ -85,7 +97,7 @@ export function usePositionLabel(position: Position, currency: string): string {
   const reason = noGainReason(position, currency);
   const shown = shownGain(position, currency);
   const gain = reason
-    ? msg(intl, reason)
+    ? msg(intl, reason.id, reason.values)
     : msg(intl, 'portfolio.position.gainLabel', {
         percent: figureTexts(intl, {
           value: shown?.percent ?? null,

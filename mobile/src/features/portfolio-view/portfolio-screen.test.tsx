@@ -840,6 +840,28 @@ describe('S2 depot positions (#478)', () => {
     expect(screen.queryByText('Cost basis currency unknown')).toBeNull();
   });
 
+  // #527: a cost basis in a known currency that gives no gain names that currency rather than
+  // calling it unknown.
+  it('names a known cost basis currency that gives no gain', async () => {
+    setData(view([depotSection()]));
+    setPositions([
+      position('1', {
+        priceCurrency: 'USD',
+        costBasisCurrency: 'GBP',
+        costBasisInAccountCurrency: null,
+        unrealisedGain: null,
+        unrealisedGainPercent: null,
+        unrealisedGainCurrency: null,
+        unrealisedGainInAccountCurrency: null,
+        unrealisedGainInAccountCurrencyPercent: null,
+      }),
+    ]);
+    await mount();
+
+    expect(screen.getByText('Gain not available for a cost basis in GBP')).toBeTruthy();
+    expect(screen.queryByText('Cost basis currency unknown')).toBeNull();
+  });
+
   it('gives no cost-basis reason for an unpriced position that has a cost basis', async () => {
     setData(view([depotSection()]));
     setPositions([

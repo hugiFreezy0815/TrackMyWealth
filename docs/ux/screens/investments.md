@@ -117,7 +117,7 @@ when #694–#697 land in sprint 9. No placeholders are shown in the meantime.
 | 2 | Name | `displayName` | one line, ellipsis; full name in the accessible label |
 | 3 | Sub line | ISIN short form or symbol, `quantity` "{n} units" / "{n} Anteile", depot name (All depots only) | units with up to 6 decimals as sent, no rounding beyond the format rules |
 | 4 | Value | `valueInAccountCurrency` (account currency); `value` + `priceCurrency` `[advanced]` | `valueStatus ≠ CURRENT` ⇒ badge; null ⇒ "–" |
-| 5 | Unrealised gain | `unrealisedGain`, `unrealisedGainPercent` | `PLChip`: arrow + sign + amount, percent one decimal (#440). Null with `costBasis = null` ⇒ text `position.noCostBasis` "No cost basis" (with a link to fix: S15 item). Shown in its own currency (#527): `unrealisedGainInAccountCurrency` when known, else `unrealisedGain` in `unrealisedGainCurrency`; with a cost basis but neither ⇒ "Cost basis currency unknown" |
+| 5 | Unrealised gain | `unrealisedGain`, `unrealisedGainPercent` | `PLChip`: arrow + sign + amount, percent one decimal (#440). Null with `costBasis = null` ⇒ text `position.noCostBasis` "No cost basis" (with a link to fix: S15 item). Shown in its own currency (#527): `unrealisedGainInAccountCurrency` when known, else `unrealisedGain` in `unrealisedGainCurrency`; with a cost basis but neither ⇒ "Cost basis currency unknown" when `costBasisCurrency` is null, else "Gain not available for a cost basis in {currency}" |
 | 6 | Estimated cost basis | `costBasisEstimated` | `Estimated` badge next to 5 |
 | 7 | Sort | Value (server order, default), Name, Gain % | ordering only |
 
