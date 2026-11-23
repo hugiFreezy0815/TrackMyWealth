@@ -72,6 +72,11 @@ public class ImportHoldingsReaderService {
   private static final BigDecimal MISMATCH_TOLERANCE = new BigDecimal("0.01");
   private static final BigDecimal MISMATCH_FLOOR = new BigDecimal("0.05");
   private static final BigDecimal PERCENT = new BigDecimal("100");
+  // US-15-08: without a price to tell, quantity x average price this many times the value may be a
+  // bond quoted in percent as well as a heavy loss - too uncertain for a cost basis.
+  private static final BigDecimal AMBIGUOUS_COST_FACTOR = BigDecimal.TEN;
+  // A cost basis column the template maps but the sheet's header lacks (unmapped is -1).
+  private static final int MISSING_COLUMN = -2;
   private static final Pattern TICKER = Pattern.compile("[A-Z0-9][A-Z0-9.:-]{0,19}");
   private static final Pattern WHITESPACE = Pattern.compile("\\s+");
   // The cells of a spreadsheet holdings rule, by their index in a resolved column array.
@@ -403,7 +408,9 @@ public class ImportHoldingsReaderService {
     // validate: a spreadsheet holdings rule always maps its columns.
     ImportHoldingsColumns columns =
         Objects.requireNonNull(template.holdingsRule().columns(), "holdingsRule.columns");
-    for (String column : mappedColumns(columns)) {
+    // US-15-08: the cost basis is optional - a sheet without its column is read all the same, each
+    // position with a warning (costBasisIndex), never refused.
+    for (String column : mappedColumns(withoutCostBasis(columns))) {
       if (ImportFileParserService.columnIndex(column, header) < 0) {
         throw new ImportFileRejectedException(
                 ProblemCode.IMPORT_TEMPLATE_MISMATCH,
@@ -420,8 +427,8 @@ public class ImportHoldingsReaderService {
       indexOf(columns.value(), header),
       indexOf(columns.currency(), header),
       indexOf(columns.cashAmount(), header),
-      indexOf(columns.averagePrice(), header),
-      indexOf(columns.costBasis(), header)
+      costBasisIndex(columns.averagePrice(), header),
+      costBasisIndex(columns.costBasis(), header)
     };
     List<ImportHoldingsStatement.Line> read = new ArrayList<>();
     Set<String> seen = new HashSet<>();
@@ -438,6 +445,29 @@ public class ImportHoldingsReaderService {
   // A mapped column's index in the header (checked to exist), or -1 for a column not mapped.
   private static int indexOf(String column, List<String> header) {
     return column == null ? -1 : ImportFileParserService.columnIndex(column, header);
+  }
+
+  // A cost basis column's index, -1 when not mapped, MISSING_COLUMN when the header lacks it.
+  private static int costBasisIndex(String column, List<String> header) {
+    if (column == null) {
+      return -1;
+    }
+    int index = ImportFileParserService.columnIndex(column, header);
+    return index < 0 ? MISSING_COLUMN : index;
+  }
+
+  private static ImportHoldingsColumns withoutCostBasis(ImportHoldingsColumns columns) {
+    return new ImportHoldingsColumns(
+        columns.isin(),
+        columns.symbol(),
+        columns.name(),
+        columns.quantity(),
+        columns.price(),
+        columns.value(),
+        columns.currency(),
+        columns.cashAmount(),
+        null,
+        null);
   }
 
   // Appends a line, bounded; a second position of the same ISIN (or, without one, symbol) is an
@@ -576,7 +606,7 @@ public class ImportHoldingsReaderService {
     BigDecimal costBasis = null;
     if (averagePriceCell != null || costBasisCell != null) {
       try {
-        costBasis = costBasis(quantity, averagePriceCell, costBasisCell, template);
+        costBasis = costBasis(quantity, price, value, averagePriceCell, costBasisCell, template);
       } catch (ImportRowRejectedException e) {
         warnings.add(ImportHoldingsValues.WARNING_COST_BASIS_UNREADABLE);
       }
@@ -586,9 +616,13 @@ public class ImportHoldingsReaderService {
   }
 
   // US-15-08: the position's total cost - quantity x the average price, rounded to the cost
-  // column's scale, or the total as printed. Blank, negative or out of range is unreadable.
+  // column's scale, or the total as printed. Blank, negative or out of range is unreadable. An
+  // average price is quoted as the price is: per unit, or in percent of the nominal for a bond
+  // (quotedInPercent) - so the cost is then a hundredth of the product, as the value is.
   private static BigDecimal costBasis(
       BigDecimal quantity,
+      BigDecimal price,
+      BigDecimal value,
       SpreadsheetCell averagePriceCell,
       SpreadsheetCell costBasisCell,
       ImportTemplateDefinition template) {
@@ -598,11 +632,12 @@ public class ImportHoldingsReaderService {
     } else {
       BigDecimal averagePrice =
           number(averagePriceCell, template, PRICE_INTEGER_DIGITS, PRICE_FRACTION_DIGITS);
+      BigDecimal product = quantity.multiply(averagePrice);
+      if (quotedInPercent(quantity, price, value, product)) {
+        product = product.divide(PERCENT);
+      }
       cost =
-          quantity
-              .multiply(averagePrice)
-              .setScale(MONEY_FRACTION_DIGITS, RoundingMode.HALF_UP)
-              .stripTrailingZeros();
+          product.setScale(MONEY_FRACTION_DIGITS, RoundingMode.HALF_UP).stripTrailingZeros();
       if (cost.scale() < 0) {
         cost = cost.setScale(0);
       }
@@ -665,10 +700,36 @@ public class ImportHoldingsReaderService {
   // Neither quantity x price nor a hundredth of it (a bond quoted in percent) is the value, within
   // 1 % or 0.05.
   static boolean mismatched(BigDecimal quantity, BigDecimal price, BigDecimal value) {
-    BigDecimal tolerance = value.abs().multiply(MISMATCH_TOLERANCE).max(MISMATCH_FLOOR);
     BigDecimal product = quantity.multiply(price);
-    return product.subtract(value).abs().compareTo(tolerance) > 0
-        && product.divide(PERCENT).subtract(value).abs().compareTo(tolerance) > 0;
+    return !near(product, value) && !near(product.divide(PERCENT), value);
+  }
+
+  // US-15-08: whether the average price is quoted in percent of the nominal (a bond), so the cost is
+  // a hundredth of quantity x average price. The price tells: it is quoted as the average price,
+  // and only a hundredth of quantity x price is the value. Without a price that matches either way,
+  // a product many times the value is as likely a percent quote as a heavy loss: unreadable, so no
+  // cost basis is guessed (FR-PERF-018).
+  private static boolean quotedInPercent(
+      BigDecimal quantity, BigDecimal price, BigDecimal value, BigDecimal costProduct) {
+    if (price != null) {
+      BigDecimal product = quantity.multiply(price);
+      if (near(product, value)) {
+        return false;
+      }
+      if (near(product.divide(PERCENT), value)) {
+        return true;
+      }
+    }
+    if (costProduct.compareTo(value.multiply(AMBIGUOUS_COST_FACTOR)) > 0) {
+      throw new ImportRowRejectedException(ImportHoldingsValues.ERROR_VALUE_UNREADABLE, Map.of());
+    }
+    return false;
+  }
+
+  // Within 1 % of the value, or 0.05.
+  private static boolean near(BigDecimal amount, BigDecimal value) {
+    BigDecimal tolerance = value.abs().multiply(MISMATCH_TOLERANCE).max(MISMATCH_FLOOR);
+    return amount.subtract(value).abs().compareTo(tolerance) <= 0;
   }
 
   // The first readable date of datePattern, or null.
@@ -720,8 +781,12 @@ public class ImportHoldingsReaderService {
     return matcher.pattern().namedGroups().containsKey(name) ? matcher.group(name) : null;
   }
 
-  // A cost basis cell the rule maps (blank when this row leaves it empty), or null when unmapped.
+  // A cost basis cell the rule maps (blank when this row leaves it empty or the header lacks its
+  // column), or null when unmapped.
   private static SpreadsheetCell mapped(List<SpreadsheetCell> row, int index) {
+    if (index == MISSING_COLUMN) {
+      return SpreadsheetCell.BLANK;
+    }
     return index < 0 ? null : cell(row, index);
   }
 
