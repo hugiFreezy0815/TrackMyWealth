@@ -423,7 +423,15 @@ discoverable by another workspace. Rules that follow from the table being global
   `V33` guards it, `V58` corrected the guard for cards) - and its balance uses the same convention
   as the ledger-derived balance (a liability's balance is the positive amount owed), so US-25-02
   can compare the two directly.
-  `reported_cost_basis` is a total in that same currency.
+  `reported_cost_basis` is a total in `reported_cost_basis_currency` (`V125`, #527): the account
+  currency or another (often the security's). NULL means unknown, as for rows before `V125` whose
+  statement value was not in the account currency (nor, without a value, its security); such a
+  position has no gain. A manual replace keeps it unknown when the client sends the same cost
+  basis back without a currency. For a cost basis in another currency,
+  `cost_basis_in_account_currency` is its cost at the purchase-date rate(s), as reported; it is
+  never derived at today's rate. Beside a cost basis in the account currency it must stay NULL
+  (trigger `snapshot_holding_account_cost_guard`, since a CHECK cannot read the snapshot's
+  currency).
 - **Holdings** reference existing security-master ids only (create first via `POST
   /api/v1/securities`), at most once per snapshot (`V33`'s `uq_snapshot_holding_security`). A
   balance may be omitted when holdings or foreign cash are given.

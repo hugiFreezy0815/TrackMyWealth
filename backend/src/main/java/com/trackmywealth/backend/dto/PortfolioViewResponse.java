@@ -149,8 +149,9 @@ public record PortfolioViewResponse(
    * @param totalReturnPercent the gain as a percentage of the absolute total cost basis, or {@code
    *     null} if the gain is unavailable or the total cost basis is zero
    * @param missingCostBasisCount number of positions with no cost basis, if any and value is known
-   * @param foreignCurrencyCostBasisCount number of positions with a cost basis in an ambiguous
-   *     currency, if any and value is known
+   * @param foreignCurrencyCostBasisCount number of positions whose cost basis has no cost in the
+   *     account currency - its currency unknown, or another currency without its cost at the
+   *     purchase-date rate (#527) - if any and value is known
    * @param dueDate for a credit card: the due date of its current statement; {@code null} while its
    *     statement cycle is not configured
    * @param linkedPropertyAccountId for a mortgage: the property account it finances, if linked

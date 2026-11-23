@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
@@ -17,6 +18,14 @@ public record SnapshotHoldingResponse(
     String securityDisplayName,
     BigDecimal quantity,
     @Nullable BigDecimal reportedCostBasis,
+    @Schema(description = "Currency of reportedCostBasis; null when unknown (#527).")
+        @Nullable String reportedCostBasisCurrency,
+    @Schema(
+            description =
+                "For a cost basis in another currency: its cost in the account currency at the"
+                    + " purchase-date rate(s), as reported. Never derived at today's rate; null for"
+                    + " a cost basis in the account currency or when not reported (#527).")
+        @Nullable BigDecimal costBasisInAccountCurrency,
     boolean costBasisIsEstimated,
     @Nullable BigDecimal reportedPrice,
     @Nullable BigDecimal reportedValue,

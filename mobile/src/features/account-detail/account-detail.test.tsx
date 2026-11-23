@@ -84,22 +84,33 @@ const listItem: AccountListItem = {
   warnings: [],
 } as unknown as AccountListItem;
 
-const holding = (id: string, overrides: Partial<Position> = {}): Position => ({
-  securityId: id,
-  displayName: `Fund ${id}`,
-  isin: null,
-  quantity: '10.000000',
-  price: '10.00',
-  priceCurrency: 'EUR',
-  value: '100.00',
-  valueInAccountCurrency: '100.00',
-  costBasis: '90.00',
-  costBasisEstimated: false,
-  unrealisedGain: '10.00',
-  unrealisedGainPercent: '11.11',
-  valueStatus: 'CURRENT',
-  ...overrides,
-});
+// #527: the gain in the account currency mirrors the gain a test sets, unless it says other.
+const holding = (id: string, overrides: Partial<Position> = {}): Position => {
+  const base = {
+    securityId: id,
+    displayName: `Fund ${id}`,
+    isin: null,
+    quantity: '10.000000',
+    price: '10.00',
+    priceCurrency: 'EUR',
+    value: '100.00',
+    valueInAccountCurrency: '100.00',
+    costBasis: '90.00',
+    costBasisCurrency: 'EUR',
+    costBasisInAccountCurrency: null,
+    costBasisEstimated: false,
+    unrealisedGain: '10.00',
+    unrealisedGainPercent: '11.11',
+    valueStatus: 'CURRENT' as Position['valueStatus'],
+    ...overrides,
+  };
+  return {
+    unrealisedGainCurrency: base.unrealisedGain == null ? null : 'EUR',
+    unrealisedGainInAccountCurrency: base.unrealisedGain,
+    unrealisedGainInAccountCurrencyPercent: base.unrealisedGainPercent,
+    ...base,
+  };
+};
 
 const positionSnapshot = (...positions: Position[]): PositionsResponse => ({
   accountId: 'acc',
@@ -337,6 +348,7 @@ describe('S3 account detail acceptance checks (#494)', () => {
       holding('foreign', {
         priceCurrency: 'USD',
         costBasis: '90.00',
+        costBasisCurrency: null,
         unrealisedGain: null,
         unrealisedGainPercent: null,
       }),
@@ -348,7 +360,7 @@ describe('S3 account detail acceptance checks (#494)', () => {
     expect(screen.getAllByText('+11.1%').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Estimated cost basis').length).toBeGreaterThan(0);
     expect(screen.getByText('No cost basis yet')).toBeTruthy();
-    expect(screen.getByText('Gain not available in USD')).toBeTruthy();
+    expect(screen.getByText('Cost basis currency unknown')).toBeTruthy();
     expect(screen.getAllByText('Price').length).toBeGreaterThan(0);
     expect(screen.getByText('Fund foreign')).toBeTruthy();
     await fireEvent.press(screen.getByText('Activity'));

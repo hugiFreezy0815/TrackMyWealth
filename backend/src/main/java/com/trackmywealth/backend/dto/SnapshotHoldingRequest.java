@@ -14,21 +14,43 @@ import java.util.UUID;
  * security not yet in the master is created first through {@code POST /api/v1/securities}
  * (US-12-01), which stays the only way to add to the shared master.
  *
- * <p>{@code reportedCostBasis} is the total cost as printed on the statement, in the account's own
- * currency; leave it out when the statement has none (FR-REC-008). {@code costBasisIsEstimated}
- * marks a figure the user worked out rather than copied (PR-011) and defaults to {@code false}. The
- * statement's market value and currency are optional and supplied together. A unit price may
- * accompany the market value.
+ * <p>{@code reportedCostBasis} is the total cost as printed on the statement, in {@code
+ * reportedCostBasisCurrency}; leave both out when the statement has none (FR-REC-008). Without a
+ * currency, the cost basis is taken to be in the account currency when the security or the
+ * statement value is in it; a replace may also send back unchanged a cost basis whose currency is
+ * unknown (a row from before #527), which then stays unknown; otherwise the request is a 400. For a
+ * cost basis in another currency, {@code costBasisInAccountCurrency} is the cost in the account
+ * currency at the purchase-date rate(s), as the statement prints it; it is never derived at today's
+ * rate. {@code costBasisIsEstimated} marks a figure the user worked out rather than copied (PR-011)
+ * and defaults to {@code false}. The statement's market value and currency are optional and
+ * supplied together. A unit price may accompany the market value.
  */
 @Schema(
     description =
         "Omit reportedValue, reportedCurrency and reportedPrice together, or supply reportedValue"
             + " and reportedCurrency together. When supplying both, reportedPrice is optional."
-            + " Other combinations return HTTP 422.")
+            + " Other combinations return HTTP 422, as does reportedCostBasisCurrency or"
+            + " costBasisInAccountCurrency without reportedCostBasis.")
 public record SnapshotHoldingRequest(
     @NotNull UUID securityId,
     @NotNull @Positive @Digits(integer = 18, fraction = 10) BigDecimal quantity,
     @PositiveOrZero @Digits(integer = 16, fraction = 4) BigDecimal reportedCostBasis,
+    @Schema(
+            description =
+                "Currency of reportedCostBasis. Defaults to the account currency when the security"
+                    + " or reportedCurrency is in it. On a replace, an unchanged cost basis whose"
+                    + " currency is unknown may be sent back without one and stays unknown."
+                    + " Required otherwise (400).")
+        @ValidCurrencyCode
+        String reportedCostBasisCurrency,
+    @Schema(
+            description =
+                "For a cost basis in another currency: its cost in the account currency at the"
+                    + " purchase-date rate(s), as the statement prints it. Omit for a cost basis in"
+                    + " the account currency.")
+        @PositiveOrZero
+        @Digits(integer = 16, fraction = 4)
+        BigDecimal costBasisInAccountCurrency,
     Boolean costBasisIsEstimated,
     @PositiveOrZero @Digits(integer = 10, fraction = 10) BigDecimal reportedPrice,
     @PositiveOrZero @Digits(integer = 16, fraction = 4) BigDecimal reportedValue,
@@ -36,6 +58,27 @@ public record SnapshotHoldingRequest(
 
   public SnapshotHoldingRequest(
       UUID securityId, BigDecimal quantity, BigDecimal reportedCostBasis, Boolean estimated) {
-    this(securityId, quantity, reportedCostBasis, estimated, null, null, null);
+    this(securityId, quantity, reportedCostBasis, null, null, estimated, null, null, null);
+  }
+
+  /** A position as a statement reports it, with a cost basis of default currency (#527). */
+  public SnapshotHoldingRequest(
+      UUID securityId,
+      BigDecimal quantity,
+      BigDecimal reportedCostBasis,
+      Boolean estimated,
+      BigDecimal reportedPrice,
+      BigDecimal reportedValue,
+      String reportedCurrency) {
+    this(
+        securityId,
+        quantity,
+        reportedCostBasis,
+        null,
+        null,
+        estimated,
+        reportedPrice,
+        reportedValue,
+        reportedCurrency);
   }
 }

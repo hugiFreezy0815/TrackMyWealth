@@ -21,13 +21,34 @@ public record AccountPositionResponse(
     @Nullable BigDecimal valueInAccountCurrency,
     @Schema(description = "Cost basis as the statement printed it, never converted.")
         @Nullable BigDecimal costBasis,
+    @Schema(description = "Currency of costBasis; null when unknown (#527).")
+        @Nullable String costBasisCurrency,
+    @Schema(
+            description =
+                "For a cost basis in another currency: its cost in the account currency at the"
+                    + " purchase-date rate(s), as reported. Never derived at today's rate.")
+        @Nullable BigDecimal costBasisInAccountCurrency,
     boolean costBasisEstimated,
     @Schema(
             description =
-                "valueInAccountCurrency minus costBasis. Null without a cost basis or value, and"
-                    + " when priceCurrency differs from the account currency: the cost basis"
-                    + " carries no currency, so the gain would not be certain.")
+                "Gain in unrealisedGainCurrency, the cost basis currency: valueInAccountCurrency"
+                    + " minus costBasis for a cost basis in the account currency, value minus"
+                    + " costBasis for one in priceCurrency. Null without a cost basis, its"
+                    + " currency or a value, and for a cost basis in a third currency.")
         @Nullable BigDecimal unrealisedGain,
     @Schema(description = "unrealisedGain in percent of costBasis; null when unrealisedGain is.")
         @Nullable BigDecimal unrealisedGainPercent,
+    @Schema(description = "Currency of unrealisedGain; null when unrealisedGain is.")
+        @Nullable String unrealisedGainCurrency,
+    @Schema(
+            description =
+                "Gain in the account currency: valueInAccountCurrency minus the cost in the account"
+                    + " currency (costBasis when it is in it, else costBasisInAccountCurrency)."
+                    + " Includes the FX change since purchase. Null when that cost is unknown.")
+        @Nullable BigDecimal unrealisedGainInAccountCurrency,
+    @Schema(
+            description =
+                "unrealisedGainInAccountCurrency in percent of the cost in the account currency;"
+                    + " null when that gain is.")
+        @Nullable BigDecimal unrealisedGainInAccountCurrencyPercent,
     ValueStatus valueStatus) {}

@@ -42,9 +42,14 @@ const positions: Position[] = [
     value: '30512.55',
     valueInAccountCurrency: '30512.55',
     costBasis: '27439.00',
+    costBasisCurrency: 'EUR',
+    costBasisInAccountCurrency: null,
     costBasisEstimated: false,
     unrealisedGain: '3073.55',
     unrealisedGainPercent: '11.20',
+    unrealisedGainCurrency: 'EUR',
+    unrealisedGainInAccountCurrency: '3073.55',
+    unrealisedGainInAccountCurrencyPercent: '11.20',
     valueStatus: 'CURRENT',
   },
   {
@@ -57,9 +62,14 @@ const positions: Position[] = [
     value: '1150.00',
     valueInAccountCurrency: '1061.20',
     costBasis: '900.00',
+    costBasisCurrency: null,
+    costBasisInAccountCurrency: null,
     costBasisEstimated: false,
     unrealisedGain: null,
     unrealisedGainPercent: null,
+    unrealisedGainCurrency: null,
+    unrealisedGainInAccountCurrency: null,
+    unrealisedGainInAccountCurrencyPercent: null,
     valueStatus: 'ESTIMATED',
   },
 ];
@@ -120,7 +130,7 @@ describe('Depot positions on web (ADR 0007, W02/W03)', () => {
     expect(screen.getByText("+EUR 3'073.55")).toBeTruthy();
     expect(screen.getByText('+11.2%')).toBeTruthy();
     // A holding priced in another currency has no gain (FR-PERF-018).
-    expect(screen.getByText('Gain not available in USD')).toBeTruthy();
+    expect(screen.getByText('Cost basis currency unknown')).toBeTruthy();
   });
 
   it('opens the depot from the focusable position link', async () => {

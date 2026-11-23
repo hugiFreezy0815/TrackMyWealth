@@ -12,24 +12,62 @@ import type { Position } from './model';
 
 export type PositionViewProps = {
   positions: readonly Position[];
-  /** The depot's own currency: `valueInAccountCurrency` and `unrealisedGain` are in it. */
+  /** The depot's own currency: `valueInAccountCurrency` is in it. */
   currency: string;
   accountName: string;
   /** Optional: S3 displays positions read-only until a position-detail route exists. */
   onOpen?: () => void;
 };
 
+/** The gain a position row shows, with the currency it is in. */
+export type ShownGain = {
+  amount: NonNullable<Position['unrealisedGain']>;
+  percent: Position['unrealisedGainPercent'];
+  currency: string;
+};
+
 /**
- * Why a position shows "–" as its gain (spec S2, M24), or null when the gain is known or its
- * value is unknown (the value-status badge says so): another price currency than the depot
- * (FR-PERF-018, even with a cost basis), or no cost basis yet.
+ * The gain a row shows (#527): in the depot currency when the position's cost there is known - it
+ * matches the depot total and includes the FX change since purchase -, else in the cost basis' own
+ * currency (a USD cost basis in a CHF depot: "+25.00 USD"). Null when there is neither.
  */
-export function noGainReason(position: Position, currency: string): string | null {
-  if (position.unrealisedGainPercent != null) return null;
-  if (position.priceCurrency && position.priceCurrency !== currency) {
-    return 'portfolio.position.foreignGain';
+export function shownGain(position: Position, currency: string): ShownGain | null {
+  if (position.unrealisedGainInAccountCurrency != null) {
+    return {
+      amount: position.unrealisedGainInAccountCurrency,
+      percent: position.unrealisedGainInAccountCurrencyPercent ?? null,
+      currency,
+    };
   }
-  return position.costBasis == null ? 'portfolio.position.noBasis' : null;
+  if (position.unrealisedGain != null && position.unrealisedGainCurrency) {
+    return {
+      amount: position.unrealisedGain,
+      percent: position.unrealisedGainPercent ?? null,
+      currency: position.unrealisedGainCurrency,
+    };
+  }
+  return null;
+}
+
+/** A message id and its values. */
+export type NoGainReason = { id: string; values?: Record<string, string> };
+
+/**
+ * Why a position shows "–" as its gain (spec S2, M24), or null when it has a gain or its value is
+ * unknown (the value-status badge says so): no cost basis yet, a cost basis whose currency is
+ * unknown, or one in a known currency that gives no gain - a third currency, or a foreign one
+ * without its cost in the depot currency (FR-PERF-018, #527).
+ */
+export function noGainReason(position: Position, currency: string): NoGainReason | null {
+  if (shownGain(position, currency)) return null;
+  if (position.costBasis == null) return { id: 'portfolio.position.noBasis' };
+  if (!isValueKnown(position.valueStatus)) return null;
+  return position.costBasisCurrency
+    ? {
+        id: 'portfolio.position.noGainInBasisCurrency',
+        values: { currency: position.costBasisCurrency },
+      }
+    : { id: 'portfolio.position.unknownBasisCurrency' };
 }
 
 /** The explanation line under a position without a gain; nothing when there is no reason. */
@@ -40,7 +78,7 @@ export function NoGainNote({ position, currency }: { position: Position; currenc
   if (!reason) return null;
   return (
     <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
-      {msg(intl, reason, { currency: position.priceCurrency ?? '' })}
+      {msg(intl, reason.id, reason.values)}
     </Text>
   );
 }
@@ -57,11 +95,12 @@ export function usePositionLabel(position: Position, currency: string): string {
   }).label;
   const units = figureTexts(intl, { value: position.quantity, kind: 'quantity', masked: hidden });
   const reason = noGainReason(position, currency);
+  const shown = shownGain(position, currency);
   const gain = reason
-    ? msg(intl, reason, { currency: position.priceCurrency ?? '' })
+    ? msg(intl, reason.id, reason.values)
     : msg(intl, 'portfolio.position.gainLabel', {
         percent: figureTexts(intl, {
-          value: position.unrealisedGainPercent,
+          value: shown?.percent ?? null,
           kind: 'percent',
           signRole: 'change',
           masked: hidden,
@@ -98,6 +137,7 @@ function PositionRow({
   const hidden = useAmountsHidden();
   const units = figureTexts(intl, { value: position.quantity, kind: 'quantity', masked: hidden });
   const label = usePositionLabel(position, currency);
+  const gain = shownGain(position, currency);
   const rowStyle = {
     minHeight: 44,
     borderBottomWidth: 1,
@@ -148,16 +188,16 @@ function PositionRow({
             currency={currency}
             valueKnown={isValueKnown(position.valueStatus)}
           />
-          {position.unrealisedGain != null ? (
+          {gain != null ? (
             <Amount
-              value={position.unrealisedGain}
-              currency={currency}
+              value={gain.amount}
+              currency={gain.currency}
               signRole="change"
               style={TypeScale.caption}
             />
           ) : null}
           <Figure
-            value={position.unrealisedGainPercent}
+            value={gain?.percent ?? null}
             kind="percent"
             signRole="change"
             tone="gainLoss"
