@@ -759,7 +759,7 @@ public class ImportBatchService {
   // #323: a PDF statement whose text names no identifier the rule can read is imported as with a
   // USER_SELECTED template, into the account the member picked, without asking for a confirmation.
   // A CSV file without one still asks (US-07-10).
-  private static ImportFileAccountIdentifier fileIdentifier(
+  static ImportFileAccountIdentifier fileIdentifier(
       ResolvedImportTemplate template, ImportParseResult parsed) {
     ImportFileAccountIdentifier identifier = parsed.accountIdentifier();
     if (identifier != null && !identifier.found() && template.definition().isPdf()) {
@@ -1006,7 +1006,7 @@ public class ImportBatchService {
   }
 
   // Exactly one template whose header fingerprint is the file's: unambiguous enough to parse with.
-  private static UUID singleExactMatch(List<ImportTemplateCandidateResponse> candidates) {
+  static UUID singleExactMatch(List<ImportTemplateCandidateResponse> candidates) {
     List<ImportTemplateCandidateResponse> exact =
         candidates.stream()
             .filter(c -> ImportTemplateCandidateResponse.EXACT_HEADER.equals(c.match()))

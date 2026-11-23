@@ -345,18 +345,26 @@ public class ImportTemplateService {
    */
   public ImportTemplateParse parseWithoutAccount(
       UUID id, byte[] content, AuthenticatedUserPrincipal actor) {
-    ImportTemplateParse template =
-        readOnlyTransaction.execute(
-            status -> {
-              accessControlService.requireActingMember(actor);
-              ImportTemplate visible = requireVisible(id, actor);
-              return new ImportTemplateParse(
-                  visible.getInstitutionCatalogueId(), definitionOf(visible), null);
-            });
+    ImportTemplateParse template = withoutParse(id, actor);
     return new ImportTemplateParse(
         template.institutionCatalogueId(),
         template.definition(),
         parseFor(content, template.definition(), null, actor));
+  }
+
+  /**
+   * Template version {@code id}'s catalogue institution and definition, without reading a file: the
+   * {@link ImportTemplateParse} has no result. For a holdings statement (#273), which {@link
+   * #parseWithoutAccount} cannot read into rows.
+   */
+  public ImportTemplateParse withoutParse(UUID id, AuthenticatedUserPrincipal actor) {
+    return readOnlyTransaction.execute(
+        status -> {
+          accessControlService.requireActingMember(actor);
+          ImportTemplate visible = requireVisible(id, actor);
+          return new ImportTemplateParse(
+              visible.getInstitutionCatalogueId(), definitionOf(visible), null);
+        });
   }
 
   /**

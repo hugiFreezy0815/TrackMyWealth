@@ -23,6 +23,7 @@ public final class IfMatchExceptions {
           Map.entry("CustomAssetValuationController#recordValuation", "create (append-only)"),
           Map.entry("ImportTemplateController#create", "create"),
           Map.entry("ImportBatchController#upload", "create"),
+          Map.entry("ImportRoutingController#upload", "create (or a dry run that writes nothing)"),
           Map.entry("PortfolioController#createPortfolio", "create"),
           Map.entry("LoanRepaymentController#recordRepayment", "create (append-only ledger)"),
           Map.entry("OpeningBalanceController#recordOpeningBalance", "create"),

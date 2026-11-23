@@ -163,6 +163,7 @@ The operations below take an `Idempotency-Key` request header (ADR 0006,
 | Idempotent operation | Request that must match |
 | --- | --- |
 | `POST /api/v1/accounts/{accountId}/imports` (statement upload) | Account, file content, file name, media type, `templateId`, `snapshotDate` |
+| `POST /api/v1/imports` (`createImport`, upload without an account; a key is kept only when a batch was created) | File content, file name, media type, `templateId` |
 | `POST /api/v1/accounts` (`createAccount`) | JSON body |
 | `POST /api/v1/accounts/{accountId}/amortisation-schedule` (`createAmortisationEntry`) | Account, JSON body |
 | `POST /api/v1/accounts/{accountId}/opening-balance` (`recordOpeningBalance`) | Account, JSON body |
