@@ -29,6 +29,13 @@ public final class ImportSnapshotValues {
   /** A part: the snapshot's holdings (in a conflict, {@code HOLDING} names one position). */
   public static final String PART_HOLDINGS = "HOLDINGS";
 
+  /**
+   * A part (US-15-08): the cost basis of positions the snapshot holds without one, from a statement
+   * that agrees on the holdings - an earlier statement imported again once its template reads it.
+   * An existing cost basis is never overwritten.
+   */
+  public static final String PART_COST_BASIS = "COST_BASIS";
+
   public static final String CONFLICT_HOLDING = "HOLDING";
 
   /** After the commit: the batch recorded the snapshot. */

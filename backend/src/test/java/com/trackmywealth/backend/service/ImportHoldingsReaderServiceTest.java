@@ -442,10 +442,14 @@ class ImportHoldingsReaderServiceTest {
         rule(
             List.of(
                 "^(?P<quantity>[0-9]+) (?P<isin>[A-Z0-9]{12}) (?P<averagePrice>\\S+)"
-                    + " (?P<value>[0-9.]+) (?P<currency>[A-Z]{3})$"));
+                    + " (?P<price>[0-9.]+) (?P<value>[0-9.]+) (?P<currency>[A-Z]{3})$"));
+    // Quantity x price is the value (a price per unit), but quantity x average price has 18
+    // integer digits: past the cost column.
     stubText(
         "Portfolio-Wertentwicklung per 31.12.2031",
-        "100000000000 " + ShippedTemplateFixtures.HOLDING_ISIN_USD + " 9999999.00 5.00 USD");
+        "1000000000 "
+            + ShippedTemplateFixtures.HOLDING_ISIN_USD
+            + " 100000000.00 1.00 1000000000.00 USD");
 
     assertThat(readStubbed(pdfTemplate(average)).linesOf(ImportHoldingsValues.KIND_POSITION))
         .singleElement()
@@ -453,8 +457,81 @@ class ImportHoldingsReaderServiceTest {
             line -> {
               assertThat(line.costBasis()).isNull();
               assertThat(line.warnings())
-                  .contains(ImportHoldingsValues.WARNING_COST_BASIS_UNREADABLE);
+                  .containsExactly(ImportHoldingsValues.WARNING_COST_BASIS_UNREADABLE);
             });
+  }
+
+  @Test
+  void aBondQuotedInPercentCostsAHundredthOfQuantityTimesItsAveragePrice() {
+    ImportHoldingsRule withPrice =
+        rule(
+            List.of(
+                "^(?P<quantity>[0-9]+) (?P<isin>[A-Z0-9]{12}) (?P<averagePrice>\\S+)"
+                    + " (?P<price>[0-9.]+) (?P<value>[0-9.]+) (?P<currency>[A-Z]{3})$"));
+    // A bond: nominal 10'000 at 98.50 %, now 101.20 % - the value is a hundredth of nominal x
+    // price, so the cost is a hundredth of nominal x average price. A share beside it: per unit.
+    stubText(
+        "Portfolio-Wertentwicklung per 31.12.2031",
+        "10000 " + ShippedTemplateFixtures.HOLDING_ISIN_CHF + " 98.50 101.20 10120.00 CHF",
+        "10 " + ShippedTemplateFixtures.HOLDING_ISIN_USD + " 75.00 80.00 800.00 USD");
+
+    assertThat(readStubbed(pdfTemplate(withPrice)).linesOf(ImportHoldingsValues.KIND_POSITION))
+        .extracting(Line::costBasis, Line::warnings)
+        .containsExactly(
+            tuple(new BigDecimal("9850"), List.of()), tuple(new BigDecimal("750"), List.of()));
+  }
+
+  @Test
+  void withoutAPriceToTellACostManyTimesTheValueIsNotGuessed() {
+    ImportHoldingsRule withoutPrice =
+        rule(
+            List.of(
+                "^(?P<quantity>[0-9]+) (?P<isin>[A-Z0-9]{12}) (?P<averagePrice>\\S+)"
+                    + " (?P<value>[0-9.]+) (?P<currency>[A-Z]{3})$"));
+    // 10'000 x 98.50 is 97 times the value: a bond in percent or a heavy loss - no cost basis.
+    // 10 x 75.00 is under ten times the value: a loss, read per unit.
+    stubText(
+        "Portfolio-Wertentwicklung per 31.12.2031",
+        "10000 " + ShippedTemplateFixtures.HOLDING_ISIN_CHF + " 98.50 10120.00 CHF",
+        "10 " + ShippedTemplateFixtures.HOLDING_ISIN_USD + " 75.00 400.00 USD");
+
+    assertThat(readStubbed(pdfTemplate(withoutPrice)).linesOf(ImportHoldingsValues.KIND_POSITION))
+        .extracting(Line::costBasis, Line::warnings)
+        .containsExactly(
+            tuple(null, List.of(ImportHoldingsValues.WARNING_COST_BASIS_UNREADABLE)),
+            tuple(new BigDecimal("750"), List.of()));
+  }
+
+  @Test
+  void aSheetWithoutTheCostBasisColumnIsReadWithAWarningPerPosition() throws Exception {
+    ImportHoldingsColumns elsewhere =
+        new ImportHoldingsColumns(
+            null,
+            "Symbol",
+            null,
+            "Anzahl",
+            "Preis",
+            "Totalwert",
+            "Währung",
+            null,
+            "Kaufkurs",
+            null);
+
+    ImportHoldingsStatement statement =
+        reader.read(
+            ShippedTemplateFixtures.postfinancePositionsWorkbook(),
+            sheetTemplate(elsewhere),
+            MEMBER_DATE);
+
+    assertThat(statement.linesOf(ImportHoldingsValues.KIND_POSITION))
+        .hasSize(3)
+        .allSatisfy(
+            line -> {
+              assertThat(line.costBasis()).isNull();
+              assertThat(line.warnings())
+                  .containsExactly(ImportHoldingsValues.WARNING_COST_BASIS_UNREADABLE);
+            });
+    assertThat(statement.linesOf(ImportHoldingsValues.KIND_ERROR)).isEmpty();
   }
 
   @Test

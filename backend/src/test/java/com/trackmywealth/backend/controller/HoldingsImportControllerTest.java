@@ -740,6 +740,112 @@ class HoldingsImportControllerTest {
         .isEqualTo(1);
   }
 
+  @Test
+  void aStatementImportedBeforeGetsItsCostBasisWhenImportedAgainWithoutOverwritingOne()
+      throws Exception {
+    createAllSecurities();
+    byte[] statement = ShippedTemplateFixtures.swissquoteHoldings();
+    ImportBatchResponse first = commit(upload(depot, statement, null));
+    // As the template's version 1 recorded it: no cost basis - but one entered for the CHF share.
+    execute(
+        "UPDATE snapshot_holding SET reported_cost_basis = NULL,"
+            + " reported_cost_basis_currency = NULL");
+    execute(
+        "UPDATE snapshot_holding SET reported_cost_basis = 2000, reported_cost_basis_currency ="
+            + " 'CHF' WHERE security_id = (SELECT id FROM security WHERE isin = '"
+            + ShippedTemplateFixtures.HOLDING_ISIN_CHF
+            + "')");
+
+    ImportBatchResponse again = upload(depot, statement, null);
+
+    assertThat(again.holdings().snapshot()).isEqualTo(ImportSnapshotValues.COMPLETES);
+    assertThat(again.holdings().adds()).containsExactly(ImportSnapshotValues.PART_COST_BASIS);
+    assertThat(again.holdings().explanation()).contains("missing cost basis");
+    commit(again);
+
+    assertThat(count("SELECT count(*) FROM account_snapshot")).isEqualTo(1);
+    assertThat(
+            rowsOf(
+                "SELECT s.isin, h.reported_cost_basis, h.reported_cost_basis_currency,"
+                    + " h.import_batch_id, h.cost_basis_import_batch_id FROM snapshot_holding h"
+                    + " JOIN security s ON s.id = h.security_id"
+                    + " WHERE h.reported_cost_basis IS NOT NULL ORDER BY h.reported_cost_basis"))
+        .extracting(
+            row -> row.get("isin"),
+            row -> ((BigDecimal) row.get("reported_cost_basis")).stripTrailingZeros(),
+            row -> row.get("reported_cost_basis_currency"),
+            row -> row.get("import_batch_id"),
+            row -> row.get("cost_basis_import_batch_id"))
+        .containsExactly(
+            tuple(
+                ShippedTemplateFixtures.HOLDING_ISIN_FUND,
+                new BigDecimal("1082.0918"),
+                "CHF",
+                first.id(),
+                again.id()),
+            tuple(
+                ShippedTemplateFixtures.HOLDING_ISIN_CHF,
+                new BigDecimal("2E+3"),
+                "CHF",
+                first.id(),
+                null),
+            tuple(
+                ShippedTemplateFixtures.HOLDING_ISIN_USD,
+                new BigDecimal("4926"),
+                "USD",
+                first.id(),
+                again.id()));
+
+    // Imported a third time, it fills nothing more: a duplicate.
+    assertThat(upload(depot, statement, null).holdings().snapshot())
+        .isEqualTo(ImportSnapshotValues.ALREADY_RECORDED);
+  }
+
+  @Test
+  void rollingBackTheImportThatFilledACostBasisClearsOnlyWhatItFilled() throws Exception {
+    createAllSecurities();
+    byte[] statement = ShippedTemplateFixtures.swissquoteHoldings();
+    ImportBatchResponse first = commit(upload(depot, statement, null));
+    execute(
+        "UPDATE snapshot_holding SET reported_cost_basis = NULL,"
+            + " reported_cost_basis_currency = NULL WHERE security_id <> (SELECT id FROM security"
+            + " WHERE isin = '"
+            + ShippedTemplateFixtures.HOLDING_ISIN_CHF
+            + "')");
+    ImportBatchResponse filled = commit(upload(depot, statement, null));
+    assertThat(filled.holdings().snapshot()).isEqualTo(ImportSnapshotValues.COMPLETED);
+    assertThat(count("SELECT count(*) FROM snapshot_holding WHERE reported_cost_basis IS NOT NULL"))
+        .isEqualTo(3);
+
+    rollback(get(depot, filled.id()));
+
+    // The snapshot, its balance and its holdings stay the first import's; only the fills went.
+    assertThat(get(depot, filled.id()).holdings().snapshot())
+        .isEqualTo(ImportSnapshotValues.REMOVED);
+    assertThat(get(depot, first.id()).holdings().snapshot())
+        .isEqualTo(ImportSnapshotValues.RECORDED);
+    assertThat(count("SELECT count(*) FROM account_snapshot WHERE withdrawn_at IS NULL"))
+        .isEqualTo(1);
+    assertThat(count("SELECT count(*) FROM snapshot_holding")).isEqualTo(4);
+    assertThat(
+            rowsOf(
+                "SELECT s.isin, h.reported_cost_basis_currency FROM snapshot_holding h"
+                    + " JOIN security s ON s.id = h.security_id"
+                    + " WHERE h.reported_cost_basis IS NOT NULL"))
+        .extracting(row -> row.get("isin"), row -> row.get("reported_cost_basis_currency"))
+        .containsExactly(tuple(ShippedTemplateFixtures.HOLDING_ISIN_CHF, "CHF"));
+    assertThat(
+            count(
+                "SELECT count(*) FROM snapshot_holding WHERE cost_basis_import_batch_id"
+                    + " IS NOT NULL"))
+        .isZero();
+    assertThat(snapshots(depot).get(0).balance()).isNotNull();
+
+    // Rolling back the first import afterwards removes the snapshot as before.
+    rollback(get(depot, first.id()));
+    assertThat(count("SELECT count(*) FROM account_snapshot WHERE withdrawn_at IS NULL")).isZero();
+  }
+
   // --- spreadsheets --------------------------------------------------------------------------
 
   @Test

@@ -283,6 +283,14 @@ public class ImportStatementBalanceService {
     // between this check and the removal.
     AccountSnapshot snapshot =
         snapshotRepository.findForUpdate(recorded.get().getId(), account.getId()).orElseThrow();
+    Set<UUID> others = contributors(snapshot);
+    if (!others.contains(batch.getId())) {
+      // US-15-08: the batch only filled the cost basis of other batches' holdings. Its fills go;
+      // the snapshot, its balance and so its reconciliation stay as they are.
+      clearCostBasesFilledBy(batch, snapshot);
+      recordRemoval(batch, ImportSnapshotValues.REMOVED);
+      return false;
+    }
     List<ReconciliationResult> results = resultRepository.findBySnapshotId(snapshot.getId());
     // A decision on the account's latest balance can be reopened, so it blocks the rollback. One
     // on an older balance is final (ReconciliationHistoryService#isFinalized): it can never be
@@ -310,7 +318,6 @@ public class ImportStatementBalanceService {
         decided.isPresent()
             || !resultIds.isEmpty() && resultRepository.existsAdjustmentOf(resultIds);
     // US-07-31: the other batches whose statements completed the snapshot.
-    Set<UUID> others = contributors(snapshot);
     others.remove(batch.getId());
     if (others.isEmpty() && keptAsHistory) {
       cashRepository.deleteBySnapshotIdAndImportBatchId(snapshot.getId(), batch.getId());
@@ -384,6 +391,14 @@ public class ImportStatementBalanceService {
       copy.setReported(
           holding.getReportedPrice(), holding.getReportedValue(), holding.getReportedCurrency());
       copy.setImportBatchId(holding.getImportBatchId());
+      // US-15-08: the cost basis moves on too, unless this batch filled it.
+      if (!batch.getId().equals(holding.getCostBasisImportBatchId())) {
+        copy.setReportedCostBasis(holding.getReportedCostBasis());
+        copy.setReportedCostBasisCurrency(holding.getReportedCostBasisCurrency());
+        copy.setCostBasisInAccountCurrency(holding.getCostBasisInAccountCurrency());
+        copy.setCostBasisEstimated(holding.isCostBasisEstimated());
+        copy.setCostBasisImportBatchId(holding.getCostBasisImportBatchId());
+      }
       copies.add(copy);
     }
     holdingRepository.saveAllAndFlush(copies);
@@ -407,6 +422,7 @@ public class ImportStatementBalanceService {
       Set<UUID> others) {
     holdingRepository.deleteBySnapshotIdAndImportBatchId(snapshot.getId(), batch.getId());
     cashRepository.deleteBySnapshotIdAndImportBatchId(snapshot.getId(), batch.getId());
+    clearCostBasesFilledBy(batch, snapshot);
     if (batch.getId().equals(snapshot.getBalanceImportBatchId())) {
       resultRepository.deleteAll(results);
       resultRepository.flush();
@@ -422,7 +438,25 @@ public class ImportStatementBalanceService {
     recordRemoval(batch, ImportSnapshotValues.REMOVED);
   }
 
-  // Every batch that recorded the snapshot or contributed a part of it.
+  // US-15-08: the cost basis this batch filled into other batches' holdings goes again; one the
+  // holding came with, or one entered by hand, stays.
+  private void clearCostBasesFilledBy(ImportBatch batch, AccountSnapshot snapshot) {
+    List<SnapshotHolding> filled =
+        holdingRepository.findBySnapshotId(snapshot.getId()).stream()
+            .filter(holding -> batch.getId().equals(holding.getCostBasisImportBatchId()))
+            .toList();
+    for (SnapshotHolding holding : filled) {
+      holding.setReportedCostBasis(null);
+      holding.setReportedCostBasisCurrency(null);
+      holding.setCostBasisInAccountCurrency(null);
+      holding.setCostBasisEstimated(false);
+      holding.setCostBasisImportBatchId(null);
+    }
+    holdingRepository.saveAllAndFlush(filled);
+  }
+
+  // Every batch that recorded the snapshot or contributed a part of it - not one that only filled
+  // the cost basis of holdings (US-15-08): those are another batch's.
   private Set<UUID> contributors(AccountSnapshot snapshot) {
     Set<UUID> batches = new LinkedHashSet<>();
     if (snapshot.getImportBatchId() != null) {

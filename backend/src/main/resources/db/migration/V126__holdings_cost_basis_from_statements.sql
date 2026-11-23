@@ -17,6 +17,12 @@
 -- V98: values as printed). The batch keeps it per position (import_holding_row) so the preview
 -- shows what the commit stores in snapshot_holding.reported_cost_basis(_currency) (V125).
 --
+-- A statement imported before (version 1) left its positions without a cost basis. Importing it
+-- again fills that gap: the commit completes the snapshot (US-07-31) with the part COST_BASIS,
+-- setting the cost basis of each held position that has none - never overwriting one. The
+-- holding records the batch that filled it (cost_basis_import_batch_id), so rolling that batch
+-- back clears only what it filled.
+--
 -- Each new version is a copy with a fixed id of its own; version 1 stays, no longer current, for
 -- the batches that used it (as V103). Fixed ids and RLS handling: see V75.
 -- =============================================================================================
@@ -33,6 +39,23 @@ ADD CONSTRAINT chk_import_holding_row_cost_basis CHECK (
 COMMENT ON COLUMN import_holding_row.reported_cost_basis IS
 'A position''s total cost in its currency, as the statement prints it; NULL when it prints '
 'none or it is unreadable (US-15-08).';
+
+ALTER TABLE snapshot_holding
+ADD COLUMN cost_basis_import_batch_id UUID REFERENCES import_batch (id);
+
+-- Only a cost basis that exists was filled by a batch.
+ALTER TABLE snapshot_holding
+ADD CONSTRAINT chk_snapshot_holding_cost_basis_import_batch CHECK (
+    cost_basis_import_batch_id IS NULL OR reported_cost_basis IS NOT NULL
+);
+
+CREATE INDEX idx_snapshot_holding_cost_basis_import_batch
+ON snapshot_holding (cost_basis_import_batch_id)
+WHERE cost_basis_import_batch_id IS NOT NULL;
+
+COMMENT ON COLUMN snapshot_holding.cost_basis_import_batch_id IS
+'The batch whose statement filled this held position''s empty cost basis afterwards; NULL when '
+'the cost basis came with the holding or by hand (US-15-08).';
 
 ALTER TABLE import_template NO FORCE ROW LEVEL SECURITY;
 

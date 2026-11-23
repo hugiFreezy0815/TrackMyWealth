@@ -25275,6 +25275,7 @@ components:
           enum:
           - BALANCE
           - HOLDINGS
+          - COST_BASIS
           items:
             type: string
         conflicts:
@@ -27509,7 +27510,9 @@ components:
           - string
           - "null"
           format: decimal
-          description: "US-15-08: the total cost the commit stores, as printed."
+          description: "US-15-08: the total cost as the statement prints it. A commit\
+            \ stores it with a new holding or where a held position has none, never\
+            \ over one."
         reportedCostBasisCurrency:
           type:
           - string

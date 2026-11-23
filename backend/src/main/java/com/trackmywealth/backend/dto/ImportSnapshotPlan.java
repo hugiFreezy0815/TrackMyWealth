@@ -15,7 +15,8 @@ import org.jspecify.annotations.Nullable;
  * @param existing the imported snapshot of that date in effect, {@code null} for {@code NEW} and
  *     {@code OUT_OF_RANGE}; with the reconciliation decision that keeps a {@code COMPLETES} plan
  *     from being committed, if one stands
- * @param adds the parts the commit would record: {@code BALANCE}, {@code HOLDINGS}
+ * @param adds the parts the commit would record: {@code BALANCE}, {@code HOLDINGS}, {@code
+ *     COST_BASIS}
  * @param conflicts each part (or position) in which the statement differs from the snapshot
  */
 public record ImportSnapshotPlan(

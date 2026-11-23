@@ -46,6 +46,12 @@ import org.springframework.stereotype.Service;
  *   <li>a part both hold and disagree on is a <b>conflict</b>, never overwritten.
  * </ul>
  *
+ * <p>A position's cost basis (US-15-08) is part of the holdings: a statement that agrees on them
+ * and has the cost basis of a held position that lacks one adds the part {@code COST_BASIS} - the
+ * cost basis of those positions only, never over one the snapshot holds. So an earlier statement
+ * imported again, once its template reads the cost basis, fills the gap; the holding records the
+ * batch that filled it ({@code cost_basis_import_batch_id}, V126) for a rollback to clear.
+ *
  * <p>So a statement is {@code NEW} (no imported snapshot of the date), {@code COMPLETES} (adds a
  * part, conflicts in none), {@code ALREADY_RECORDED} (adds nothing, conflicts in nothing - a
  * duplicate) or {@code CONFLICTING}; {@code OUT_OF_RANGE} when the account's dates do not admit its
@@ -115,6 +121,23 @@ public class ImportSnapshotCompletionService {
       Map<String, BigDecimal> foreignCash,
       Map<UUID, BigDecimal> holdings,
       boolean holdingsKnown) {
+    return plan(account, date, balance, foreignCash, holdings, Map.of(), holdingsKnown);
+  }
+
+  /**
+   * As {@link #plan(Account, LocalDate, BigDecimal, Map, Map, boolean)}, for a statement that also
+   * prints the cost basis of positions (US-15-08).
+   *
+   * @param costBases the statement's cost basis by security, for the positions that print one
+   */
+  public ImportSnapshotPlan plan(
+      Account account,
+      LocalDate date,
+      BigDecimal balance,
+      Map<String, BigDecimal> foreignCash,
+      Map<UUID, BigDecimal> holdings,
+      Map<UUID, BigDecimal> costBases,
+      boolean holdingsKnown) {
     if (!withinAccountDates(account, date)) {
       return new ImportSnapshotPlan(ImportSnapshotValues.OUT_OF_RANGE, null, List.of(), List.of());
     }
@@ -174,7 +197,11 @@ public class ImportSnapshotCompletionService {
       if (held.isEmpty()) {
         adds.add(ImportSnapshotValues.PART_HOLDINGS);
       } else if (holdingsKnown) {
-        conflicts.addAll(holdingConflicts(held, holdings));
+        List<ImportSnapshotPlan.Conflict> differing = holdingConflicts(held, holdings);
+        conflicts.addAll(differing);
+        if (differing.isEmpty() && !fillableCostBases(held, costBases).isEmpty()) {
+          adds.add(ImportSnapshotValues.PART_COST_BASIS);
+        }
       }
     }
     String outcome;
@@ -282,8 +309,43 @@ public class ImportSnapshotCompletionService {
       }
       holdingRepository.saveAllAndFlush(rows);
     }
+    if (plan.adds().contains(ImportSnapshotValues.PART_COST_BASIS)) {
+      fillCostBases(snapshot, batch, holdings);
+    }
     reconciliationService.reconcileLatest(account, committedBy);
     return outcome;
+  }
+
+  // US-15-08: the held positions without a cost basis whose cost basis the statement prints.
+  private static List<SnapshotHolding> fillableCostBases(
+      List<SnapshotHolding> held, Map<UUID, BigDecimal> costBases) {
+    return held.stream()
+        .filter(holding -> holding.getReportedCostBasis() == null)
+        .filter(holding -> costBases.containsKey(holding.getSecurityId()))
+        .toList();
+  }
+
+  // US-15-08: sets the cost basis of each held position that has none, as the statement prints it,
+  // in the position's currency; one the snapshot holds (imported or entered) is never overwritten.
+  private void fillCostBases(
+      AccountSnapshot snapshot, ImportBatch batch, List<ImportSnapshotHolding> holdings) {
+    Map<UUID, ImportSnapshotHolding> printed = new LinkedHashMap<>();
+    for (ImportSnapshotHolding position : holdings) {
+      if (position.costBasis() != null) {
+        printed.putIfAbsent(position.securityId(), position);
+      }
+    }
+    Map<UUID, BigDecimal> costBases = new LinkedHashMap<>();
+    printed.forEach((security, position) -> costBases.put(security, position.costBasis()));
+    List<SnapshotHolding> filled =
+        fillableCostBases(holdingRepository.findBySnapshotId(snapshot.getId()), costBases);
+    for (SnapshotHolding holding : filled) {
+      ImportSnapshotHolding position = printed.get(holding.getSecurityId());
+      holding.setReportedCostBasis(position.costBasis().setScale(FxRateService.MONEY_SCALE));
+      holding.setReportedCostBasisCurrency(position.currency());
+      holding.setCostBasisImportBatchId(batch.getId());
+    }
+    holdingRepository.saveAllAndFlush(filled);
   }
 
   private Map<String, BigDecimal> existingCash(AccountSnapshot snapshot) {

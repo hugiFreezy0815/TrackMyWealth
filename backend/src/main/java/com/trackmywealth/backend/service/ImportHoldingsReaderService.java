@@ -636,8 +636,7 @@ public class ImportHoldingsReaderService {
       if (quotedInPercent(quantity, price, value, product)) {
         product = product.divide(PERCENT);
       }
-      cost =
-          product.setScale(MONEY_FRACTION_DIGITS, RoundingMode.HALF_UP).stripTrailingZeros();
+      cost = product.setScale(MONEY_FRACTION_DIGITS, RoundingMode.HALF_UP).stripTrailingZeros();
       if (cost.scale() < 0) {
         cost = cost.setScale(0);
       }
@@ -704,7 +703,8 @@ public class ImportHoldingsReaderService {
     return !near(product, value) && !near(product.divide(PERCENT), value);
   }
 
-  // US-15-08: whether the average price is quoted in percent of the nominal (a bond), so the cost is
+  // US-15-08: whether the average price is quoted in percent of the nominal (a bond), so the cost
+  // is
   // a hundredth of quantity x average price. The price tells: it is quoted as the average price,
   // and only a hundredth of quantity x price is the value. Without a price that matches either way,
   // a product many times the value is as likely a percent quote as a heavy loss: unreadable, so no

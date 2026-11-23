@@ -2760,7 +2760,7 @@ export interface components {
         | 'REMOVED';
       existingSnapshot: components['schemas']['Existing'] | null;
       /** @enum {array} */
-      adds: 'BALANCE' | 'HOLDINGS';
+      adds: 'BALANCE' | 'HOLDINGS' | 'COST_BASIS';
       conflicts: components['schemas']['Conflict'][];
       explanation: string;
       /**
@@ -3596,7 +3596,7 @@ export interface components {
       reportedCurrency: string;
       /**
        * Format: decimal
-       * @description US-15-08: the total cost the commit stores, as printed.
+       * @description US-15-08: the total cost as the statement prints it. A commit stores it with a new holding or where a held position has none, never over one.
        */
       reportedCostBasis: DecimalString | null;
       /** @description US-15-08: the currency of reportedCostBasis. */

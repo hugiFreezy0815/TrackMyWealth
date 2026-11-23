@@ -167,6 +167,7 @@ public class ImportHoldingsService {
               balance,
               cashByCurrency,
               quantities(positions, resolved),
+              costBases(positions, resolved),
               unresolvedCount == 0 && duplicates.isEmpty());
       snapshot = plan.outcome();
     }
@@ -286,7 +287,13 @@ public class ImportHoldingsService {
     BigDecimal balance = cashByCurrency.remove(currency);
     ImportSnapshotPlan plan =
         completionService.plan(
-            account, date, balance, cashByCurrency, quantities(positions, resolved), true);
+            account,
+            date,
+            balance,
+            cashByCurrency,
+            quantities(positions, resolved),
+            costBases(positions, resolved),
+            true);
     if (ImportSnapshotValues.OUT_OF_RANGE.equals(plan.outcome())) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
@@ -315,6 +322,19 @@ public class ImportHoldingsService {
     batch.setHoldingsSnapshot(
         completionService.commit(
             batch, account, date, currency, plan, balance, cashByCurrency, holdings, committedBy));
+  }
+
+  // US-15-08: each resolved position's cost basis by security, where the statement prints one.
+  private static Map<UUID, BigDecimal> costBases(
+      List<ImportHoldingRow> positions, Map<Integer, UUID> resolved) {
+    Map<UUID, BigDecimal> costBases = new LinkedHashMap<>();
+    for (ImportHoldingRow row : positions) {
+      UUID id = resolved.get(row.getRowNumber());
+      if (id != null && row.getReportedCostBasis() != null) {
+        costBases.putIfAbsent(id, row.getReportedCostBasis());
+      }
+    }
+    return costBases;
   }
 
   // Each resolved position's quantity by security (the statement lists a security once).
