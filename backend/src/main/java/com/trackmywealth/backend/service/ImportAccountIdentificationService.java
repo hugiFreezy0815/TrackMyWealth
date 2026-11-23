@@ -12,7 +12,10 @@ import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 
 /**
@@ -127,14 +130,53 @@ public class ImportAccountIdentificationService {
     }
   }
 
+  /**
+   * US-07-34 (#365): the account of workspace {@code workspaceId} that {@code fileIdentifier} names
+   * and {@code actor} may import into; empty when the file names none, or names one the member may
+   * not import into (so nothing about it is revealed). Whether the match is certain is the
+   * caller's: a masked card number never is.
+   *
+   * @throws ApiException 503 {@code ACCOUNT_IDENTIFICATION_UNAVAILABLE} when the file names an
+   *     identifier and the server has no key: without it, no account can be matched, and answering
+   *     "no account" would invite a duplicate account (#365 review)
+   */
+  public Optional<Account> importableAccountNamed(
+      UUID workspaceId,
+      @Nullable ImportFileAccountIdentifier fileIdentifier,
+      AuthenticatedUserPrincipal actor) {
+    if (fileIdentifier == null || !fileIdentifier.found()) {
+      return Optional.empty();
+    }
+    return identifiers
+        .match(workspaceId, fileIdentifier.value(), fileIdentifier.kind())
+        .filter(named -> mayImportInto(actor, named));
+  }
+
+  /**
+   * The accounts of {@code accounts} that {@code actor} may import into: active, holding
+   * transactions, and accessible to the member - in their given order.
+   */
+  public List<Account> importable(AuthenticatedUserPrincipal actor, List<Account> accounts) {
+    UUID memberId = accessControlService.requireActingMember(actor);
+    List<Account> open =
+        accounts.stream()
+            .filter(a -> ACTIVE.equals(a.getStatus()) && a.isHasTransactions())
+            .toList();
+    if (open.isEmpty()) {
+      return List.of();
+    }
+    Set<UUID> accessible =
+        accessControlService.accountsWithAccess(memberId, open).stream()
+            .map(Account::getId)
+            .collect(Collectors.toSet());
+    return open.stream().filter(a -> accessible.contains(a.getId())).toList();
+  }
+
   private boolean mayImportInto(AuthenticatedUserPrincipal actor, UUID accountId) {
     return accountRepository.findById(accountId).filter(a -> mayImportInto(actor, a)).isPresent();
   }
 
   private boolean mayImportInto(AuthenticatedUserPrincipal actor, Account account) {
-    UUID memberId = accessControlService.requireActingMember(actor);
-    return ACTIVE.equals(account.getStatus())
-        && account.isHasTransactions()
-        && !accessControlService.accountsWithAccess(memberId, List.of(account)).isEmpty();
+    return !importable(actor, List.of(account)).isEmpty();
   }
 }

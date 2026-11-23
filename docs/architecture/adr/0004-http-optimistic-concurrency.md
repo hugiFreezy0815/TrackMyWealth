@@ -54,7 +54,7 @@ These mutating endpoints take no `If-Match`, because there is no client-held ver
 existing resource that a concurrent write could silently overwrite:
 
 - **Creates** (`POST` on a collection): accounts, snapshots, users, categories, categorization
-  rules, import templates, import batches (the upload, US-07-04), institutions, sharing grants,
+  rules, import templates, import batches (the upload, US-07-04, and the upload without an account, US-07-34, which writes nothing unless it creates a batch), institutions, sharing grants,
   transactions, custom-asset valuations. Transactions and
   valuations are append-only besides. An account's opening balance is created the same way
   (`POST .../opening-balance`, a singleton: a second one is a 409); replacing or deleting it needs

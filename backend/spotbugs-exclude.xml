@@ -52,6 +52,17 @@ holds itself to for its own exemption list.
         <Bug pattern="EI_EXPOSE_REP"/>
     </Match>
 
+    <!-- Same false positive as InstitutionSummaryResponse (US-07-34, #365): the compact
+         constructor copies both lists with List.copyOf before the fields are set. -->
+    <Match>
+        <Class name="com.trackmywealth.backend.dto.ImportRoutingResponse"/>
+        <Or>
+            <Method name="accountCandidates"/>
+            <Method name="templateCandidates"/>
+        </Or>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+
     <!-- JwtService's constructor derives its signing key from configuration and has nothing to
          clean up if that fails - a malformed/missing secret should fail application startup
          immediately (fail-fast), not construct a partially-usable service. No finalizer exists

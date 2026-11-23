@@ -6,6 +6,7 @@ import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportHoldingsRule;
 import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
+import com.trackmywealth.backend.dto.ImportPdfStatement;
 import com.trackmywealth.backend.dto.ImportPreviewRowResponse;
 import com.trackmywealth.backend.dto.ImportRowErrorResponse;
 import com.trackmywealth.backend.dto.ImportRowFilter;
@@ -345,18 +346,42 @@ public class ImportTemplateService {
    */
   public ImportTemplateParse parseWithoutAccount(
       UUID id, byte[] content, AuthenticatedUserPrincipal actor) {
-    ImportTemplateParse template =
-        readOnlyTransaction.execute(
-            status -> {
-              accessControlService.requireActingMember(actor);
-              ImportTemplate visible = requireVisible(id, actor);
-              return new ImportTemplateParse(
-                  visible.getInstitutionCatalogueId(), definitionOf(visible), null);
-            });
+    return parseWithoutAccount(id, content, null, actor);
+  }
+
+  /**
+   * {@link #parseWithoutAccount(UUID, byte[], AuthenticatedUserPrincipal)} of a PDF whose statement
+   * was already read with this template version ({@link ImportFileParserService#readPdfStatement});
+   * {@code null} reads it here (#365 review).
+   */
+  public ImportTemplateParse parseWithoutAccount(
+      UUID id, byte[] content, ImportPdfStatement pdfStatement, AuthenticatedUserPrincipal actor) {
+    ImportTemplateParse template = withoutParse(id, actor);
     return new ImportTemplateParse(
         template.institutionCatalogueId(),
         template.definition(),
-        parseFor(content, template.definition(), null, actor));
+        pdfStatement == null
+            ? parseFor(content, template.definition(), null, actor)
+            : parser.parseForAccount(
+                content,
+                template.definition(),
+                new ImportAccountContext(null, false, false),
+                pdfStatement));
+  }
+
+  /**
+   * Template version {@code id}'s catalogue institution and definition, without reading a file: the
+   * {@link ImportTemplateParse} has no result. For a holdings statement (#273), which {@link
+   * #parseWithoutAccount} cannot read into rows.
+   */
+  public ImportTemplateParse withoutParse(UUID id, AuthenticatedUserPrincipal actor) {
+    return readOnlyTransaction.execute(
+        status -> {
+          accessControlService.requireActingMember(actor);
+          ImportTemplate visible = requireVisible(id, actor);
+          return new ImportTemplateParse(
+              visible.getInstitutionCatalogueId(), definitionOf(visible), null);
+        });
   }
 
   /**

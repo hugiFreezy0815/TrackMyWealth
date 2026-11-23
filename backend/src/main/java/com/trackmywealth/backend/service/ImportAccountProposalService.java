@@ -106,7 +106,11 @@ public class ImportAccountProposalService {
 
   // --- the proposal ----------------------------------------------------------------------------
 
-  private ImportAccountProposalResponse proposal(UUID templateId, ImportTemplateParse parse) {
+  /**
+   * US-07-34 (#365): the proposal for a file already read with template version {@code templateId}
+   * ({@code parse} with its result), so an upload that found no account reads it only once.
+   */
+  public ImportAccountProposalResponse proposal(UUID templateId, ImportTemplateParse parse) {
     UUID catalogueId = parse.institutionCatalogueId();
     String institutionName =
         catalogueId == null

@@ -72,6 +72,27 @@ class ImportAccountIdentificationServiceTest {
     assertUnconfirmed();
   }
 
+  // #365 review: without a key no account can be matched, so the upload without an account
+  // answers 503 instead of "no account" (which would invite a duplicate account).
+  @Test
+  void withoutAKeyAnUploadWithoutAccountCannotMatchAndIs503() {
+    ImportAccountIdentificationService keyless =
+        new ImportAccountIdentificationService(
+            new AccountIdentifierService("", accounts), access, accounts);
+    UUID workspaceId = workspace.getId();
+
+    assertThatThrownBy(() -> keyless.importableAccountNamed(workspaceId, iban(IBAN), actor))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            e -> {
+              assertThat(e.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.ACCOUNT_IDENTIFICATION_UNAVAILABLE);
+            });
+    // A file that names no identifier needs no key.
+    assertThat(keyless.importableAccountNamed(workspaceId, iban(null), actor)).isEmpty();
+    assertThat(keyless.importableAccountNamed(workspaceId, null, actor)).isEmpty();
+  }
+
   @Test
   void aFileNamingNoReadableIdentifierIsNotFound() {
     service.identify(batch, own, iban(null), actor);

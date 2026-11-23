@@ -106,4 +106,18 @@ public interface AccountRepository
   // month's spending on an account archived since must still count (FR-LIF-005 only excludes an
   // archived account from *current* totals).
   List<Account> findByWorkspaceId(UUID workspaceId);
+
+  /**
+   * US-07-34 (#365): the active accounts of the workspace whose portfolio is backed by catalogue
+   * institution {@code catalogueInstitutionId} - the bank a statement's template belongs to. Oldest
+   * first, the id as tie-breaker; one bank's accounts in one workspace are few.
+   */
+  @Query(
+      "SELECT a FROM Account a JOIN FETCH a.portfolio p"
+          + " WHERE a.workspace.id = :workspaceId AND a.status = 'ACTIVE'"
+          + " AND p.catalogueInstitution.id = :catalogueInstitutionId"
+          + " ORDER BY a.createdAt, a.id")
+  List<Account> findActiveAtCatalogueInstitution(
+      @Param("workspaceId") UUID workspaceId,
+      @Param("catalogueInstitutionId") UUID catalogueInstitutionId);
 }

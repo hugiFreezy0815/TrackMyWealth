@@ -1210,6 +1210,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/imports': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Upload a statement file without choosing its account */
+    post: operations['createImport'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/institutions/catalogue': {
     parameters: {
       query?: never;
@@ -2513,6 +2530,20 @@ export interface components {
       /** Format: int32 */
       version: number;
     };
+    ImportAccountCandidateResponse: {
+      /** Format: uuid */
+      accountId: string;
+      accountName: string;
+      accountType: string;
+      nativeCurrency: string;
+      /** Format: uuid */
+      portfolioId: string;
+      portfolioName: string;
+      /** @description The identifier registered on the account, masked. */
+      maskedIdentifier: string | null;
+      /** @enum {string} */
+      reason: 'IDENTIFIER' | 'INSTITUTION';
+    };
     ImportAccountIdentifierRule: {
       /** @description IBAN, MASKED_CARD or CONTRACT_NUMBER. */
       kind?: string;
@@ -2847,6 +2878,18 @@ export interface components {
       voidedTransactionIds: string[];
       reversalTransactionIds: string[];
       unmatchedTransactionIds: string[];
+    };
+    ImportRoutingResponse: {
+      /** @enum {string} */
+      outcome: 'BATCH_CREATED' | 'CHOOSE_ACCOUNT' | 'NO_ACCOUNT' | 'NO_TEMPLATE';
+      /** @description The preview batch, on the account the file names; BATCH_CREATED only. */
+      batch: components['schemas']['ImportBatchResponse'] | null;
+      /** @description CHOOSE_ACCOUNT: the accounts the file may belong to, the one it names first. Empty for every other outcome. */
+      accountCandidates: components['schemas']['ImportAccountCandidateResponse'][];
+      /** @description What the file suggests for a new account, when it names no account the member may import into and a template read it; null otherwise (also for CAMT). */
+      accountProposal: components['schemas']['ImportAccountProposalResponse'] | null;
+      /** @description NO_TEMPLATE: the templates that can read the file, best first; empty when none can. Empty for every other outcome. */
+      templateCandidates: components['schemas']['ImportTemplateCandidateResponse'][];
     };
     ImportRowErrorResponse: {
       /** @description Stable row code; the text is tmw.import.row.<code> with args in order (docs/api/error-codes.md). An open set: a client shows message for a code it does not know. Existing codes are never renamed, and removed only as a declared breaking change. */
@@ -18675,6 +18718,223 @@ export interface operations {
        * @description Problem codes:
        *     - `IMPORT_PDF_BUSY`: The server is reading as many PDF statements as it may at once.
        *     - `IMPORT_OCR_UNAVAILABLE`: Local OCR is not installed, busy, or did not finish within the time limit.
+       */
+      503: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          /** @description Seconds to wait before retrying, when the server can tell. */
+          'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      default: components['responses']['ApiProblemResponse'];
+    };
+  };
+  createImport: {
+    parameters: {
+      query?: {
+        templateId?: string;
+      };
+      header?: {
+        /** @description A fresh UUID for each upload, the same UUID on every retry of it (ADR 0006). A retry within 24 hours of an upload that created a batch answers that 201 again and creates no second batch. */
+        'Idempotency-Key'?: string;
+        /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
+        'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'multipart/form-data': {
+          /** Format: binary */
+          file: string;
+        };
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ImportRoutingResponse'];
+        };
+      };
+      /** @description Created */
+      201: {
+        headers: {
+          Location: components['headers']['Location'];
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ImportRoutingResponse'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       */
+      400: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `UNAUTHENTICATED`: No valid access token, or a sign-in was refused.
+       */
+      401: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `NOT_FOUND`: Not found, or not visible to the caller; the two are never told apart.
+       */
+      404: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+       *     - `IDEMPOTENCY_KEY_IN_USE`: A request with this Idempotency-Key is still running; retry it with the same key to get its result.
+       *     - `ACCOUNT_ARCHIVED`: The account is archived; restore it first.
+       *     - `IMPORT_TOO_MANY_OPEN_BATCHES`: The account holds as many open import batches as it may (maxOpenBatches); commit or discard one first.
+       */
+      409: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          /** @description Seconds to wait before retrying, when the server can tell. */
+          'Retry-After'?: number;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `IMPORT_FILE_TOO_LARGE`: The uploaded file exceeds the 5 MB import limit.
+       */
+      413: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `IDEMPOTENCY_KEY_MISMATCH`: This Idempotency-Key was already used for a different request; a new request needs a new key.
+       *     - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
+       *     - `IMPORT_TEMPLATE_INVALID`: The import template breaks a rule; field names the template field, detail the rule.
+       *     - `IMPORT_TEMPLATE_UNSUPPORTED`: A valid template this release cannot import yet.
+       *     - `IMPORT_TEMPLATE_MISMATCH`: The file's header lacks columns the template maps (missingColumns); no row is parsed.
+       *     - `IMPORT_ENCODING_SUSPECT`: The header holds characters the template's encoding cannot decode; the file is probably in another encoding.
+       *     - `IMPORT_FILE_EMPTY`: The file is empty, or holds nothing after the skipped preamble.
+       *     - `IMPORT_FILE_NO_DATA_ROWS`: The file has a header but no data row.
+       *     - `IMPORT_FILE_MALFORMED`: The file is not valid CSV for the template's delimiter, or not a readable PDF, XML or spreadsheet (damaged, encrypted).
+       *     - `IMPORT_FILE_TOO_MANY_ROWS`: The file has more data rows than one import may hold (maxRows).
+       *     - `IMPORT_CAMT_UNSUPPORTED`: An XML file is no supported ISO 20022 message: only camt.053 and camt.052, versions 001.02, 001.04 and 001.08.
+       *     - `IMPORT_CAMT_LIMIT_EXCEEDED`: A CAMT file holds more than one import may; exporting a shorter period helps.
+       *     - `IMPORT_CAMT_MULTIPLE_ACCOUNTS`: A CAMT file holds statements of more than one account; import each account's file on its own.
+       *     - `IMPORT_FILE_TOO_MANY_PAGES`: A PDF has more pages than one import may hold (maxPages).
+       *     - `IMPORT_PDF_LIMIT_EXCEEDED`: A PDF holds more than one statement may (text, objects, images); exporting a shorter statement helps.
+       *     - `IMPORT_PDF_NO_TEXT`: A scanned PDF without a text layer, but the template reads text; use an OCR template.
+       *     - `IMPORT_SPREADSHEET_LIMIT_EXCEEDED`: A spreadsheet holds more sheets, rows, cells or text than one import may; exporting less helps.
+       *     - `IMPORT_OCR_FAILED`: Local OCR could not read a scanned page (it failed or produced too much text).
+       */
+      422: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
+       */
+      500: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `IMPORT_PDF_BUSY`: The server is reading as many PDF statements as it may at once.
+       *     - `IMPORT_SPREADSHEET_BUSY`: The server is reading as many spreadsheets as it may at once.
+       *     - `IMPORT_OCR_UNAVAILABLE`: Local OCR is not installed, busy, or did not finish within the time limit.
+       *     - `ACCOUNT_IDENTIFICATION_UNAVAILABLE`: Account identification is switched off on this server (no key configured).
        */
       503: {
         headers: {

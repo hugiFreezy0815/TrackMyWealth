@@ -12,6 +12,7 @@ import com.trackmywealth.backend.dto.ImportHoldingsResponse;
 import com.trackmywealth.backend.dto.ImportHoldingsStatement;
 import com.trackmywealth.backend.dto.ImportIdentificationResponse;
 import com.trackmywealth.backend.dto.ImportParseResult;
+import com.trackmywealth.backend.dto.ImportPdfStatement;
 import com.trackmywealth.backend.dto.ImportRateNeed;
 import com.trackmywealth.backend.dto.ImportRecheck;
 import com.trackmywealth.backend.dto.ImportRowErrorResponse;
@@ -228,6 +229,27 @@ public class ImportBatchService {
       LocalDate snapshotDate,
       AuthenticatedUserPrincipal actor,
       IdempotencyClaim claim) {
+    return upload(
+        accountId, fileName, mediaType, content, templateId, snapshotDate, actor, claim, null);
+  }
+
+  /**
+   * {@link #upload} of a PDF statement that template version {@code templateId} has already read
+   * ({@link ImportFileParserService#readPdfStatement}), so its text - OCR for a scanned one - is
+   * not read a second time (#365 review: the upload without an account reads it to find the
+   * account). {@code pdfStatement} is used only with that {@code templateId}; {@code null} reads
+   * the file here.
+   */
+  public ImportBatchResponse upload(
+      UUID accountId,
+      String fileName,
+      String mediaType,
+      byte[] content,
+      UUID templateId,
+      LocalDate snapshotDate,
+      AuthenticatedUserPrincipal actor,
+      IdempotencyClaim claim,
+      ImportPdfStatement pdfStatement) {
     ImportAccountContext accountContext =
         readOnlyTransaction.execute(
             status -> {
@@ -257,7 +279,11 @@ public class ImportBatchService {
             ? camtReader.parse(content, accountContext)
             : template == null || holdings != null
                 ? null
-                : parser.parseForAccount(content, template.definition(), accountContext);
+                : parser.parseForAccount(
+                    content,
+                    template.definition(),
+                    accountContext,
+                    templateId == null ? null : pdfStatement);
     List<ImportTemplateCandidateResponse> offered = template == null ? candidates : List.of();
     Map<String, Boolean> rates =
         parsed == null ? new HashMap<>() : lookUpRates(accountId, parsed.rows(), actor);
@@ -759,7 +785,7 @@ public class ImportBatchService {
   // #323: a PDF statement whose text names no identifier the rule can read is imported as with a
   // USER_SELECTED template, into the account the member picked, without asking for a confirmation.
   // A CSV file without one still asks (US-07-10).
-  private static ImportFileAccountIdentifier fileIdentifier(
+  static ImportFileAccountIdentifier fileIdentifier(
       ResolvedImportTemplate template, ImportParseResult parsed) {
     ImportFileAccountIdentifier identifier = parsed.accountIdentifier();
     if (identifier != null && !identifier.found() && template.definition().isPdf()) {
@@ -1006,7 +1032,7 @@ public class ImportBatchService {
   }
 
   // Exactly one template whose header fingerprint is the file's: unambiguous enough to parse with.
-  private static UUID singleExactMatch(List<ImportTemplateCandidateResponse> candidates) {
+  static UUID singleExactMatch(List<ImportTemplateCandidateResponse> candidates) {
     List<ImportTemplateCandidateResponse> exact =
         candidates.stream()
             .filter(c -> ImportTemplateCandidateResponse.EXACT_HEADER.equals(c.match()))

@@ -56,6 +56,7 @@ import java.util.stream.Collectors;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -152,6 +153,17 @@ public class ImportFileParserService {
    * @throws ApiException {@code IMPORT_TEMPLATE_INVALID}/{@code _UNSUPPORTED} for a template that
    *     cannot be applied, or an {@code IMPORT_*} file-level code for a file it cannot read
    */
+  /**
+   * #365 review: the statement PDF {@code template} reads in {@code content} - its text (OCR for a
+   * scanned one), booking lines and balance lines - for {@link #parseForAccount(byte[],
+   * ImportTemplateDefinition, ImportAccountContext, ImportPdfStatement)}; it does not depend on the
+   * account. Same limits and 422s as a parse.
+   */
+  public ImportPdfStatement readPdfStatement(byte[] content, ImportTemplateDefinition template) {
+    validateTemplate(template, null);
+    return pdfReader.readStatement(content, template);
+  }
+
   public ImportParseResult parse(
       byte[] content, ImportTemplateDefinition template, String accountCurrency) {
     return parseForAccount(
@@ -167,6 +179,20 @@ public class ImportFileParserService {
    */
   public ImportParseResult parseForAccount(
       byte[] content, ImportTemplateDefinition template, ImportAccountContext account) {
+    return parseForAccount(content, template, account, null);
+  }
+
+  /**
+   * {@link #parseForAccount(byte[], ImportTemplateDefinition, ImportAccountContext)} of a PDF whose
+   * statement {@code pdfStatement} was already read with this {@code template} ({@link
+   * #readPdfStatement}), so its text - OCR for a scanned one - is not read twice (#365 review);
+   * {@code null} reads it here. Ignored for any file but a PDF.
+   */
+  public ImportParseResult parseForAccount(
+      byte[] content,
+      ImportTemplateDefinition template,
+      ImportAccountContext account,
+      @Nullable ImportPdfStatement pdfStatement) {
     String accountCurrency = account.currency();
     validateTemplate(template, null);
     if (template.isSnapshot()) {
@@ -187,7 +213,8 @@ public class ImportFileParserService {
     List<String> balanceLines;
     if (template.isPdf()) {
       header = template.pdfLayout().cellNames();
-      ImportPdfStatement statement = pdfReader.readStatement(content, template);
+      ImportPdfStatement statement =
+          pdfStatement == null ? pdfReader.readStatement(content, template) : pdfStatement;
       bookingLines = statement.bookingLines();
       balanceLines = statement.lines();
       preamble = statement.lines();
