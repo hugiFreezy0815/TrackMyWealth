@@ -26,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -335,15 +336,17 @@ public class ImportSnapshotCompletionService {
         printed.putIfAbsent(position.securityId(), position);
       }
     }
-    Map<UUID, BigDecimal> costBases = new LinkedHashMap<>();
-    printed.forEach((security, position) -> costBases.put(security, position.costBasis()));
-    List<SnapshotHolding> filled =
-        fillableCostBases(holdingRepository.findBySnapshotId(snapshot.getId()), costBases);
-    for (SnapshotHolding holding : filled) {
+    List<SnapshotHolding> filled = new ArrayList<>();
+    for (SnapshotHolding holding : holdingRepository.findBySnapshotId(snapshot.getId())) {
       ImportSnapshotHolding position = printed.get(holding.getSecurityId());
-      holding.setReportedCostBasis(position.costBasis().setScale(FxRateService.MONEY_SCALE));
-      holding.setReportedCostBasisCurrency(position.currency());
-      holding.setCostBasisImportBatchId(batch.getId());
+      if (holding.getReportedCostBasis() == null && position != null) {
+        // Only positions that print a cost basis are in printed.
+        BigDecimal costBasis = Objects.requireNonNull(position.costBasis(), "costBasis");
+        holding.setReportedCostBasis(costBasis.setScale(FxRateService.MONEY_SCALE));
+        holding.setReportedCostBasisCurrency(position.currency());
+        holding.setCostBasisImportBatchId(batch.getId());
+        filled.add(holding);
+      }
     }
     holdingRepository.saveAllAndFlush(filled);
   }
