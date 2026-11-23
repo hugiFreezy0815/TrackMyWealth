@@ -635,6 +635,7 @@ class LoanRepaymentControllerTest {
         .isEqualByComparingTo(new BigDecimal("750.00").add(estimated.interestAmount()));
     assertThat(thisYear.principalPaid())
         .isEqualByComparingTo(new BigDecimal("1250.00").add(estimated.principalAmount()));
+    assertThat(thisYear.unknownSplitAmount()).isEqualByComparingTo("0");
     assertThat(thisYear.paymentCount()).isEqualTo(2);
     assertThat(thisYear.splitEstimated()).isTrue();
     LoanRepaymentYearTotalResponse previous = totals.years().get(1);
@@ -646,7 +647,7 @@ class LoanRepaymentControllerTest {
   }
 
   @Test
-  void anUnknownSplitCountsOnlyInTheAmountPaidAndFlagsItsYear() {
+  void anUnknownSplitIsNeitherPrincipalNorInterestButItsOwnAmountAndFlagsItsYear() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse loan = createLoanWithoutRate(token, "20000.00");
@@ -659,10 +660,24 @@ class LoanRepaymentControllerTest {
         .satisfies(
             year -> {
               assertThat(year.amountPaid()).isEqualByComparingTo("500.00");
-              assertThat(year.principalPaid()).isEqualByComparingTo("0");
-              assertThat(year.interestPaid()).isEqualByComparingTo("0");
+              assertThat(year.principalPaid()).isNull();
+              assertThat(year.interestPaid()).isNull();
+              assertThat(year.unknownSplitAmount()).isEqualByComparingTo("500.00");
               assertThat(year.paymentCount()).isEqualTo(1);
               assertThat(year.splitEstimated()).isTrue();
+            });
+
+    repay(token, loan.id(), payment(current.id(), "300.00", "40.00", null));
+
+    assertThat(yearlyTotals(token, loan.id()).years())
+        .singleElement()
+        .satisfies(
+            year -> {
+              assertThat(year.amountPaid()).isEqualByComparingTo("800.00");
+              assertThat(year.principalPaid()).isEqualByComparingTo("260.00");
+              assertThat(year.interestPaid()).isEqualByComparingTo("40.00");
+              assertThat(year.unknownSplitAmount()).isEqualByComparingTo("500.00");
+              assertThat(year.paymentCount()).isEqualTo(2);
             });
   }
 

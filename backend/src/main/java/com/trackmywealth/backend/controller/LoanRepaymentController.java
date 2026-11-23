@@ -96,7 +96,9 @@ public class LoanRepaymentController {
       description =
           "Principal and interest paid per calendar year of booking date, newest year first, from"
               + " the repayments the list returns. A payment with an unknown split adds to"
-              + " amountPaid only; splitEstimated flags a year with any estimated split.")
+              + " amountPaid and unknownSplitAmount only; principalPaid and interestPaid are null"
+              + " when no payment of the year has a known split. splitEstimated flags a year with"
+              + " any estimated split.")
   @GetMapping("/yearly-totals")
   public LoanRepaymentYearlyTotalsResponse getYearlyTotals(
       @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {

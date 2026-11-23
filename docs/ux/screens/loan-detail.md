@@ -78,7 +78,8 @@ Activity  (S3 transaction list)
 4. Card: `GET /api/v1/accounts/{cardAccountId}/statement` → `CardStatementResponse`.
 5. Loan: `GET /api/v1/accounts/{accountId}/repayments/yearly-totals` →
    `LoanRepaymentYearlyTotalsResponse` (`currency`, `years[]` newest first, each `year`,
-   `amountPaid`, `principalPaid`, `interestPaid`, `paymentCount`, `splitEstimated`). "This year" is
+   `amountPaid`, `principalPaid`, `interestPaid`, `unknownSplitAmount`, `paymentCount`,
+   `splitEstimated`). "This year" is
    the entry whose `year` is the current calendar year; no entry ⇒ nothing paid this year.
 
 ## Fields
@@ -91,7 +92,7 @@ Activity  (S3 transaction list)
 | 4 | Balance chart | text alternative `loan.chartSummary` "From {first} to {last}: {start} down to {end}" | (2) points | `ValueChart` in liability colour, no fill |
 | 5 | Paid off on | `loan.paidOffOn` "Paid off on {date}" / "Abbezahlt am {date}" | last entry `dueDate` | hidden when the last `remainingBalance ≠ 0`; then `loan.scheduleEnds` "Schedule ends {date}, {remaining} still owed" |
 | 6 | Repayment row | `loan.repayment.split` "Principal {p} · Interest {i}" / "Tilgung {p} · Zinsen {i}" | (3) | `splitEstimated` ⇒ `Estimated split` badge with the explanation "The split was estimated from the schedule ({splitSource})" |
-| 7 | Interest this year | `loan.interestYtd` | (5) `interestPaid` of the current year (G10-2, #693) | hidden when the year has no entry; `splitEstimated` ⇒ `Estimated split` badge, as on a repayment row. A payment with an unknown split is in `amountPaid` only |
+| 7 | Interest this year | `loan.interestYtd` | (5) `interestPaid` of the current year (G10-2, #693) | hidden when the year has no entry; `splitEstimated` ⇒ `Estimated split` badge, as on a repayment row. `interestPaid = null` (no payment of the year has a known split) ⇒ `loan.interestUnknown` "Not known" / "Unbekannt", never 0. A payment with an unknown split is in `amountPaid` and `unknownSplitAmount`, not in `interestPaid` |
 | 8 | Card statement period | `card.statement.period` "{from} – {to}" | (4) `periodStart`, `periodEnd` | |
 | 9 | Card statement amount | | (4) `closingBalance`, `currency` | null ⇒ `card.statement.amountUnknown` |
 | 10 | Card due | `card.statement.due` "Due {date}" / "Fällig am {date}" | (4) `dueDate`, `paid` | badge `card.paid` / `card.notPaid` |

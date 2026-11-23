@@ -228,8 +228,9 @@ public class LoanRepaymentService {
 
   /**
    * #693: the payments {@link #list} lists, summed per calendar year of their booking date, newest
-   * year first. Principal and interest add up only the parts a split recorded; an unknown split
-   * counts in {@code amountPaid} alone, and any estimated split flags its year.
+   * year first. Principal and interest add up only the parts a split recorded, and stay null when
+   * no payment of the year has a split; an unknown split counts in {@code amountPaid} and {@code
+   * unknownSplitAmount}, and any estimated split flags its year.
    */
   @Transactional(readOnly = true)
   public LoanRepaymentYearlyTotalsResponse yearlyTotals(
@@ -263,8 +264,9 @@ public class LoanRepaymentService {
     return new LoanRepaymentYearTotalResponse(
         sum.year(),
         sum.amount(),
-        Objects.requireNonNullElse(sum.principal(), BigDecimal.ZERO),
-        Objects.requireNonNullElse(sum.interest(), BigDecimal.ZERO),
+        sum.principal(),
+        sum.interest(),
+        Objects.requireNonNullElse(sum.unknownSplitAmount(), BigDecimal.ZERO),
         sum.payments(),
         sum.estimatedPayments() > 0);
   }

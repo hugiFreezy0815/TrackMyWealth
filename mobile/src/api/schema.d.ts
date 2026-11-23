@@ -502,7 +502,7 @@ export interface paths {
     };
     /**
      * Sum a loan's repayments per calendar year
-     * @description Principal and interest paid per calendar year of booking date, newest year first, from the repayments the list returns. A payment with an unknown split adds to amountPaid only; splitEstimated flags a year with any estimated split.
+     * @description Principal and interest paid per calendar year of booking date, newest year first, from the repayments the list returns. A payment with an unknown split adds to amountPaid and unknownSplitAmount only; principalPaid and interestPaid are null when no payment of the year has a known split. splitEstimated flags a year with any estimated split.
      */
     get: operations['getLoanRepaymentYearlyTotals'];
     put?: never;
@@ -3229,12 +3229,17 @@ export interface components {
        * Format: decimal
        * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
        */
-      principalPaid: DecimalString;
+      principalPaid: DecimalString | null;
       /**
        * Format: decimal
        * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
        */
-      interestPaid: DecimalString;
+      interestPaid: DecimalString | null;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      unknownSplitAmount: DecimalString;
       /** Format: int64 */
       paymentCount: number;
       splitEstimated: boolean;

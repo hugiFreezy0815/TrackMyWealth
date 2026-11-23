@@ -17,13 +17,13 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface LoanPaymentRepository extends JpaRepository<LoanPayment, UUID> {
 
+  String LOAN_ACCOUNT_ID = "loanAccountId";
+  String PAYING_ACCOUNT_IDS = "payingAccountIds";
+
   // A payment is in effect while one of its rows is: removing a payment soft-deletes (or, for an
   // imported row, voids) all of its rows together, and a restore brings them back. The record
   // itself stays (V87). deletedAt is spelled out although Transaction's @SQLRestriction hides
   // deleted rows already, so the rule does not rest on how a subquery applies it.
-  String LOAN_ACCOUNT_ID = "loanAccountId";
-  String PAYING_ACCOUNT_IDS = "payingAccountIds";
-
   String IN_EFFECT =
       " exists (select 1 from Transaction t"
           + " where t.id in (p.principalTransactionId, p.interestTransactionId)"
@@ -54,7 +54,8 @@ public interface LoanPaymentRepository extends JpaRepository<LoanPayment, UUID> 
   @Query(
       "select new com.trackmywealth.backend.dto.LoanRepaymentYearSum("
           + "extract(year from p.bookingDate), sum(p.totalAmount), sum(p.principalAmount),"
-          + " sum(p.interestAmount), count(p),"
+          + " sum(p.interestAmount),"
+          + " sum(case when p.principalAmount is null then p.totalAmount end), count(p),"
           + " sum(case when p.splitEstimated = true then 1 else 0 end))"
           + " from LoanPayment p where p.loanAccount.id = :loanAccountId"
           + " and p.payingAccount.id in :payingAccountIds and"

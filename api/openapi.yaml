@@ -7320,8 +7320,9 @@ paths:
       summary: Sum a loan's repayments per calendar year
       description: "Principal and interest paid per calendar year of booking date,\
         \ newest year first, from the repayments the list returns. A payment with\
-        \ an unknown split adds to amountPaid only; splitEstimated flags a year with\
-        \ any estimated split."
+        \ an unknown split adds to amountPaid and unknownSplitAmount only; principalPaid\
+        \ and interestPaid are null when no payment of the year has a known split.\
+        \ splitEstimated flags a year with any estimated split."
       operationId: getLoanRepaymentYearlyTotals
       parameters:
       - name: accountId
@@ -26725,11 +26726,20 @@ components:
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         principalPaid:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         interestPaid:
+          type:
+          - string
+          - "null"
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        unknownSplitAmount:
           type: string
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
@@ -26745,6 +26755,7 @@ components:
       - paymentCount
       - principalPaid
       - splitEstimated
+      - unknownSplitAmount
       - year
     LoanRepaymentYearlyTotalsResponse:
       type: object
