@@ -622,8 +622,9 @@ describe('S10 liability detail (#685)', () => {
       const server = fakeServer(summary({ nature: 'LIABILITY', hasAmortisation: true }), []);
       server.repayments = [repayment('r0', '2026-10-01')];
       server.yearlyTotals = { loanAccountId: 'acc', currency: 'EUR', years };
-      await renderDetail();
+      const { client } = await renderDetail();
       expect(await screen.findByText('EUR 825.40')).toBeTruthy();
+      return { server, client };
     };
 
     it('shows the sent interest of the current year', async () => {
@@ -645,6 +646,40 @@ describe('S10 liability detail (#685)', () => {
       expect(await screen.findByText('EUR 250.00')).toBeTruthy();
       // One badge for the year sum, one for the estimated repayment row.
       expect(screen.getAllByText('Estimated split')).toHaveLength(2);
+    });
+
+    it.each([
+      [
+        'an access error',
+        new ApiError('forbidden', 403, { status: 403, title: 'Forbidden', code: 'FORBIDDEN' }),
+      ],
+      ['a failed request', new ApiError('unavailable', 503)],
+    ])('shows a dash after %s', async (_, failure) => {
+      const server = fakeServer(summary({ nature: 'LIABILITY', hasAmortisation: true }), []);
+      server.repayments = [repayment('r0', '2026-10-01')];
+      server.beforeRead = (path) => {
+        if (path.endsWith('/repayments/yearly-totals')) throw failure;
+      };
+      await renderDetail();
+
+      expect(await screen.findByText('Interest this year: –')).toBeTruthy();
+    });
+
+    it('replaces a loaded sum with a dash when access is denied later', async () => {
+      const { server, client } = await renderYears([year(thisYear, { interestPaid: '251.15' })]);
+      expect(await screen.findByText('EUR 251.15')).toBeTruthy();
+      server.beforeRead = (path) => {
+        if (path.endsWith('/repayments/yearly-totals')) {
+          throw new ApiError('forbidden', 403, {
+            status: 403,
+            title: 'Forbidden',
+            code: 'FORBIDDEN',
+          });
+        }
+      };
+      await act(() => invalidateFinancialData(client));
+      expect(await screen.findByText('Interest this year: –')).toBeTruthy();
+      expect(screen.queryByText('EUR 251.15')).toBeNull();
     });
 
     it('is hidden when nothing was paid this year', async () => {

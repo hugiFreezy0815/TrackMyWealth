@@ -53,7 +53,7 @@ export function RepaymentsPanel({
   const canExpand = showAll || (recent.data?.page.totalPages ?? 0) > 1;
   return (
     <LiabilityPanel title={msg(intl, 'loan.repayments')}>
-      {accessError ? null : <InterestThisYear accountId={accountId} />}
+      <InterestThisYear accountId={accountId} unavailable={!!accessError} />
       {/* With the full history open, the way back to the recent rows must survive an error. */}
       {canExpand && (showAll || !accessError) ? (
         <LiabilityLink
@@ -126,14 +126,18 @@ export function RepaymentsPanel({
 
 /**
  * Field 7: the server's interest sum for the current calendar year. Hidden when nothing was paid
- * this year or the sum cannot be loaded; an unknown split is "Not known", never 0.
+ * this year; an unknown split is "Not known", never 0. When the sum cannot be loaded, or the loan's
+ * repayments are not accessible, the field shows "–" and never a cached amount (PO 2026-11-23).
  */
-function InterestThisYear({ accountId }: { accountId: string }) {
+function InterestThisYear({ accountId, unavailable }: { accountId: string; unavailable: boolean }) {
   const intl = useIntl();
   const totals = useRepaymentYearlyTotals(accountId);
-  if (isAccessFailure(totals.error)) return null;
   const year = Number(localDay(new Date()).slice(0, 4));
   const current = totals.data?.years.find((entry) => entry.year === year);
+  // A failed refresh keeps a loaded sum unless access was denied.
+  if (unavailable || isAccessFailure(totals.error) || (totals.isError && !totals.data)) {
+    return <InfoText>{msg(intl, 'loan.interestYtd', { amount: '–' })}</InfoText>;
+  }
   if (!current || !totals.data) return null;
   return (
     <>
