@@ -8,11 +8,11 @@ import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.SettlementMatch;
 import com.trackmywealth.backend.entity.Transaction;
+import com.trackmywealth.backend.repository.DatabaseClockRepository;
 import com.trackmywealth.backend.repository.SettlementMatchRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -85,11 +85,11 @@ public class TransactionRemovalService {
   private final TransactionService transactionService;
   private final CategorizationService categorizationService;
   private final BusinessDateService businessDateService;
-  private final Clock clock;
   private final VersionPreconditionService versionPreconditionService;
   private final ReconciliationService reconciliationService;
   private final ReconciliationAdjustmentService reconciliationAdjustmentService;
   private final ImportLockService importLockService;
+  private final DatabaseClockRepository databaseClock;
 
   public TransactionRemovalService(
       AccountLookupService accountLookupService,
@@ -101,11 +101,11 @@ public class TransactionRemovalService {
       TransactionService transactionService,
       CategorizationService categorizationService,
       BusinessDateService businessDateService,
-      Clock clock,
       VersionPreconditionService versionPreconditionService,
       ReconciliationService reconciliationService,
       ReconciliationAdjustmentService reconciliationAdjustmentService,
-      ImportLockService importLockService) {
+      ImportLockService importLockService,
+      DatabaseClockRepository databaseClock) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.transactionRepository = transactionRepository;
@@ -115,11 +115,11 @@ public class TransactionRemovalService {
     this.transactionService = transactionService;
     this.categorizationService = categorizationService;
     this.businessDateService = businessDateService;
-    this.clock = clock;
     this.versionPreconditionService = versionPreconditionService;
     this.reconciliationService = reconciliationService;
     this.reconciliationAdjustmentService = reconciliationAdjustmentService;
     this.importLockService = importLockService;
+    this.databaseClock = databaseClock;
   }
 
   /**
@@ -238,11 +238,15 @@ public class TransactionRemovalService {
    */
   List<Transaction> voidRows(
       List<Transaction> rows, String reason, UUID actorUserId, SortedSet<UUID> unmatched) {
-    OffsetDateTime now = OffsetDateTime.now(clock);
+    // The database's clock, as created_at and the categorization log's assigned_at: a row's end
+    // and its replacement's start are then ordered by one clock in its history (US-07-38), not
+    // by two machines' clocks and the skew between them. Read after the rows are locked: see
+    // DatabaseClockRepository#removalInstants.
+    Map<UUID, OffsetDateTime> removedAt = databaseClock.removalInstants(idsOf(rows));
     dissolveMatches(rows, unmatched);
     List<Transaction> reversals = new ArrayList<>();
     for (Transaction row : rows) {
-      row.setVoidedAt(now);
+      row.setVoidedAt(removedAt.get(row.getId()));
       row.setVoidedBy(actorUserId);
       row.setVoidReason(reason);
       transactionRepository.save(row);
@@ -254,10 +258,11 @@ public class TransactionRemovalService {
 
   // T1: hides each row, dissolving its open matches.
   private void softDeleteRows(List<Transaction> rows, UUID actorUserId, SortedSet<UUID> unmatched) {
-    OffsetDateTime now = OffsetDateTime.now(clock);
+    // The database's clock, as in voidRows.
+    Map<UUID, OffsetDateTime> removedAt = databaseClock.removalInstants(idsOf(rows));
     dissolveMatches(rows, unmatched);
     for (Transaction row : rows) {
-      row.setDeletedAt(now);
+      row.setDeletedAt(removedAt.get(row.getId()));
       row.setDeletedBy(actorUserId);
       transactionRepository.save(row);
     }
@@ -836,7 +841,12 @@ public class TransactionRemovalService {
     return trimmed;
   }
 
+  private static List<UUID> idsOf(List<Transaction> rows) {
+    return rows.stream().map(Transaction::getId).toList();
+  }
+
+  // The database's clock, as deleted_at and voided_at it is compared with.
   private OffsetDateTime restoreWindowStart() {
-    return OffsetDateTime.now(clock).minus(Duration.ofDays(RESTORE_WINDOW_DAYS));
+    return databaseClock.now().minus(Duration.ofDays(RESTORE_WINDOW_DAYS));
   }
 }

@@ -8,6 +8,7 @@ import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountSnapshot;
 import com.trackmywealth.backend.entity.ReconciliationResult;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
+import com.trackmywealth.backend.repository.DatabaseClockRepository;
 import com.trackmywealth.backend.repository.ImportRowRawRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
@@ -70,18 +71,21 @@ public class ReconciliationService {
   private final ReconciliationResultRepository resultRepository;
   private final ImportRowRawRepository importRowRawRepository;
   private final Clock clock;
+  private final DatabaseClockRepository databaseClock;
 
   public ReconciliationService(
       AccountSnapshotRepository snapshotRepository,
       TransactionRepository transactionRepository,
       ReconciliationResultRepository resultRepository,
       ImportRowRawRepository importRowRawRepository,
-      Clock clock) {
+      Clock clock,
+      DatabaseClockRepository databaseClock) {
     this.snapshotRepository = snapshotRepository;
     this.transactionRepository = transactionRepository;
     this.resultRepository = resultRepository;
     this.importRowRawRepository = importRowRawRepository;
     this.clock = clock;
+    this.databaseClock = databaseClock;
   }
 
   /**
@@ -280,7 +284,9 @@ public class ReconciliationService {
           .findByIdForUpdate(adjustmentId)
           .ifPresent(
               adjustment -> {
-                adjustment.setDeletedAt(now());
+                // The database's clock, as every deleted_at the change history (US-07-38) orders
+                // against created_at and the categorization log's assigned_at.
+                adjustment.setDeletedAt(databaseClock.now());
                 adjustment.setDeletedBy(withdrawnBy);
                 transactionRepository.saveAndFlush(adjustment);
               });

@@ -159,6 +159,35 @@ class TransactionRemovalControllerTest {
   // --- US-07-38 (#480): change history across the void, restore and correction chain -----------
 
   @Test
+  void aVoidIsNeverDatedBeforeACategoryDecisionTheRowAlreadyHolds() throws SQLException {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID batch = insertImportBatch(card.id());
+    UUID imported = insertImportedFromBatch(card.id(), batch, "COOP PRONTO BERN");
+    createMerchantRule(token, "coop", defaultCategory("GROCERIES"));
+    categorizationService.recategorizeWorkspace(workspaceOf(card.id()));
+    // A decision committed by a database transaction that started after the removing one, while
+    // the removal waited for the row's lock: its assigned_at is later than the removal's now().
+    execute(
+        "UPDATE transaction_categorization_log SET assigned_at = now() + interval '1 hour'"
+            + " WHERE transaction_id = ?",
+        imported);
+
+    remove(token, card.id(), imported, "Duplicate import");
+
+    assertThat(history(token, card.id(), imported))
+        .extracting(TransactionHistoryEntryResponse::kind)
+        .containsExactly("VOIDED", "CATEGORY_ASSIGNED", "IMPORTED");
+    assertThat(
+            queryDecimal(
+                "SELECT count(*) FROM transaction t WHERE t.id = ? AND t.voided_at >"
+                    + " (SELECT max(l.assigned_at) FROM transaction_categorization_log l"
+                    + " WHERE l.transaction_id = t.id)",
+                imported))
+        .isEqualByComparingTo("1");
+  }
+
+  @Test
   void anImportedRowsHistoryShowsItsCategoryDecisionsVoidAndRestoreNewestFirst() {
     String token = bootstrapAdministrator();
     String member = memberName("admin@example.com");
@@ -368,6 +397,9 @@ class TransactionRemovalControllerTest {
             });
     assertThat(balance(token, card.id())).isEqualByComparingTo("80.00");
     assertThat(countRows(card.id())).isEqualTo(3);
+    // One clock: the void and the replacement it makes way for share the database's instant, so
+    // the history orders them by its rule for one instant, never by a skew between two clocks.
+    assertThat(removedWhenReplaced(corrected.transaction().id(), "voided_at")).isTrue();
   }
 
   @Test
@@ -397,6 +429,7 @@ class TransactionRemovalControllerTest {
         .containsExactly(corrected.transaction().id());
     assertThat(balance(token, source.id())).isEqualByComparingTo("0");
     assertThat(balance(token, destination.id())).isEqualByComparingTo("80.00");
+    assertThat(removedWhenReplaced(corrected.transaction().id(), "deleted_at")).isTrue();
   }
 
   @Test
@@ -3326,6 +3359,19 @@ class TransactionRemovalControllerTest {
   private int countRows(UUID accountId) {
     return queryDecimal("SELECT count(*) FROM transaction WHERE account_id = ?", accountId)
         .intValue();
+  }
+
+  // Whether the row a replacement corrects was removed ("voided_at" or "deleted_at") at exactly the
+  // replacement's created_at: the start of the database transaction that did both.
+  private boolean removedWhenReplaced(UUID replacement, String removedAt) {
+    return queryDecimal(
+                "SELECT count(*) FROM transaction r JOIN transaction o"
+                    + " ON o.id = r.corrects_transaction_id WHERE r.id = ? AND o."
+                    + removedAt
+                    + " = r.created_at",
+                replacement)
+            .intValue()
+        == 1;
   }
 
   private BigDecimal queryDecimal(String sql, UUID parameter) {

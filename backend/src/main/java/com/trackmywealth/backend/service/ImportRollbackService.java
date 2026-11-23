@@ -10,15 +10,14 @@ import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.entity.SettlementMatch;
 import com.trackmywealth.backend.entity.Transaction;
 import com.trackmywealth.backend.repository.AccountRepository;
+import com.trackmywealth.backend.repository.DatabaseClockRepository;
 import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ImportRollbackRepository;
 import com.trackmywealth.backend.repository.SettlementMatchRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import jakarta.persistence.EntityManager;
-import java.time.Clock;
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -86,7 +85,7 @@ public class ImportRollbackService {
   private final AccountRepository accountRepository;
   private final AccessControlService accessControlService;
   private final EntityManager entityManager;
-  private final Clock clock;
+  private final DatabaseClockRepository databaseClock;
 
   public ImportRollbackService(
       ImportBatchService batchService,
@@ -103,7 +102,7 @@ public class ImportRollbackService {
       AccountRepository accountRepository,
       AccessControlService accessControlService,
       EntityManager entityManager,
-      Clock clock) {
+      DatabaseClockRepository databaseClock) {
     this.batchService = batchService;
     this.batchRepository = batchRepository;
     this.rollbackRepository = rollbackRepository;
@@ -118,7 +117,7 @@ public class ImportRollbackService {
     this.accountRepository = accountRepository;
     this.accessControlService = accessControlService;
     this.entityManager = entityManager;
-    this.clock = clock;
+    this.databaseClock = databaseClock;
   }
 
   /**
@@ -286,7 +285,8 @@ public class ImportRollbackService {
   private void end(
       ImportBatch batch, String status, String reason, AuthenticatedUserPrincipal actor) {
     batch.setStatus(status);
-    batch.recordRollback(OffsetDateTime.now(clock), actor.userId(), reason);
+    // The database's clock, as the voided_at its rows got in this transaction.
+    batch.recordRollback(databaseClock.now(), actor.userId(), reason);
     batchRepository.saveAndFlush(batch);
   }
 
