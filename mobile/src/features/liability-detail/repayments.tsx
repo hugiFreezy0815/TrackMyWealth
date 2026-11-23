@@ -1,6 +1,8 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { View } from 'react-native';
 
+import { queryKeys } from '@/api/queries/keys';
 import {
   ActionButton,
   Amount,
@@ -39,6 +41,7 @@ export function RepaymentsPanel({
 }) {
   const intl = useIntl();
   const online = useOnline();
+  const queryClient = useQueryClient();
   const { view, setView, saveForBack } = useRepaymentHistoryView(accountId);
   const { showAll, expandedIds } = view;
   const recent = useRecentRepayments(accountId);
@@ -64,14 +67,24 @@ export function RepaymentsPanel({
         <LiabilityLink
           label={msg(intl, showAll ? 'loan.showRecent' : 'loan.seeAll')}
           expanded={showAll}
-          onPress={() =>
+          onPress={() => {
+            if (showAll && accessError) {
+              // Access was denied: the cached recent rows and interest sum may no longer be
+              // readable, so they load again instead of coming back from the cache.
+              for (const queryKey of [
+                queryKeys.loanRepayments(accountId, 3),
+                queryKeys.loanYearlyTotals(accountId),
+              ]) {
+                void queryClient.resetQueries({ queryKey, exact: true });
+              }
+            }
             setView({
               showAll: !showAll,
               expandedIds: showAll
                 ? expandedIds.filter((id) => recent.data?.content.some((row) => row.id === id))
                 : expandedIds,
-            })
-          }
+            });
+          }}
         />
       ) : null}
       {error ? (

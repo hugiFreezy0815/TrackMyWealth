@@ -1,6 +1,9 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useLayoutEffect, useRef } from 'react';
 
 import { moveAccessibilityFocus } from '@/components/shared/accessibility-focus';
+
+import { focusRow } from './row-focus';
 
 type FocusTarget = { focus: () => void; isConnected?: boolean };
 type Fallback = { readonly current: Parameters<typeof moveAccessibilityFocus>[0] };
@@ -41,4 +44,28 @@ export function usePanelFocusReturn(open: boolean, fallback: Fallback) {
       pending.current = true;
     },
   };
+}
+
+/** The row to focus on the account screen that a closing transaction route navigates to. */
+let rowAfterNavigation: { accountId: string; transactionId: string } | null = null;
+
+/**
+ * On a desktop transaction route the URL owns the open transaction, so closing it navigates to
+ * the account route: the row that opened it is then on another screen. Call this right before
+ * that navigation; `useRowFocusAfterNavigation` on the account screen focuses the row (web).
+ */
+export function focusRowAfterNavigation(accountId: string, transactionId: string) {
+  rowAfterNavigation = { accountId, transactionId };
+}
+
+/** Takes the row handed over by `focusRowAfterNavigation` once this account screen is shown. */
+export function useRowFocusAfterNavigation(accountId: string, fallback: Fallback) {
+  useFocusEffect(
+    useCallback(() => {
+      const pending = rowAfterNavigation;
+      rowAfterNavigation = null;
+      if (!pending || pending.accountId !== accountId) return;
+      if (!focusRow(pending.transactionId)) moveAccessibilityFocus(fallback.current);
+    }, [accountId, fallback]),
+  );
 }

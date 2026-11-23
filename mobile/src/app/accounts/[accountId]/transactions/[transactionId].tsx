@@ -38,18 +38,19 @@ export default function TransactionDetailRoute() {
     if (repaymentOrigin) router.dismissTo(href);
     else router.replace(href);
   };
-  const openRelated = (id: string, transactionAccountId = accountId) =>
-    router.replace({
-      pathname: '/accounts/[accountId]/transactions/[transactionId]',
-      params: {
-        accountId: transactionAccountId,
-        transactionId: id,
-        // A row of the loan itself has the loan as its parent and needs no repayment origin.
-        ...(repaymentOrigin && transactionAccountId !== repaymentOrigin
-          ? { repaymentFromAccountId: repaymentOrigin }
-          : {}),
-      },
-    });
+  const openRelated = (id: string, transactionAccountId = accountId) => {
+    const params = {
+      accountId: transactionAccountId,
+      transactionId: id,
+      // Kept also for a row of the loan itself: Back then dismisses to the loan route below
+      // instead of adding a second one.
+      ...(repaymentOrigin ? { repaymentFromAccountId: repaymentOrigin } : {}),
+    };
+    // On desktop the account stays on screen, so the route keeps its screen: the side column's
+    // repayment history and the opening row survive the URL change.
+    if (desktop) router.setParams(params);
+    else router.replace({ pathname: '/accounts/[accountId]/transactions/[transactionId]', params });
+  };
 
   if (isAdministrator(identity)) return <Redirect href={homeFor(true)} />;
   if (desktop) {

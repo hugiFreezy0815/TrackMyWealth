@@ -101,6 +101,25 @@ const loanActivity = ['loan-payment', 'loan-fee'].map(
 
 const accountRouteMounted = jest.fn();
 let historyDenied = false;
+let accessRevoked = false;
+const forbidden = () =>
+  new ApiError('forbidden', 403, { status: 403, title: 'Forbidden', code: 'FORBIDDEN' });
+
+/** Minimal DOM stand-in for row focus: jest-expo runs without one. */
+const fakeDocument = {
+  documentElement: { lang: '' },
+  activeElement: null as unknown,
+  focusedId: null as string | null,
+  getElementById(id: string) {
+    const node = {
+      focus: () => {
+        fakeDocument.activeElement = node;
+        fakeDocument.focusedId = id;
+      },
+    };
+    return node;
+  },
+};
 
 function AccountRouteWithMountProbe() {
   useEffect(() => {
@@ -143,6 +162,9 @@ function renderRoute(
 beforeEach(() => {
   accountRouteMounted.mockClear();
   historyDenied = false;
+  accessRevoked = false;
+  fakeDocument.activeElement = null;
+  fakeDocument.focusedId = null;
   const read = async (
     path: string,
     options?: { params?: { accountId?: string }; query?: { size?: number } },
@@ -160,15 +182,22 @@ beforeEach(() => {
         });
       case '/api/v1/accounts/{accountId}/repayments': {
         const size = query?.size ?? 3;
-        if (historyDenied && size > 3) {
-          throw new ApiError('forbidden', 403, {
-            status: 403,
-            title: 'Forbidden',
-            code: 'FORBIDDEN',
-          });
-        }
+        if (accessRevoked || (historyDenied && size > 3)) throw forbidden();
         return collectionPage(repayments.slice(0, size), 0, size, repayments.length);
       }
+      case '/api/v1/accounts/{accountId}/repayments/yearly-totals':
+        if (accessRevoked) throw forbidden();
+        return {
+          currency: 'EUR',
+          years: [
+            {
+              year: new Date().getFullYear(),
+              interestPaid: '100.00',
+              principalPaid: '700.00',
+              splitEstimated: false,
+            },
+          ],
+        };
       case '/api/v1/accounts/{accountId}/transactions':
         return params?.accountId === 'loan'
           ? collectionPage(loanActivity, 0, 50, loanActivity.length)
@@ -184,6 +213,7 @@ beforeEach(() => {
 
 afterEach(() => {
   Platform.OS = originalOS;
+  delete (globalThis as { document?: unknown }).document;
 });
 
 async function openPayingTransaction(container: ReturnType<typeof within> = screen) {
@@ -253,7 +283,6 @@ it('opens a loan activity row through the URL on the desktop transaction route',
 
   await fireEvent.press(await within(screen.getByTestId('account-detail')).findByText('Loan fee'));
   await waitFor(() => expect(view.getPathname()).toBe('/accounts/loan/transactions/loan-fee'));
-  // The replaced route renders a new side column.
   expect(await screen.findByText('loan/loan-fee')).toBeTruthy();
   expect(screen.queryByText('payer/paying-payment')).toBeNull();
   await fireEvent.press(screen.getByRole('button', { name: 'Back from transaction' }));
@@ -311,9 +340,67 @@ it('opens a loan activity row through the URL on the desktop repayment link rout
   const detail = within(await screen.findByTestId('account-detail'));
   await fireEvent.press(await detail.findByText('Loan fee'));
   await waitFor(() => expect(view.getPathname()).toBe('/accounts/loan/transactions/loan-fee'));
-  expect(view.getSearchParams()).not.toHaveProperty('repaymentFromAccountId');
+  expect(view.getSearchParams()).toHaveProperty('repaymentFromAccountId', 'loan');
   expect(await screen.findByText('loan/loan-fee')).toBeTruthy();
   await fireEvent.press(screen.getByRole('button', { name: 'Back from transaction' }));
   await waitFor(() => expect(view.getPathname()).toBe(loanPath));
   expect(screen.queryByText('payer/paying-payment')).toBeNull();
+});
+
+it('loads the recent repayments again after access to the full history was denied', async () => {
+  await renderRoute(loanPath, 'ios', 390);
+  expect(await screen.findByRole('button', { name: 'See all' })).toBeTruthy();
+  expect(await screen.findByText('4 Oct 2026')).toBeTruthy();
+  expect(screen.queryByText('Interest this year: –')).toBeNull();
+
+  accessRevoked = true;
+  await fireEvent.press(screen.getByRole('button', { name: 'See all' }));
+  expect(await screen.findByText('You are not allowed to do this.')).toBeTruthy();
+  await fireEvent.press(screen.getByRole('button', { name: 'Show recent repayments' }));
+
+  expect(await screen.findByText('Interest this year: –')).toBeTruthy();
+  expect(await screen.findByText('You are not allowed to do this.')).toBeTruthy();
+  expect(screen.queryByText('4 Oct 2026')).toBeNull();
+});
+
+it('keeps the side-column history when a loan row opens on the desktop repayment link route', async () => {
+  const view = await renderRoute(`${payingTransactionPath}?repaymentFromAccountId=loan`, 'web');
+  const panel = within(await screen.findByTestId('shell-detail-panel'));
+  await fireEvent.press(await panel.findByRole('button', { name: 'See all' }));
+  await fireEvent.press(await panel.findByRole('button', { name: 'Transactions for 1 Oct 2026' }));
+
+  const detail = within(screen.getByTestId('account-detail'));
+  await fireEvent.press(await detail.findByText('Loan fee'));
+  await waitFor(() => expect(view.getPathname()).toBe('/accounts/loan/transactions/loan-fee'));
+  expect(await screen.findByText('loan/loan-fee')).toBeTruthy();
+  const panels = screen.getAllByTestId('shell-detail-panel');
+  const latest = within(panels[panels.length - 1]);
+  expect(latest.getByRole('button', { name: 'Show recent repayments' })).toBeTruthy();
+  expect(latest.getByRole('button', { name: 'Debt repayment' })).toBeTruthy();
+});
+
+it('dismisses to the loan below after a loan row replaced a repayment link', async () => {
+  const view = await renderRoute(loanPath, 'web');
+  await screen.findByTestId('account-detail');
+  await act(() => router.push(`${payingTransactionPath}?repaymentFromAccountId=loan`));
+  expect(await screen.findByText('payer/paying-payment')).toBeTruthy();
+
+  const details = screen.getAllByTestId('account-detail');
+  await fireEvent.press(await within(details[details.length - 1]).findByText('Loan fee'));
+  await waitFor(() => expect(view.getPathname()).toBe('/accounts/loan/transactions/loan-fee'));
+  await fireEvent.press(await screen.findByRole('button', { name: 'Back from transaction' }));
+  await waitFor(() => expect(view.getPathname()).toBe(loanPath));
+  expect(router.canGoBack()).toBe(false);
+});
+
+it('returns focus to the loan row after the desktop repayment link route closes it', async () => {
+  Object.defineProperty(globalThis, 'document', { value: fakeDocument, configurable: true });
+  const view = await renderRoute(`${payingTransactionPath}?repaymentFromAccountId=loan`, 'web');
+  const detail = within(await screen.findByTestId('account-detail'));
+  await fireEvent.press(await detail.findByText('Loan fee'));
+  expect(await screen.findByText('loan/loan-fee')).toBeTruthy();
+
+  await fireEvent.press(screen.getByRole('button', { name: 'Back from transaction' }));
+  await waitFor(() => expect(view.getPathname()).toBe(loanPath));
+  await waitFor(() => expect(fakeDocument.focusedId).toBe('transaction-loan-fee'));
 });

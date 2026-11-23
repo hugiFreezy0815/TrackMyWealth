@@ -12,7 +12,11 @@ import { TransactionDetail } from '@/features/transaction-detail/transaction-det
 
 import { isAccessFailure } from './access';
 import { AccountDetail, useAccountRefresh, type AccountDetailProps } from './account-detail';
-import { usePanelFocusReturn } from './panel-focus';
+import {
+  focusRowAfterNavigation,
+  usePanelFocusReturn,
+  useRowFocusAfterNavigation,
+} from './panel-focus';
 
 type TransactionSelection = { accountId: string; transactionId: string };
 
@@ -52,6 +56,9 @@ export function AccountDetailLayout({
   const selected = accountUnavailable && current?.accountId === accountId ? undefined : current;
   const titleRef = useRef<ComponentRef<typeof Text>>(null);
   const panelFocus = usePanelFocusReturn(!!selection && !!selected, titleRef);
+  // The activity row that opened the transaction the URL owns: closing that one leaves the screen.
+  const routeOpener = useRef<string | null>(null);
+  useRowFocusAfterNavigation(accountId, titleRef);
 
   const showTransaction = (
     transactionId: string,
@@ -77,6 +84,7 @@ export function AccountDetailLayout({
       // The URL owns the open transaction on this route, so Back in the panel closes it. On a
       // repayment link the URL holds the paying account, so the row names its own account.
       setSelection(null);
+      routeOpener.current = transactionId;
       onRelatedLinkedTransaction(transactionId, accountId);
     } else {
       showTransaction(transactionId, accountId, false);
@@ -89,6 +97,8 @@ export function AccountDetailLayout({
       panelFocus.returnFocusOnClose();
       setSelection(null);
     } else {
+      if (routeOpener.current) focusRowAfterNavigation(accountId, routeOpener.current);
+      routeOpener.current = null;
       onCloseLinkedTransaction?.();
     }
   };
