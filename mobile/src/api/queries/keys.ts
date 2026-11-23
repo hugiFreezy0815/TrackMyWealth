@@ -33,6 +33,10 @@ export const queryKeys = {
   uncategorizedCount: (accountId: string) =>
     [queryRoots.accounts, accountId, 'transactions', 'uncategorized-count'] as const,
   accountPositions: (accountId: string) => [queryRoots.accounts, accountId, 'positions'] as const,
+  amortisationSchedule: (id: string) => [queryRoots.accounts, id, 'amortisation-schedule'] as const,
+  loanRepayments: (id: string, size: number) =>
+    [queryRoots.accounts, id, 'repayments', size] as const,
+  cardStatement: (id: string) => [queryRoots.accounts, id, 'statement'] as const,
   transaction: (accountId: string, transactionId: string) =>
     [queryRoots.accounts, accountId, 'transactions', transactionId] as const,
   reversalDate: (accountId: string, transactionId: string) =>

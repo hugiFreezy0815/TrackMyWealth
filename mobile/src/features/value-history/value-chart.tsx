@@ -46,6 +46,39 @@ export function chartPoints(points: ValueHistory['points']) {
   }));
 }
 
+export function ValueLine({
+  coordinates,
+  color,
+  markEnd = false,
+}: {
+  coordinates: ReturnType<typeof chartPoints>;
+  color: string;
+  markEnd?: boolean;
+}) {
+  const marker = coordinates.length === 1 || markEnd ? coordinates.at(-1) : undefined;
+  return (
+    <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+      {coordinates.slice(1).map((end, index) => {
+        const start = coordinates[index];
+        return (
+          <Line
+            // The index keeps keys unique even if the server repeats a date.
+            key={`${index}-${end.point.date}`}
+            x1={start.x}
+            y1={start.y}
+            x2={end.x}
+            y2={end.y}
+            stroke={color}
+            strokeWidth={2}
+            strokeDasharray={start.point.estimated || end.point.estimated ? '4 3' : undefined}
+          />
+        );
+      })}
+      {marker ? <Circle cx={marker.x} cy={marker.y} r={3} fill={color} /> : null}
+    </Svg>
+  );
+}
+
 export function ValueChart({ data, hidden }: { data: ValueHistory; hidden: boolean }) {
   const intl = useIntl();
   const theme = useTheme();
@@ -84,32 +117,7 @@ export function ValueChart({ data, hidden }: { data: ValueHistory; hidden: boole
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
         >
-          <Svg
-            width="100%"
-            height={height}
-            viewBox={`0 0 ${width} ${height}`}
-            preserveAspectRatio="none"
-          >
-            {coordinates.slice(1).map((end, index) => {
-              const start = coordinates[index];
-              return (
-                <Line
-                  // The index keeps keys unique even if the server repeats a date.
-                  key={`${index}-${end.point.date}`}
-                  x1={start.x}
-                  y1={start.y}
-                  x2={end.x}
-                  y2={end.y}
-                  stroke={theme.chart1}
-                  strokeWidth={2}
-                  strokeDasharray={start.point.estimated || end.point.estimated ? '4 3' : undefined}
-                />
-              );
-            })}
-            {coordinates.length === 1 ? (
-              <Circle cx={first.x} cy={first.y} r={3} fill={theme.chart1} />
-            ) : null}
-          </Svg>
+          <ValueLine coordinates={coordinates} color={theme.chart1} />
           {!hidden ? (
             <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
               <View style={{ flexShrink: 1 }}>

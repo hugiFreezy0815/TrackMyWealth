@@ -38,11 +38,14 @@ export function AccountHeaderCard({
     >
       <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
         {intl.formatMessage({
-          id: summary.holdsPositions
-            ? 'account.marketValue'
-            : summary.manualValuation
-              ? 'account.value'
-              : 'account.balance',
+          id:
+            summary.nature === 'LIABILITY'
+              ? 'account.owed'
+              : summary.holdsPositions
+                ? 'account.marketValue'
+                : summary.manualValuation
+                  ? 'account.value'
+                  : 'account.balance',
         })}
       </Text>
       {value ? (

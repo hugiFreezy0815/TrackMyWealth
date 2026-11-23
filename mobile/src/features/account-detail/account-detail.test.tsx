@@ -8,6 +8,9 @@ import { Platform, StyleSheet } from 'react-native';
 import { ApiError, NetworkError, setRefreshHandler } from '@/api/client';
 import { typedApi } from '@/api/typed-api';
 import { queryKeys } from '@/api/queries/keys';
+import type { components } from '@/api/schema';
+import type { Repayment, ScheduleEntry } from '@/features/liability-detail/queries';
+import { formatDate, localDay } from '@/format/date';
 import type { Position, PositionsResponse } from '@/features/portfolio-view/model';
 import { amountTexts } from '@/components/shared';
 import { restoreSession, signIn, signOut } from '@/features/auth/session';
@@ -19,6 +22,12 @@ import { AccountDetail, useAccountRefresh, type AccountDetailProps } from './acc
 import type { AccountListItem, AccountSummary, Category, Transaction } from './model';
 
 jest.mock('@/global.css', () => ({}));
+jest.mock('react-native-svg', () => ({
+  __esModule: true,
+  default: 'Svg',
+  Line: 'Line',
+  Circle: 'Circle',
+}));
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn() }));
 jest.mock('expo-image', () => ({ Image: 'Image' }));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
@@ -156,11 +165,31 @@ function fakeServer(account: AccountSummary, rows: Transaction[], holdings?: Pos
     rows: Transaction[];
     holdings?: PositionsResponse;
     portfolioView?: unknown;
+    schedulePages?: ScheduleEntry[][];
+    repayments?: Repayment[];
+    statement?: components['schemas']['CardStatementResponse'];
+    statementConfig?: components['schemas']['StatementConfigResponse'];
     beforeRead?: (path: string, options: Options) => void | Promise<void>;
   } = { account, rows, holdings };
   const counted = (row: Transaction) => row.categoryId === 'uncat' && !row.internalTransfer;
+  function paginate<T>(items: T[], query: Options['query']) {
+    const page = Number(query?.page);
+    const size = Number(query?.size);
+    return collectionPage(items.slice(page * size, (page + 1) * size), page, size, items.length);
+  }
   const routes: Record<string, (options: Options) => unknown> = {
     '/api/v1/accounts/{accountId}': () => state.account,
+    '/api/v1/accounts/{accountId}/amortisation-schedule': ({ query }) => {
+      const pages = state.schedulePages ?? [];
+      const number = Number(query?.page);
+      const size = Number(query?.size);
+      const response = collectionPage(pages[number] ?? [], number, size);
+      return { ...response, page: { ...response.page, totalPages: pages.length } };
+    },
+    '/api/v1/accounts/{accountId}/repayments': ({ query }) =>
+      paginate(state.repayments ?? [], query),
+    '/api/v1/accounts/{cardAccountId}/statement': () => state.statement,
+    '/api/v1/accounts/{cardAccountId}/statement-config': () => state.statementConfig,
     '/api/v1/accounts/{accountId}/positions': () => state.holdings,
     '/api/v1/portfolios/{portfolioId}/view': () => state.portfolioView ?? { sections: [] },
     '/api/v1/accounts/{accountId}/transactions/{transactionId}': ({ params }) =>
@@ -236,6 +265,7 @@ async function renderDetail(
   });
   const onBack = props.onBack ?? jest.fn();
   const onTransaction = jest.fn();
+  const onRepaymentTransaction = jest.fn();
   if (props.cachedAccounts) client.setQueryData(queryKeys.accounts({}), props.cachedAccounts);
   await render(
     <QueryClientProvider client={client}>
@@ -245,12 +275,13 @@ async function renderDetail(
           initialTab={props.initialTab}
           onBack={onBack}
           onTransaction={onTransaction}
+          onRepaymentTransaction={onRepaymentTransaction}
           onImport={jest.fn()}
         />
       </IntlProvider>
     </QueryClientProvider>,
   );
-  return { onBack, onTransaction, client };
+  return { onBack, onTransaction, onRepaymentTransaction, client };
 }
 
 async function changeCategory(currentLabel: string, pick: string) {
@@ -266,6 +297,188 @@ beforeEach(() => {
   api.post.mockReset();
   api.put.mockReset();
   jest.mocked(showToast).mockReset();
+});
+
+describe('S10 liability detail (#685)', () => {
+  const schedulePath = '/api/v1/accounts/{accountId}/amortisation-schedule';
+  const repaymentPath = '/api/v1/accounts/{accountId}/repayments';
+  const statementPath = '/api/v1/accounts/{cardAccountId}/statement';
+  const scheduleEntry = (id: string, dueDate: string, remainingBalance: string): ScheduleEntry => ({
+    id,
+    accountId: 'acc',
+    dueDate,
+    principalComponent: '518.70',
+    interestComponent: '131.30',
+    remainingBalance,
+    currency: 'EUR',
+    version: 1,
+    createdAt: '2026-10-01T00:00:00Z',
+  });
+  const repayment = (id: string, bookingDate: string): Repayment => ({
+    id,
+    loanAccountId: 'acc',
+    payingAccountId: 'payer',
+    bookingDate,
+    amount: '825.40',
+    principalAmount: '720.40',
+    interestAmount: '105.00',
+    currency: 'EUR',
+    splitSource: 'ESTIMATED',
+    splitEstimated: true,
+    amortisationScheduleEntryId: null,
+    externalId: null,
+    transactions: [],
+    createdAt: '2026-10-01T00:00:00Z',
+  });
+
+  it('pages the schedule, selects an entry due today and uses server amounts without a payment total', async () => {
+    const server = fakeServer(summary({ nature: 'LIABILITY', hasAmortisation: true }), [txn(0)]);
+    const today = localDay(new Date());
+    server.schedulePages = [
+      [scheduleEntry('past', '2000-01-01', '958.50')],
+      [scheduleEntry('today', today, '439.80'), scheduleEntry('final', '2099-01-01', '0.00')],
+    ];
+    const { client } = await renderDetail();
+
+    await waitFor(() =>
+      expect(client.getQueryState(queryKeys.amortisationSchedule('acc'))?.status).toBe('success'),
+    );
+    expect(await screen.findByText('Paid off on 1 Jan 2099')).toBeTruthy();
+    expect(screen.getByText('Owed')).toBeTruthy();
+    expect(screen.getByText(formatDate(today, 'en'))).toBeTruthy();
+    expect(screen.getByText('EUR 518.70')).toBeTruthy();
+    expect(screen.getByText('EUR 131.30')).toBeTruthy();
+    expect(screen.getByText('EUR 439.80')).toBeTruthy();
+    expect(screen.queryByText('EUR 650.00')).toBeNull();
+    expect(screen.getByText('Shop 000')).toBeTruthy();
+    expect(
+      api.get.mock.calls
+        .filter(([path]) => path === schedulePath)
+        .map(([, options]) => options?.query),
+    ).toEqual([
+      { page: 0, size: 200, sort: ['dueDate,asc'] },
+      { page: 1, size: 200, sort: ['dueDate,asc'] },
+    ]);
+    expect(api.get.mock.calls.some(([path]) => path === statementPath)).toBe(false);
+    await fireEvent.press(screen.getByRole('button', { name: /^Remaining balance from/ }));
+    expect(screen.getByText(/Balances from the loan repayment schedule/)).toBeTruthy();
+  });
+
+  it('masks the schedule figures and chart when amounts are hidden', async () => {
+    const server = fakeServer(summary({ hasAmortisation: true }), []);
+    server.schedulePages = [[scheduleEntry('upcoming', '2099-01-01', '439.80')]];
+    jest.mocked(useAmountsHidden).mockReturnValue(true);
+    try {
+      await renderDetail();
+      const chart = await screen.findByRole('button', { name: 'Remaining balance chart hidden' });
+      expect(screen.queryByText('EUR 439.80')).toBeNull();
+      expect(screen.queryByLabelText(/439.80 euros/)).toBeNull();
+      await fireEvent.press(chart);
+      expect(screen.getByText(/Balances from the loan repayment schedule/)).toBeTruthy();
+      expect(screen.queryByText(/439.80 euros/)).toBeNull();
+    } finally {
+      jest.mocked(useAmountsHidden).mockReturnValue(false);
+    }
+  });
+
+  it('shows the estimated split, pages the full history, and opens a linked transaction on its account', async () => {
+    const server = fakeServer(summary({ nature: 'LIABILITY', hasAmortisation: true }), []);
+    server.repayments = [
+      { ...repayment('latest', '2026-10-01'), transactions: [txn(42, { accountId: 'payer' })] },
+      ...Array.from({ length: 49 }, (_, index) => ({
+        ...repayment(`old-${index}`, '2026-09-01'),
+        splitEstimated: false,
+      })),
+      { ...repayment('oldest', '2026-08-01'), amount: '515.15', splitEstimated: false },
+    ];
+    const { onRepaymentTransaction } = await renderDetail();
+
+    expect(await screen.findByText('Estimated split')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'The split was estimated using the outstanding balance and the interest rate.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getAllByText('EUR 720.40')).toHaveLength(3);
+    expect(screen.getAllByText('EUR 105.00')).toHaveLength(3);
+    expect(
+      screen.getByText('No repayment schedule yet. It is read from your loan statement.'),
+    ).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Transactions for 1 Oct 2026' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Card purchase' }));
+    expect(onRepaymentTransaction).toHaveBeenCalledWith('t042', 'payer');
+    await fireEvent.press(screen.getByRole('button', { name: 'See all' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Load more' }));
+    expect(await screen.findByText('EUR 515.15')).toBeTruthy();
+    expect(
+      api.get.mock.calls
+        .filter(([path]) => path === repaymentPath)
+        .map(([, options]) => options?.query),
+    ).toEqual([
+      { page: 0, size: 3, sort: ['bookingDate,desc'] },
+      { page: 0, size: 50, sort: ['bookingDate,desc'] },
+      { page: 1, size: 50, sort: ['bookingDate,desc'] },
+    ]);
+  });
+
+  it('shows the unpaid status and unknown statement amount as text and hides a revoked statement', async () => {
+    const server = fakeServer(summary({ nature: 'LIABILITY', hasStatementCycle: true }), []);
+    server.statement = {
+      cardAccountId: 'acc',
+      periodStart: '2026-10-20',
+      periodEnd: '2026-11-19',
+      dueDate: '2026-12-05',
+      closingBalance: null,
+      currency: 'EUR',
+      paid: false,
+    };
+    const { client } = await renderDetail();
+
+    expect(await screen.findByText('Not paid yet')).toBeTruthy();
+    expect(screen.getByText('Statement amount not known yet')).toBeTruthy();
+    expect(screen.getByText('Due 5 Dec 2026')).toBeTruthy();
+    expect(
+      api.get.mock.calls.some(([path]) => path === schedulePath || path === repaymentPath),
+    ).toBe(false);
+
+    server.beforeRead = (path) => {
+      if (path === statementPath) throw new ApiError('not found', 404);
+    };
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: queryKeys.cardStatement('acc') });
+    });
+    await waitFor(() => expect(screen.queryByText('Current statement')).toBeNull());
+    expect(screen.queryByText('Not paid yet')).toBeNull();
+  });
+
+  it('recognises a missing statement configuration from the API', async () => {
+    const server = fakeServer(summary({ hasStatementCycle: true }), []);
+    server.beforeRead = (path) => {
+      if (path === statementPath) throw new ApiError('unprocessable', 422);
+    };
+    server.statementConfig = {
+      cardAccountId: 'acc',
+      statementDay: null,
+      dueDateOffsetDays: null,
+      version: 0,
+    };
+    await renderDetail();
+
+    expect(await screen.findByText('Statement day not set')).toBeTruthy();
+    expect(screen.queryByText('Not paid yet')).toBeNull();
+  });
+
+  it('uses the plain account detail for a liability without either capability', async () => {
+    fakeServer(summary({ nature: 'LIABILITY' }), [txn(0)]);
+    await renderDetail();
+    expect(await screen.findByText('Shop 000')).toBeTruthy();
+    expect(screen.getByText('Owed')).toBeTruthy();
+    expect(
+      api.get.mock.calls.some(([path]) =>
+        [schedulePath, repaymentPath, statementPath].includes(path),
+      ),
+    ).toBe(false);
+  });
 });
 
 describe('S3 account detail updates (#690)', () => {

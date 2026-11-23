@@ -1,7 +1,11 @@
 import { useRef, useState, type ComponentRef } from 'react';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { Platform, RefreshControl, useWindowDimensions, type Text } from 'react-native';
+import { Platform, RefreshControl, useWindowDimensions, View, type Text } from 'react-native';
 import { useIntl } from 'react-intl';
+import { useAccount } from '@/api/queries/resources';
+import { Spacing } from '@/constants/theme';
+import { isAccessFailure } from '@/features/account-detail/access';
+import { LiabilityDetail } from '@/features/liability-detail/liability-detail';
 import { AccountDetail, useAccountRefresh } from '@/features/account-detail/account-detail';
 import { usePanelFocusReturn } from '@/features/account-detail/panel-focus';
 import { isAdministrator } from '@/features/auth/session';
@@ -19,25 +23,39 @@ export default function AccountDetailRoute() {
   const { refreshing, refresh } = useAccountRefresh();
   const { width } = useWindowDimensions();
   const webPanel = Platform.OS === 'web' && width >= 1024;
-  const [selectedTransaction, setSelectedTransaction] = useState<string | null>(null);
+  const admin = isAdministrator(identity);
+  const desktopAccount = useAccount(webPanel && !admin ? (accountId ?? '') : '');
+  const accountUnavailable = isAccessFailure(desktopAccount.error);
+  const summary = accountUnavailable ? undefined : desktopAccount.data;
+  const desktopLiability =
+    webPanel && summary && (summary.hasAmortisation || summary.hasStatementCycle);
+  const [selection, setSelection] = useState<{ accountId: string; transactionId: string } | null>(
+    null,
+  );
+  const selectedTransaction =
+    webPanel && !accountUnavailable && selection?.accountId === accountId
+      ? selection?.transactionId
+      : undefined;
   const titleRef = useRef<ComponentRef<typeof Text>>(null);
-  const panelFocus = usePanelFocusReturn(selectedTransaction !== null, titleRef);
+  const panelFocus = usePanelFocusReturn(!!selectedTransaction, titleRef);
 
-  if (isAdministrator(identity)) return <Redirect href={homeFor(true)} />;
-  const openTransaction = (transactionId: string) => {
-    if (webPanel) {
+  if (admin) return <Redirect href={homeFor(true)} />;
+  const selectTransaction = (transactionId: string) =>
+    setSelection({ accountId: accountId ?? '', transactionId });
+  const openTransaction = (transactionId: string, transactionAccountId = accountId ?? '') => {
+    if (webPanel && transactionAccountId === accountId) {
       panelFocus.rememberOpener();
-      setSelectedTransaction(transactionId);
+      selectTransaction(transactionId);
     } else {
       router.push({
         pathname: '/accounts/[accountId]/transactions/[transactionId]',
-        params: { accountId: accountId ?? '', transactionId },
+        params: { accountId: transactionAccountId, transactionId },
       });
     }
   };
   const closePanel = () => {
     panelFocus.returnFocusOnClose();
-    setSelectedTransaction(null);
+    setSelection(null);
   };
   return (
     <ShellScreen
@@ -47,17 +65,24 @@ export default function AccountDetailRoute() {
       detailWidth={400}
       virtualizedNative
       aside={
-        webPanel && selectedTransaction ? (
-          <TransactionDetail
-            key={selectedTransaction}
-            accountId={accountId ?? ''}
-            transactionId={selectedTransaction}
-            onBack={closePanel}
-            onRelatedTransaction={setSelectedTransaction}
-            onAccount={(id) =>
-              router.push({ pathname: '/accounts/[accountId]', params: { accountId: id } })
-            }
-          />
+        selectedTransaction || desktopLiability ? (
+          <View style={{ gap: Spacing.three }}>
+            {selectedTransaction ? (
+              <TransactionDetail
+                key={selectedTransaction}
+                accountId={accountId ?? ''}
+                transactionId={selectedTransaction}
+                onBack={closePanel}
+                onRelatedTransaction={selectTransaction}
+                onAccount={(id) =>
+                  router.push({ pathname: '/accounts/[accountId]', params: { accountId: id } })
+                }
+              />
+            ) : null}
+            {desktopLiability ? (
+              <LiabilityDetail key={summary.id} account={summary} onTransaction={openTransaction} />
+            ) : null}
+          </View>
         ) : undefined
       }
     >
@@ -69,7 +94,9 @@ export default function AccountDetailRoute() {
         onRefresh={() => void refresh()}
         onBack={() => router.replace('/overview')}
         onTransaction={openTransaction}
-        selectedTransactionId={webPanel ? selectedTransaction : null}
+        onRepaymentTransaction={openTransaction}
+        liabilityInAside={webPanel}
+        selectedTransactionId={selectedTransaction}
         onImport={() =>
           router.push({
             pathname: '/accounts/[accountId]/imports/new',
