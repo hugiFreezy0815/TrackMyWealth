@@ -38,13 +38,16 @@ export default function TransactionDetailRoute() {
     if (repaymentOrigin) router.dismissTo(href);
     else router.replace(href);
   };
-  const openRelated = (id: string) =>
+  const openRelated = (id: string, transactionAccountId = accountId) =>
     router.replace({
       pathname: '/accounts/[accountId]/transactions/[transactionId]',
       params: {
-        accountId,
+        accountId: transactionAccountId,
         transactionId: id,
-        ...(repaymentOrigin ? { repaymentFromAccountId: repaymentOrigin } : {}),
+        // A row of the loan itself has the loan as its parent and needs no repayment origin.
+        ...(repaymentOrigin && transactionAccountId !== repaymentOrigin
+          ? { repaymentFromAccountId: repaymentOrigin }
+          : {}),
       },
     });
 

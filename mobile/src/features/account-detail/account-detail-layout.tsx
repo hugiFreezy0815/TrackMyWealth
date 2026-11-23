@@ -34,7 +34,8 @@ export function AccountDetailLayout({
   desktop: boolean;
   linkedTransaction?: TransactionSelection;
   onCloseLinkedTransaction?: () => void;
-  onRelatedLinkedTransaction?: (transactionId: string) => void;
+  /** Opens a transaction in the URL; without an account it stays on the linked one's account. */
+  onRelatedLinkedTransaction?: (transactionId: string, transactionAccountId?: string) => void;
 }) {
   const router = useRouter();
   const intl = useIntl();
@@ -72,10 +73,11 @@ export function AccountDetailLayout({
     }
   };
   const openActivity = (transactionId: string) => {
-    if (desktop && linkedTransaction?.accountId === accountId && onRelatedLinkedTransaction) {
-      // The URL owns the open transaction on this route, so Back in the panel closes it.
+    if (desktop && onRelatedLinkedTransaction) {
+      // The URL owns the open transaction on this route, so Back in the panel closes it. On a
+      // repayment link the URL holds the paying account, so the row names its own account.
       setSelection(null);
-      onRelatedLinkedTransaction(transactionId);
+      onRelatedLinkedTransaction(transactionId, accountId);
     } else {
       showTransaction(transactionId, accountId, false);
     }
@@ -117,7 +119,7 @@ export function AccountDetailLayout({
               />
             ) : null}
             {hasLiabilityPanels ? (
-              <LiabilityDetail account={summary} onTransaction={openRepayment} />
+              <LiabilityDetail account={summary} onTransaction={openRepayment} inAside />
             ) : null}
           </View>
         ) : undefined

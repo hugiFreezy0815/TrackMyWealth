@@ -30,9 +30,12 @@ export type OpenRepaymentTransaction = (id: string, accountId: string) => void;
 export function RepaymentsPanel({
   accountId,
   onTransaction,
+  inAside = false,
 }: {
   accountId: string;
   onTransaction?: OpenRepaymentTransaction;
+  /** In the desktop side column a link opens beside the panel, so there is no Back to restore. */
+  inAside?: boolean;
 }) {
   const intl = useIntl();
   const online = useOnline();
@@ -41,7 +44,9 @@ export function RepaymentsPanel({
   const recent = useRecentRepayments(accountId);
   const history = useRepaymentHistory(accountId, showAll);
   const query = showAll ? history : recent;
-  const accessError = [recent.error, history.error].find(isAccessFailure);
+  // The full history's error counts only while it is shown: its query is off on the recent rows,
+  // so a kept error could never be retried there.
+  const accessError = [recent.error, showAll ? history.error : null].find(isAccessFailure);
   const rows = accessError
     ? undefined
     : showAll
@@ -97,7 +102,7 @@ export function RepaymentsPanel({
             onTransaction={
               onTransaction &&
               ((id, transactionAccountId) => {
-                saveForBack();
+                if (!inAside) saveForBack();
                 onTransaction(id, transactionAccountId);
               })
             }

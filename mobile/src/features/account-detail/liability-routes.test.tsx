@@ -100,6 +100,7 @@ const loanActivity = ['loan-payment', 'loan-fee'].map(
 );
 
 const accountRouteMounted = jest.fn();
+let historyDenied = false;
 
 function AccountRouteWithMountProbe() {
   useEffect(() => {
@@ -141,6 +142,7 @@ function renderRoute(
 
 beforeEach(() => {
   accountRouteMounted.mockClear();
+  historyDenied = false;
   const read = async (
     path: string,
     options?: { params?: { accountId?: string }; query?: { size?: number } },
@@ -158,6 +160,13 @@ beforeEach(() => {
         });
       case '/api/v1/accounts/{accountId}/repayments': {
         const size = query?.size ?? 3;
+        if (historyDenied && size > 3) {
+          throw new ApiError('forbidden', 403, {
+            status: 403,
+            title: 'Forbidden',
+            code: 'FORBIDDEN',
+          });
+        }
         return collectionPage(repayments.slice(0, size), 0, size, repayments.length);
       }
       case '/api/v1/accounts/{accountId}/transactions':
@@ -262,4 +271,49 @@ it('opens the loan with recent repayments when it is reached other than by Back'
   await waitFor(() => expect(view.getPathname()).toBe(loanPath));
   expect(await screen.findByRole('button', { name: 'See all' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Show recent repayments' })).toBeNull();
+});
+
+it('shows the recent repayments again after the full history was denied', async () => {
+  historyDenied = true;
+  await renderRoute(loanPath, 'ios', 390);
+  await fireEvent.press(await screen.findByRole('button', { name: 'See all' }));
+  expect(await screen.findByText('You are not allowed to do this.')).toBeTruthy();
+
+  await fireEvent.press(screen.getByRole('button', { name: 'Show recent repayments' }));
+  expect(await screen.findByRole('button', { name: 'See all' })).toBeTruthy();
+  expect(screen.queryByText('You are not allowed to do this.')).toBeNull();
+
+  historyDenied = false;
+  await fireEvent.press(screen.getByRole('button', { name: 'See all' }));
+  expect(await screen.findByRole('button', { name: 'Transactions for 1 Oct 2026' })).toBeTruthy();
+});
+
+it('does not restore a desktop side-column view on a later mount', async () => {
+  const view = await renderRoute(loanPath, 'web');
+  const panel = within(await screen.findByTestId('shell-detail-panel'));
+  await openPayingTransaction(panel);
+  await fireEvent.press(screen.getByRole('button', { name: 'Back from transaction' }));
+  await fireEvent.press(panel.getByRole('button', { name: 'Show recent repayments' }));
+
+  await act(() => router.push(loanTransactionPath));
+  await waitFor(() => expect(view.getPathname()).toBe(loanTransactionPath));
+  expect(await screen.findByText('loan/loan-payment')).toBeTruthy();
+  const panels = screen.getAllByTestId('shell-detail-panel');
+  const latest = within(panels[panels.length - 1]);
+  expect(await latest.findByRole('button', { name: 'See all' })).toBeTruthy();
+  expect(latest.queryByRole('button', { name: 'Show recent repayments' })).toBeNull();
+});
+
+it('opens a loan activity row through the URL on the desktop repayment link route', async () => {
+  const view = await renderRoute(`${payingTransactionPath}?repaymentFromAccountId=loan`, 'web');
+  expect(await screen.findByText('payer/paying-payment')).toBeTruthy();
+
+  const detail = within(await screen.findByTestId('account-detail'));
+  await fireEvent.press(await detail.findByText('Loan fee'));
+  await waitFor(() => expect(view.getPathname()).toBe('/accounts/loan/transactions/loan-fee'));
+  expect(view.getSearchParams()).not.toHaveProperty('repaymentFromAccountId');
+  expect(await screen.findByText('loan/loan-fee')).toBeTruthy();
+  await fireEvent.press(screen.getByRole('button', { name: 'Back from transaction' }));
+  await waitFor(() => expect(view.getPathname()).toBe(loanPath));
+  expect(screen.queryByText('payer/paying-payment')).toBeNull();
 });

@@ -16,9 +16,11 @@ import { RepaymentsPanel, type OpenRepaymentTransaction } from './repayments';
 export function LiabilityDetail({
   account,
   onTransaction,
+  inAside = false,
 }: {
   account: AccountSummary;
   onTransaction?: OpenRepaymentTransaction;
+  inAside?: boolean;
 }) {
   if (!account.hasAmortisation && !account.hasStatementCycle) return null;
   return (
@@ -26,7 +28,7 @@ export function LiabilityDetail({
       {account.hasAmortisation ? (
         <>
           <LoanSchedulePanel accountId={account.id} />
-          <RepaymentsPanel accountId={account.id} onTransaction={onTransaction} />
+          <RepaymentsPanel accountId={account.id} onTransaction={onTransaction} inAside={inAside} />
         </>
       ) : null}
       {account.hasStatementCycle ? <CardStatementPanel accountId={account.id} /> : null}
