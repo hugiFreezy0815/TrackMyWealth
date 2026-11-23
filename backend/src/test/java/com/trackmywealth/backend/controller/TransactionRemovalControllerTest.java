@@ -368,6 +368,9 @@ class TransactionRemovalControllerTest {
             });
     assertThat(balance(token, card.id())).isEqualByComparingTo("80.00");
     assertThat(countRows(card.id())).isEqualTo(3);
+    // One clock: the void and the replacement it makes way for share the database's instant, so
+    // the history orders them by its rule for one instant, never by a skew between two clocks.
+    assertThat(removedWhenReplaced(corrected.transaction().id(), "voided_at")).isTrue();
   }
 
   @Test
@@ -397,6 +400,7 @@ class TransactionRemovalControllerTest {
         .containsExactly(corrected.transaction().id());
     assertThat(balance(token, source.id())).isEqualByComparingTo("0");
     assertThat(balance(token, destination.id())).isEqualByComparingTo("80.00");
+    assertThat(removedWhenReplaced(corrected.transaction().id(), "deleted_at")).isTrue();
   }
 
   @Test
@@ -3326,6 +3330,19 @@ class TransactionRemovalControllerTest {
   private int countRows(UUID accountId) {
     return queryDecimal("SELECT count(*) FROM transaction WHERE account_id = ?", accountId)
         .intValue();
+  }
+
+  // Whether the row a replacement corrects was removed ("voided_at" or "deleted_at") at exactly the
+  // replacement's created_at: the start of the database transaction that did both.
+  private boolean removedWhenReplaced(UUID replacement, String removedAt) {
+    return queryDecimal(
+                "SELECT count(*) FROM transaction r JOIN transaction o"
+                    + " ON o.id = r.corrects_transaction_id WHERE r.id = ? AND o."
+                    + removedAt
+                    + " = r.created_at",
+                replacement)
+            .intValue()
+        == 1;
   }
 
   private BigDecimal queryDecimal(String sql, UUID parameter) {
