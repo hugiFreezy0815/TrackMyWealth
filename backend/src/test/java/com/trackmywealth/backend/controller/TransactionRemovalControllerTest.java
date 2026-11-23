@@ -159,6 +159,35 @@ class TransactionRemovalControllerTest {
   // --- US-07-38 (#480): change history across the void, restore and correction chain -----------
 
   @Test
+  void aVoidIsNeverDatedBeforeACategoryDecisionTheRowAlreadyHolds() throws SQLException {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID batch = insertImportBatch(card.id());
+    UUID imported = insertImportedFromBatch(card.id(), batch, "COOP PRONTO BERN");
+    createMerchantRule(token, "coop", defaultCategory("GROCERIES"));
+    categorizationService.recategorizeWorkspace(workspaceOf(card.id()));
+    // A decision committed by a database transaction that started after the removing one, while
+    // the removal waited for the row's lock: its assigned_at is later than the removal's now().
+    execute(
+        "UPDATE transaction_categorization_log SET assigned_at = now() + interval '1 hour'"
+            + " WHERE transaction_id = ?",
+        imported);
+
+    remove(token, card.id(), imported, "Duplicate import");
+
+    assertThat(history(token, card.id(), imported))
+        .extracting(TransactionHistoryEntryResponse::kind)
+        .containsExactly("VOIDED", "CATEGORY_ASSIGNED", "IMPORTED");
+    assertThat(
+            queryDecimal(
+                "SELECT count(*) FROM transaction t WHERE t.id = ? AND t.voided_at >"
+                    + " (SELECT max(l.assigned_at) FROM transaction_categorization_log l"
+                    + " WHERE l.transaction_id = t.id)",
+                imported))
+        .isEqualByComparingTo("1");
+  }
+
+  @Test
   void anImportedRowsHistoryShowsItsCategoryDecisionsVoidAndRestoreNewestFirst() {
     String token = bootstrapAdministrator();
     String member = memberName("admin@example.com");

@@ -17,6 +17,7 @@ import com.trackmywealth.backend.entity.ReconciliationResult;
 import com.trackmywealth.backend.entity.Transaction;
 import com.trackmywealth.backend.entity.Workspace;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
+import com.trackmywealth.backend.repository.DatabaseClockRepository;
 import com.trackmywealth.backend.repository.ImportRowRawRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
@@ -45,6 +46,8 @@ class ReconciliationServiceTest {
   private static final LocalDate SNAPSHOT_DATE = LocalDate.of(2026, 9, 30);
   private static final OffsetDateTime OPENING_STATED_AT =
       OffsetDateTime.parse("2026-02-01T09:00:00Z");
+  private static final OffsetDateTime DATABASE_NOW =
+      OffsetDateTime.parse("2026-10-03T11:59:58.123456Z");
   private static final AuthenticatedUserPrincipal ACTOR =
       new AuthenticatedUserPrincipal(
           UUID.randomUUID(), "STANDARD_USER", UUID.randomUUID(), UUID.randomUUID(), "EN");
@@ -55,13 +58,15 @@ class ReconciliationServiceTest {
   private final ReconciliationResultRepository resultRepository =
       mock(ReconciliationResultRepository.class);
   private final ImportRowRawRepository importRowRawRepository = mock(ImportRowRawRepository.class);
+  private final DatabaseClockRepository databaseClock = mock(DatabaseClockRepository.class);
   private final ReconciliationService service =
       new ReconciliationService(
           snapshotRepository,
           transactionRepository,
           resultRepository,
           importRowRawRepository,
-          Clock.fixed(Instant.parse("2026-10-03T12:00:00Z"), ZoneOffset.UTC));
+          Clock.fixed(Instant.parse("2026-10-03T12:00:00Z"), ZoneOffset.UTC),
+          databaseClock);
 
   private Account account;
   private AccountSnapshot opening;
@@ -72,6 +77,7 @@ class ReconciliationServiceTest {
     account = account();
     opening = snapshot(OPENING_DATE, "10000.00", true);
     snapshot = snapshot(SNAPSHOT_DATE, "12345.67", false);
+    when(databaseClock.now()).thenReturn(DATABASE_NOW);
     when(snapshotRepository.findLatestObserved(account.getId())).thenReturn(Optional.of(snapshot));
     when(snapshotRepository.findByAccountIdAndOpeningBalanceTrue(account.getId()))
         .thenReturn(Optional.of(opening));
@@ -356,7 +362,8 @@ class ReconciliationServiceTest {
 
     service.reconcileLatest(account, ACTOR.userId());
 
-    assertThat(adjustment.getDeletedAt()).isNotNull();
+    // The database's clock, as every deleted_at the change history orders (US-07-38).
+    assertThat(adjustment.getDeletedAt()).isEqualTo(DATABASE_NOW);
     assertThat(adjustment.getDeletedBy()).isEqualTo(ACTOR.userId());
     assertThat(accepted.getStatus()).isEqualTo("RESOLVED");
     assertThat(accepted.getResolutionTransactionId()).isNull();
