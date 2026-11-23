@@ -112,7 +112,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V118` | #520: extended statistics `st_transaction_account_category (MCV, DEPENDENCIES)` on `transaction(account_id, category_id)`. `UNCATEGORIZED` is one shared system category, so treating the two columns as independent gave every account the database-wide uncategorized share (7,184 estimated rows for an inbox of 500 in `PagedListFixture`) and let page 0 of the inbox walk `idx_transaction_account_date_order` filtering on `category_id`; with the statistics the estimate is 414. Collected by autovacuum's `ANALYZE`. (V117 is left to PR #524; `out-of-order` application allows the gap.) **Tests:** `PagedListPlanTest.accountCategoryStatisticsAreCollected`, and the inbox test's count estimate within 2x of the actual rows |
 | `V119` | #520: `idx_transaction_account_category_order` rebuilt with the same key but **not partial**: V115's predicate columns (`deleted_at`, `voided_at`, `replaces_transaction_id`) move into `INCLUDE`, so the inbox's `count(*)` stays index-only and removed rows are filtered in the index. PostgreSQL ignores extended statistics when it costs a partial index (the predicate enters the estimate as bare clauses), so with V118 alone the partial index kept the old estimate (cost 7,738) and the inbox's last page read `idx_transaction_category` (every workspace's uncategorized rows) and sorted (3,299); non-partial, the index costs 1,117 and serves every page sort-free. Live rows hold `NULL` in the included columns, which costs only the null bitmap. Plain `CREATE INDEX` at application start, as V115 |
 | `V124` | Idempotent creates (US-29-14, #574): `idempotency_key` (workspace, user, operation, key, SHA-256 request fingerprint, `IN_PROGRESS`/`COMPLETED`, stored response status and body, `expires_at`), unique per workspace, user, operation and key; workspace RLS; cascades with its workspace and user. `SECURITY DEFINER` `purge_expired_idempotency_keys(now, limit)`, `EXECUTE` revoked from `PUBLIC` and granted to `trackmywealth_runtime` only (see "Idempotent creates" below). Numbered after #628's `V122`/`V123` |
-| `V126` | Cost basis from holdings statements (US-15-08, #589): `import_holding_row.reported_cost_basis` (`NUMERIC(20,4)`, positions only, `>= 0`); version 2 of the Swissquote PDF and PF-5 XLSX holdings templates reads the average purchase price (`averagePrice`), version 1 no longer current |
+| `V126` | Cost basis from holdings statements (US-15-08, #589): `import_holding_row.reported_cost_basis` (`NUMERIC(20,4)`, positions only, `>= 0`); version 2 of the Swissquote PDF and PF-5 XLSX holdings templates reads the average purchase price (`averagePrice`), version 1 no longer current; `snapshot_holding.cost_basis_import_batch_id` (the batch that filled a held position's empty cost basis; snapshot part `COST_BASIS`) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
 instance as part of this design (including a positive/negative row-level-security test as a
@@ -1521,8 +1521,12 @@ in percent), within 1 % or 0.05, carries the warning `HOLDING_VALUE_MISMATCH`. W
 one (`averagePrice` or `costBasis`, `V126`), a position keeps the cost basis the statement prints -
 quantity x average price rounded to `(20,4)`, or the total as printed - in the position's
 currency; the commit stores it as `snapshot_holding.reported_cost_basis(_currency)`, never
-estimated. A blank, negative or unreadable one leaves it NULL with the warning
-`HOLDING_COST_BASIS_UNREADABLE`, never an `ERROR` line. A statement with
+estimated. An average price is quoted as the price is: when only a hundredth of quantity x price
+is the value (a bond in percent), the cost is a hundredth of quantity x average price; without a
+price that tells, a product over ten times the value is not guessed. A blank, negative,
+unreadable or not guessable one - or a spreadsheet whose header lacks the mapped cost basis
+column - leaves it NULL with the warning `HOLDING_COST_BASIS_UNREADABLE`, never an `ERROR` line
+and never a refused file. A statement with
 positions needs an account that `holds_positions`; one with neither a position, nor cash in the
 account's currency, nor an `ERROR` line is refused (`IMPORT_FILE_NO_DATA_ROWS`).
 `chk_import_batch_holdings_not_balance` keeps a holdings batch from also recording a statement
@@ -1558,6 +1562,12 @@ snapshot the same way, and a holdings statement a balance-only one; a cash state
 committed either way. `MANUAL` snapshots are never met. Holdings are compared only once every
 position resolves.
 
+A holdings statement that agrees on the held positions and prints the cost basis of one that has
+none adds the part `COST_BASIS` (US-15-08, V126): the commit fills each empty cost basis, never
+one the snapshot holds, and records the filling batch in
+`snapshot_holding.cost_basis_import_batch_id`. So a statement imported before its template read
+the cost basis gets it by being imported again.
+
 Each part records the batch that contributed it (`balance_import_batch_id`,
 `snapshot_foreign_cash.import_batch_id`, `snapshot_holding.import_batch_id`). V123 restores
 foreign cash on active snapshots from the committed own-currency balance batch when the
@@ -1576,7 +1586,9 @@ snapshot is deleted or withdrawn by US-07-12's rules. A snapshot kept as history
 an adjusting entry) covers its balance only: rolling back a batch that added holdings removes
 them as above, and rolling back the batch whose balance it is withdraws the snapshot under that
 batch (`WITHDRAWN`) while the other imports' holdings move on to a new snapshot of the date that
-the first of them records, so they stay in effect.
+the first of them records, so they stay in effect, with their cost basis. Rolling back a batch
+that only filled cost bases (`COST_BASIS`) clears those fills and nothing else (`REMOVED`); a
+batch that filled them beside another part clears them with that part.
 
 ## 5. Time-series data and partitioning
 
