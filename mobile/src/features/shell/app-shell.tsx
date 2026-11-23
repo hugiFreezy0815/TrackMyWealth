@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/hooks/use-theme';
 import { ContentLoading, OverviewSetupGate } from '@/features/overview-name/setup-gate';
 import { type Identity, isAdministrator } from '@/features/auth/session';
+import { RepaymentHistoryProvider } from '@/features/liability-detail/repayment-history-view';
 import { restoreAmountVisibility } from '@/features/privacy/amount-visibility';
 import { useAppSwitcherProtection } from '@/features/privacy/screen-protection';
 
@@ -112,17 +113,19 @@ export function AppShell({
               Without an identity after verification (server unreachable), the route shows
               ungated rather than locking the member out.
             */}
-            <Navigator activityDefaultThreshold={1}>
-              {identity && !isAdministrator(identity) ? (
-                <OverviewSetupGate userId={identity.userId}>
+            <RepaymentHistoryProvider resetKey={identity?.userId}>
+              <Navigator activityDefaultThreshold={1}>
+                {identity && !isAdministrator(identity) ? (
+                  <OverviewSetupGate userId={identity.userId}>
+                    <Slot />
+                  </OverviewSetupGate>
+                ) : !identity && verifyingIdentity ? (
+                  <ContentLoading />
+                ) : (
                   <Slot />
-                </OverviewSetupGate>
-              ) : !identity && verifyingIdentity ? (
-                <ContentLoading />
-              ) : (
-                <Slot />
-              )}
-            </Navigator>
+                )}
+              </Navigator>
+            </RepaymentHistoryProvider>
             <ToastHost />
           </View>
           {!desktop && menu}

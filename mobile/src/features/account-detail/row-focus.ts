@@ -26,7 +26,8 @@ function focusLost(): boolean {
   return !current || current === document.body;
 }
 
-function focusRow(transactionId: string | undefined): boolean {
+/** Focuses a transaction row's open control (web); false when the row is not on the page. */
+export function focusRow(transactionId: string | undefined): boolean {
   if (!transactionId || typeof document === 'undefined') return false;
   const target = document.getElementById(transactionElementId(transactionId));
   if (!target) return false;

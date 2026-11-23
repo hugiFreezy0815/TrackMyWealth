@@ -40,6 +40,8 @@ import {
 import { Spacing, TypeScale } from '@/constants/theme';
 import { formatDate } from '@/format/date';
 import { validationErrors } from '@/features/add-flow/model';
+import { LiabilityDetail } from '@/features/liability-detail/liability-detail';
+import type { OpenRepaymentTransaction } from '@/features/liability-detail/repayments';
 import { PositionView } from '@/features/portfolio-view/position-view';
 import { useSavingsPocketLink } from '@/features/savings-pocket/link-pocket';
 import { showToast } from '@/features/shell/toast';
@@ -79,6 +81,8 @@ export type AccountDetailProps = {
   onBack: () => void;
   initialTab?: 'positions' | 'activity';
   onTransaction?: (id: string) => void;
+  onRepaymentTransaction?: OpenRepaymentTransaction;
+  liabilityInAside?: boolean;
   /** The selected transaction in a desktop S4 panel, if any. */
   selectedTransactionId?: string | null;
   onImport: () => void;
@@ -123,6 +127,8 @@ export function AccountDetail({
   accountId,
   onBack,
   onTransaction,
+  onRepaymentTransaction,
+  liabilityInAside = false,
   selectedTransactionId,
   initialTab = 'activity',
   onImport,
@@ -604,6 +610,9 @@ export function AccountDetail({
           disabled={!online || archiveWrite.isPending}
           onRestore={() => archiveOrRestore(true)}
         />
+      ) : null}
+      {!liabilityInAside ? (
+        <LiabilityDetail account={summary} onTransaction={onRepaymentTransaction} />
       ) : null}
       {summary.holdsPositions ? (
         <ChipGroup

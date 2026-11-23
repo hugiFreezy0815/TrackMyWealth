@@ -7,18 +7,29 @@ import { Platform, StyleSheet } from 'react-native';
 
 import { ApiError, NetworkError, setRefreshHandler } from '@/api/client';
 import { typedApi } from '@/api/typed-api';
+import { invalidateFinancialData } from '@/api/queries/invalidation';
 import { queryKeys } from '@/api/queries/keys';
+import type { components } from '@/api/schema';
+import type { Repayment, ScheduleEntry } from '@/features/liability-detail/queries';
+import { formatDate, localDay } from '@/format/date';
 import type { Position, PositionsResponse } from '@/features/portfolio-view/model';
 import { amountTexts } from '@/components/shared';
 import { restoreSession, signIn, signOut } from '@/features/auth/session';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { showToast } from '@/features/shell/toast';
+import de from '@/i18n/de.json';
 import en from '@/i18n/en.json';
 
 import { AccountDetail, useAccountRefresh, type AccountDetailProps } from './account-detail';
 import type { AccountListItem, AccountSummary, Category, Transaction } from './model';
 
 jest.mock('@/global.css', () => ({}));
+jest.mock('react-native-svg', () => ({
+  __esModule: true,
+  default: 'Svg',
+  Line: 'Line',
+  Circle: 'Circle',
+}));
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn() }));
 jest.mock('expo-image', () => ({ Image: 'Image' }));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
@@ -156,11 +167,34 @@ function fakeServer(account: AccountSummary, rows: Transaction[], holdings?: Pos
     rows: Transaction[];
     holdings?: PositionsResponse;
     portfolioView?: unknown;
+    schedulePages?: ScheduleEntry[][];
+    repayments?: Repayment[];
+    yearlyTotals?: components['schemas']['LoanRepaymentYearlyTotalsResponse'];
+    statement?: components['schemas']['CardStatementResponse'];
+    statementConfig?: components['schemas']['StatementConfigResponse'];
     beforeRead?: (path: string, options: Options) => void | Promise<void>;
   } = { account, rows, holdings };
   const counted = (row: Transaction) => row.categoryId === 'uncat' && !row.internalTransfer;
+  function paginate<T>(items: T[], query: Options['query']) {
+    const page = Number(query?.page);
+    const size = Number(query?.size);
+    return collectionPage(items.slice(page * size, (page + 1) * size), page, size, items.length);
+  }
   const routes: Record<string, (options: Options) => unknown> = {
     '/api/v1/accounts/{accountId}': () => state.account,
+    '/api/v1/accounts/{accountId}/amortisation-schedule': ({ query }) => {
+      const pages = state.schedulePages ?? [];
+      const number = Number(query?.page);
+      const size = Number(query?.size);
+      const response = collectionPage(pages[number] ?? [], number, size);
+      return { ...response, page: { ...response.page, totalPages: pages.length } };
+    },
+    '/api/v1/accounts/{accountId}/repayments': ({ query }) =>
+      paginate(state.repayments ?? [], query),
+    '/api/v1/accounts/{accountId}/repayments/yearly-totals': () =>
+      state.yearlyTotals ?? { loanAccountId: 'acc', currency: 'EUR', years: [] },
+    '/api/v1/accounts/{cardAccountId}/statement': () => state.statement,
+    '/api/v1/accounts/{cardAccountId}/statement-config': () => state.statementConfig,
     '/api/v1/accounts/{accountId}/positions': () => state.holdings,
     '/api/v1/portfolios/{portfolioId}/view': () => state.portfolioView ?? { sections: [] },
     '/api/v1/accounts/{accountId}/transactions/{transactionId}': ({ params }) =>
@@ -226,6 +260,7 @@ async function renderDetail(
     cachedAccounts?: AccountListItem[];
     initialTab?: 'positions' | 'activity';
     staleTime?: number;
+    locale?: 'en' | 'de';
   } = {},
 ) {
   const client = new QueryClient({
@@ -236,21 +271,23 @@ async function renderDetail(
   });
   const onBack = props.onBack ?? jest.fn();
   const onTransaction = jest.fn();
+  const onRepaymentTransaction = jest.fn();
   if (props.cachedAccounts) client.setQueryData(queryKeys.accounts({}), props.cachedAccounts);
   await render(
     <QueryClientProvider client={client}>
-      <IntlProvider locale="en" messages={en}>
+      <IntlProvider locale={props.locale ?? 'en'} messages={props.locale === 'de' ? de : en}>
         <RefreshableAccountDetail
           accountId="acc"
           initialTab={props.initialTab}
           onBack={onBack}
           onTransaction={onTransaction}
+          onRepaymentTransaction={onRepaymentTransaction}
           onImport={jest.fn()}
         />
       </IntlProvider>
     </QueryClientProvider>,
   );
-  return { onBack, onTransaction, client };
+  return { onBack, onTransaction, onRepaymentTransaction, client };
 }
 
 async function changeCategory(currentLabel: string, pick: string) {
@@ -266,6 +303,455 @@ beforeEach(() => {
   api.post.mockReset();
   api.put.mockReset();
   jest.mocked(showToast).mockReset();
+});
+
+describe('S10 liability detail (#685)', () => {
+  const schedulePath = '/api/v1/accounts/{accountId}/amortisation-schedule';
+  const repaymentPath = '/api/v1/accounts/{accountId}/repayments';
+  const statementPath = '/api/v1/accounts/{cardAccountId}/statement';
+  const scheduleEntry = (id: string, dueDate: string, remainingBalance: string): ScheduleEntry => ({
+    id,
+    accountId: 'acc',
+    dueDate,
+    principalComponent: '518.70',
+    interestComponent: '131.30',
+    // Not the sum of the split, so a test can tell a sent total from one added in the app.
+    amount: '655.00',
+    remainingBalance,
+    currency: 'EUR',
+    version: 1,
+    createdAt: '2026-10-01T00:00:00Z',
+  });
+  const repayment = (id: string, bookingDate: string): Repayment => ({
+    id,
+    loanAccountId: 'acc',
+    payingAccountId: 'payer',
+    bookingDate,
+    amount: '825.40',
+    principalAmount: '720.40',
+    interestAmount: '105.00',
+    currency: 'EUR',
+    splitSource: 'ESTIMATED',
+    splitEstimated: true,
+    amortisationScheduleEntryId: null,
+    externalId: null,
+    transactions: [],
+    createdAt: '2026-10-01T00:00:00Z',
+  });
+
+  it('pages the schedule, selects an entry due today and shows the payment total as sent', async () => {
+    const server = fakeServer(summary({ nature: 'LIABILITY', hasAmortisation: true }), [txn(0)]);
+    const today = localDay(new Date());
+    server.schedulePages = [
+      [scheduleEntry('past', '2000-01-01', '958.50')],
+      [scheduleEntry('today', today, '439.80'), scheduleEntry('final', '2099-01-01', '0.00')],
+    ];
+    const { client } = await renderDetail();
+
+    await waitFor(() =>
+      expect(client.getQueryState(queryKeys.amortisationSchedule('acc'))?.status).toBe('success'),
+    );
+    expect(await screen.findByText('Paid off on 1 Jan 2099')).toBeTruthy();
+    expect(screen.getByText('Owed')).toBeTruthy();
+    expect(screen.getByText(formatDate(today, 'en'))).toBeTruthy();
+    expect(screen.getByText('EUR 518.70')).toBeTruthy();
+    expect(screen.getByText('EUR 131.30')).toBeTruthy();
+    expect(screen.getByText('EUR 439.80')).toBeTruthy();
+    expect(screen.getByText('EUR 655.00')).toBeTruthy();
+    expect(screen.queryByText('EUR 650.00')).toBeNull();
+    expect(screen.getByText('Shop 000')).toBeTruthy();
+    expect(
+      api.get.mock.calls
+        .filter(([path]) => path === schedulePath)
+        .map(([, options]) => options?.query),
+    ).toEqual([
+      { page: 0, size: 200, sort: ['dueDate,asc'] },
+      { page: 1, size: 200, sort: ['dueDate,asc'] },
+    ]);
+    expect(api.get.mock.calls.some(([path]) => path === statementPath)).toBe(false);
+    await fireEvent.press(screen.getByRole('button', { name: /^Remaining balance from/ }));
+    expect(screen.getByText(/Balances from the loan repayment schedule/)).toBeTruthy();
+  });
+
+  it('keeps the first schedule page visible and retries only the failed page', async () => {
+    const server = fakeServer(summary({ hasAmortisation: true }), []);
+    const today = localDay(new Date());
+    server.schedulePages = [
+      [scheduleEntry('today', today, '439.80')],
+      [scheduleEntry('final', '2099-01-01', '0.00')],
+    ];
+    const pages: unknown[] = [];
+    server.beforeRead = (path, options) => {
+      if (path !== schedulePath) return;
+      const page = options.query?.page;
+      pages.push(page);
+      if (page === 1 && pages.length === 2) throw new ApiError('unavailable', 503);
+    };
+    await renderDetail();
+
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    expect(screen.getByText(formatDate(today, 'en'))).toBeTruthy();
+    expect(screen.getByText('EUR 439.80')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Incomplete schedule/ })).toBeTruthy();
+    expect(screen.queryByText(/Paid off on/)).toBeNull();
+
+    await fireEvent.press(retry);
+    expect(await screen.findByText('Paid off on 1 Jan 2099')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Incomplete schedule/ })).toBeNull();
+    expect(pages).toEqual([0, 1, 1]);
+  });
+
+  it('keeps the complete schedule on screen while a refresh reloads its later pages', async () => {
+    const server = fakeServer(summary({ hasAmortisation: true }), []);
+    server.schedulePages = [
+      [scheduleEntry('today', localDay(new Date()), '439.80')],
+      [scheduleEntry('final', '2099-01-01', '0.00')],
+    ];
+    const { client } = await renderDetail();
+    expect(await screen.findByText('Paid off on 1 Jan 2099')).toBeTruthy();
+
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.beforeRead = (path, options) =>
+      path === schedulePath && options.query?.page === 1 ? held : undefined;
+    await act(() => {
+      void invalidateFinancialData(client);
+    });
+    await waitFor(() =>
+      expect(
+        api.get.mock.calls.filter(
+          ([path, options]) =>
+            path === schedulePath && (options as { query: { page: number } }).query.page === 1,
+        ),
+      ).toHaveLength(2),
+    );
+    expect(
+      client.getQueryData<InfiniteData<unknown>>(queryKeys.amortisationSchedule('acc'))?.pages,
+    ).toHaveLength(1);
+    expect(screen.getByText('Paid off on 1 Jan 2099')).toBeTruthy();
+    expect(screen.queryByText(/Showing the first part/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Incomplete schedule/ })).toBeNull();
+
+    await act(async () => release());
+    await waitFor(() =>
+      expect(
+        client.getQueryData<InfiniteData<unknown>>(queryKeys.amortisationSchedule('acc'))?.pages,
+      ).toHaveLength(2),
+    );
+    expect(screen.getByText('Paid off on 1 Jan 2099')).toBeTruthy();
+  });
+
+  it('loads a schedule longer than three pages to its end', async () => {
+    const server = fakeServer(summary({ hasAmortisation: true }), []);
+    server.schedulePages = [
+      [scheduleEntry('today', localDay(new Date()), '1600.00')],
+      [scheduleEntry('p1', '2096-01-01', '1200.00')],
+      [scheduleEntry('p2', '2097-01-01', '800.00')],
+      [scheduleEntry('p3', '2098-01-01', '400.00')],
+      [scheduleEntry('final', '2099-01-01', '0.00')],
+    ];
+    await renderDetail();
+
+    expect(await screen.findByText('Paid off on 1 Jan 2099')).toBeTruthy();
+    expect(screen.queryByText(/Showing the first part/)).toBeNull();
+    expect(
+      api.get.mock.calls
+        .filter(([path]) => path === schedulePath)
+        .map(([, options]) => (options as { query: { page: number } }).query.page),
+    ).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('hides an earlier schedule page when a later request denies access', async () => {
+    const server = fakeServer(summary({ hasAmortisation: true }), []);
+    server.schedulePages = [
+      [scheduleEntry('today', localDay(new Date()), '439.80')],
+      [scheduleEntry('final', '2099-01-01', '0.00')],
+    ];
+    server.beforeRead = (path, options) => {
+      if (path === schedulePath && options.query?.page === 1) {
+        throw new ApiError('forbidden', 403, {
+          status: 403,
+          title: 'Forbidden',
+          code: 'FORBIDDEN',
+        });
+      }
+    };
+    await renderDetail();
+
+    expect(await screen.findByText('You are not allowed to do this.')).toBeTruthy();
+    expect(screen.queryByText('EUR 439.80')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Incomplete schedule/ })).toBeNull();
+  });
+
+  it.each([
+    { locale: 'en', balance: '400.00', trend: 'decreases from' },
+    { locale: 'en', balance: '500.00', trend: 'increases from' },
+    { locale: 'en', balance: '439.800', trend: 'stays flat at' },
+    { locale: 'de', balance: '400.00', trend: 'sinkt von' },
+    { locale: 'de', balance: '500.00', trend: 'steigt von' },
+    { locale: 'de', balance: '439.800', trend: 'bleibt unverändert bei' },
+  ] as const)(
+    'announces the balance trend in $locale when it $trend',
+    async ({ locale, balance, trend }) => {
+      const server = fakeServer(summary({ hasAmortisation: true }), []);
+      server.schedulePages = [
+        [
+          scheduleEntry('first', '2099-01-01', '439.80'),
+          scheduleEntry('last', '2099-02-01', balance),
+        ],
+      ];
+      await renderDetail({ locale });
+
+      expect(await screen.findByRole('button', { name: new RegExp(trend) })).toBeTruthy();
+    },
+  );
+
+  it('masks the schedule figures and chart when amounts are hidden', async () => {
+    const server = fakeServer(summary({ hasAmortisation: true }), []);
+    server.schedulePages = [
+      [
+        scheduleEntry('upcoming', '2099-01-01', '439.80'),
+        scheduleEntry('last', '2099-02-01', '400.00'),
+      ],
+    ];
+    jest.mocked(useAmountsHidden).mockReturnValue(true);
+    try {
+      await renderDetail();
+      const chart = await screen.findByRole('button', { name: 'Remaining balance chart hidden' });
+      expect(screen.queryByText('EUR 439.80')).toBeNull();
+      expect(screen.queryByLabelText(/439.80 euros/)).toBeNull();
+      await fireEvent.press(chart);
+      expect(screen.getByText(/Balances from the loan repayment schedule/)).toBeTruthy();
+      expect(screen.queryByText(/439.80 euros|decreases from/)).toBeNull();
+      expect(screen.queryByRole('button', { name: /decreases from/ })).toBeNull();
+    } finally {
+      jest.mocked(useAmountsHidden).mockReturnValue(false);
+    }
+  });
+
+  it('shows the estimated split, pages the full history, and opens a linked transaction on its account', async () => {
+    const server = fakeServer(summary({ nature: 'LIABILITY', hasAmortisation: true }), []);
+    server.repayments = [
+      { ...repayment('latest', '2026-10-01'), transactions: [txn(42, { accountId: 'payer' })] },
+      ...Array.from({ length: 49 }, (_, index) => ({
+        ...repayment(`old-${index}`, '2026-09-01'),
+        splitEstimated: false,
+      })),
+      { ...repayment('oldest', '2026-08-01'), amount: '515.15', splitEstimated: false },
+    ];
+    const { onRepaymentTransaction } = await renderDetail();
+
+    expect(await screen.findByText('Estimated split')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'The split was estimated using the outstanding balance and the interest rate.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getAllByText('EUR 720.40')).toHaveLength(3);
+    expect(screen.getAllByText('EUR 105.00')).toHaveLength(3);
+    expect(
+      screen.getByText('No repayment schedule yet. It is read from your loan statement.'),
+    ).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Transactions for 1 Oct 2026' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Card purchase' }));
+    expect(onRepaymentTransaction).toHaveBeenCalledWith('t042', 'payer');
+    await fireEvent.press(screen.getByRole('button', { name: 'See all' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Load more' }));
+    expect(await screen.findByText('EUR 515.15')).toBeTruthy();
+    expect(
+      api.get.mock.calls
+        .filter(([path]) => path === repaymentPath)
+        .map(([, options]) => options?.query),
+    ).toEqual([
+      { page: 0, size: 3, sort: ['bookingDate,desc'] },
+      { page: 0, size: 50, sort: ['bookingDate,desc'] },
+      { page: 1, size: 50, sort: ['bookingDate,desc'] },
+    ]);
+  });
+
+  it('keeps Show recent repayments usable when the recent list loses access', async () => {
+    const server = fakeServer(summary({ nature: 'LIABILITY', hasAmortisation: true }), []);
+    server.repayments = Array.from({ length: 4 }, (_, index) =>
+      repayment(`r${index}`, `2026-10-0${4 - index}`),
+    );
+    const { client } = await renderDetail();
+    await fireEvent.press(await screen.findByRole('button', { name: 'See all' }));
+    expect(await screen.findByRole('button', { name: 'Show recent repayments' })).toBeTruthy();
+
+    let denied = true;
+    server.beforeRead = (path, options) => {
+      if (path === repaymentPath && options.query?.size === 3 && denied) {
+        throw new ApiError('forbidden', 403, {
+          status: 403,
+          title: 'Forbidden',
+          code: 'FORBIDDEN',
+        });
+      }
+    };
+    await act(() => client.refetchQueries({ queryKey: queryKeys.loanRepayments('acc', 3) }));
+    expect(await screen.findByText('You are not allowed to do this.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Show recent repayments' })).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Show recent repayments' }));
+    expect(screen.queryByRole('button', { name: 'Show recent repayments' })).toBeNull();
+
+    denied = false;
+    await act(() => client.refetchQueries({ queryKey: queryKeys.loanRepayments('acc', 3) }));
+    expect(await screen.findByRole('button', { name: 'See all' })).toBeTruthy();
+    expect(screen.queryByText('You are not allowed to do this.')).toBeNull();
+  });
+
+  describe('interest this year', () => {
+    const thisYear = Number(localDay(new Date()).slice(0, 4));
+    const year = (
+      value: number,
+      other: Partial<components['schemas']['LoanRepaymentYearTotalResponse']> = {},
+    ) => ({
+      year: value,
+      amountPaid: '1650.00',
+      principalPaid: '1400.00',
+      interestPaid: '250.00',
+      unknownSplitAmount: '0.00',
+      paymentCount: 2,
+      splitEstimated: false,
+      ...other,
+    });
+    const renderYears = async (years: ReturnType<typeof year>[]) => {
+      const server = fakeServer(summary({ nature: 'LIABILITY', hasAmortisation: true }), []);
+      server.repayments = [repayment('r0', '2026-10-01')];
+      server.yearlyTotals = { loanAccountId: 'acc', currency: 'EUR', years };
+      const { client } = await renderDetail();
+      expect(await screen.findByText('EUR 825.40')).toBeTruthy();
+      return { server, client };
+    };
+
+    it('shows the sent interest of the current year', async () => {
+      await renderYears([year(thisYear, { interestPaid: '251.15' }), year(thisYear - 1)]);
+      expect(await screen.findByText('EUR 251.15')).toBeTruthy();
+      expect(screen.getByText(/^Interest this year:/)).toBeTruthy();
+    });
+
+    it('says Not known instead of 0 when no payment of the year has a known split', async () => {
+      await renderYears([
+        year(thisYear, { interestPaid: null, principalPaid: null, unknownSplitAmount: '1650.00' }),
+      ]);
+      expect(await screen.findByText('Interest this year: Not known')).toBeTruthy();
+      expect(screen.queryByText('EUR 0.00')).toBeNull();
+    });
+
+    it('marks an estimated year sum', async () => {
+      await renderYears([year(thisYear, { splitEstimated: true })]);
+      expect(await screen.findByText('EUR 250.00')).toBeTruthy();
+      // One badge for the year sum, one for the estimated repayment row.
+      expect(screen.getAllByText('Estimated split')).toHaveLength(2);
+    });
+
+    it.each([
+      [
+        'an access error',
+        new ApiError('forbidden', 403, { status: 403, title: 'Forbidden', code: 'FORBIDDEN' }),
+      ],
+      ['a failed request', new ApiError('unavailable', 503)],
+    ])('shows a dash after %s', async (_, failure) => {
+      const server = fakeServer(summary({ nature: 'LIABILITY', hasAmortisation: true }), []);
+      server.repayments = [repayment('r0', '2026-10-01')];
+      server.beforeRead = (path) => {
+        if (path.endsWith('/repayments/yearly-totals')) throw failure;
+      };
+      await renderDetail();
+
+      expect(await screen.findByText('Interest this year: –')).toBeTruthy();
+    });
+
+    it('replaces a loaded sum with a dash when access is denied later', async () => {
+      const { server, client } = await renderYears([year(thisYear, { interestPaid: '251.15' })]);
+      expect(await screen.findByText('EUR 251.15')).toBeTruthy();
+      server.beforeRead = (path) => {
+        if (path.endsWith('/repayments/yearly-totals')) {
+          throw new ApiError('forbidden', 403, {
+            status: 403,
+            title: 'Forbidden',
+            code: 'FORBIDDEN',
+          });
+        }
+      };
+      await act(() => invalidateFinancialData(client));
+      expect(await screen.findByText('Interest this year: –')).toBeTruthy();
+      expect(screen.queryByText('EUR 251.15')).toBeNull();
+    });
+
+    it('is hidden when nothing was paid this year', async () => {
+      await renderYears([year(thisYear - 1)]);
+      await waitFor(() =>
+        expect(
+          api.get.mock.calls.some(([path]) => String(path).endsWith('/repayments/yearly-totals')),
+        ).toBe(true),
+      );
+      expect(screen.queryByText(/Interest this year/)).toBeNull();
+      expect(screen.queryByText('EUR 250.00')).toBeNull();
+    });
+  });
+
+  it('shows the unpaid status and unknown statement amount as text and hides a revoked statement', async () => {
+    const server = fakeServer(summary({ nature: 'LIABILITY', hasStatementCycle: true }), []);
+    server.statement = {
+      cardAccountId: 'acc',
+      periodStart: '2026-10-20',
+      periodEnd: '2026-11-19',
+      dueDate: '2026-12-05',
+      closingBalance: null,
+      currency: 'EUR',
+      paid: false,
+    };
+    const { client } = await renderDetail();
+
+    expect(await screen.findByText('Not paid yet')).toBeTruthy();
+    expect(screen.getByText('Statement amount not known yet')).toBeTruthy();
+    expect(screen.getByText('Due 5 Dec 2026')).toBeTruthy();
+    expect(
+      api.get.mock.calls.some(([path]) => path === schedulePath || path === repaymentPath),
+    ).toBe(false);
+
+    server.beforeRead = (path) => {
+      if (path === statementPath) throw new ApiError('not found', 404);
+    };
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: queryKeys.cardStatement('acc') });
+    });
+    await waitFor(() => expect(screen.queryByText('Current statement')).toBeNull());
+    expect(screen.queryByText('Not paid yet')).toBeNull();
+  });
+
+  it('recognises a missing statement configuration from the API', async () => {
+    const server = fakeServer(summary({ hasStatementCycle: true }), []);
+    server.beforeRead = (path) => {
+      if (path === statementPath) throw new ApiError('unprocessable', 422);
+    };
+    server.statementConfig = {
+      cardAccountId: 'acc',
+      statementDay: null,
+      dueDateOffsetDays: null,
+      version: 0,
+    };
+    await renderDetail();
+
+    expect(await screen.findByText('Statement day not set')).toBeTruthy();
+    expect(screen.queryByText('Not paid yet')).toBeNull();
+  });
+
+  it('uses the plain account detail for a liability without either capability', async () => {
+    fakeServer(summary({ nature: 'LIABILITY' }), [txn(0)]);
+    await renderDetail();
+    expect(await screen.findByText('Shop 000')).toBeTruthy();
+    expect(screen.getByText('Owed')).toBeTruthy();
+    expect(
+      api.get.mock.calls.some(([path]) =>
+        [schedulePath, repaymentPath, statementPath].includes(path),
+      ),
+    ).toBe(false);
+  });
 });
 
 describe('S3 account detail updates (#690)', () => {
