@@ -1522,8 +1522,9 @@ one (`averagePrice` or `costBasis`, `V126`), a position keeps the cost basis the
 quantity x average price rounded to `(20,4)`, or the total as printed - in the position's
 currency; the commit stores it as `snapshot_holding.reported_cost_basis(_currency)`, never
 estimated. An average price is quoted as the price is: when only a hundredth of quantity x price
-is the value (a bond in percent), the cost is a hundredth of quantity x average price; without a
-price that tells, a product over ten times the value is not guessed. A blank, negative,
+is the value (a bond in percent), the cost is a hundredth of quantity x average price; a rule
+maps `averagePrice` only with `price`, and a position without a price, or whose price gives the
+value neither way, gets no cost basis (not guessed). A blank, negative,
 unreadable or not guessable one - or a spreadsheet whose header lacks the mapped cost basis
 column - leaves it NULL with the warning `HOLDING_COST_BASIS_UNREADABLE`, never an `ERROR` line
 and never a refused file. A statement with

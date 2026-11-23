@@ -51,7 +51,14 @@ import org.springframework.stereotype.Service;
  * and has the cost basis of a held position that lacks one adds the part {@code COST_BASIS} - the
  * cost basis of those positions only, never over one the snapshot holds. So an earlier statement
  * imported again, once its template reads the cost basis, fills the gap; the holding records the
- * batch that filled it ({@code cost_basis_import_batch_id}, V126) for a rollback to clear.
+ * batch that filled it ({@code cost_basis_import_batch_id}, V126) for a rollback to clear. A
+ * reconciliation decision does not stand in the way of a completion that only fills cost bases:
+ * results compare balances and quantities, which it leaves as they are.
+ *
+ * <p>The cost basis is stored as printed, in the position's currency. A statement prints no
+ * account-currency cost (the cost at the purchase-date rate, #527), so a foreign position's {@code
+ * cost_in_account_currency} stays empty, as for one entered without it: the position shows its gain
+ * in its own currency and the depot total counts it apart, until the member adds that cost.
  *
  * <p>So a statement is {@code NEW} (no imported snapshot of the date), {@code COMPLETES} (adds a
  * part, conflicts in none), {@code ALREADY_RECORDED} (adds nothing, conflicts in nothing - a
@@ -225,15 +232,25 @@ public class ImportSnapshotCompletionService {
                 .orElse(null),
             snapshot.getBalance(),
             held.size(),
-            standingDecision(account, snapshot).map(ReconciliationResult::getId).orElse(null)),
+            // A completion that only fills cost bases changes nothing a decision covers.
+            ImportSnapshotValues.COMPLETES.equals(outcome) && fillsCostBasisOnly(adds)
+                ? null
+                : standingDecision(account, snapshot)
+                    .map(ReconciliationResult::getId)
+                    .orElse(null)),
         adds,
         conflicts);
+  }
+
+  // US-15-08: the completion adds the cost basis of held positions and nothing else.
+  private static boolean fillsCostBasisOnly(List<String> adds) {
+    return adds.equals(List.of(ImportSnapshotValues.PART_COST_BASIS));
   }
 
   /**
    * Records what {@code plan} - {@code NEW} or {@code COMPLETES}, planned in this transaction -
    * says: a new snapshot of the batch, or the parts it adds to the existing one. Reconciles the
-   * account against its newest snapshot afterwards.
+   * account against its newest snapshot afterwards, unless only cost bases were filled.
    *
    * @return {@code RECORDED} or {@code COMPLETED}, for the batch's record
    * @throws ApiException 409 {@code IMPORT_SNAPSHOT_RECONCILIATION_DECIDED} when a decision stands
@@ -274,7 +291,9 @@ public class ImportSnapshotCompletionService {
           snapshotRepository
               .findForUpdate(plan.existing().id(), account.getId())
               .orElseThrow(() -> new IllegalStateException("The planned snapshot is gone."));
-      requireNoDecision(account, snapshot);
+      if (!fillsCostBasisOnly(plan.adds())) {
+        requireNoDecision(account, snapshot);
+      }
       if (balance != null && snapshot.getBalance() == null) {
         snapshot.setImportedBalance(balance.setScale(FxRateService.MONEY_SCALE), batch.getId());
       }
@@ -299,7 +318,8 @@ public class ImportSnapshotCompletionService {
             position.price(),
             position.value().setScale(FxRateService.MONEY_SCALE),
             position.currency());
-        // US-15-08: the cost basis as printed, in the position's currency; never estimated.
+        // US-15-08: the cost basis as printed, in the position's currency; never estimated, and
+        // no account-currency cost for a foreign one (see the class comment).
         BigDecimal costBasis = position.costBasis();
         if (costBasis != null) {
           holding.setReportedCostBasis(costBasis.setScale(FxRateService.MONEY_SCALE));
@@ -313,7 +333,11 @@ public class ImportSnapshotCompletionService {
     if (plan.adds().contains(ImportSnapshotValues.PART_COST_BASIS)) {
       fillCostBases(snapshot, batch, holdings);
     }
-    reconciliationService.reconcileLatest(account, committedBy);
+    // A completion that only fills cost bases leaves the reconciliation as it is, as its rollback
+    // does (ImportStatementBalanceService#rollBack).
+    if (!fillsCostBasisOnly(plan.adds())) {
+      reconciliationService.reconcileLatest(account, committedBy);
+    }
     return outcome;
   }
 

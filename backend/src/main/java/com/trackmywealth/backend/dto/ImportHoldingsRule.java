@@ -34,11 +34,12 @@ import org.jspecify.annotations.Nullable;
  * heading, a subtotal) is passed over. The date is the one the member enters at upload: a
  * spreadsheet export states none.
  *
- * <p><b>Cost basis</b> (US-15-08, #589), optional: the statement's average purchase price per unit
- * ({@value #AVERAGE_PRICE_GROUP}; cost basis = quantity x average price) or its total cost ({@value
- * #COST_BASIS_GROUP}), as a named group or a column. It is in the position's currency - the row's,
- * else the section's - as the price and value are. A position whose cost basis cannot be read keeps
- * no cost basis and gets a warning; it does not block the commit (FR-PERF-018: no guessing).
+ * <p><b>Cost basis</b> (US-15-08, #589), optional: the statement's average purchase price ({@value
+ * #AVERAGE_PRICE_GROUP}; cost basis = quantity x average price, read only with the price, which
+ * tells a per-unit quote from one in percent) or its total cost ({@value #COST_BASIS_GROUP}), as a
+ * named group or a column. It is in the position's currency - the row's, else the section's - as
+ * the price and value are. A position whose cost basis cannot be read keeps no cost basis and gets
+ * a warning; it does not block the commit (FR-PERF-018: no guessing).
  *
  * <p>Amounts are read with the template's separators. A line or row a pattern took for a position
  * or a cash balance but whose values cannot be read is never dropped: it blocks the commit.
@@ -66,7 +67,7 @@ public record ImportHoldingsRule(
             description =
                 "PDF: RE2 patterns of a position line, with the named groups quantity and value,"
                     + " isin and/or symbol, optionally price, name and currency, and at most one of"
-                    + " averagePrice and costBasis.")
+                    + " averagePrice (with price) and costBasis.")
         @Size(max = MAX_POSITION_PATTERNS)
         List<@Size(max = ImportPdfLayout.MAX_PATTERN_LENGTH) String> positionPatterns,
     @Schema(
@@ -89,7 +90,10 @@ public record ImportHoldingsRule(
   public static final String VALUE_GROUP = "value";
   public static final String AMOUNT_GROUP = "amount";
 
-  /** US-15-08: the average purchase price per unit; cost basis = quantity x average price. */
+  /**
+   * US-15-08: the average purchase price, quoted as the price is (per unit, or in percent of the
+   * nominal); cost basis = quantity x average price. Read only together with the price.
+   */
   public static final String AVERAGE_PRICE_GROUP = "averagePrice";
 
   /** US-15-08: the total cost of the position. */
@@ -109,8 +113,8 @@ public record ImportHoldingsRule(
    * US-07-13: the header cells of a spreadsheet holdings statement. {@code quantity} and {@code
    * value} are mapped together, with {@code currency} and at least one of {@code isin} and {@code
    * symbol}; {@code cashAmount} with {@code currency}. At least one of the two is mapped. US-15-08:
-   * a position's cost basis, optionally, from at most one of {@code averagePrice} and {@code
-   * costBasis}.
+   * a position's cost basis, optionally, from at most one of {@code averagePrice} (with {@code
+   * price}) and {@code costBasis}.
    */
   public record ImportHoldingsColumns(
       @Size(max = MAX_COLUMN_LENGTH) @Nullable String isin,
@@ -121,7 +125,10 @@ public record ImportHoldingsRule(
       @Size(max = MAX_COLUMN_LENGTH) @Nullable String value,
       @Size(max = MAX_COLUMN_LENGTH) String currency,
       @Size(max = MAX_COLUMN_LENGTH) @Nullable String cashAmount,
-      @Schema(description = "Optional: the average purchase price per unit (US-15-08).")
+      @Schema(
+              description =
+                  "Optional: the average purchase price (US-15-08), quoted as the price is;"
+                      + " needs price.")
           @Size(max = MAX_COLUMN_LENGTH)
           @Nullable String averagePrice,
       @Schema(description = "Optional: the position's total cost (US-15-08).")

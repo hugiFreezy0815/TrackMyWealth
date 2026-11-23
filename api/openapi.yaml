@@ -25155,7 +25155,8 @@ components:
           minLength: 0
         averagePrice:
           type: string
-          description: "Optional: the average purchase price per unit (US-15-08)."
+          description: "Optional: the average purchase price (US-15-08), quoted as\
+            \ the price is; needs price."
           maxLength: 200
           minLength: 0
         costBasis:
@@ -25216,7 +25217,8 @@ components:
           type:
           - string
           - "null"
-          description: "Optional: the average purchase price per unit (US-15-08)."
+          description: "Optional: the average purchase price (US-15-08), quoted as\
+            \ the price is; needs price."
           maxLength: 200
           minLength: 0
         costBasis:
@@ -25356,7 +25358,7 @@ components:
           type: array
           description: "PDF: RE2 patterns of a position line, with the named groups\
             \ quantity and value, isin and/or symbol, optionally price, name and currency,\
-            \ and at most one of averagePrice and costBasis."
+            \ and at most one of averagePrice (with price) and costBasis."
           items:
             type: string
             maxLength: 1000
@@ -25410,7 +25412,7 @@ components:
           type: array
           description: "PDF: RE2 patterns of a position line, with the named groups\
             \ quantity and value, isin and/or symbol, optionally price, name and currency,\
-            \ and at most one of averagePrice and costBasis."
+            \ and at most one of averagePrice (with price) and costBasis."
           items:
             type: string
             maxLength: 1000

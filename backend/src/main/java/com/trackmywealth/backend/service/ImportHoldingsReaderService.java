@@ -72,9 +72,10 @@ public class ImportHoldingsReaderService {
   private static final BigDecimal MISMATCH_TOLERANCE = new BigDecimal("0.01");
   private static final BigDecimal MISMATCH_FLOOR = new BigDecimal("0.05");
   private static final BigDecimal PERCENT = new BigDecimal("100");
-  // US-15-08: without a price to tell, quantity x average price this many times the value may be a
-  // bond quoted in percent as well as a heavy loss - too uncertain for a cost basis.
-  private static final BigDecimal AMBIGUOUS_COST_FACTOR = BigDecimal.TEN;
+  // US-15-08: only the price tells whether an average price is per unit or in percent (a bond).
+  private static final String AVERAGE_PRICE_NEEDS_PRICE =
+      "An average price is read only with the price, which tells whether it is per unit or in"
+          + " percent of the nominal; map the price too, or read the total cost (costBasis).";
   // A cost basis column the template maps but the sheet's header lacks (unmapped is -1).
   private static final int MISSING_COLUMN = -2;
   private static final Pattern TICKER = Pattern.compile("[A-Z0-9][A-Z0-9.:-]{0,19}");
@@ -182,6 +183,10 @@ public class ImportHoldingsReaderService {
           && groups.contains(ImportHoldingsRule.COST_BASIS_GROUP)) {
         throw invalid(field, "A position's cost basis is read from averagePrice or costBasis.");
       }
+      if (groups.contains(ImportHoldingsRule.AVERAGE_PRICE_GROUP)
+          && !groups.contains(ImportHoldingsRule.PRICE_GROUP)) {
+        throw invalid(field, AVERAGE_PRICE_NEEDS_PRICE);
+      }
     }
     if (rule.cashPattern() != null) {
       requireGroups(rule.cashPattern(), FIELD + ".cashPattern", CASH_GROUPS);
@@ -229,6 +234,9 @@ public class ImportHoldingsReaderService {
           COLUMNS_FIELD,
           "A position's cost basis is read from one column: averagePrice or costBasis.");
     }
+    if (columns.averagePrice() != null && columns.price() == null) {
+      throw invalid(COLUMNS_FIELD, AVERAGE_PRICE_NEEDS_PRICE);
+    }
     List<String> mapped = mappedColumns(columns);
     for (String column : mapped) {
       if (column.isBlank()) {
@@ -239,6 +247,15 @@ public class ImportHoldingsReaderService {
             COLUMNS_FIELD, "The sample's header has no single column named " + column + ".");
       }
     }
+  }
+
+  /**
+   * The header cells a sheet must have for the rule to read it: every mapped one but the cost basis
+   * column, which is optional (US-15-08) - a sheet without it is read, each position with a
+   * warning.
+   */
+  public static List<String> requiredColumns(ImportHoldingsColumns columns) {
+    return mappedColumns(withoutCostBasis(columns));
   }
 
   /** The header cells a spreadsheet holdings rule maps, in field order, each once. */
@@ -410,7 +427,7 @@ public class ImportHoldingsReaderService {
         Objects.requireNonNull(template.holdingsRule().columns(), "holdingsRule.columns");
     // US-15-08: the cost basis is optional - a sheet without its column is read all the same, each
     // position with a warning (costBasisIndex), never refused.
-    for (String column : mappedColumns(withoutCostBasis(columns))) {
+    for (String column : requiredColumns(columns)) {
       if (ImportFileParserService.columnIndex(column, header) < 0) {
         throw new ImportFileRejectedException(
                 ProblemCode.IMPORT_TEMPLATE_MISMATCH,
@@ -633,7 +650,7 @@ public class ImportHoldingsReaderService {
       BigDecimal averagePrice =
           number(averagePriceCell, template, PRICE_INTEGER_DIGITS, PRICE_FRACTION_DIGITS);
       BigDecimal product = quantity.multiply(averagePrice);
-      if (quotedInPercent(quantity, price, value, product)) {
+      if (quotedInPercent(quantity, price, value)) {
         product = product.divide(PERCENT);
       }
       cost = product.setScale(MONEY_FRACTION_DIGITS, RoundingMode.HALF_UP).stripTrailingZeros();
@@ -704,26 +721,22 @@ public class ImportHoldingsReaderService {
   }
 
   // US-15-08: whether the average price is quoted in percent of the nominal (a bond), so the cost
-  // is
-  // a hundredth of quantity x average price. The price tells: it is quoted as the average price,
-  // and only a hundredth of quantity x price is the value. Without a price that matches either way,
-  // a product many times the value is as likely a percent quote as a heavy loss: unreadable, so no
-  // cost basis is guessed (FR-PERF-018).
-  private static boolean quotedInPercent(
-      BigDecimal quantity, BigDecimal price, BigDecimal value, BigDecimal costProduct) {
-    if (price != null) {
-      BigDecimal product = quantity.multiply(price);
-      if (near(product, value)) {
-        return false;
-      }
-      if (near(product.divide(PERCENT), value)) {
-        return true;
-      }
-    }
-    if (costProduct.compareTo(value.multiply(AMBIGUOUS_COST_FACTOR)) > 0) {
+  // is a hundredth of quantity x average price. The price tells: it is quoted as the average price
+  // is, and only a hundredth of quantity x price is the value. Without a price, or with one that
+  // gives the value neither way (HOLDING_VALUE_MISMATCH), the quote is unknown: unreadable, so no
+  // cost basis is guessed (FR-PERF-018). A position worth nothing at a price of 0 is per unit.
+  private static boolean quotedInPercent(BigDecimal quantity, BigDecimal price, BigDecimal value) {
+    if (price == null) {
       throw new ImportRowRejectedException(ImportHoldingsValues.ERROR_VALUE_UNREADABLE, Map.of());
     }
-    return false;
+    BigDecimal product = quantity.multiply(price);
+    if (near(product, value)) {
+      return false;
+    }
+    if (near(product.divide(PERCENT), value)) {
+      return true;
+    }
+    throw new ImportRowRejectedException(ImportHoldingsValues.ERROR_VALUE_UNREADABLE, Map.of());
   }
 
   // Within 1 % of the value, or 0.05.

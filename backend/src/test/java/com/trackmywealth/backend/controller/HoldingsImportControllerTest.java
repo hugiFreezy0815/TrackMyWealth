@@ -846,6 +846,56 @@ class HoldingsImportControllerTest {
     assertThat(count("SELECT count(*) FROM account_snapshot WHERE withdrawn_at IS NULL")).isZero();
   }
 
+  @Test
+  void aDecisionOnTheBalanceDoesNotKeepACostBasisFromBeingFilled() throws Exception {
+    createAllSecurities();
+    byte[] statement = ShippedTemplateFixtures.swissquoteHoldings();
+    commit(upload(depot, statement, null));
+    execute(
+        "UPDATE snapshot_holding SET reported_cost_basis = NULL,"
+            + " reported_cost_basis_currency = NULL");
+    dismissedResult((UUID) rowsOf("SELECT id FROM account_snapshot").get(0).get("id"));
+
+    ImportBatchResponse again = upload(depot, statement, null);
+
+    // Filling cost bases changes neither the balance nor a quantity: nothing the decision covers.
+    assertThat(again.holdings().snapshot()).isEqualTo(ImportSnapshotValues.COMPLETES);
+    assertThat(again.holdings().adds()).containsExactly(ImportSnapshotValues.PART_COST_BASIS);
+    assertThat(again.holdings().existingSnapshot().reconciliationResultId()).isNull();
+    assertThat(again.holdings().readyToCommit()).isTrue();
+    assertThat(again.holdings().explanation()).contains("missing cost basis");
+    assertThat(commit(again).holdings().snapshot()).isEqualTo(ImportSnapshotValues.COMPLETED);
+    assertThat(count("SELECT count(*) FROM snapshot_holding WHERE reported_cost_basis IS NOT NULL"))
+        .isEqualTo(3);
+    assertThat(count("SELECT count(*) FROM reconciliation_result WHERE status = 'DISMISSED'"))
+        .isEqualTo(1);
+  }
+
+  @Test
+  void rollingBackTheImportThatRecordedTheHoldingsTellsTheImportThatFilledTheirCostBasis()
+      throws Exception {
+    createAllSecurities();
+    byte[] statement = ShippedTemplateFixtures.swissquoteHoldings();
+    ImportBatchResponse first = commit(upload(depot, statement, null));
+    execute(
+        "UPDATE snapshot_holding SET reported_cost_basis = NULL,"
+            + " reported_cost_basis_currency = NULL");
+    ImportBatchResponse filled = commit(upload(depot, statement, null));
+    assertThat(filled.holdings().snapshot()).isEqualTo(ImportSnapshotValues.COMPLETED);
+
+    rollback(get(depot, first.id()));
+
+    // The fills went with the holdings: the filling import no longer claims a completion.
+    assertThat(count("SELECT count(*) FROM account_snapshot")).isZero();
+    assertThat(get(depot, filled.id()).holdings().snapshot())
+        .isEqualTo(ImportBatchValues.SNAPSHOT_DELETED);
+
+    // Its own rollback has nothing left to take out, and its record stays as it is.
+    rollback(get(depot, filled.id()));
+    assertThat(get(depot, filled.id()).holdings().snapshot())
+        .isEqualTo(ImportBatchValues.SNAPSHOT_DELETED);
+  }
+
   // --- spreadsheets --------------------------------------------------------------------------
 
   @Test

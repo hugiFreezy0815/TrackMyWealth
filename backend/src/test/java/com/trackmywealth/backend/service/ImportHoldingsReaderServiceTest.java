@@ -187,9 +187,14 @@ class ImportHoldingsReaderServiceTest {
         "Anzahl Wertpapier ISIN Durchschnittspreis Marktpreis Kursdatum Bewertung in CHF %",
         "10 COLUMNS SWAPPED ZZ0000000016 1.000 50.000 30.12.2031 7.00 1.00",
         "5000 BOND IN PERCENT ZZ0000000024 99.000 101.250 30.12.2031 5'062.50 1.00");
+    // US-15-08: a price that is not the value's cannot tell how the average price is quoted either.
     assertThat(readStubbed(pdfTemplate(SWISSQUOTE)).lines())
         .extracting(Line::warnings)
-        .containsExactly(List.of(ImportHoldingsValues.WARNING_VALUE_MISMATCH), List.of());
+        .containsExactly(
+            List.of(
+                ImportHoldingsValues.WARNING_VALUE_MISMATCH,
+                ImportHoldingsValues.WARNING_COST_BASIS_UNREADABLE),
+            List.of());
   }
 
   @Test
@@ -482,24 +487,77 @@ class ImportHoldingsReaderServiceTest {
   }
 
   @Test
-  void withoutAPriceToTellACostManyTimesTheValueIsNotGuessed() {
-    ImportHoldingsRule withoutPrice =
+  void anAveragePriceIsReadOnlyWithThePriceThatTellsHowItIsQuoted() {
+    // Without a price, 10'000 x 98.50 may be a bond in percent as well as a heavy loss.
+    assertInvalid(
+        pdfTemplate(
+            rule(
+                List.of(
+                    "^(?P<quantity>[0-9]+) (?P<isin>[A-Z0-9]{12}) (?P<averagePrice>\\S+)"
+                        + " (?P<value>[0-9.]+) (?P<currency>[A-Z]{3})$"))),
+        "holdingsRule.positionPatterns[0]");
+    assertInvalid(
+        sheetTemplate(
+            new ImportHoldingsColumns(
+                null,
+                "Symbol",
+                null,
+                "Anzahl",
+                null,
+                "Totalwert",
+                "Währung",
+                null,
+                "Einstandskurs",
+                null)),
+        "holdingsRule.columns");
+  }
+
+  @Test
+  void aCostBasisIsNotGuessedWhenThePriceDoesNotTellHowTheAveragePriceIsQuoted() {
+    ImportHoldingsRule optionalPrice =
         rule(
             List.of(
                 "^(?P<quantity>[0-9]+) (?P<isin>[A-Z0-9]{12}) (?P<averagePrice>\\S+)"
-                    + " (?P<value>[0-9.]+) (?P<currency>[A-Z]{3})$"));
-    // 10'000 x 98.50 is 97 times the value: a bond in percent or a heavy loss - no cost basis.
-    // 10 x 75.00 is under ten times the value: a loss, read per unit.
+                    + " (?:(?P<price>[0-9.]+) )?(?P<value>[0-9.]+) (?P<currency>[A-Z]{3})$"));
     stubText(
         "Portfolio-Wertentwicklung per 31.12.2031",
+        // No price on the line: per unit or in percent is unknown.
         "10000 " + ShippedTemplateFixtures.HOLDING_ISIN_CHF + " 98.50 10120.00 CHF",
-        "10 " + ShippedTemplateFixtures.HOLDING_ISIN_USD + " 75.00 400.00 USD");
+        // 10 x 80.00 gives 400.00 neither per unit nor in percent: the price is not the value's.
+        "10 " + ShippedTemplateFixtures.HOLDING_ISIN_USD + " 75.00 80.00 400.00 USD",
+        // Written off: worth nothing at a price of 0, so per unit - a loss of all of 500.
+        "10 " + ShippedTemplateFixtures.HOLDING_ISIN_FUND + " 50.00 0.00 0.00 CHF");
 
-    assertThat(readStubbed(pdfTemplate(withoutPrice)).linesOf(ImportHoldingsValues.KIND_POSITION))
+    assertThat(readStubbed(pdfTemplate(optionalPrice)).linesOf(ImportHoldingsValues.KIND_POSITION))
         .extracting(Line::costBasis, Line::warnings)
         .containsExactly(
             tuple(null, List.of(ImportHoldingsValues.WARNING_COST_BASIS_UNREADABLE)),
-            tuple(new BigDecimal("750"), List.of()));
+            tuple(
+                null,
+                List.of(
+                    ImportHoldingsValues.WARNING_VALUE_MISMATCH,
+                    ImportHoldingsValues.WARNING_COST_BASIS_UNREADABLE)),
+            tuple(new BigDecimal("500"), List.of()));
+  }
+
+  @Test
+  void theOptionalCostBasisColumnIsNotARequiredOne() {
+    ImportHoldingsColumns columns =
+        new ImportHoldingsColumns(
+            null,
+            "Symbol",
+            null,
+            "Anzahl",
+            "Preis",
+            "Totalwert",
+            "Währung",
+            null,
+            "Einstandskurs",
+            null);
+
+    assertThat(ImportHoldingsReaderService.requiredColumns(columns))
+        .containsExactly("Symbol", "Anzahl", "Preis", "Totalwert", "Währung");
+    assertThat(ImportHoldingsReaderService.mappedColumns(columns)).contains("Einstandskurs");
   }
 
   @Test
