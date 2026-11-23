@@ -132,15 +132,19 @@ public class ImportAccountIdentificationService {
 
   /**
    * US-07-34 (#365): the account of workspace {@code workspaceId} that {@code fileIdentifier} names
-   * and {@code actor} may import into; empty when the file names none, names one the member may not
-   * import into (so nothing about it is revealed), or the server has no key. Whether the match is
-   * certain is the caller's: a masked card number never is.
+   * and {@code actor} may import into; empty when the file names none, or names one the member may
+   * not import into (so nothing about it is revealed). Whether the match is certain is the
+   * caller's: a masked card number never is.
+   *
+   * @throws ApiException 503 {@code ACCOUNT_IDENTIFICATION_UNAVAILABLE} when the file names an
+   *     identifier and the server has no key: without it, no account can be matched, and answering
+   *     "no account" would invite a duplicate account (#365 review)
    */
   public Optional<Account> importableAccountNamed(
       UUID workspaceId,
       @Nullable ImportFileAccountIdentifier fileIdentifier,
       AuthenticatedUserPrincipal actor) {
-    if (fileIdentifier == null || !fileIdentifier.found() || !identifiers.enabled()) {
+    if (fileIdentifier == null || !fileIdentifier.found()) {
       return Optional.empty();
     }
     return identifiers

@@ -5,6 +5,10 @@ import static com.trackmywealth.backend.testsupport.CamtFixtures.camt053;
 import static com.trackmywealth.backend.testsupport.CamtFixtures.entry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 import com.trackmywealth.backend.dto.AccountIdentifierRequest;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
@@ -21,11 +25,13 @@ import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.service.IdempotencyService;
+import com.trackmywealth.backend.service.PdfImportReaderService;
 import com.trackmywealth.backend.service.ShippedTemplateFixtures;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -48,6 +54,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.client.EntityExchangeResult;
 import org.springframework.test.web.servlet.client.RestTestClient;
 import org.springframework.util.LinkedMultiValueMap;
@@ -73,6 +80,9 @@ class ImportRoutingControllerTest {
   private static final String DKB_IBAN = "DE97 9999 9999 0000 0123 45";
   private static final String YUH_IBAN = "CH21 0076 2000 0000 0000 0";
   private static final String CARD = "1234 56** **** 7890";
+  // The shipped Swissquote holdings statement template (V100, a SNAPSHOT PDF template).
+  private static final UUID SWISSQUOTE_HOLDINGS =
+      UUID.fromString("003878c0-995e-4801-96d3-3e431c5095a2");
 
   @Container
   static PostgreSQLContainer<?> postgres =
@@ -92,6 +102,8 @@ class ImportRoutingControllerTest {
   @LocalServerPort int port;
 
   @Autowired DataSource dataSource;
+
+  @MockitoSpyBean PdfImportReaderService pdfReader;
 
   private String token;
   private UUID account;
@@ -115,6 +127,9 @@ class ImportRoutingControllerTest {
               "DELETE FROM import_file",
               "DELETE FROM import_batch",
               "DELETE FROM account_credit_card",
+              "DELETE FROM account_securities",
+              "DELETE FROM account_loan",
+              "DELETE FROM account_vested_benefits",
               "DELETE FROM account",
               "DELETE FROM admin_audit_log",
               "DELETE FROM user_session",
@@ -238,7 +253,8 @@ class ImportRoutingControllerTest {
     ImportRoutingResponse routed = result.getResponseBody();
     assertThat(routed.outcome()).isEqualTo(ImportRoutingValues.CHOOSE_ACCOUNT);
     assertThat(routed.batch()).isNull();
-    assertThat(routed.accountProposal()).isNull();
+    // #365 review: a masked number may also be a new card's, so the new card is still proposed.
+    assertThat(routed.accountProposal().suggestedAccountType()).isEqualTo("CREDIT_CARD");
     assertThat(routed.accountCandidates())
         .extracting(
             ImportAccountCandidateResponse::accountId,
@@ -271,12 +287,20 @@ class ImportRoutingControllerTest {
   }
 
   // Not named for certain, but the bank's accounts are candidates - and the proposal stays, as
-  // the file names none of them.
+  // the file names none of them. A depot at the bank is no candidate for a bank statement; a loan
+  // is, as a loan statement reads like a current account's (#365 review).
   @Test
   void theBanksAccountsAreCandidatesBesideTheProposal() throws IOException {
     UUID dkb = portfolioAt(catalogueInstitutionOf(DKB));
     UUID atDkb =
         create(AccountRequests.account("DKB Giro", "CASH", "EUR").portfolioId(dkb).build());
+    create(AccountRequests.account("DKB Depot", "SECURITIES", "EUR").portfolioId(dkb).build());
+    UUID loan =
+        create(
+            AccountRequests.account("DKB Darlehen", "LOAN", "EUR")
+                .portfolioId(dkb)
+                .originalPrincipal(new BigDecimal("10000.00"))
+                .build());
 
     ImportRoutingResponse routed =
         route(fixture("dkb-girokonto-synthetic.csv"), "umsaetze.csv", "text/csv", null);
@@ -285,12 +309,15 @@ class ImportRoutingControllerTest {
     assertThat(routed.accountCandidates())
         .extracting(
             ImportAccountCandidateResponse::accountId, ImportAccountCandidateResponse::reason)
-        .containsExactly(tuple(atDkb, ImportRoutingValues.REASON_INSTITUTION));
+        .containsExactly(
+            tuple(atDkb, ImportRoutingValues.REASON_INSTITUTION),
+            tuple(loan, ImportRoutingValues.REASON_INSTITUTION));
     assertThat(routed.accountProposal()).isNotNull();
   }
 
   // AC 3: an account the member may not import into (here archived) is answered exactly as no
-  // account at all - nothing about it is revealed.
+  // account at all - nothing about it is revealed. Archiving released the IBAN, so the proposed new
+  // account can register it.
   @Test
   void anAccountTheMemberMayNotImportIntoIsAnsweredAsNoAccount() throws IOException {
     byte[] csv = fixture("dkb-girokonto-synthetic.csv");
@@ -302,6 +329,55 @@ class ImportRoutingControllerTest {
 
     assertThat(hidden).isEqualTo(unknown);
     assertThat(hidden.outcome()).isEqualTo(ImportRoutingValues.NO_ACCOUNT);
+  }
+
+  // AC 3: the same for an account that holds no transactions, which nothing is imported into.
+  @Test
+  void anAccountWithoutTransactionsIsAnsweredAsNoAccount() throws IOException {
+    byte[] csv = fixture("dkb-girokonto-synthetic.csv");
+    ImportRoutingResponse unknown = route(csv, "umsaetze.csv", "text/csv", null);
+    UUID vested =
+        create(AccountRequests.account("Freizügigkeit", "VESTED_BENEFITS", "EUR").build());
+    registerIdentifier(vested, DKB_IBAN);
+
+    ImportRoutingResponse hidden = route(csv, "umsaetze.csv", "text/csv", null);
+
+    assertThat(hidden).isEqualTo(unknown);
+  }
+
+  // #365 review: a holdings statement is read before the answer, so a file its template cannot
+  // read fails now with a 422, not on the account upload after the member picked an account.
+  @Test
+  void aFileTheHoldingsTemplateCannotReadIsRefusedBeforeAnyAccountIsOffered() {
+    client()
+        .post()
+        .uri("/api/v1/imports")
+        .contentType(MediaType.MULTIPART_FORM_DATA)
+        .body(
+            multipart(
+                "not a statement at all".getBytes(StandardCharsets.UTF_8),
+                "depot.pdf",
+                "application/pdf",
+                SWISSQUOTE_HOLDINGS))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    assertThat(count("SELECT count(*) FROM import_batch")).isZero();
+  }
+
+  // #365 review: a routed PDF's text is read once - the account upload re-uses what the routing
+  // read (for a scanned PDF, that is its OCR).
+  @Test
+  void aRoutedPdfIsReadOnce() throws IOException {
+    UUID yuh = create(AccountRequests.account("Yuh", "CASH", "CHF").build());
+    registerIdentifier(yuh, YUH_IBAN);
+    clearInvocations(pdfReader);
+
+    ImportRoutingResponse routed =
+        route(ShippedTemplateFixtures.yuhStatement(), "yuh.pdf", "application/pdf", YUH);
+
+    assertThat(routed.outcome()).isEqualTo(ImportRoutingValues.BATCH_CREATED);
+    verify(pdfReader, times(1)).readStatement(any(), any());
   }
 
   // AC 4: a file no template reads creates no batch and says so.
@@ -353,6 +429,51 @@ class ImportRoutingControllerTest {
         .isEqualTo(first.getResponseBody().batch().id());
     assertThat(retry.getResponseHeaders().getLocation())
         .isEqualTo(first.getResponseHeaders().getLocation());
+    assertThat(count("SELECT count(*) FROM import_batch")).isOne();
+  }
+
+  // #365 review: an upload that stored nothing keeps no key, so its retry is routed afresh - not
+  // answered 409 IDEMPOTENCY_KEY_IN_USE.
+  @Test
+  void aRetryOfAnUploadThatStoredNothingIsRoutedAgain() throws IOException {
+    UUID dkb = portfolioAt(catalogueInstitutionOf(DKB));
+    create(AccountRequests.account("DKB Giro", "CASH", "EUR").portfolioId(dkb).build());
+    byte[] csv = fixture("dkb-girokonto-synthetic.csv");
+    String key = UUID.randomUUID().toString();
+
+    EntityExchangeResult<ImportRoutingResponse> first =
+        exchange(multipart(csv, "umsaetze.csv", "text/csv", null), key);
+    EntityExchangeResult<ImportRoutingResponse> retry =
+        exchange(multipart(csv, "umsaetze.csv", "text/csv", null), key);
+
+    assertThat(first.getResponseBody().outcome()).isEqualTo(ImportRoutingValues.CHOOSE_ACCOUNT);
+    assertThat(retry.getStatus()).isEqualTo(HttpStatus.OK);
+    assertThat(retry.getResponseBody()).isEqualTo(first.getResponseBody());
+    assertThat(count("SELECT count(*) FROM idempotency_key")).isZero();
+    assertThat(count("SELECT count(*) FROM import_batch")).isZero();
+  }
+
+  // #365 review: a failed upload releases its key, so the same key works for the next upload -
+  // even with another file (a kept key would answer 422 IDEMPOTENCY_KEY_MISMATCH).
+  @Test
+  void aKeyIsReleasedWhenTheUploadFails() {
+    registerIdentifier(account, IBAN);
+    String key = UUID.randomUUID().toString();
+    client()
+        .post()
+        .uri("/api/v1/imports")
+        .header(IdempotencyService.HEADER, key)
+        .contentType(MediaType.MULTIPART_FORM_DATA)
+        .body(multipart(new byte[0], "leer.csv", "text/csv", null))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    assertThat(count("SELECT count(*) FROM idempotency_key")).isZero();
+
+    EntityExchangeResult<ImportRoutingResponse> next =
+        exchange(multipart(camt(), "auszug.xml", "application/xml", null), key);
+
+    assertThat(next.getStatus()).isEqualTo(HttpStatus.CREATED);
     assertThat(count("SELECT count(*) FROM import_batch")).isOne();
   }
 

@@ -6,6 +6,7 @@ import com.trackmywealth.backend.dto.ImportAccountContext;
 import com.trackmywealth.backend.dto.ImportAccountProposalResponse;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportFileAccountIdentifier;
+import com.trackmywealth.backend.dto.ImportPdfStatement;
 import com.trackmywealth.backend.dto.ImportRoutingResponse;
 import com.trackmywealth.backend.dto.ImportRoutingValues;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
@@ -16,10 +17,12 @@ import com.trackmywealth.backend.dto.ImportUpload;
 import com.trackmywealth.backend.dto.PortfolioPlacement;
 import com.trackmywealth.backend.dto.ResolvedImportTemplate;
 import com.trackmywealth.backend.entity.Account;
+import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ImportFileRejectedException;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -43,8 +46,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       limits, identification and duplicate check;
  *   <li>otherwise nothing is stored. The answer lists candidates - the account a masked card number
  *       names (never routed on its own), then the importable accounts of the statement's kind at
- *       the template's bank - and, when the file names no account the member may import into, the
- *       US-07-11 proposal for a new one;
+ *       the template's bank - and the US-07-11 proposal for a new account;
  *   <li>a file no template reads unambiguously stores nothing either: the answer lists the
  *       templates that can read it, and the member uploads again naming one.
  * </ul>
@@ -60,7 +62,13 @@ public class ImportRoutingService {
   private static final ImportAccountContext NO_ACCOUNT =
       new ImportAccountContext(null, false, false);
 
+  // A spreadsheet holdings statement states no date; the member gives it on the account upload.
+  // Checking that the file reads needs a date, which only stamps the statement and is dropped.
+  private static final LocalDate HOLDINGS_CHECK_DATE = LocalDate.EPOCH;
+
   private final ImportTemplateService templates;
+  private final ImportFileParserService parser;
+  private final ImportHoldingsReaderService holdingsReader;
   private final CamtImportReaderService camtReader;
   private final ImportAccountIdentificationService identification;
   private final ImportAccountProposalService proposals;
@@ -72,6 +80,8 @@ public class ImportRoutingService {
 
   public ImportRoutingService(
       ImportTemplateService templates,
+      ImportFileParserService parser,
+      ImportHoldingsReaderService holdingsReader,
       CamtImportReaderService camtReader,
       ImportAccountIdentificationService identification,
       ImportAccountProposalService proposals,
@@ -81,6 +91,8 @@ public class ImportRoutingService {
       AccountRepository accountRepository,
       PlatformTransactionManager transactionManager) {
     this.templates = templates;
+    this.parser = parser;
+    this.holdingsReader = holdingsReader;
     this.camtReader = camtReader;
     this.identification = identification;
     this.proposals = proposals;
@@ -98,6 +110,8 @@ public class ImportRoutingService {
    * null}.
    *
    * @throws ImportFileRejectedException 422 for an empty file, or one the template cannot read
+   * @throws ApiException 503 {@code ACCOUNT_IDENTIFICATION_UNAVAILABLE} when the file names an
+   *     identifier and the server has no key to match it with
    */
   public ImportRoutingResponse route(
       String fileName,
@@ -123,7 +137,8 @@ public class ImportRoutingService {
           identifier,
           null,
           account -> !account.isHasStatementCycle(),
-          () -> null);
+          () -> null,
+          null);
     }
     UUID chosen = templateId;
     if (chosen == null) {
@@ -136,17 +151,24 @@ public class ImportRoutingService {
     // Refuses a template version no new import may use, as the account upload does.
     ResolvedImportTemplate template = templates.resolveForImport(chosen, actor);
     ImportTemplateDefinition definition = template.definition();
-    // A holdings statement (#273) has no rows to read and names no account: never routed.
+    // A holdings statement (#273) has no rows to read and names no account: never routed. It is
+    // still read here, so a file the template cannot read fails now with its 422, as every other
+    // file does, not on the account upload after the member picked an account (#365 review).
     if (definition.isSnapshot()) {
+      holdingsReader.read(content, definition, definition.isPdf() ? null : HOLDINGS_CHECK_DATE);
       return route(
           new ImportUpload(fileName, mediaType, chosen, actor, claim),
           content,
           null,
           templates.withoutParse(chosen, actor).institutionCatalogueId(),
           Account::isHoldsPositions,
-          () -> null);
+          () -> null,
+          null);
     }
-    ImportTemplateParse parse = templates.parseWithoutAccount(chosen, content, actor);
+    // A PDF's text - OCR for a scanned one - is read once; the account upload re-uses it.
+    ImportPdfStatement pdfStatement =
+        definition.isPdf() ? parser.readPdfStatement(content, definition) : null;
+    ImportTemplateParse parse = templates.parseWithoutAccount(chosen, content, pdfStatement, actor);
     UUID readWith = chosen;
     return route(
         new ImportUpload(fileName, mediaType, chosen, actor, claim),
@@ -154,7 +176,8 @@ public class ImportRoutingService {
         ImportBatchService.fileIdentifier(template, parse.result()),
         parse.institutionCatalogueId(),
         ofTheStatementsKind(definition),
-        () -> proposals.proposal(readWith, parse));
+        () -> proposals.proposal(readWith, parse),
+        pdfStatement);
   }
 
   private ImportRoutingResponse route(
@@ -163,7 +186,8 @@ public class ImportRoutingService {
       @Nullable ImportFileAccountIdentifier identifier,
       @Nullable UUID catalogueInstitutionId,
       Predicate<Account> sameKind,
-      Supplier<@Nullable ImportAccountProposalResponse> proposal) {
+      Supplier<@Nullable ImportAccountProposalResponse> proposal,
+      @Nullable ImportPdfStatement pdfStatement) {
     AuthenticatedUserPrincipal actor = upload.actor();
     UUID workspaceId = actor.workspaceId();
     Optional<UUID> named =
@@ -182,7 +206,8 @@ public class ImportRoutingService {
               upload.templateId(),
               null,
               actor,
-              upload.claim());
+              upload.claim(),
+              pdfStatement);
       return ImportRoutingResponse.created(batch);
     }
     List<ImportAccountCandidateResponse> candidates =
@@ -190,8 +215,9 @@ public class ImportRoutingService {
             status ->
                 candidates(
                     workspaceId, named.orElse(null), catalogueInstitutionId, sameKind, actor));
-    // A proposal for a new account only when the file names none the member may import into.
-    return ImportRoutingResponse.unrouted(candidates, named.isPresent() ? null : proposal.get());
+    // Not routed, so no account is named for certain - a masked card number may also be a new
+    // card's - and a new account is proposed (#365 review).
+    return ImportRoutingResponse.unrouted(candidates, proposal.get());
   }
 
   // The account the file names by a masked card number first, then the bank's accounts of the
@@ -244,13 +270,17 @@ public class ImportRoutingService {
         reason);
   }
 
-  // A card statement belongs on a card, any other statement on an account without a statement
-  // cycle (a holdings statement is matched on positions above).
+  // A card statement belongs on a card. Any other statement belongs on an account without a
+  // statement cycle that holds no positions: a depot's bookings come from its holdings statements
+  // and trades (a holdings statement is matched on positions above). A loan or mortgage stays a
+  // candidate - its statement reads like a current account's, by IBAN (#365 review).
   static Predicate<Account> ofTheStatementsKind(ImportTemplateDefinition definition) {
     boolean card =
         ImportAccountProposalService.ACCOUNT_CREDIT_CARD.equals(
             ImportAccountProposalService.accountTypeOf(definition));
-    return account -> account.isHasStatementCycle() == card;
+    return card
+        ? Account::isHasStatementCycle
+        : account -> !account.isHasStatementCycle() && !account.isHoldsPositions();
   }
 
   // Several cards can share a masked number's visible digits: such a match is never certain.
