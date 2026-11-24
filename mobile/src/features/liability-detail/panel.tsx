@@ -4,7 +4,16 @@ import { Pressable, Text, View } from 'react-native';
 import { Spacing, TypeScale } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-export function LiabilityPanel({ title, children }: { title: string; children: ReactNode }) {
+/** A liability card. `action` (for example "See all") sits at the end of the title row. */
+export function LiabilityPanel({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   const theme = useTheme();
   return (
     <View
@@ -15,12 +24,23 @@ export function LiabilityPanel({ title, children }: { title: string; children: R
         backgroundColor: theme.bgSurface,
       }}
     >
-      <Text
-        accessibilityRole="header"
-        style={{ ...TypeScale.headingSmall, color: theme.textPrimary }}
+      <View
+        style={{
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          columnGap: Spacing.two,
+        }}
       >
-        {title}
-      </Text>
+        <Text
+          accessibilityRole="header"
+          style={{ ...TypeScale.headingSmall, color: theme.textPrimary, flexShrink: 1 }}
+        >
+          {title}
+        </Text>
+        {action}
+      </View>
       {children}
     </View>
   );

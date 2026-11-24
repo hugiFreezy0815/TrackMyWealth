@@ -1,20 +1,22 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { queryKeys } from '@/api/queries/keys';
 import {
   ActionButton,
   Amount,
+  amountTexts,
   ErrorBanner,
   LoadingSkeleton,
   RefreshingIndicator,
 } from '@/components/shared';
-import { Spacing } from '@/constants/theme';
+import { Spacing, TypeScale } from '@/constants/theme';
 import { formatDate, localDay } from '@/format/date';
 import { isAccessFailure } from '@/features/account-detail/access';
 import { transactionTypeLabel } from '@/features/account-detail/model';
 import { InfoText, msg } from '@/features/overview/overview-text';
+import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { useOnline } from '@/hooks/use-online';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -60,33 +62,37 @@ export function RepaymentsPanel({
   if (!showAll && rows?.length === 0 && !error) return null;
   const canExpand = showAll || (recent.data?.page.totalPages ?? 0) > 1;
   return (
-    <LiabilityPanel title={msg(intl, 'loan.repayments')}>
-      <InterestThisYear accountId={accountId} unavailable={!!accessError} />
-      {/* With the full history open, the way back to the recent rows must survive an error. */}
-      {canExpand && (showAll || !accessError) ? (
-        <LiabilityLink
-          label={msg(intl, showAll ? 'loan.showRecent' : 'loan.seeAll')}
-          expanded={showAll}
-          onPress={() => {
-            if (showAll && accessError) {
-              // Access was denied: the cached recent rows and interest sum may no longer be
-              // readable, so they load again instead of coming back from the cache.
-              for (const queryKey of [
-                queryKeys.loanRepayments(accountId, 3),
-                queryKeys.loanYearlyTotals(accountId),
-              ]) {
-                void queryClient.resetQueries({ queryKey, exact: true });
+    <LiabilityPanel
+      title={msg(intl, 'loan.repayments')}
+      // With the full history open, the way back to the recent rows must survive an error.
+      action={
+        canExpand && (showAll || !accessError) ? (
+          <LiabilityLink
+            label={msg(intl, showAll ? 'loan.showRecent' : 'loan.seeAll')}
+            expanded={showAll}
+            onPress={() => {
+              if (showAll && accessError) {
+                // Access was denied: the cached recent rows and interest sum may no longer be
+                // readable, so they load again instead of coming back from the cache.
+                for (const queryKey of [
+                  queryKeys.loanRepayments(accountId, 3),
+                  queryKeys.loanYearlyTotals(accountId),
+                ]) {
+                  void queryClient.resetQueries({ queryKey, exact: true });
+                }
               }
-            }
-            setView({
-              showAll: !showAll,
-              expandedIds: showAll
-                ? expandedIds.filter((id) => recent.data?.content.some((row) => row.id === id))
-                : expandedIds,
-            });
-          }}
-        />
-      ) : null}
+              setView({
+                showAll: !showAll,
+                expandedIds: showAll
+                  ? expandedIds.filter((id) => recent.data?.content.some((row) => row.id === id))
+                  : expandedIds,
+              });
+            }}
+          />
+        ) : null
+      }
+    >
+      <InterestThisYear accountId={accountId} unavailable={!!accessError} />
       {error ? (
         <ErrorBanner
           error={error}
@@ -143,43 +149,103 @@ export function RepaymentsPanel({
 }
 
 /**
- * Field 7: the server's interest sum for the current calendar year. Hidden when nothing was paid
- * this year; an unknown split is "Not known", never 0. When the sum cannot be loaded, or the loan's
- * repayments are not accessible, the field shows "–" and never a cached amount (PO 2026-11-23).
+ * Field 7 (#712): the server's interest sum for the current calendar year, as the first block of
+ * the Repayments panel. Hidden when nothing was paid this year; an unknown split is "Not known",
+ * never 0. When the sum cannot be loaded, or the loan's repayments are not accessible, the amount
+ * is "–" and never a cached one (PO 2026-11-23). Payments without a known split are left out of
+ * `interestPaid`, so their sent total is named below it (PO 2026-11-24).
  */
 function InterestThisYear({ accountId, unavailable }: { accountId: string; unavailable: boolean }) {
   const intl = useIntl();
+  const theme = useTheme();
+  const hidden = useAmountsHidden();
   const totals = useRepaymentYearlyTotals(accountId);
-  const year = Number(localDay(new Date()).slice(0, 4));
-  const current = totals.data?.years.find((entry) => entry.year === year);
+  const thisYear = Number(localDay(new Date()).slice(0, 4));
+  const current = totals.data?.years.find((entry) => entry.year === thisYear);
   // A failed refresh keeps a loaded sum unless access was denied.
-  if (unavailable || isAccessFailure(totals.error) || (totals.isError && !totals.data)) {
-    return <InfoText>{msg(intl, 'loan.interestYtd', { amount: '–' })}</InfoText>;
+  const failed = unavailable || isAccessFailure(totals.error) || (totals.isError && !totals.data);
+  if (!failed && (!current || !totals.data)) return null;
+
+  // A string, so the year is not formatted as a grouped number.
+  const year = String(thisYear);
+  const title = msg(intl, 'loan.interestYtd', { year });
+  const secondary = { ...TypeScale.caption, color: theme.textSecondary };
+  if (failed || !current || !totals.data) {
+    return (
+      <View accessible accessibilityLabel={msg(intl, 'loan.interestYtdUnavailable', { year })}>
+        <Text style={{ ...TypeScale.labelSmall, color: theme.textSecondary }}>{title}</Text>
+        <Text style={{ ...TypeScale.numberLarge, color: theme.textPrimary }}>–</Text>
+      </View>
+    );
   }
-  if (!current || !totals.data) return null;
+
+  const { currency } = totals.data;
+  const { interestPaid, paymentCount, splitEstimated, unknownSplitAmount } = current;
+  const known = interestPaid != null;
+  const interest = known
+    ? amountTexts(intl, { value: interestPaid, currency, masked: hidden })
+    : null;
+  const meta = known
+    ? msg(intl, 'loan.interestYtdCount', { count: paymentCount })
+    : msg(intl, 'loan.splitUnknown');
+  const unsplit =
+    known && Number(unknownSplitAmount) > 0
+      ? amountTexts(intl, { value: unknownSplitAmount, currency, masked: hidden })
+      : null;
+  const label = [
+    title,
+    interest?.label ?? msg(intl, 'loan.interestUnknown'),
+    meta,
+    splitEstimated ? msg(intl, 'loan.estimatedSplit') : null,
+    unsplit ? msg(intl, 'loan.interestYtdPartial', { amount: unsplit.label }) : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
+
   return (
-    <>
-      <InfoText>
-        {intl.formatMessage(
-          { id: 'loan.interestYtd' },
-          {
-            amount:
-              current.interestPaid == null ? (
-                msg(intl, 'loan.interestUnknown')
-              ) : (
+    <View accessible accessibilityLabel={label} style={{ gap: Spacing.one }}>
+      <Text style={{ ...TypeScale.labelSmall, color: theme.textSecondary }}>{title}</Text>
+      {known ? (
+        <Amount value={interestPaid} currency={currency} style={TypeScale.numberLarge} />
+      ) : (
+        <Text style={{ ...TypeScale.numberLarge, color: theme.textSecondary }}>
+          {msg(intl, 'loan.interestUnknown')}
+        </Text>
+      )}
+      <View
+        style={{
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: Spacing.two,
+        }}
+      >
+        <Text style={secondary}>{meta}</Text>
+        {splitEstimated ? (
+          <LiabilityBadge tone="warning" label={msg(intl, 'loan.estimatedSplit')} />
+        ) : null}
+      </View>
+      {splitEstimated ? (
+        <Text style={secondary}>{msg(intl, 'loan.interestYtdEstimated')}</Text>
+      ) : null}
+      {unsplit ? (
+        <Text style={secondary}>
+          {intl.formatMessage(
+            { id: 'loan.interestYtdPartial' },
+            {
+              amount: (
                 <Amount
-                  key="interest"
-                  value={current.interestPaid}
-                  currency={totals.data.currency}
+                  key="unsplit"
+                  value={unknownSplitAmount}
+                  currency={currency}
+                  style={secondary}
                 />
               ),
-          },
-        )}
-      </InfoText>
-      {current.splitEstimated ? (
-        <LiabilityBadge tone="warning" label={msg(intl, 'loan.estimatedSplit')} />
+            },
+          )}
+        </Text>
       ) : null}
-    </>
+    </View>
   );
 }
 
