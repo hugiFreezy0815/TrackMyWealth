@@ -50,7 +50,7 @@ public record ImportHoldingsResponse(
             })
         String snapshot,
     ImportSnapshotPlan.@Nullable Existing existingSnapshot,
-    @Schema(allowableValues = {"BALANCE", "HOLDINGS"}) List<String> adds,
+    @Schema(allowableValues = {"BALANCE", "HOLDINGS", "COST_BASIS"}) List<String> adds,
     List<ImportSnapshotPlan.Conflict> conflicts,
     String explanation,
     @Nullable BigDecimal balance,
@@ -71,7 +71,11 @@ public record ImportHoldingsResponse(
 
   /**
    * One position: as the statement reports it, and the security it resolves to ({@code securityId}
-   * while {@code RESOLVED}).
+   * while {@code RESOLVED}). US-15-08: {@code reportedCostBasis} is the total cost as the statement
+   * prints it (or quantity x its average price), in {@code reportedCostBasisCurrency}; both null
+   * when it prints none or it is unreadable (then a warning says so). A commit stores it with a new
+   * holding, or where a held position has none ({@code adds} {@code COST_BASIS}); it never
+   * overwrites a cost basis the snapshot holds.
    */
   public record Position(
       int rowNumber,
@@ -82,6 +86,13 @@ public record ImportHoldingsResponse(
       BigDecimal reportedPrice,
       BigDecimal reportedValue,
       String reportedCurrency,
+      @Schema(
+              description =
+                  "US-15-08: the total cost as the statement prints it. A commit stores it with a"
+                      + " new holding or where a held position has none, never over one.")
+          @Nullable BigDecimal reportedCostBasis,
+      @Schema(description = "US-15-08: the currency of reportedCostBasis.")
+          @Nullable String reportedCostBasisCurrency,
       @Schema(allowableValues = {"RESOLVED", "UNRESOLVED"}) String resolution,
       @Nullable UUID securityId,
       List<ImportRowErrorResponse> warnings) {

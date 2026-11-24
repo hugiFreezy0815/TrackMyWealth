@@ -74,6 +74,11 @@ public class SnapshotHolding {
   @Column(name = "import_batch_id", columnDefinition = UUID_COLUMN)
   private UUID importBatchId;
 
+  // US-15-08 (V126): the batch that filled this held position's empty cost basis afterwards; null
+  // when the cost basis came with the holding, was entered by hand, or is unknown.
+  @Column(name = "cost_basis_import_batch_id", columnDefinition = UUID_COLUMN)
+  private UUID costBasisImportBatchId;
+
   public UUID getId() {
     return id;
   }
@@ -162,5 +167,13 @@ public class SnapshotHolding {
 
   public void setImportBatchId(UUID importBatchId) {
     this.importBatchId = importBatchId;
+  }
+
+  public UUID getCostBasisImportBatchId() {
+    return costBasisImportBatchId;
+  }
+
+  public void setCostBasisImportBatchId(UUID costBasisImportBatchId) {
+    this.costBasisImportBatchId = costBasisImportBatchId;
   }
 }

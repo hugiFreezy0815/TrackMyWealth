@@ -15,6 +15,7 @@ import com.trackmywealth.backend.entity.SnapshotHolding;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
+import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
 import com.trackmywealth.backend.repository.SnapshotForeignCashRepository;
 import com.trackmywealth.backend.repository.SnapshotHoldingRepository;
@@ -81,6 +82,7 @@ public class ImportStatementBalanceService {
   private final AccountSnapshotRepository snapshotRepository;
   private final SnapshotHoldingRepository holdingRepository;
   private final SnapshotForeignCashRepository cashRepository;
+  private final ImportBatchRepository batchRepository;
   private final ImportSnapshotCompletionService completionService;
   private final ImportSnapshotExplanationService explanations;
   private final ReconciliationResultRepository resultRepository;
@@ -93,6 +95,7 @@ public class ImportStatementBalanceService {
       AccountSnapshotRepository snapshotRepository,
       SnapshotHoldingRepository holdingRepository,
       SnapshotForeignCashRepository cashRepository,
+      ImportBatchRepository batchRepository,
       ImportSnapshotCompletionService completionService,
       ImportSnapshotExplanationService explanations,
       ReconciliationResultRepository resultRepository,
@@ -103,6 +106,7 @@ public class ImportStatementBalanceService {
     this.snapshotRepository = snapshotRepository;
     this.holdingRepository = holdingRepository;
     this.cashRepository = cashRepository;
+    this.batchRepository = batchRepository;
     this.completionService = completionService;
     this.explanations = explanations;
     this.resultRepository = resultRepository;
@@ -283,6 +287,17 @@ public class ImportStatementBalanceService {
     // between this check and the removal.
     AccountSnapshot snapshot =
         snapshotRepository.findForUpdate(recorded.get().getId(), account.getId()).orElseThrow();
+    Set<UUID> others = contributors(snapshot);
+    if (!others.contains(batch.getId())) {
+      // US-15-08: the batch only filled the cost basis of other batches' holdings. Its fills go;
+      // the snapshot, its balance and so its reconciliation stay as they are.
+      clearCostBasesFilledBy(batch, snapshot);
+      recordRemoval(batch, ImportSnapshotValues.REMOVED);
+      return false;
+    }
+    // US-15-08: the batches that filled the cost basis of holdings here; if this rollback takes
+    // their fills away with the holdings or the snapshot, their record says so (lostFills).
+    Set<UUID> fillers = fillersBesides(batch, snapshot);
     List<ReconciliationResult> results = resultRepository.findBySnapshotId(snapshot.getId());
     // A decision on the account's latest balance can be reopened, so it blocks the rollback. One
     // on an older balance is final (ReconciliationHistoryService#isFinalized): it can never be
@@ -310,7 +325,6 @@ public class ImportStatementBalanceService {
         decided.isPresent()
             || !resultIds.isEmpty() && resultRepository.existsAdjustmentOf(resultIds);
     // US-07-31: the other batches whose statements completed the snapshot.
-    Set<UUID> others = contributors(snapshot);
     others.remove(batch.getId());
     if (others.isEmpty() && keptAsHistory) {
       cashRepository.deleteBySnapshotIdAndImportBatchId(snapshot.getId(), batch.getId());
@@ -331,7 +345,37 @@ public class ImportStatementBalanceService {
       // Kept as history or not, a decision covers the balance only: holdings of this batch go.
       removeParts(batch, snapshot, results, others);
     }
+    recordLostFills(fillers, recordedRemoval(batch));
     return true;
+  }
+
+  // US-15-08: every other batch whose cost basis fill is on a holding of the snapshot.
+  private Set<UUID> fillersBesides(ImportBatch batch, AccountSnapshot snapshot) {
+    Set<UUID> fillers = new LinkedHashSet<>();
+    holdingRepository.findBySnapshotId(snapshot.getId()).stream()
+        .map(SnapshotHolding::getCostBasisImportBatchId)
+        .filter(Objects::nonNull)
+        .filter(filler -> !filler.equals(batch.getId()))
+        .forEach(fillers::add);
+    return fillers;
+  }
+
+  // US-15-08: a batch that only filled cost bases contributes nothing once the holdings it filled
+  // are deleted, or kept as history on a withdrawn snapshot: it records the same fate as the batch
+  // rolled back (removed, deleted or withdrawn), so its record no longer claims a completion and
+  // its own rollback has nothing left to take out. Fills carried on to a successor stay its own.
+  private void recordLostFills(Set<UUID> fillers, String outcome) {
+    for (UUID filler : fillers) {
+      if (snapshotRepository.findContributedBy(filler).isEmpty()) {
+        batchRepository
+            .findById(filler)
+            .ifPresent(
+                lost -> {
+                  recordRemoval(lost, outcome);
+                  batchRepository.save(lost);
+                });
+      }
+    }
   }
 
   // US-07-31: this batch's balance is the one a final decision (or an adjusting entry) covered, so
@@ -384,6 +428,14 @@ public class ImportStatementBalanceService {
       copy.setReported(
           holding.getReportedPrice(), holding.getReportedValue(), holding.getReportedCurrency());
       copy.setImportBatchId(holding.getImportBatchId());
+      // US-15-08: the cost basis moves on too, unless this batch filled it.
+      if (!batch.getId().equals(holding.getCostBasisImportBatchId())) {
+        copy.setReportedCostBasis(holding.getReportedCostBasis());
+        copy.setReportedCostBasisCurrency(holding.getReportedCostBasisCurrency());
+        copy.setCostBasisInAccountCurrency(holding.getCostBasisInAccountCurrency());
+        copy.setCostBasisEstimated(holding.isCostBasisEstimated());
+        copy.setCostBasisImportBatchId(holding.getCostBasisImportBatchId());
+      }
       copies.add(copy);
     }
     holdingRepository.saveAllAndFlush(copies);
@@ -407,6 +459,7 @@ public class ImportStatementBalanceService {
       Set<UUID> others) {
     holdingRepository.deleteBySnapshotIdAndImportBatchId(snapshot.getId(), batch.getId());
     cashRepository.deleteBySnapshotIdAndImportBatchId(snapshot.getId(), batch.getId());
+    clearCostBasesFilledBy(batch, snapshot);
     if (batch.getId().equals(snapshot.getBalanceImportBatchId())) {
       resultRepository.deleteAll(results);
       resultRepository.flush();
@@ -422,7 +475,25 @@ public class ImportStatementBalanceService {
     recordRemoval(batch, ImportSnapshotValues.REMOVED);
   }
 
-  // Every batch that recorded the snapshot or contributed a part of it.
+  // US-15-08: the cost basis this batch filled into other batches' holdings goes again; one the
+  // holding came with, or one entered by hand, stays.
+  private void clearCostBasesFilledBy(ImportBatch batch, AccountSnapshot snapshot) {
+    List<SnapshotHolding> filled =
+        holdingRepository.findBySnapshotId(snapshot.getId()).stream()
+            .filter(holding -> batch.getId().equals(holding.getCostBasisImportBatchId()))
+            .toList();
+    for (SnapshotHolding holding : filled) {
+      holding.setReportedCostBasis(null);
+      holding.setReportedCostBasisCurrency(null);
+      holding.setCostBasisInAccountCurrency(null);
+      holding.setCostBasisEstimated(false);
+      holding.setCostBasisImportBatchId(null);
+    }
+    holdingRepository.saveAllAndFlush(filled);
+  }
+
+  // Every batch that recorded the snapshot or contributed a part of it - not one that only filled
+  // the cost basis of holdings (US-15-08): those are another batch's.
   private Set<UUID> contributors(AccountSnapshot snapshot) {
     Set<UUID> batches = new LinkedHashSet<>();
     if (snapshot.getImportBatchId() != null) {
@@ -456,6 +527,12 @@ public class ImportStatementBalanceService {
     resultRepository.saveAllAndFlush(results);
     snapshot.withdraw(now, rolledBackBy);
     snapshotRepository.saveAndFlush(snapshot);
+  }
+
+  private static String recordedRemoval(ImportBatch batch) {
+    return batch.isHoldingsStatement()
+        ? batch.getHoldingsSnapshot()
+        : batch.getStatementBalanceSnapshot();
   }
 
   // A holdings statement's batch (#273) records its snapshot's fate in its own column.

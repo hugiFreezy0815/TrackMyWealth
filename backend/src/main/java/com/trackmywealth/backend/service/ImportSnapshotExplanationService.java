@@ -26,6 +26,8 @@ public class ImportSnapshotExplanationService {
   private static final String BALANCE_PREFIX = PREFIX + "balance.";
   private static final String PART_PREFIX = "tmw.import.snapshot.part.";
   private static final String BOTH = "BOTH";
+  // US-15-08: a cash balance and the missing cost basis of held positions.
+  private static final String BALANCE_AND_COST_BASIS = "BALANCE_COST_BASIS";
   private static final String WITH = "with.";
   private static final String ADDS = "adds.";
 
@@ -110,7 +112,9 @@ public class ImportSnapshotExplanationService {
     if (parts.isEmpty()) {
       return "";
     }
-    String key = phrase + (parts.size() > 1 ? BOTH : parts.get(0));
+    String combined =
+        parts.contains(ImportSnapshotValues.PART_COST_BASIS) ? BALANCE_AND_COST_BASIS : BOTH;
+    String key = phrase + (parts.size() > 1 ? combined : parts.get(0));
     return messageSource.getMessage(PART_PREFIX + key, null, key, locale);
   }
 

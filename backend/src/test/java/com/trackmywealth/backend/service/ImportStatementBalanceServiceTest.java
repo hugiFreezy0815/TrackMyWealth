@@ -80,6 +80,7 @@ class ImportStatementBalanceServiceTest {
           snapshots,
           holdings,
           cash,
+          batches,
           completion,
           new ImportSnapshotExplanationService(messages()),
           results,

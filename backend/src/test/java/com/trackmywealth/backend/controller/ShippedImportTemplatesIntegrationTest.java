@@ -81,10 +81,14 @@ class ShippedImportTemplatesIntegrationTest {
   private static final UUID YUH_FAMILY = UUID.fromString("a2820365-0b08-4474-bdb9-f2c419a91a25");
   private static final UUID LBS_FAMILY = UUID.fromString("0ac5fd45-d7f5-4c7b-895d-cc8233d07e7b");
   // US-07-13 (V100): holdings statements. The Swissquote PDF serves PostFinance and Yuh alike, so
-  // it names no institution.
+  // it names no institution. US-15-08 (V126): version 2 of both reads the cost basis.
   private static final UUID SWISSQUOTE_HOLDINGS =
+      UUID.fromString("24803064-3f64-4856-b79a-a2b33e4c37c2");
+  private static final UUID SWISSQUOTE_HOLDINGS_FAMILY =
       UUID.fromString("003878c0-995e-4801-96d3-3e431c5095a2");
   private static final UUID POSTFINANCE_POSITIONS =
+      UUID.fromString("cd83acd5-0e83-4433-bda7-4813133a6582");
+  private static final UUID POSTFINANCE_POSITIONS_FAMILY =
       UUID.fromString("41aff7f6-3fc8-4206-ae61-dc4bf3fdad53");
   private static final UUID POSTFINANCE_CASH =
       UUID.fromString("1dcaf9a1-3aab-4b56-8e44-1a252821ca23");
@@ -166,7 +170,9 @@ class ShippedImportTemplatesIntegrationTest {
                               SPARKASSE_LOAN, SPARKASSE_LOAN_FAMILY,
                               SPARKASSE_CARD, SPARKASSE_CARD_FAMILY,
                               YUH, YUH_FAMILY,
-                              LBS, LBS_FAMILY)
+                              LBS, LBS_FAMILY,
+                              SWISSQUOTE_HOLDINGS, SWISSQUOTE_HOLDINGS_FAMILY,
+                              POSTFINANCE_POSITIONS, POSTFINANCE_POSITIONS_FAMILY)
                           .getOrDefault(template.id(), template.id()));
               assertThat(template.current()).isTrue();
               assertThat(template.active()).isTrue();

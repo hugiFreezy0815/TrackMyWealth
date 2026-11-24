@@ -380,7 +380,7 @@ class ImportSnapshotCompletionServiceTest {
         Map.of(),
         List.of(
             new ImportSnapshotHolding(
-                CHF_SHARE, new BigDecimal("25"), null, new BigDecimal("1000.00"), "CHF")),
+                CHF_SHARE, new BigDecimal("25"), null, new BigDecimal("1000.00"), "CHF", null)),
         UUID.randomUUID());
   }
 

@@ -46,5 +46,11 @@ public final class ImportHoldingsValues {
    */
   public static final String WARNING_VALUE_MISMATCH = "HOLDING_VALUE_MISMATCH";
 
+  /**
+   * Warning (US-15-08): the template reads a cost basis, but this position's is blank or unreadable
+   * - so the position keeps none, and shows no gain. Never blocking.
+   */
+  public static final String WARNING_COST_BASIS_UNREADABLE = "HOLDING_COST_BASIS_UNREADABLE";
+
   private ImportHoldingsValues() {}
 }

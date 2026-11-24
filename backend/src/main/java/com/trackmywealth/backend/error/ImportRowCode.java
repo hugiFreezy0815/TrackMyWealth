@@ -98,7 +98,11 @@ public enum ImportRowCode {
       Kind.HOLDINGS_LINE_ERROR, "A second line of the same ISIN or symbol in one statement."),
   HOLDING_VALUE_MISMATCH(
       Kind.HOLDINGS_LINE_WARNING,
-      "Quantity times price is not the value (nor a hundredth of it); check the columns.");
+      "Quantity times price is not the value (nor a hundredth of it); check the columns."),
+  HOLDING_COST_BASIS_UNREADABLE(
+      Kind.HOLDINGS_LINE_WARNING,
+      "The position's purchase price or total cost is blank, missing or unreadable: no cost basis"
+          + " is stored (US-15-08).");
 
   /** The prefix of each code's message key in {@code messages*.properties}. */
   public static final String MESSAGE_KEY_PREFIX = "tmw.import.row.";

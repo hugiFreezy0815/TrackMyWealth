@@ -167,6 +167,7 @@ public class ImportHoldingsService {
               balance,
               cashByCurrency,
               quantities(positions, resolved),
+              costBases(positions, resolved),
               unresolvedCount == 0 && duplicates.isEmpty());
       snapshot = plan.outcome();
     }
@@ -184,6 +185,8 @@ public class ImportHoldingsService {
               row.getReportedPrice(),
               row.getReportedValue(),
               row.getCurrency(),
+              row.getReportedCostBasis(),
+              row.getReportedCostBasis() == null ? null : row.getCurrency(),
               securityId == null ? ImportHoldingsValues.UNRESOLVED : ImportHoldingsValues.RESOLVED,
               securityId,
               row.getWarningCodes().stream().map(code -> message(code, locale)).toList()));
@@ -284,7 +287,13 @@ public class ImportHoldingsService {
     BigDecimal balance = cashByCurrency.remove(currency);
     ImportSnapshotPlan plan =
         completionService.plan(
-            account, date, balance, cashByCurrency, quantities(positions, resolved), true);
+            account,
+            date,
+            balance,
+            cashByCurrency,
+            quantities(positions, resolved),
+            costBases(positions, resolved),
+            true);
     if (ImportSnapshotValues.OUT_OF_RANGE.equals(plan.outcome())) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
@@ -307,11 +316,25 @@ public class ImportHoldingsService {
                         position.getQuantity(),
                         position.getReportedPrice(),
                         position.getReportedValue(),
-                        position.getCurrency()))
+                        position.getCurrency(),
+                        position.getReportedCostBasis()))
             .toList();
     batch.setHoldingsSnapshot(
         completionService.commit(
             batch, account, date, currency, plan, balance, cashByCurrency, holdings, committedBy));
+  }
+
+  // US-15-08: each resolved position's cost basis by security, where the statement prints one.
+  private static Map<UUID, BigDecimal> costBases(
+      List<ImportHoldingRow> positions, Map<Integer, UUID> resolved) {
+    Map<UUID, BigDecimal> costBases = new LinkedHashMap<>();
+    for (ImportHoldingRow row : positions) {
+      UUID id = resolved.get(row.getRowNumber());
+      if (id != null && row.getReportedCostBasis() != null) {
+        costBases.putIfAbsent(id, row.getReportedCostBasis());
+      }
+    }
+    return costBases;
   }
 
   // Each resolved position's quantity by security (the statement lists a security once).
@@ -442,6 +465,7 @@ public class ImportHoldingsService {
     row.setQuantity(line.quantity());
     row.setReportedPrice(line.price());
     row.setReportedValue(line.value());
+    row.setReportedCostBasis(line.costBasis());
     row.setCurrency(line.currency());
     row.setAmount(line.amount());
     row.setRawText(line.rawText());

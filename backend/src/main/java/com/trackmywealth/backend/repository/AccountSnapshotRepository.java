@@ -179,12 +179,14 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
 
   /**
    * US-07-31: the snapshot in effect a batch contributed to - it recorded it, or added its balance
-   * or holdings - if any. A batch contributes to at most one (one account and date).
+   * or holdings, or filled the cost basis of its holdings (US-15-08) - if any. A batch contributes
+   * to at most one (one account and date).
    */
   @Query(
       "SELECT s FROM AccountSnapshot s WHERE s.withdrawnAt IS NULL AND (s.importBatchId = :batchId"
           + " OR s.balanceImportBatchId = :batchId OR EXISTS (SELECT 1 FROM SnapshotHolding h"
-          + " WHERE h.snapshotId = s.id AND h.importBatchId = :batchId)"
+          + " WHERE h.snapshotId = s.id AND (h.importBatchId = :batchId"
+          + " OR h.costBasisImportBatchId = :batchId))"
           + " OR EXISTS (SELECT c.id FROM SnapshotForeignCash c"
           + " WHERE c.snapshotId = s.id AND c.importBatchId = :batchId))")
   Optional<AccountSnapshot> findContributedBy(@Param("batchId") UUID batchId);

@@ -426,10 +426,11 @@ public class ImportFileParserService {
   /** Missing columns from both ordinary mappings and the optional row filter. */
   public List<String> missingColumns(ImportTemplateDefinition template, List<String> header) {
     if (template.isSnapshot()) {
-      // #273: a spreadsheet holdings template's columns are its holdings rule's.
+      // #273: a spreadsheet holdings template's columns are its holdings rule's; the optional cost
+      // basis column (US-15-08) is not missing when the sheet lacks it.
       return template.holdingsRule() == null || template.holdingsRule().columns() == null
           ? List.of()
-          : ImportHoldingsReaderService.mappedColumns(template.holdingsRule().columns()).stream()
+          : ImportHoldingsReaderService.requiredColumns(template.holdingsRule().columns()).stream()
               .filter(column -> columnIndex(column, header) < 0)
               .toList();
     }

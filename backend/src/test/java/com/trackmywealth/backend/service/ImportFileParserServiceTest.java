@@ -14,6 +14,7 @@ import com.trackmywealth.backend.dto.ImportAccountIdentifierRule;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportFileAccountIdentifier;
+import com.trackmywealth.backend.dto.ImportHoldingsRule;
 import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
@@ -211,6 +212,31 @@ class ImportFileParserServiceTest {
   }
 
   /** Template detection does not offer a template whose filter column the file lacks. */
+  @Test
+  void aHoldingsSheetWithoutItsOptionalCostBasisColumnMissesNoColumn() {
+    // US-15-08: a template that reads the cost basis still matches a sheet without its column.
+    ImportTemplateDefinition template =
+        ImportHoldingsReaderServiceTest.sheetTemplate(
+            new ImportHoldingsRule.ImportHoldingsColumns(
+                null,
+                "Symbol",
+                null,
+                "Anzahl",
+                "Preis",
+                "Totalwert",
+                "Währung",
+                null,
+                "Einstandskurs",
+                null));
+
+    assertThat(
+            parser.missingColumns(
+                template, List.of("Symbol", "Anzahl", "Preis", "Totalwert", "Währung")))
+        .isEmpty();
+    assertThat(parser.missingColumns(template, List.of("Symbol", "Preis", "Totalwert", "Währung")))
+        .containsExactly("Anzahl");
+  }
+
   @Test
   void missingColumnsIncludesTheRowFilterColumn() {
     ImportTemplateDefinition template =
