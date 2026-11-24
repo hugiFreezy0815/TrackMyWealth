@@ -292,16 +292,15 @@ public class AccountPositionsService {
     CurrencyConversionResult rate = rate(reported, reportedCurrency, accountCurrency, rates);
     BigDecimal inAccountCurrency =
         inAccountCurrency(reported, reportedCurrency, accountCurrency, rate);
-    BigDecimal costBasis = holding.getReportedCostBasis();
-    String costCurrency = holding.getReportedCostBasisCurrency();
-    BigDecimal costInAccountCurrency = holding.getCostBasisInAccountCurrency();
-    CostBasisSource source = costBasis == null ? null : recorded;
-    if (fromOrders.isPresent()) {
-      costBasis = fromOrders.get().costBasis();
-      costCurrency = fromOrders.get().currency();
-      costInAccountCurrency = null;
-      source = CostBasisSource.ORDERS;
-    }
+    // US-15-15: the orders' cost basis, if any, stands in for the one the snapshot lacks; it has no
+    // cost in the account currency (no FX is applied).
+    CostFromOrders orders = fromOrders.orElse(null);
+    BigDecimal costBasis = orders == null ? holding.getReportedCostBasis() : orders.costBasis();
+    String costCurrency =
+        orders == null ? holding.getReportedCostBasisCurrency() : orders.currency();
+    BigDecimal costInAccountCurrency =
+        orders == null ? holding.getCostBasisInAccountCurrency() : null;
+    CostBasisSource source = sourceOf(costBasis, orders != null, recorded);
 
     // The gain in the cost basis' own currency: against the account-currency value for a cost in
     // the account currency, against the statement's value for a cost in the quoted currency.
@@ -339,6 +338,15 @@ public class AccountPositionsService {
         accountGain,
         accountGain == null ? null : gainPercent(accountGain, accountCost),
         status);
+  }
+
+  /** US-15-15: where the shown cost basis comes from; null without one. */
+  private static @Nullable CostBasisSource sourceOf(
+      @Nullable BigDecimal costBasis, boolean fromOrders, CostBasisSource recorded) {
+    if (fromOrders) {
+      return CostBasisSource.ORDERS;
+    }
+    return costBasis == null ? null : recorded;
   }
 
   /**
