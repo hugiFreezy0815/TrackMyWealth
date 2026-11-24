@@ -70,6 +70,15 @@ export function noGainReason(position: Position, currency: string): NoGainReason
     : { id: 'portfolio.position.unknownBasisCurrency' };
 }
 
+/**
+ * The note on where a position's cost basis comes from, or null for a printed or entered one: an
+ * estimate, or one calculated from the account's orders (US-15-15, #714).
+ */
+export function costBasisNoteId(position: Position): string | null {
+  if (position.costBasisEstimated) return 'portfolio.position.estimated';
+  return position.costBasisSource === 'ORDERS' ? 'portfolio.position.fromOrders' : null;
+}
+
 /** The explanation line under a position without a gain; nothing when there is no reason. */
 export function NoGainNote({ position, currency }: { position: Position; currency: string }) {
   const intl = useIntl();
@@ -81,6 +90,15 @@ export function NoGainNote({ position, currency }: { position: Position; currenc
       {msg(intl, reason.id, reason.values)}
     </Text>
   );
+}
+
+/** The note on where the cost basis comes from (costBasisNoteId); nothing for none. */
+export function CostBasisNote({ position }: { position: Position }) {
+  const intl = useIntl();
+  const theme = useTheme();
+  const id = costBasisNoteId(position);
+  if (!id) return null;
+  return <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>{msg(intl, id)}</Text>;
 }
 
 /** The row's spoken summary: name, value, units and gain, masked like the visible text. */
@@ -210,11 +228,7 @@ function PositionRow({
       >
         <ValueStatusBadge status={position.valueStatus} interactive={false} />
         <NoGainNote position={position} currency={currency} />
-        {position.costBasisEstimated ? (
-          <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
-            {msg(intl, 'portfolio.position.estimated')}
-          </Text>
-        ) : null}
+        <CostBasisNote position={position} />
       </View>
     </>
   );

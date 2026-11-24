@@ -780,6 +780,7 @@
   "portfolio.position.noGainInBasisCurrency": "Gain not available for a cost basis in {currency}",
   "portfolio.position.noBasis": "No cost basis yet",
   "portfolio.position.estimated": "Estimated cost basis",
+  "portfolio.position.fromOrders": "Cost basis from orders",
   "portfolio.empty.title": "No accounts in {name} yet",
   "portfolio.empty.body": "Add an account or import a statement.",
   "portfolio.addAccount": "Add account",

@@ -11,6 +11,7 @@ import { useTheme } from '@/hooks/use-theme';
 
 import {
   PositionList,
+  CostBasisNote,
   NoGainNote,
   shownGain,
   usePositionLabel,
@@ -157,11 +158,7 @@ export function PositionView(props: PositionViewProps) {
               <View style={{ alignItems: 'flex-end', gap: Spacing.one }}>
                 <GainFigures position={position} currency={currency} />
                 <NoGainNote position={position} currency={currency} />
-                {position.costBasisEstimated ? (
-                  <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
-                    {msg(intl, 'portfolio.position.estimated')}
-                  </Text>
-                ) : null}
+                <CostBasisNote position={position} />
               </View>
             </td>
           </tr>
