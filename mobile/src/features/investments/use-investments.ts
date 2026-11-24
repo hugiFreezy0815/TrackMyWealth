@@ -20,6 +20,13 @@ export function useInvestments(accountId?: string) {
   });
   const depots = investmentDepots(views.map(({ data }) => data));
   const depot = depots.find(({ account }) => account.accountId === accountId);
+  const depotView = depot
+    ? views.find(({ data }) =>
+        data?.sections.some(({ accounts }) =>
+          accounts.some((account) => account.accountId === depot.account.accountId),
+        ),
+      )
+    : undefined;
   const directoryQueries = [portfolios, ...views];
   const directoryPending = directoryQueries.some(({ isPending }) => isPending);
   const directoryComplete = portfolios.data != null && views.every(({ data }) => data != null);
@@ -66,6 +73,15 @@ export function useInvestments(accountId?: string) {
       depot ? positions[0]?.data : undefined,
       balance.data,
     ),
+    // The queries behind the figures shown: the value and performance, and the positions.
+    figureQueries: [
+      ...(showAll
+        ? currency
+          ? [netWorth]
+          : []
+        : [...(depotView ? [depotView] : []), ...(needsBalance ? [balance] : [])]),
+      ...positions,
+    ],
     groups: scopes.map(({ account }, index) => ({ account, query: positions[index] })),
     positions,
   };

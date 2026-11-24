@@ -172,7 +172,8 @@ it('shows the Investments cost-basis column and uses the snapshot date for a sta
     'Unrealised gain',
   ]);
   expect(screen.getByText("EUR 27'439.00")).toBeOnTheScreen();
-  expect(screen.getByText('Price from 21 Nov 2026')).toBeOnTheScreen();
+  expect(screen.getByText('Price outdated')).toBeOnTheScreen();
+  expect(screen.queryByText(/Price from/)).toBeNull();
 });
 
 it('makes each Investments column sortable and announces the active sort direction', async () => {

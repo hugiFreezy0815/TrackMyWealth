@@ -14,7 +14,9 @@ export type ShownGain = {
  *
  * The server's account-currency gain wins, as it always did on S2/S3: it can rest on
  * `costBasisInAccountCurrency` alone. A cost-basis-currency gain needs the cost basis itself, so
- * a response that sends one without it is not trusted (contract: null without a cost basis).
+ * a response that sends one without it is not trusted. The contract makes `unrealisedGain` null
+ * without a cost basis (AccountPositionsService computes it as a difference with costBasis), so
+ * S2/S3 show exactly what they showed before this guard.
  */
 export function shownGain(position: Position, currency: string): ShownGain | null {
   if (position.unrealisedGainInAccountCurrency != null) {

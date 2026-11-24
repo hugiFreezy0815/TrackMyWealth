@@ -52,7 +52,7 @@ Positions · 12                         [↕ Value ⌄]
 │ [i] iShares Core SPI                CHF 18'770.00    │
 │     CSSPI · 120 units · VIAC 3a      no cost basis   │
 │ [₿] Bitcoin ETP                     CHF  6'100.00    │
-│     … [Price from 31 Oct]           ↘ −CHF 410.00    │
+│     … [Price outdated]              ↘ −CHF 410.00    │
 │                                       −6.3 %         │
 └──────────────────────────────────────────────────────┘
 ┌ ALLOCATION                                           ┐
@@ -95,7 +95,7 @@ Activity                                       See all   ← trades, dividends, 
 
 | Element | All depots | One depot |
 |---|---|---|
-| Market value | Labelled **Depot section subtotal**. Uses `/net-worth` DEPOT section `subtotal` (3) and excludes Pillar 3a, even when those accounts have positions in the list. | `AccountRow.balance` when the depot and portfolio currencies match. Otherwise use (4), or show the account-currency balance with valuation status and date unavailable. |
+| Market value | Labelled **Depot section subtotal**. Uses `/net-worth` DEPOT section `subtotal` (3) and excludes Pillar 3a, even when those accounts have positions in the list; the note under it names Pillar 3a only when such an account is listed. | `AccountRow.balance` when the depot and portfolio currencies match. Otherwise use (4), or show the account-currency balance with valuation status and date unavailable. |
 | Change chip and chart | **hidden** (G11-1) | **hidden** (G11-1). A portfolio can contain other accounts earlier in the period, and the series is in portfolio currency. |
 | Total return | **hidden** (G11-2: the sum of per-depot returns is a computation) | `AccountRow.totalReturn`, `totalReturnPercent` |
 | Positions | the depots' lists one after the other, each under a depot header; **no merging** of the same security across depots (G11-3) | one list |
@@ -238,6 +238,7 @@ A full screen from the card (phone push, web main column).
   position".
 - Given "All depots", positions are grouped by depot, and no total return, chart or allocation
   renders while G11-1/2/4 are not delivered.
-- Given a position with `valueStatus = STALE`, the row shows "Price from {date}".
+- Given a position with `valueStatus = STALE`, the row shows "Price outdated" without a date: the
+  positions `asOf` dates the snapshot, not the price, and STALE can also come from an old FX rate.
 - No figure on the screen is the result of client arithmetic (code review check plus a unit test
   on the view model).

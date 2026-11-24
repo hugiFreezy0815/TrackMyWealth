@@ -203,10 +203,8 @@ export function PositionView(props: PositionViewProps) {
                   currency={currency}
                   valueKnown={isValueKnown(position.valueStatus)}
                 />
-                <ValueStatusBadge
-                  status={position.valueStatus}
-                  valueSourceDate={investments?.asOf}
-                />
+                {/* No date: the snapshot's asOf does not date the price (STALE may be FX). */}
+                <ValueStatusBadge status={position.valueStatus} />
               </View>
             </td>
             <td style={{ ...cell, ...numeric }}>

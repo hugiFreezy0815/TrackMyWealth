@@ -1,8 +1,11 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import { Platform } from 'react-native';
 
+import { NetworkError, REQUEST_TIMEOUT_MS } from '@/api/client';
 import { collectionPage } from '@/api/collection-page.fixture';
+import { queryKeys } from '@/api/queries/keys';
+import { shouldRetry } from '@/api/queries/retry';
 import {
   POSITION_SLOT_TIMEOUT_MS,
   accountPositionsQuery,
@@ -195,6 +198,7 @@ describe('Investments view model', () => {
       const scope = {
         account: { ...depot, valueKnown: valueStatus !== 'UNKNOWN', valueStatus },
         portfolioCurrency: 'CHF',
+        section: 'DEPOT' as const,
       };
       expect(investmentFigures(scope, undefined, snapshot, ownBalance).value).toMatchObject({
         amount: '910.52',
@@ -364,7 +368,9 @@ describe('Investments screen', () => {
       expect(screen.queryByText('Swiss Fund')).toBeNull();
       expect(screen.getByText('No cost basis')).toBeOnTheScreen();
       const row = screen.getByLabelText(/^Example Fund, /);
-      expect(row.props.accessibilityLabel).toContain('Price from 21 Nov 2026');
+      // The snapshot date does not date a position's price, so the stale badge names none.
+      expect(row.props.accessibilityLabel).toContain('Price outdated');
+      expect(row.props.accessibilityLabel).not.toContain('Price from');
       await fireEvent.press(screen.getByRole('switch', { name: 'Hide amounts' }));
       expect(screen.getByLabelText(/^Example Fund, /).props.accessibilityLabel).toContain('hidden');
       await fireEvent.press(screen.getByRole('switch', { name: 'Hide amounts' }));
@@ -374,7 +380,7 @@ describe('Investments screen', () => {
       expect(screen.getByText('+USD 12.34')).toBeOnTheScreen();
       expect(screen.queryByText('+USD 99.99')).toBeNull();
       expect(screen.getByText('Cost basis missing for 1 position')).toBeOnTheScreen();
-      expect(screen.getAllByText('Price from 21 Nov 2026').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Price outdated').length).toBeGreaterThan(0);
       await fireEvent.press(screen.getByRole('button', { name: 'View performance breakdown' }));
       const sheet = screen.getByTestId(
         platform === 'web' ? 'shell-detail-panel' : 'shared-dialog-modal',
@@ -480,7 +486,9 @@ it.each([false, true])(
     await render(route());
     expect(await screen.findByRole('radio', { name: pillar.name })).toBeOnTheScreen();
     if (onlyPillar) {
-      expect(await screen.findByText(/No Depot section subtotal/)).toBeOnTheScreen();
+      expect(
+        await screen.findByText(/No Depot section subtotal.*Pillar 3a accounts are excluded/),
+      ).toBeOnTheScreen();
       expect(screen.queryByText('Depot section subtotal')).toBeNull();
     } else {
       expect(await screen.findByText('Depot section subtotal')).toBeOnTheScreen();
@@ -488,6 +496,58 @@ it.each([false, true])(
     }
   },
 );
+
+it.each([
+  [true, 'No Depot section subtotal is available for these accounts.'],
+  [false, 'Includes accounts in the Depot section.'],
+])(
+  'leaves Pillar 3a out of the subtotal note when none is listed (no subtotal: %s)',
+  async (noSubtotal, note) => {
+    mockInvestments({
+      views: [view],
+      netWorth: noSubtotal
+        ? {
+            ...netWorth,
+            sections: [{ ...netWorth.sections[0], accountCount: 0, subtotal: '0.00' }],
+          }
+        : netWorth,
+      snapshot: { ...snapshot, positions: [] },
+    });
+    const { route } = setupScreen();
+    await render(route());
+    expect(await screen.findByText(note)).toBeOnTheScreen();
+    expect(screen.queryByText(/Pillar 3a/)).toBeNull();
+  },
+);
+
+it('dates the offline banner by the oldest figure shown, not the newest refetch', async () => {
+  const dayOld = Date.parse('2026-11-20T09:00:00Z');
+  const now = Date.parse('2026-11-23T09:00:00Z');
+  const clock = jest.spyOn(Date, 'now').mockReturnValue(dayOld);
+  try {
+    mockInvestments({ views: [view] });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: Infinity } },
+    });
+    await render(
+      <QueryClientProvider client={client}>
+        {withIntl(
+          <InvestmentsScreen onScope={jest.fn()} onAccount={jest.fn()} onAddDepot={jest.fn()} />,
+        )}
+      </QueryClientProvider>,
+    );
+    await screen.findByText('Depot section subtotal');
+    await waitFor(() => expect(screen.getAllByText('Example Fund')).toHaveLength(2));
+    clock.mockReturnValue(now);
+    await act(() => client.refetchQueries({ queryKey: queryKeys.workspace }));
+    await act(() => onlineManager.setOnline(false));
+    expect(await screen.findByText(/^Last updated .*20 Nov 2026/)).toBeOnTheScreen();
+    expect(screen.queryByText(/23 Nov 2026/)).toBeNull();
+  } finally {
+    clock.mockRestore();
+    onlineManager.setOnline(true);
+  }
+});
 
 it('keeps loaded depots visible and retries a failed portfolio view', async () => {
   const { allowSecondPortfolio } = mockInvestments(
@@ -681,7 +741,18 @@ it('frees a positions slot after its deadline when a request never settles', asy
   const late = client.fetchQuery(accountPositionsQuery('late'));
   await jest.advanceTimersByTimeAsync(0);
   expect(starts).toEqual(['a', 'b', 'c', 'd']);
-  await jest.advanceTimersByTimeAsync(POSITION_SLOT_TIMEOUT_MS);
+  // A request, a session renewal after its 401 and the resend each have a client deadline: the
+  // slot outlasts all three, so it never ends an exchange the client would still let finish.
+  expect(POSITION_SLOT_TIMEOUT_MS).toBeGreaterThan(3 * REQUEST_TIMEOUT_MS);
+  await jest.advanceTimersByTimeAsync(3 * REQUEST_TIMEOUT_MS);
+  expect(starts).toEqual(['a', 'b', 'c', 'd']);
+  await jest.advanceTimersByTimeAsync(POSITION_SLOT_TIMEOUT_MS - 3 * REQUEST_TIMEOUT_MS);
   await expect(late).resolves.toEqual(snapshot);
-  expect(await Promise.all(stuck)).toEqual(Array(4).fill(new Error('Positions request timed out')));
+  const errors = await Promise.all(stuck);
+  for (const error of errors) {
+    expect(error).toBeInstanceOf(NetworkError);
+    expect(error).toHaveProperty('message', 'Positions request timed out');
+    // Retried like the client's own timeout.
+    expect(shouldRetry(0, error)).toBe(true);
+  }
 });

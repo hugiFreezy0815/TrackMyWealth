@@ -7,6 +7,7 @@ import {
 import {
   isInvestmentDepot,
   type PortfolioAccount,
+  type PortfolioSection,
   type PortfolioView,
   type Position,
   type PositionSort,
@@ -20,6 +21,8 @@ type ValueStatus = PortfolioAccount['valueStatus'];
 export type Depot = {
   account: PortfolioAccount;
   portfolioCurrency: string;
+  /** DEPOT, or PILLAR_3A for a Pillar 3a account with positions (outside the Depot subtotal). */
+  section: PortfolioSection['section'];
 };
 
 export function investmentDepots(views: readonly (PortfolioView | undefined)[]): Depot[] {
@@ -28,21 +31,39 @@ export function investmentDepots(views: readonly (PortfolioView | undefined)[]):
       view?.sections.flatMap((section) =>
         section.accounts
           .filter((account) => isInvestmentDepot(account, section))
-          .map((account) => ({ account, portfolioCurrency: view.portfolioCurrency })),
+          .map((account) => ({
+            account,
+            portfolioCurrency: view.portfolioCurrency,
+            section: section.section,
+          })),
       ) ?? [],
   );
 }
 
-// The balance endpoint supplies the basis and flags for its own currency, as used by ValueStatus.of.
-function balanceStatus(balance: AccountBalance): ValueStatus {
+/**
+ * A client copy of the backend's ValueStatus.of (backend/.../dto/ValueStatus.java), which the
+ * balance endpoint does not send: its basis list is ValueBasisValues.isApproximate. Only used for a
+ * depot whose currency differs from its portfolio's, where the view's valueStatus is for the
+ * converted figure. value-status-sync.test.ts reads both Java files and fails when they change.
+ */
+export const APPROXIMATE_VALUE_BASES: readonly string[] = [
+  'LEDGER_EMPTY',
+  'ORIGINAL_PRINCIPAL',
+  'ORIGINAL_PRINCIPAL_LESS_REPAYMENTS',
+];
+/** The warnings ValueStatus.of reads, in the order it checks them. */
+export const STATUS_WARNINGS = {
+  unreconciled: 'OPEN_RECONCILIATION_DIFFERENCE',
+  estimated: 'TRANSACTIONS_BEFORE_OPENING_BALANCE',
+} as const;
+
+export function balanceStatus(balance: AccountBalance): ValueStatus {
   if (!balance.valueKnown || balance.value == null) return 'UNKNOWN';
-  if (balance.warnings.includes('OPEN_RECONCILIATION_DIFFERENCE')) return 'UNRECONCILED';
+  if (balance.warnings.includes(STATUS_WARNINGS.unreconciled)) return 'UNRECONCILED';
   if (balance.conversionRateStale || balance.valueSourceStale) return 'STALE';
   if (
-    ['LEDGER_EMPTY', 'ORIGINAL_PRINCIPAL', 'ORIGINAL_PRINCIPAL_LESS_REPAYMENTS'].some(
-      (basis) => basis === balance.valueBasis,
-    ) ||
-    balance.warnings.includes('TRANSACTIONS_BEFORE_OPENING_BALANCE')
+    APPROXIMATE_VALUE_BASES.some((basis) => basis === balance.valueBasis) ||
+    balance.warnings.includes(STATUS_WARNINGS.estimated)
   )
     return 'ESTIMATED';
   return 'CURRENT';

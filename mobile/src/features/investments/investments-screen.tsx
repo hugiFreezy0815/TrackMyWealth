@@ -78,7 +78,12 @@ export function InvestmentsScreen({
   ];
   const refreshing = results.some(({ isRefetching }) => isRefetching);
   const refresh = () => void Promise.allSettled(results.map((result) => result.refetch()));
-  const lastUpdated = Math.max(0, ...results.map(({ dataUpdatedAt }) => dataUpdatedAt));
+  // Offline, the banner dates the oldest figure shown: a newer refetch of another query (the
+  // workspace, a portfolio view) must not make a day-old value or position list look fresh.
+  const loadedAt = data.figureQueries
+    .map(({ dataUpdatedAt }) => dataUpdatedAt)
+    .filter((at) => at > 0);
+  const lastUpdated = loadedAt.length > 0 ? Math.min(...loadedAt) : 0;
   const { value, performance } = data.figures;
   const marketValueTitle = msg(
     intl,
@@ -102,6 +107,8 @@ export function InvestmentsScreen({
       />
     ) : null;
   const noDepots = data.directoryComplete && data.depots.length === 0;
+  // The subtotal leaves out Pillar 3a: say so only when such an account is in the list below.
+  const listsPillar3a = data.depots.some(({ section }) => section === 'PILLAR_3A');
   const addDepot = () => {
     if (data.portfolios && data.portfolios.length > 1) setShowPortfolioPicker(true);
     else onAddDepot(data.portfolios?.[0]?.id);
@@ -226,7 +233,16 @@ export function InvestmentsScreen({
           {value.statusUnavailable ? (
             <InfoText>{msg(intl, 'investments.valueStatusUnavailable')}</InfoText>
           ) : null}
-          {data.showAll ? <InfoText>{msg(intl, 'investments.depotSubtotalScope')}</InfoText> : null}
+          {data.showAll ? (
+            <InfoText>
+              {msg(
+                intl,
+                listsPillar3a
+                  ? 'investments.depotSubtotalScopePillar3a'
+                  : 'investments.depotSubtotalScope',
+              )}
+            </InfoText>
+          ) : null}
           {!value.complete ? <InfoText warning>{msg(intl, 'total.incomplete')}</InfoText> : null}
           <Pressable
             accessibilityRole="button"
@@ -258,7 +274,14 @@ export function InvestmentsScreen({
       !data.directoryPending &&
       !data.directoryFailed &&
       data.valueQueries.every(({ isSuccess }) => isSuccess) ? (
-        <InfoText>{msg(intl, 'investments.depotSubtotalAbsent')}</InfoText>
+        <InfoText>
+          {msg(
+            intl,
+            listsPillar3a
+              ? 'investments.depotSubtotalAbsentPillar3a'
+              : 'investments.depotSubtotalAbsent',
+          )}
+        </InfoText>
       ) : null}
       {!desktop ? performanceCard : null}
       {!webTable && data.groups.some(({ query }) => query.data?.positions.length) ? (

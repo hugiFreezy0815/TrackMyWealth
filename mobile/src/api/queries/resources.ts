@@ -7,7 +7,7 @@ import {
   type InfiniteData,
 } from '@tanstack/react-query';
 
-import { REQUEST_TIMEOUT_MS } from '@/api/client';
+import { NetworkError, REQUEST_TIMEOUT_MS } from '@/api/client';
 import { readAllPages } from '@/api/pages';
 import type { components } from '@/api/schema';
 import { typedApi } from '@/api/typed-api';
@@ -167,9 +167,11 @@ export const useArchivedAccounts = (portfolioId: string, enabled = true) =>
 
 // Share the four-request limit and the cache across screens that read depot positions.
 const POSITION_REQUEST_LIMIT = 4;
-// A slot is held at most this long (two client deadlines: room for a session refresh and retry),
-// so a request that never settles cannot block every later positions query in the app.
-export const POSITION_SLOT_TIMEOUT_MS = 2 * REQUEST_TIMEOUT_MS;
+// A slot is held at most this long, so a request that never settles cannot block every later
+// positions query in the app. One exchange can use three client deadlines - the request, a session
+// renewal after its 401 and the resend - and reading the response body has none of its own, so
+// the slot allows one more on top: it only ends a request the client's own deadlines missed.
+export const POSITION_SLOT_TIMEOUT_MS = 4 * REQUEST_TIMEOUT_MS;
 let positionRequestQueue: (() => void)[] = [];
 let activePositionRequests = 0;
 
@@ -220,7 +222,8 @@ async function readAccountPositions(accountId: string, signal: AbortSignal) {
     if (signal.aborted) throw cancelled(signal);
     const deadline = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
-        const timeout = new Error('Positions request timed out');
+        // A NetworkError like the client's own timeout, so React Query retries it (shouldRetry).
+        const timeout = new NetworkError('Positions request timed out');
         controller.abort(timeout);
         reject(timeout);
       }, POSITION_SLOT_TIMEOUT_MS);
