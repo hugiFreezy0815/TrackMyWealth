@@ -22,7 +22,11 @@ import { formatDate } from '@/format/date';
 import { useOnline } from '@/hooks/use-online';
 import { useTheme } from '@/hooks/use-theme';
 
-import { POSITION_TABLE_MIN_WIDTH, type PositionSort } from '@/features/portfolio-view/model';
+import {
+  POSITION_TABLE_MIN_WIDTH,
+  sectionMessageKey,
+  type PositionSort,
+} from '@/features/portfolio-view/model';
 
 import { InvestmentActivity } from './activity';
 import { CHIP_SORT_KEYS, DEFAULT_POSITION_SORT, visiblePositionSort, type Depot } from './model';
@@ -76,7 +80,7 @@ export function InvestmentsScreen({
     ...data.directoryQueries,
     ...data.valueQueries,
     ...data.positions,
-    ...(selectedId ? [data.account] : []),
+    ...data.accountQueries,
     ...(data.activity ? [data.activity] : []),
   ];
   const refreshing = results.some(({ isRefetching }) => isRefetching);
@@ -156,7 +160,7 @@ export function InvestmentsScreen({
       ) : null}
       <RefreshingIndicator active={refreshing} />
       {data.directoryPending ? <LoadingSkeleton count={2} /> : null}
-      {[...data.directoryQueries, ...data.valueQueries, ...(selectedId ? [data.account] : [])].map(
+      {[...data.directoryQueries, ...data.valueQueries, ...data.accountQueries].map(
         (result, index) =>
           result.isError ? (
             <ErrorBanner key={index} error={result.error} onRetry={() => void result.refetch()} />
@@ -266,6 +270,7 @@ export function InvestmentsScreen({
                 data.showAll
                   ? 'investments.explanation.depotSubtotal'
                   : 'investments.explanation.marketValue',
+                { currency: value.currency },
               )}
             </InfoText>
           ) : null}
@@ -333,13 +338,31 @@ export function InvestmentsScreen({
   );
 }
 
-/** A depot named like another one (in another portfolio) also names its portfolio. */
+/**
+ * A depot named like another one (in another portfolio) also names its portfolio. Namesakes in
+ * the same portfolio add their section, else their masked identifier, else their position.
+ */
 function depotLabel(intl: IntlShape, depot: Depot, depots: readonly Depot[]) {
   const namesakes = depots.filter(({ account }) => account.name === depot.account.name);
-  return namesakes.length > 1
-    ? msg(intl, 'investments.scopeInPortfolio', {
-        depot: depot.account.name,
-        portfolio: depot.portfolioName,
-      })
-    : depot.account.name;
+  if (namesakes.length <= 1) return depot.account.name;
+  const twins = namesakes.filter(({ portfolioName }) => portfolioName === depot.portfolioName);
+  if (twins.length <= 1)
+    return msg(intl, 'investments.scopeInPortfolio', {
+      depot: depot.account.name,
+      portfolio: depot.portfolioName,
+    });
+  return msg(intl, 'investments.scopeInPortfolioDetail', {
+    depot: depot.account.name,
+    portfolio: depot.portfolioName,
+    detail: twinDetail(intl, depot, twins),
+  });
+}
+
+function twinDetail(intl: IntlShape, depot: Depot, twins: readonly Depot[]) {
+  if (twins.filter(({ section }) => section === depot.section).length === 1)
+    return msg(intl, sectionMessageKey(depot.section));
+  const masked = depot.account.maskedIdentifier;
+  if (masked && twins.filter(({ account }) => account.maskedIdentifier === masked).length === 1)
+    return masked;
+  return String(twins.indexOf(depot) + 1);
 }

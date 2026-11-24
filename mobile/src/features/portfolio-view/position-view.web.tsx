@@ -109,8 +109,9 @@ export function PositionView(props: PositionViewProps) {
     padding: `${Spacing.two}px ${Spacing.compact}px`,
     borderBottom: `1px solid ${theme.borderDefault}`,
     verticalAlign: 'top',
-    overflowWrap: 'anywhere',
   };
+  // Long security names may break anywhere; amounts and units must never break mid-number.
+  const nameCell: CSSProperties = { ...cell, overflowWrap: 'anywhere' };
   const headerText = {
     ...TypeScale.caption,
     fontWeight: '600',
@@ -175,7 +176,7 @@ export function PositionView(props: PositionViewProps) {
       <tbody>
         {positions.map((position) => (
           <tr key={position.securityId}>
-            <td style={cell}>
+            <td style={nameCell}>
               <PositionCell
                 position={position}
                 currency={currency}

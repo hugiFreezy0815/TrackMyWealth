@@ -22,16 +22,15 @@ export function useInvestments(accountId?: string, scopeCurrency?: string) {
   const views = useQueries({
     queries: (portfolios.data ?? []).map(({ id }) => portfolioViewQuery(id)),
   });
-  const positionAccounts = usePositionAccounts(
-    views.flatMap(
-      ({ data }) =>
-        data?.sections.flatMap((section) =>
-          section.accounts
-            .filter((account) => needsHoldsPositions(account, section))
-            .map(({ accountId }) => accountId),
-        ) ?? [],
-    ),
+  const summaryIds = views.flatMap(
+    ({ data }) =>
+      data?.sections.flatMap((section) =>
+        section.accounts
+          .filter((account) => needsHoldsPositions(account, section))
+          .map(({ accountId }) => accountId),
+      ) ?? [],
   );
+  const positionAccounts = usePositionAccounts(summaryIds);
   const depots = investmentDepots(
     views.map(({ data }) => data),
     positionAccounts.ids,
@@ -89,6 +88,9 @@ export function useInvestments(accountId?: string, scopeCurrency?: string) {
         ? [balance]
         : [],
     account,
+    // The selected depot's summary, unless the directory already lists that same query: one
+    // error banner and one refetch per request.
+    accountQueries: selectedId && !summaryIds.includes(selectedId) ? [account] : [],
     activity: hasActivity ? activity : undefined,
     figures: investmentFigures(
       depot,

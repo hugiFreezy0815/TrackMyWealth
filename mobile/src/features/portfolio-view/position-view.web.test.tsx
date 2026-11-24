@@ -133,6 +133,21 @@ describe('Depot positions on web (ADR 0007, W02/W03)', () => {
     expect(screen.getByText('Cost basis currency unknown')).toBeTruthy();
   });
 
+  it('lets only the Position cell break anywhere, never an amount or a unit count', async () => {
+    await renderTable();
+    const wraps = host('td').map(
+      (td) => (td.props.style as { overflowWrap?: string }).overflowWrap,
+    );
+    expect(wraps).toEqual(
+      ['anywhere', undefined, undefined, undefined].concat([
+        'anywhere',
+        undefined,
+        undefined,
+        undefined,
+      ]),
+    );
+  });
+
   it('opens the depot from the focusable position link', async () => {
     const onOpen = await renderTable();
     await fireEvent.press(screen.getByRole('link', { name: /^iShares Core MSCI World,/ }));

@@ -412,7 +412,7 @@ function setupScreen(currency?: string) {
       )}
     </QueryClientProvider>
   );
-  return { route, onAccount, onAddDepot };
+  return { route, onAccount, onAddDepot, client };
 }
 
 type FixtureOptions = {
@@ -426,6 +426,7 @@ type FixtureOptions = {
 function mockInvestments(options: FixtureOptions, holdSecondPortfolio = false) {
   const get = jest.mocked(typedApi.get);
   let fail = holdSecondPortfolio;
+  let failSummaries = false;
   get.mockImplementation(async (path, request) => {
     const params = request?.params;
     switch (path) {
@@ -447,6 +448,7 @@ function mockInvestments(options: FixtureOptions, holdSecondPortfolio = false) {
         return (options.netWorth ?? netWorth) as never;
       case '/api/v1/accounts/{accountId}': {
         const id = params && 'accountId' in params ? params.accountId : undefined;
+        if (failSummaries) throw new Error('Account unavailable');
         const summary = options.accounts?.find((account) => account.id === id);
         return { id, hasTransactions: false, holdsPositions: summary?.holdsPositions } as never;
       }
@@ -464,6 +466,9 @@ function mockInvestments(options: FixtureOptions, holdSecondPortfolio = false) {
   return {
     allowSecondPortfolio: () => {
       fail = false;
+    },
+    failSummaries: () => {
+      failSummaries = true;
     },
     get,
   };
@@ -817,6 +822,8 @@ it('reads the Depot subtotal in the Overview scope currency it was opened with',
   const { route } = setupScreen('EUR');
   await render(route());
   expect(await screen.findByText("EUR 1'999.17")).toBeOnTheScreen();
+  await fireEvent.press(screen.getByRole('button', { name: /^Explain / }));
+  expect(screen.getByText('The subtotal of the depot section, in EUR.')).toBeOnTheScreen();
   const currencies = get.mock.calls
     .filter(([path]) => path === '/api/v1/net-worth')
     .map(([, request]) => (request?.query as { currency?: string } | undefined)?.currency);
@@ -841,6 +848,58 @@ it('rejects queued positions requests on reset instead of leaving them pending',
   await waitFor(() => expect(typedApi.get).toHaveBeenCalledTimes(4));
   resetPositionRequests();
   await expect(queued).rejects.toThrow('Positions requests reset');
-  await client.cancelQueries();
-  await Promise.all(active);
+  // Active requests of the earlier generation end too, so they never run beside new ones.
+  for (const error of await Promise.all(active)) {
+    expect(error).toHaveProperty('message', 'Positions requests reset');
+  }
+  const next = ['e', 'f', 'g', 'h', 'i'].map((id) =>
+    client.fetchQuery(accountPositionsQuery(id)).catch((error: unknown) => error),
+  );
+  await waitFor(() => expect(typedApi.get).toHaveBeenCalledTimes(8));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(typedApi.get).toHaveBeenCalledTimes(8);
+  resetPositionRequests();
+  await Promise.all(next);
+});
+
+it('tells same-name depots of one portfolio apart by section, else masked identifier', async () => {
+  const twin = (accountId: string, maskedIdentifier: string | null) => ({
+    ...depot,
+    accountId,
+    name: 'Depot',
+    maskedIdentifier,
+  });
+  mockInvestments({
+    views: [
+      {
+        ...view,
+        name: 'UBS',
+        sections: [
+          { ...view.sections[0], accounts: [twin('a', 'CH•• 1111'), twin('b', 'CH•• 2222')] },
+          { ...view.sections[0], section: 'PILLAR_3A', accounts: [twin('c', null)] },
+        ],
+      },
+    ],
+    snapshot: { ...snapshot, positions: [] },
+  });
+  const { route } = setupScreen();
+  await render(route());
+  expect(await screen.findByRole('radio', { name: 'Depot (UBS, CH•• 1111)' })).toBeOnTheScreen();
+  expect(screen.getByRole('radio', { name: 'Depot (UBS, CH•• 2222)' })).toBeOnTheScreen();
+  expect(screen.getByRole('radio', { name: 'Depot (UBS, Pillar 3a)' })).toBeOnTheScreen();
+});
+
+it('shows one error banner for a selected depot whose summary the directory already reads', async () => {
+  const fresh = { ...depot, positionsCount: null, positionsAsOf: null, accountId: 'fresh' };
+  const { failSummaries } = mockInvestments({
+    views: [{ ...view, sections: [{ ...view.sections[0], accounts: [fresh] }] }],
+    accounts: [{ id: fresh.accountId, holdsPositions: true }],
+    snapshot: { ...snapshot, positions: [] },
+  });
+  const { route, client } = setupScreen();
+  await render(route(fresh.accountId));
+  expect(await screen.findByRole('radio', { name: fresh.name })).toBeOnTheScreen();
+  failSummaries();
+  await act(() => client.refetchQueries({ queryKey: queryKeys.account(fresh.accountId) }));
+  await waitFor(() => expect(screen.getAllByRole('button', { name: 'Try again' })).toHaveLength(1));
 });

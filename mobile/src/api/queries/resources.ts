@@ -179,17 +179,24 @@ let activePositionRequests = 0;
 // Bumped by resetPositionRequests: a request admitted before a reset must not release a slot
 // counted after it.
 let positionGeneration = 0;
+// The requests holding a slot, so a reset can end them before it frees their slots.
+const activePositionControllers = new Set<AbortController>();
 
 /**
  * Test hook: forget queued and active positions requests left over by an earlier test. Queued
- * requests are rejected, so none of their queries stays pending for good.
+ * requests are rejected and active ones aborted, so none of their queries stays pending for good
+ * and no request of the earlier generation runs beside the new ones (the limit still holds).
  */
 export function resetPositionRequests() {
   const abandoned = positionRequestQueue;
+  const active = [...activePositionControllers];
   positionRequestQueue = [];
+  activePositionControllers.clear();
   activePositionRequests = 0;
   positionGeneration++;
-  for (const waiter of abandoned) waiter.abandon(new Error('Positions requests reset'));
+  const reason = new Error('Positions requests reset');
+  for (const waiter of abandoned) waiter.abandon(reason);
+  for (const controller of active) controller.abort(reason);
 }
 
 function cancelled(signal: AbortSignal) {
@@ -234,11 +241,14 @@ function releasePositionSlot(generation: number) {
 async function readAccountPositions(accountId: string, signal: AbortSignal) {
   const generation = await waitForPositionSlot(signal);
   const controller = new AbortController();
+  activePositionControllers.add(controller);
   const forwardAbort = () => controller.abort(signal.reason);
   signal.addEventListener('abort', forwardAbort, { once: true });
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     if (signal.aborted) throw cancelled(signal);
+    // A reset between the slot grant and this line found no controller to abort.
+    if (generation !== positionGeneration) throw new Error('Positions requests reset');
     const deadline = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
         // A NetworkError like the client's own timeout, so React Query retries it (shouldRetry).
@@ -257,6 +267,7 @@ async function readAccountPositions(accountId: string, signal: AbortSignal) {
   } finally {
     clearTimeout(timer);
     signal.removeEventListener('abort', forwardAbort);
+    activePositionControllers.delete(controller);
     releasePositionSlot(generation);
   }
 }
