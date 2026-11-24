@@ -844,6 +844,7 @@
   "investments.noPositions": "No positions have been recorded for this depot.",
   "investments.depotMissing": "This depot is unavailable. Showing all depots.",
   "investments.add": "Add a depot",
+  "investments.addCancel": "Cancel",
   "investments.open": "View investments",
   "investments.openDepot": "View investments in {depot}",
   "investments.sort": "Sort positions",

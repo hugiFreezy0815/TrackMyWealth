@@ -60,6 +60,18 @@ export function noGainReason(
     : { id: 'portfolio.position.unknownBasisCurrency' };
 }
 
+/**
+ * Whether the gain's percent figure shows. S2/S3 always show it ("–" without a gain). Investments
+ * leaves it out when a note explains the missing gain, but still shows "–" when nothing else
+ * would fill the cell (a cost basis but an unknown value): a missing figure is never blank.
+ */
+export function showsGainPercent(position: Position, currency: string, investments: boolean) {
+  if (!investments) return true;
+  const gain = shownGain(position, currency);
+  if (gain) return gain.percent != null;
+  return noGainReason(position, currency, true) == null;
+}
+
 /** The explanation line under a position without a gain; nothing when there is no reason. */
 export function NoGainNote({
   position,
@@ -226,7 +238,7 @@ function PositionRow({
               style={TypeScale.caption}
             />
           ) : null}
-          {(!investments || gain?.percent != null) && (
+          {showsGainPercent(position, currency, Boolean(investments)) && (
             <Figure
               value={gain?.percent ?? null}
               kind="percent"

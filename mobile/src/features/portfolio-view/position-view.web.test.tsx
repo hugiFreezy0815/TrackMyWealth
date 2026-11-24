@@ -207,3 +207,16 @@ it('makes each Investments column sortable and announces the active sort directi
   await fireEvent(screen.getByText('Cost basis'), 'click');
   expect(onSort).toHaveBeenCalledWith('costBasis');
 });
+
+it('shows "–" in an Investments gain cell that has neither a gain nor a note', async () => {
+  await renderWithIntl(
+    <PositionView
+      positions={[{ ...positions[1], costBasisCurrency: 'USD', valueStatus: 'UNKNOWN' }]}
+      currency="EUR"
+      accountName="DKB Depot"
+      investments={{ asOf: '2026-11-21', showDepotName: false }}
+    />,
+  );
+  const gainCell = host('td')[4];
+  expect(textOf(gainCell).trim()).toBe('–');
+});

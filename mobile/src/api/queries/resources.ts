@@ -7,6 +7,7 @@ import {
   type InfiniteData,
 } from '@tanstack/react-query';
 
+import { REQUEST_TIMEOUT_MS } from '@/api/client';
 import { readAllPages } from '@/api/pages';
 import type { components } from '@/api/schema';
 import { typedApi } from '@/api/typed-api';
@@ -165,12 +166,26 @@ export const useArchivedAccounts = (portfolioId: string, enabled = true) =>
   });
 
 // Share the four-request limit and the cache across screens that read depot positions.
-const positionRequestQueue: (() => void)[] = [];
+const POSITION_REQUEST_LIMIT = 4;
+// A slot is held at most this long (two client deadlines: room for a session refresh and retry),
+// so a request that never settles cannot block every later positions query in the app.
+export const POSITION_SLOT_TIMEOUT_MS = 2 * REQUEST_TIMEOUT_MS;
+let positionRequestQueue: (() => void)[] = [];
 let activePositionRequests = 0;
 
+/** Test hook: forget queued and active positions requests left over by an earlier test. */
+export function resetPositionRequests() {
+  positionRequestQueue = [];
+  activePositionRequests = 0;
+}
+
+function cancelled(signal: AbortSignal) {
+  return signal.reason ?? new Error('Positions request cancelled');
+}
+
 async function waitForPositionSlot(signal: AbortSignal) {
-  if (signal.aborted) throw signal.reason ?? new Error('Positions request cancelled');
-  if (activePositionRequests < 4) {
+  if (signal.aborted) throw cancelled(signal);
+  if (activePositionRequests < POSITION_REQUEST_LIMIT) {
     activePositionRequests++;
     return;
   }
@@ -182,25 +197,45 @@ async function waitForPositionSlot(signal: AbortSignal) {
     const cancel = () => {
       const index = positionRequestQueue.indexOf(resume);
       if (index >= 0) positionRequestQueue.splice(index, 1);
-      reject(signal.reason ?? new Error('Positions request cancelled'));
+      reject(cancelled(signal));
     };
     positionRequestQueue.push(resume);
     signal.addEventListener('abort', cancel, { once: true });
   });
 }
 
+function releasePositionSlot() {
+  const next = positionRequestQueue.shift();
+  if (next) next();
+  else activePositionRequests = Math.max(0, activePositionRequests - 1);
+}
+
 async function readAccountPositions(accountId: string, signal: AbortSignal) {
   await waitForPositionSlot(signal);
+  const controller = new AbortController();
+  const forwardAbort = () => controller.abort(signal.reason);
+  signal.addEventListener('abort', forwardAbort, { once: true });
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    if (signal.aborted) throw signal.reason ?? new Error('Positions request cancelled');
-    return await typedApi.get('/api/v1/accounts/{accountId}/positions', {
-      params: { accountId },
-      signal,
+    if (signal.aborted) throw cancelled(signal);
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const timeout = new Error('Positions request timed out');
+        controller.abort(timeout);
+        reject(timeout);
+      }, POSITION_SLOT_TIMEOUT_MS);
     });
+    return await Promise.race([
+      typedApi.get('/api/v1/accounts/{accountId}/positions', {
+        params: { accountId },
+        signal: controller.signal,
+      }),
+      deadline,
+    ]);
   } finally {
-    const next = positionRequestQueue.shift();
-    if (next) next();
-    else activePositionRequests--;
+    clearTimeout(timer);
+    signal.removeEventListener('abort', forwardAbort);
+    releasePositionSlot();
   }
 }
 

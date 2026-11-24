@@ -3,7 +3,11 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { Platform } from 'react-native';
 
 import { collectionPage } from '@/api/collection-page.fixture';
-import { accountPositionsQuery } from '@/api/queries/resources';
+import {
+  POSITION_SLOT_TIMEOUT_MS,
+  accountPositionsQuery,
+  resetPositionRequests,
+} from '@/api/queries/resources';
 import type { components } from '@/api/schema';
 import { typedApi } from '@/api/typed-api';
 import type { NetWorth } from '@/features/overview/overview-model';
@@ -18,7 +22,7 @@ import { setAmountsHidden } from '@/features/privacy/amount-visibility';
 import { withIntl } from '@/i18n/test-utils';
 
 import { InvestmentsScreen } from './investments-screen';
-import { investmentDepots, investmentFigures, orderPositions } from './model';
+import { investmentDepots, investmentFigures, orderPositions, visiblePositionSort } from './model';
 
 jest.mock('@/global.css', () => ({}));
 jest.mock('@/api/typed-api', () => ({ typedApi: { get: jest.fn() } }));
@@ -36,6 +40,9 @@ const originalPlatform = Platform.OS;
 afterEach(() => {
   Platform.OS = originalPlatform;
   jest.mocked(typedApi.get).mockReset();
+  jest.useRealTimers();
+  mockWindow.width = 390;
+  resetPositionRequests();
 });
 
 const asOf = '2026-11-21';
@@ -234,6 +241,17 @@ describe('Investments view model', () => {
       currency: 'USD',
     });
     expect(shownGain(noBasis, 'EUR')).toBeNull();
+    // S2/S3 keep the server's account-currency gain, which can rest on its cost there alone.
+    expect(
+      shownGain(
+        {
+          ...noBasis,
+          costBasisInAccountCurrency: '1000.00',
+          unrealisedGainInAccountCurrency: '50.00',
+        },
+        'EUR',
+      ),
+    ).toEqual({ amount: '50.00', percent: null, currency: 'EUR' });
     expect(
       orderPositions(
         { ...snapshot, positions: [noBasis, position] },
@@ -599,4 +617,71 @@ it('starts a newly selected depot without issuing abandoned queued positions req
   await previousSettled;
   expect(starts).toEqual([...depots.slice(0, 4), selected]);
   expect(maximum).toBe(4);
+});
+
+it('falls back to All depots for a missing depot while another portfolio view failed', async () => {
+  mockInvestments(
+    {
+      views: [view, { ...view, portfolioId: 'other-portfolio', sections: [pillarSection] }],
+    },
+    true,
+  );
+  const { route } = setupScreen();
+  await render(route('archived-depot'));
+  expect(await screen.findByText(/This depot is unavailable/)).toBeOnTheScreen();
+  expect(screen.getByText(/Some depots could not be loaded/)).toBeOnTheScreen();
+  expect(screen.getByRole('radio', { name: 'All depots' })).toBeChecked();
+  expect((await screen.findAllByText('Example Fund')).length).toBeGreaterThan(0);
+});
+
+it('resets a table-only sort to the default where the phone sort chips show', () => {
+  const units = { key: 'units', direction: 'ascending' } as const;
+  expect(visiblePositionSort(units, true)).toBe(units);
+  expect(visiblePositionSort(units, false)).toEqual({ key: 'value', direction: 'descending' });
+  expect(visiblePositionSort({ key: 'costBasis', direction: 'descending' }, false).key).toBe(
+    'value',
+  );
+  const name = { key: 'name', direction: 'ascending' } as const;
+  expect(visiblePositionSort(name, false)).toBe(name);
+});
+
+it('lets the member back out of the portfolio picker', async () => {
+  mockInvestments({
+    views: [
+      { ...view, sections: [] },
+      { ...view, portfolioId: 'other-portfolio', name: 'Second portfolio', sections: [] },
+    ],
+  });
+  const { route, onAddDepot } = setupScreen();
+  await render(route());
+  await fireEvent.press(await screen.findByRole('button', { name: 'Add a depot' }));
+  expect(screen.getByRole('radio', { name: 'Second portfolio' })).toBeOnTheScreen();
+  await fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+  expect(screen.queryByRole('radio', { name: 'Second portfolio' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Add a depot' })).toBeOnTheScreen();
+  expect(onAddDepot).not.toHaveBeenCalled();
+});
+
+it('frees a positions slot after its deadline when a request never settles', async () => {
+  jest.useFakeTimers();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  const starts: string[] = [];
+  jest.mocked(typedApi.get).mockImplementation((_, options) => {
+    const params = options?.params;
+    const accountId = params && 'accountId' in params ? params.accountId : '';
+    starts.push(accountId);
+    // Ignores its abort signal on purpose: only the slot deadline can free it.
+    return (accountId === 'late' ? Promise.resolve(snapshot) : new Promise(() => {})) as never;
+  });
+  const stuck = ['a', 'b', 'c', 'd'].map((id) =>
+    client.fetchQuery(accountPositionsQuery(id)).catch((error: unknown) => error),
+  );
+  const late = client.fetchQuery(accountPositionsQuery('late'));
+  await jest.advanceTimersByTimeAsync(0);
+  expect(starts).toEqual(['a', 'b', 'c', 'd']);
+  await jest.advanceTimersByTimeAsync(POSITION_SLOT_TIMEOUT_MS);
+  await expect(late).resolves.toEqual(snapshot);
+  expect(await Promise.all(stuck)).toEqual(Array(4).fill(new Error('Positions request timed out')));
 });

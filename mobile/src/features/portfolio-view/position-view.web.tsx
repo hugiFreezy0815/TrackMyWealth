@@ -12,6 +12,7 @@ import { useTheme } from '@/hooks/use-theme';
 import {
   PositionList,
   NoGainNote,
+  showsGainPercent,
   usePositionLabel,
   type PositionViewProps,
 } from './position-list';
@@ -56,6 +57,8 @@ function PositionCell({
       {depotName ? (
         <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>{depotName}</Text>
       ) : null}
+      {/* Shown on Investments too, unlike the phone row: W16 puts "price {price}" in this cell
+          because the table has no Price column (PO 2026-11-22). */}
       {position.price != null && position.priceCurrency ? (
         <View
           style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.one }}
@@ -232,7 +235,10 @@ export function PositionView(props: PositionViewProps) {
   );
 }
 
-/** The gain amount in its own currency and its percentage (#527); "–" without a gain. */
+/**
+ * The gain amount in its own currency and its percentage (#527); "–" without a gain unless
+ * Investments explains it in a note.
+ */
 function GainFigures({
   position,
   currency,
@@ -253,7 +259,7 @@ function GainFigures({
           style={TypeScale.bodyMedium}
         />
       ) : null}
-      {(!omitMissing || gain?.percent != null) && (
+      {showsGainPercent(position, currency, omitMissing) && (
         <Figure
           value={gain?.percent ?? null}
           kind="percent"

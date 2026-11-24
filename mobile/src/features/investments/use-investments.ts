@@ -24,7 +24,10 @@ export function useInvestments(accountId?: string) {
   const directoryPending = directoryQueries.some(({ isPending }) => isPending);
   const directoryComplete = portfolios.data != null && views.every(({ data }) => data != null);
   const directoryFailed = directoryQueries.some(({ isError, data }) => isError && data == null);
-  const invalidScope = Boolean(accountId && !depot && directoryComplete);
+  // A depot missing from every view that loaded falls back to All depots once no view is still
+  // loading: one failed view must not leave the screen blank (its error banner still shows).
+  const directorySettled = portfolios.data != null && views.every(({ isPending }) => !isPending);
+  const invalidScope = Boolean(accountId && !depot && directorySettled);
   const showAll = !accountId || invalidScope;
   const workspace = useWorkspace();
   const currency = workspace.data?.currency;

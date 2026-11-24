@@ -25,12 +25,12 @@ import { useTheme } from '@/hooks/use-theme';
 import { POSITION_TABLE_MIN_WIDTH, type PositionSort } from '@/features/portfolio-view/model';
 
 import { InvestmentActivity } from './activity';
+import { CHIP_SORT_KEYS, DEFAULT_POSITION_SORT, visiblePositionSort } from './model';
 import { PerformanceBreakdown, PerformanceCard } from './performance';
 import { DepotPositions } from './positions';
 import { useInvestments } from './use-investments';
 
 const ALL_DEPOTS = 'all-depots';
-const ORDERS = ['value', 'name', 'gain'] as const;
 
 export function InvestmentsScreen({
   accountId,
@@ -49,19 +49,20 @@ export function InvestmentsScreen({
   const { width } = useWindowDimensions();
   const desktop = Platform.OS === 'web' && width >= 1024;
   const webTable = Platform.OS === 'web' && width >= POSITION_TABLE_MIN_WIDTH;
-  const [sort, setSort] = useState<PositionSort>({ key: 'value', direction: 'descending' });
+  const [chosenSort, setSort] = useState<PositionSort>(DEFAULT_POSITION_SORT);
+  const sort = visiblePositionSort(chosenSort, webTable);
   const selectSort = (key: PositionSort['key']) =>
-    setSort((current) => ({
+    setSort({
       key,
       direction:
-        current.key === key
-          ? current.direction === 'ascending'
+        sort.key === key
+          ? sort.direction === 'ascending'
             ? 'descending'
             : 'ascending'
           : key === 'name'
             ? 'ascending'
             : 'descending',
-    }));
+    });
   const [performanceAccount, setPerformanceAccount] = useState<string>();
   const [showPortfolioPicker, setShowPortfolioPicker] = useState(false);
   const [explainedScope, setExplainedScope] = useState<string>();
@@ -166,13 +167,19 @@ export function InvestmentsScreen({
               disabled={!online}
             />
           ) : (
-            <ChipGroup
-              label={msg(intl, 'overview.portfolios')}
-              options={data.portfolios?.map(({ id, name }) => ({ value: id, label: name })) ?? []}
-              selected={[]}
-              onSelect={onAddDepot}
-              disabled={!online}
-            />
+            <>
+              <ChipGroup
+                label={msg(intl, 'overview.portfolios')}
+                options={data.portfolios?.map(({ id, name }) => ({ value: id, label: name })) ?? []}
+                selected={[]}
+                onSelect={onAddDepot}
+                disabled={!online}
+              />
+              <ActionButton
+                label={msg(intl, 'investments.addCancel')}
+                onPress={() => setShowPortfolioPicker(false)}
+              />
+            </>
           )}
           <InfoText>{msg(intl, 'investments.holdingsUnavailable')}</InfoText>
         </SectionCard>
@@ -257,13 +264,13 @@ export function InvestmentsScreen({
       {!webTable && data.groups.some(({ query }) => query.data?.positions.length) ? (
         <ChipGroup
           label={msg(intl, 'investments.sort')}
-          options={ORDERS.map((value) => ({
+          options={CHIP_SORT_KEYS.map((value) => ({
             value,
             label: msg(intl, 'investments.sort.' + value),
           }))}
           selected={[sort.key]}
           onSelect={(next) => {
-            const option = ORDERS.find((value) => value === next);
+            const option = CHIP_SORT_KEYS.find((value) => value === next);
             if (option)
               setSort({ key: option, direction: option === 'name' ? 'ascending' : 'descending' });
           }}

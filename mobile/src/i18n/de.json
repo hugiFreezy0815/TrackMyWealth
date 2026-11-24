@@ -844,6 +844,7 @@
   "investments.noPositions": "Für dieses Depot wurden noch keine Positionen erfasst.",
   "investments.depotMissing": "Dieses Depot ist nicht verfügbar. Du siehst alle Depots.",
   "investments.add": "Depot hinzufügen",
+  "investments.addCancel": "Abbrechen",
   "investments.open": "Anlagen ansehen",
   "investments.openDepot": "Anlagen in {depot} ansehen",
   "investments.sort": "Positionen sortieren",

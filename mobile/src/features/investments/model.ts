@@ -145,3 +145,15 @@ export function orderPositions(response: PositionsResponse, sort: PositionSort, 
     return sign * compareDecimal(a.amount, b.amount);
   });
 }
+
+/** The orders the phone sort chips offer; the web table's headers also sort by units and cost. */
+export const CHIP_SORT_KEYS = ['value', 'name', 'gain'] as const;
+export const DEFAULT_POSITION_SORT: PositionSort = { key: 'value', direction: 'descending' };
+
+/**
+ * The order the positions show in: a table-only order (Units, Cost basis) falls back to the
+ * default where the chips show instead of the table, so the list always matches a checked chip.
+ */
+export function visiblePositionSort(sort: PositionSort, table: boolean): PositionSort {
+  return table || CHIP_SORT_KEYS.some((key) => key === sort.key) ? sort : DEFAULT_POSITION_SORT;
+}
