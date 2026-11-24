@@ -12,7 +12,6 @@ import static org.mockito.Mockito.verify;
 
 import com.trackmywealth.backend.dto.AccountIdentifierRequest;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
 import com.trackmywealth.backend.dto.ImportAccountCandidateResponse;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
@@ -22,13 +21,13 @@ import com.trackmywealth.backend.dto.ImportRoutingValues;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.PortfolioResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.service.IdempotencyService;
 import com.trackmywealth.backend.service.PdfImportReaderService;
 import com.trackmywealth.backend.service.ShippedTemplateFixtures;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -142,7 +141,7 @@ class ImportRoutingControllerTest {
         statement.execute(sql);
       }
     }
-    token = bootstrapAdministrator();
+    token = bootstrapStandardUser();
     account = create(AccountRequests.account("Girokonto", "CASH", "EUR").build());
   }
 
@@ -643,20 +642,13 @@ class ImportRoutingControllerTest {
         .id();
   }
 
-  private String bootstrapAdministrator() {
-    return RestTestClient.bindToServer()
-        .baseUrl("http://localhost:%d".formatted(port))
-        .build()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "EUR"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            RestTestClient.bindToServer().baseUrl("http://localhost:%d".formatted(port)).build(),
+            "admin@example.com",
+            PASSWORD,
+            "Test Workspace",
+            "EUR")
         .accessToken();
   }
 

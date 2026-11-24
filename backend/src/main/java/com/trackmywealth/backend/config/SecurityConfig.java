@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.config;
 
 import com.trackmywealth.backend.controller.SecurityController;
+import com.trackmywealth.backend.dto.UserRoleValues;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.ApiAccessPaths;
 import com.trackmywealth.backend.security.JwtAuthenticationFilter;
@@ -87,7 +88,7 @@ public class SecurityConfig {
                     .requestMatchers(EndpointRequest.to(HealthEndpoint.class, InfoEndpoint.class))
                     .permitAll()
                     .requestMatchers(EndpointRequest.toAnyEndpoint())
-                    .hasRole("SYSTEM_ADMINISTRATOR")
+                    .hasRole(UserRoleValues.SYSTEM_ADMINISTRATOR)
                     .requestMatchers(PUBLIC_API_PATTERNS.toArray(String[]::new))
                     .permitAll()
                     // Spring MVC's default handling of a thrown ResponseStatusException (e.g.
@@ -101,7 +102,7 @@ public class SecurityConfig {
                     // FR-TEN-007: administration rights are their own permission domain -
                     // gated on role alone here, deliberately never on workspace context.
                     .requestMatchers(ADMIN_API_PATTERNS.toArray(String[]::new))
-                    .hasRole("SYSTEM_ADMINISTRATOR")
+                    .hasRole(UserRoleValues.SYSTEM_ADMINISTRATOR)
                     .anyRequest()
                     .authenticated())
         .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)

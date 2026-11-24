@@ -4,13 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CustomAssetValuationResponse;
 import com.trackmywealth.backend.dto.PageResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.service.CustomAssetValuationService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -105,7 +104,7 @@ class CustomAssetValuationControllerTest {
 
   @Test
   void recordingAValuationCreatesItAndReturnsItCreated() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse account = createCustomAssetAccount(token, "CHF");
 
     CustomAssetValuationResponse created =
@@ -126,7 +125,7 @@ class CustomAssetValuationControllerTest {
   @Test
   void listingValuationsReturnsThemNewestFirst() {
     // DoD: enters two valuations at different dates, asserts correct historical attribution.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse account = createCustomAssetAccount(token, "CHF");
     recordValuation(
         token,
@@ -164,7 +163,7 @@ class CustomAssetValuationControllerTest {
   // tied dates are tested on repayments.)
   @Test
   void sixtyValuationsArePagedNewestFirstWithoutOverlap() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse account = createCustomAssetAccount(token, "CHF");
     LocalDate first = LocalDate.of(2021, 1, 1);
     for (int month = 0; month < 60; month++) {
@@ -215,7 +214,7 @@ class CustomAssetValuationControllerTest {
 
   @Test
   void theValuationAsOfADateIsTheLatestOneOnOrBeforeItNeverAnInterpolation() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse account = createCustomAssetAccount(token, "CHF");
     recordValuation(
         token,
@@ -244,7 +243,7 @@ class CustomAssetValuationControllerTest {
   @Test
   void anAccountWithNoValuationHasNoCurrentValueRatherThanZero() {
     // PR-011/data-quality behaviour: unknown, never silently zero.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse account = createCustomAssetAccount(token, "CHF");
 
     Optional<CustomAssetValuationResponse> asOf =
@@ -255,7 +254,7 @@ class CustomAssetValuationControllerTest {
 
   @Test
   void recordingASecondValuationForTheSameDateIsRejectedWithAStructuredConflict() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse account = createCustomAssetAccount(token, "CHF");
     recordValuation(
         token,
@@ -277,7 +276,7 @@ class CustomAssetValuationControllerTest {
 
   @Test
   void recordingAValuationForANonCustomAssetAccountIsRejectedWithAStructuredConflict() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cashAccount = createCashAccount(token, "CHF");
 
     client(token)
@@ -294,7 +293,7 @@ class CustomAssetValuationControllerTest {
 
   @Test
   void recordingAValuationForAnUnknownAccountIsNotFound() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     client(token)
         .post()
@@ -310,7 +309,7 @@ class CustomAssetValuationControllerTest {
 
   @Test
   void listingValuationsForAnUnknownAccountIsNotFound() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     client(token)
         .get()
@@ -327,7 +326,7 @@ class CustomAssetValuationControllerTest {
     // guard never fires here, unlike the combined-violation test below - so this is the only
     // remaining check that custom_asset_valuation_guard_2_currency's own predicate/message are
     // still correct on their own, now that the service can never construct this input itself.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse account = createCustomAssetAccount(token, "CHF");
 
     try (Connection connection = dataSource.getConnection();
@@ -346,7 +345,7 @@ class CustomAssetValuationControllerTest {
     // actually construct a row violating both - currency isn't client input any more - so this
     // reaches the DB directly the way a future non-service caller of this table might, to verify
     // the ordering fix itself rather than anything the API surface can still exercise.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cashAccount = createCashAccount(token, "CHF");
 
     try (Connection connection = dataSource.getConnection();
@@ -420,22 +419,13 @@ class CustomAssetValuationControllerTest {
         .getResponseBody();
   }
 
-  private String bootstrapAdministrator() {
-    return RestTestClient.bindToServer()
-        .baseUrl("http://localhost:%d".formatted(port))
-        .build()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new SetupAdministratorRequest(
-                "admin@example.com", "correct-horse-battery-staple", "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            RestTestClient.bindToServer().baseUrl("http://localhost:%d".formatted(port)).build(),
+            "admin@example.com",
+            "correct-horse-battery-staple",
+            "Test Workspace",
+            "CHF")
         .accessToken();
   }
 

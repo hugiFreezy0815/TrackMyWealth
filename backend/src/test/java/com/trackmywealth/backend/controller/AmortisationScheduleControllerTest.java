@@ -5,10 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AmortisationScheduleEntryRequest;
 import com.trackmywealth.backend.dto.AmortisationScheduleEntryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.PageResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.Statement;
@@ -89,7 +88,7 @@ class AmortisationScheduleControllerTest {
   // #473: a 30-year monthly mortgage has 360 entries; paged earliest due date first.
   @Test
   void aLongScheduleIsPagedEarliestDueDateFirst() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID mortgage = createMortgage(token);
     for (int month = 0; month < 120; month++) {
       post(
@@ -131,7 +130,7 @@ class AmortisationScheduleControllerTest {
 
   @Test
   void entriesAreCreatedListedInDueDateOrderReplacedAndDeleted() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID mortgage = createMortgage(token);
 
     EntityExchangeResult<AmortisationScheduleEntryResponse> created =
@@ -188,7 +187,7 @@ class AmortisationScheduleControllerTest {
 
   @Test
   void aReplaceNeedsTheCurrentVersion() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID mortgage = createMortgage(token);
     AmortisationScheduleEntryResponse march =
         post(token, mortgage, entry(MARCH, "800.00", "1200.00", "498800.00"))
@@ -219,7 +218,7 @@ class AmortisationScheduleControllerTest {
 
   @Test
   void aDeleteNeedsTheCurrentVersion() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID mortgage = createMortgage(token);
     AmortisationScheduleEntryResponse march =
         post(token, mortgage, entry(MARCH, "800.00", "1200.00", "498800.00"))
@@ -247,7 +246,7 @@ class AmortisationScheduleControllerTest {
 
   @Test
   void anArchivedLoansScheduleCanBeReadButNotChanged() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID mortgage = createMortgage(token);
     AmortisationScheduleEntryResponse march =
         post(token, mortgage, entry(MARCH, "800.00", "1200.00", "498800.00"))
@@ -291,7 +290,7 @@ class AmortisationScheduleControllerTest {
 
   @Test
   void aSecondEntryForTheSameDueDateIsAConflictNamingTheFirst() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID mortgage = createMortgage(token);
     UUID first =
         post(token, mortgage, entry(MARCH, "800.00", "1200.00", "498800.00"))
@@ -312,7 +311,7 @@ class AmortisationScheduleControllerTest {
 
   @Test
   void onlyALoanTakesAScheduleAndItsAmountsAreNeverNegativeOrZero() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID mortgage = createMortgage(token);
     UUID current = create(token, AccountRequests.account("Current", "CASH", "CHF").build());
 
@@ -330,7 +329,7 @@ class AmortisationScheduleControllerTest {
 
   @Test
   void anEntryOfAnotherLoanIsNotFound() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID mortgage = createMortgage(token);
     UUID other = createMortgage(token);
     UUID entry =
@@ -409,18 +408,9 @@ class AmortisationScheduleControllerTest {
         .id();
   }
 
-  private String bootstrapAdministrator() {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Test Workspace", "CHF")
         .accessToken();
   }
 

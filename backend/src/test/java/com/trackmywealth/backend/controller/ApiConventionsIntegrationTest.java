@@ -5,18 +5,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.trackmywealth.backend.architecture.IfMatchExceptions;
 import com.trackmywealth.backend.config.JwtProperties;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.SecurityResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ImportRowCode;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.SortWhitelist;
 import com.trackmywealth.backend.web.TraceparentResponseFilter;
@@ -161,7 +160,7 @@ class ApiConventionsIntegrationTest {
 
   @Test
   void aValidationFailureNamesEachRejectedField() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     JsonNode problem =
         problem(
@@ -179,7 +178,8 @@ class ApiConventionsIntegrationTest {
 
   @Test
   void aMissingTokenIsUnauthenticatedAndAWrongRoleForbidden() {
-    String adminToken = bootstrapAdministrator();
+    String adminToken =
+        WorkspaceLoginFixtures.bootstrapAdministrator(anonymousClient()).accessToken();
     createStandardUser(adminToken, "member@example.com");
 
     problem(
@@ -215,7 +215,7 @@ class ApiConventionsIntegrationTest {
 
   @Test
   void aForeignResourceIsNotFoundExactlyLikeOneThatDoesNotExist() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID foreign = accountInAnotherWorkspace();
 
     JsonNode missing =
@@ -234,7 +234,7 @@ class ApiConventionsIntegrationTest {
 
   @Test
   void aConflictAndABrokenRuleExplainThemselves() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "CASH");
     String category = "{\"nameEn\":\"Hobby\",\"nameDe\":\"Hobby\"}";
     client(token)
@@ -268,7 +268,7 @@ class ApiConventionsIntegrationTest {
 
   @Test
   void aClientCanTellAnArchivedAccountFromOtherConflicts() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "CASH");
     client(token)
         .post()
@@ -286,7 +286,7 @@ class ApiConventionsIntegrationTest {
 
   @Test
   void anUnexpectedHttpErrorUsesTheSameEnvelopeAndDoesNotLeakItsCause() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     JsonNode problem =
         problem(
@@ -304,7 +304,7 @@ class ApiConventionsIntegrationTest {
   /** PR #267 review: a busy server says when to retry, inside the same error envelope. */
   @Test
   void aRetryableErrorSaysWhenToRetry() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     client(token)
         .get()
@@ -320,7 +320,7 @@ class ApiConventionsIntegrationTest {
 
   @Test
   void aRequestTheSecurityFirewallRejectsGetsTheSameShape() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     // Sent as given - a client would normalise these paths - so they reach the firewall as is.
     for (String path : List.of("/api/v1/accounts;x=1", "/api/v1/accounts/%2e%2e/x")) {
       URI uri = URI.create("http://localhost:" + port + path);
@@ -335,7 +335,7 @@ class ApiConventionsIntegrationTest {
 
   @Test
   void aWellFormedCorrelationIdIsEchoedAndAnythingElseReplaced() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     String echoed =
         client(token)
@@ -374,7 +374,7 @@ class ApiConventionsIntegrationTest {
 
   @Test
   void continuesTheCallerTraceAndUsesTheServerSpanInTheResponse() {
-    EntityExchangeResult<String> result = traceProbe(bootstrapAdministrator(), VALID_TRACEPARENT);
+    EntityExchangeResult<String> result = traceProbe(bootstrapStandardUser(), VALID_TRACEPARENT);
     String traceparent = result.getResponseHeaders().getFirst("traceparent");
     assertThat(traceparent).matches("00-" + TRACE_ID + "-[0-9a-f]{16}-01");
     assertThat(traceparent).doesNotContain("-" + PARENT_ID + "-");
@@ -386,7 +386,7 @@ class ApiConventionsIntegrationTest {
   @NullSource
   @ValueSource(strings = {"malformed", "00-4bf92f3577b34da6a3ce929d0e0e4736-0000000000000000-01"})
   void startsANewTraceWhenTheCallerContextIsMissingOrInvalid(String incoming) {
-    EntityExchangeResult<String> result = traceProbe(bootstrapAdministrator(), incoming);
+    EntityExchangeResult<String> result = traceProbe(bootstrapStandardUser(), incoming);
     String traceId = result.getResponseBody();
     assertThat(traceId)
         .matches("[0-9a-f]{32}")
@@ -466,7 +466,7 @@ class ApiConventionsIntegrationTest {
                 assertThat(value.toLowerCase())
                     .contains("x-correlation-id", "if-match", "idempotency-key", "traceparent"));
 
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse account = createAccount(token, "CASH");
     client(token)
         .get()
@@ -487,7 +487,7 @@ class ApiConventionsIntegrationTest {
 
   @Test
   void everyDecimalTravelsAsAStringWithItsFullPrecision() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "SECURITIES");
     UUID security = createSecurity(token);
     // 12345678.1234567891 x 1.0000000001 = 12345678.12469135691..., statement-rounded to 4 places.
@@ -541,7 +541,7 @@ class ApiConventionsIntegrationTest {
 
   @Test
   void numbersAreStillAcceptedOnRequestsAndReadBackAsStrings() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "CASH");
 
     String created =
@@ -566,7 +566,7 @@ class ApiConventionsIntegrationTest {
 
   @Test
   void openApiDocumentsExactDecimalsCorrelationIdsAndTheSharedProblemEnvelope() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     JsonNode spec =
         objectMapper.readTree(
@@ -707,7 +707,7 @@ class ApiConventionsIntegrationTest {
   void openApiListsEveryProblemCodeAndPerOperationTheCodesItCanReturn() {
     JsonNode spec =
         objectMapper.readTree(
-            client(bootstrapAdministrator())
+            client(bootstrapStandardUser())
                 .get()
                 .uri("/api-docs")
                 .exchange()
@@ -825,7 +825,7 @@ class ApiConventionsIntegrationTest {
   void anUnregisteredCodeNeverReachesAClient() {
     JsonNode problem =
         objectMapper.readTree(
-            client(bootstrapAdministrator())
+            client(bootstrapStandardUser())
                 .get()
                 .uri("/api/v1/test/unregistered-code")
                 .exchange()
@@ -844,7 +844,7 @@ class ApiConventionsIntegrationTest {
   void openApiDocumentsEveryPagedListWithItsPageResponseAndSortWhitelist() {
     JsonNode spec =
         objectMapper.readTree(
-            client(bootstrapAdministrator())
+            client(bootstrapStandardUser())
                 .get()
                 .uri("/api-docs")
                 .exchange()
@@ -1080,18 +1080,9 @@ class ApiConventionsIntegrationTest {
         .accessToken();
   }
 
-  private String bootstrapAdministrator() {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Workspace A", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Workspace A", "CHF")
         .accessToken();
   }
 

@@ -3,27 +3,22 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CardStatementResponse;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SetStatementConfigRequest;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.StatementConfigResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
-import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.MutableClock;
 import com.trackmywealth.backend.testsupport.TestClockConfig;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.math.BigDecimal;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -119,7 +114,7 @@ class CardStatementControllerTest {
 
   @Test
   void settingAndReadingBackTheStatementConfig() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID card = createCard(token);
 
     assertThat(getConfig(token, card)).isEqualTo(new StatementConfigResponse(card, null, null, 0));
@@ -137,7 +132,7 @@ class CardStatementControllerTest {
   // rejected and the first one is kept. Without If-Match: 428.
   @Test
   void aStaleStatementConfigWriteIsRejectedAndTheFirstIsKept() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID card = createCard(token);
     int versionReadByBoth = getConfig(token, card).version();
 
@@ -167,7 +162,7 @@ class CardStatementControllerTest {
 
   @Test
   void anOutOfRangeStatementDayOrANegativeOffsetIsRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID card = createCard(token);
 
     setConfig(token, card, 0, 10, HttpStatus.UNPROCESSABLE_CONTENT);
@@ -178,7 +173,7 @@ class CardStatementControllerTest {
 
   @Test
   void onlyACreditCardAccountHasAStatementCycle() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID cash = createAccount(token, "Everyday Checking", "CASH", "CHF").id();
 
     setConfig(token, cash, 5, 10, HttpStatus.UNPROCESSABLE_CONTENT);
@@ -198,7 +193,7 @@ class CardStatementControllerTest {
 
   @Test
   void theCurrentStatementIsUnavailableUntilBothFieldsAreConfigured() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID card = createCard(token);
     setToday(clock, LocalDate.of(2026, 9, 22));
 
@@ -215,7 +210,7 @@ class CardStatementControllerTest {
 
   @Test
   void theCurrentPeriodIsTheMostRecentlyClosedCycleWithItsClosingBalanceAndDueDate() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID card = createCard(token);
     setConfig(token, card, 5, 20, HttpStatus.OK);
     purchase(token, card, "-700.00", LocalDate.of(2026, 8, 28)); // in the closed period
@@ -237,7 +232,7 @@ class CardStatementControllerTest {
   void theStatementBoundaryIsDeterministicAndInclusive() {
     // The story's own edge case: a purchase booked exactly on the closing day. It belongs to the
     // period ending that day, not the one starting the next day.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID card = createCard(token);
     setConfig(token, card, 5, 10, HttpStatus.OK);
     purchase(token, card, "-50.00", LocalDate.of(2026, 9, 5));
@@ -253,7 +248,7 @@ class CardStatementControllerTest {
   // before it has no known balance, and nothing can be shown as paid.
   @Test
   void theClosingBalanceStartsFromTheOpeningBalanceAndIsUnknownBeforeIt() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID card = createCard(token);
     setConfig(token, card, 5, 10, HttpStatus.OK);
     // Set first: an opening balance may not be dated after "today".
@@ -274,7 +269,7 @@ class CardStatementControllerTest {
 
   @Test
   void beforeThisMonthsCloseTheCurrentPeriodIsStillLastMonths() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID card = createCard(token);
     setConfig(token, card, 5, 10, HttpStatus.OK);
     setToday(clock, LocalDate.of(2026, 9, 4)); // one day before September's close
@@ -288,7 +283,7 @@ class CardStatementControllerTest {
   @Test
   void aStatementDayBeyondTheMonthsLengthClampsToTheMonthsLastDay() {
     // statementDay = 31 in a 28-day February closes on the 28th, not error or roll into March.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID card = createCard(token);
     setConfig(token, card, 31, 0, HttpStatus.OK);
     setToday(clock, LocalDate.of(2027, 3, 15)); // 2027 is not a leap year
@@ -304,7 +299,7 @@ class CardStatementControllerTest {
 
   @Test
   void aStatementWithNothingOwedIsTriviallyPaid() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID card = createCard(token);
     setConfig(token, card, 5, 20, HttpStatus.OK);
     setToday(clock, LocalDate.of(2026, 9, 22));
@@ -314,7 +309,7 @@ class CardStatementControllerTest {
 
   @Test
   void anUnpaidClosingBalanceIsNotPaidUntilAConfirmedSettlementCoversIt() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     setConfig(token, a.card(), 5, 20, HttpStatus.OK);
     purchase(token, a.card(), "-1200.00", LocalDate.of(2026, 8, 28));
@@ -331,7 +326,7 @@ class CardStatementControllerTest {
 
   @Test
   void aPartialPaymentDoesNotMarkTheStatementPaid() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     setConfig(token, a.card(), 5, 20, HttpStatus.OK);
     purchase(token, a.card(), "-1200.00", LocalDate.of(2026, 8, 28));
@@ -348,7 +343,7 @@ class CardStatementControllerTest {
     // Regression: with a generous dueDateOffsetDays, an uncapped window would let a settlement
     // booked well into the *next* cycle still satisfy this period's paid check just because the
     // amount happens to match. The window must stay capped short of the next period's own close.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     setConfig(token, a.card(), 5, 40, HttpStatus.OK); // due date offset exceeds a monthly cycle
     purchase(token, a.card(), "-1200.00", LocalDate.of(2026, 8, 10));
@@ -370,10 +365,10 @@ class CardStatementControllerTest {
 
   @Test
   void anotherMemberReadsAndSetsTheCycleWithoutAnyGrant() {
-    String adminToken = bootstrapAdministrator();
+    String adminToken = bootstrapStandardUser();
     UUID card = createCard(adminToken);
     setConfig(adminToken, card, 5, 20, HttpStatus.OK);
-    createSecondMember(adminToken, "bob@example.com");
+    createSecondMember("bob@example.com");
     String bobToken = login("bob@example.com");
 
     assertThat(getConfig(bobToken, card)).isEqualTo(new StatementConfigResponse(card, 5, 20, 1));
@@ -545,28 +540,8 @@ class CardStatementControllerTest {
         : null;
   }
 
-  private UUID createSecondMember(String adminToken, String email) {
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(UserSummaryResponse.class);
-    try (Connection connection = dataSource.getConnection();
-        PreparedStatement statement =
-            connection.prepareStatement(
-                "SELECT workspace_member_id FROM app_user WHERE email = ?")) {
-      statement.setString(1, email);
-      try (ResultSet resultSet = statement.executeQuery()) {
-        assertThat(resultSet.next()).as("app_user " + email).isTrue();
-        return (UUID) resultSet.getObject(1);
-      }
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
+  private UUID createSecondMember(String email) {
+    return WorkspaceLoginFixtures.addMember(dataSource, "admin@example.com", email, PASSWORD);
   }
 
   private String login(String email) {
@@ -585,18 +560,9 @@ class CardStatementControllerTest {
         .accessToken();
   }
 
-  private String bootstrapAdministrator() {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Test Workspace", "CHF")
         .accessToken();
   }
 

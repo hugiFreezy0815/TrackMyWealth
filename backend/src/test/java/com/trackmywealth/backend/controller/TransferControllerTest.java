@@ -3,16 +3,13 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.service.TransferDetectionService;
@@ -20,6 +17,7 @@ import com.trackmywealth.backend.service.TransferRecheckService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -113,7 +111,7 @@ class TransferControllerTest {
 
   @Test
   void aTransferToSavingsIsSavingNeverSpending() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(token, "SAVINGS", "CHF");
 
@@ -138,7 +136,7 @@ class TransferControllerTest {
 
   @Test
   void aTransferIntoADepotAndThePurchaseThereAreNeitherSpending() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse depot = createAccount(token, "SECURITIES", "CHF");
     record(token, current.id(), transfer("-1005.00", depot.id(), null));
@@ -161,7 +159,7 @@ class TransferControllerTest {
 
   @Test
   void twoImportedTransferLegsArePairedAutomaticallyAndLeaveIncomeAndSpending() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(token, "SAVINGS", "CHF");
     // Two days apart, both inside this month whatever today's date is.
@@ -184,7 +182,7 @@ class TransferControllerTest {
   @Test
   void crossCurrencyImportedLegsWithinToleranceAreProposedAndConfirmedAsOneTransfer()
       throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse euro = createAccount(token, "SAVINGS", "EUR");
     LocalDate sent = today().withDayOfMonth(10);
@@ -221,7 +219,7 @@ class TransferControllerTest {
 
   @Test
   void crossCurrencyImportedLegsOutsideToleranceAreNotProposed() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse euro = createAccount(token, "SAVINGS", "EUR");
     LocalDate sent = today().withDayOfMonth(10);
@@ -239,7 +237,7 @@ class TransferControllerTest {
   // background import has stored rates for it the FX job re-runs detection there.
   @Test
   void crossCurrencyLegsWithoutAnFxRateAreProposedOnceTheRateIsImported() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse euro = createAccount(token, "SAVINGS", "EUR");
     LocalDate sent = today().withDayOfMonth(10);
@@ -271,7 +269,7 @@ class TransferControllerTest {
   // write nearby.
   @Test
   void aPairWhoseCurrencyIsNeverPublishedIsRecheckedOnlyAFewTimes() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse yen = createAccount(token, "SAVINGS", "JPY");
     LocalDate sent = today().withDayOfMonth(10);
@@ -294,7 +292,7 @@ class TransferControllerTest {
 
   @Test
   void rejectedCrossCurrencyPairIsNeverProposedAgain() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse euro = createAccount(token, "SAVINGS", "EUR");
     LocalDate sent = today().withDayOfMonth(10);
@@ -324,7 +322,7 @@ class TransferControllerTest {
   // still recognises a CHF -> EUR transfer, compared the other way round.
   @Test
   void crossCurrencyLegsMatchWithOnlyTheReverseRateStored() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse euro = createAccount(token, "SAVINGS", "EUR");
     LocalDate sent = today().withDayOfMonth(10);
@@ -340,7 +338,7 @@ class TransferControllerTest {
   // The latest rate on or before the debit's date counts, however old (FR-CUR-012).
   @Test
   void crossCurrencyLegsMatchOnTheLatestEarlierRate() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse euro = createAccount(token, "SAVINGS", "EUR");
     LocalDate sent = today().withDayOfMonth(10);
@@ -357,7 +355,7 @@ class TransferControllerTest {
   // at that rate, the one the bank applied - not at the daily rate, which here would be far off.
   @Test
   void aLegsOwnImportedRateWinsOverTheDailyRate() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(token, "SAVINGS", "CHF");
     LocalDate sent = today().withDayOfMonth(10);
@@ -384,7 +382,7 @@ class TransferControllerTest {
   // Within the tolerance two credits can fit one debit: both are proposed, the member picks one.
   @Test
   void twoCreditsWithinToleranceAreBothProposed() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse euro = createAccount(token, "SAVINGS", "EUR");
     LocalDate sent = today().withDayOfMonth(10);
@@ -401,7 +399,7 @@ class TransferControllerTest {
 
   @Test
   void aWithdrawalAndADepositOfTheSameAmountAreOnlyProposed() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(token, "SAVINGS", "CHF");
     TransactionResponse withdrawal = record(token, current.id(), cash("WITHDRAWAL", "-150.00"));
@@ -436,7 +434,7 @@ class TransferControllerTest {
 
   @Test
   void twoEqualLegsForOneCounterpartAreProposedNeverGuessed() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(token, "SAVINGS", "CHF");
     record(token, current.id(), transfer("-100.00", null, null));
@@ -449,7 +447,7 @@ class TransferControllerTest {
 
   @Test
   void aProposedPairAcrossTwoMonthsIsPendingInBothNeverDropped() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse other = createAccount(token, "CASH", "CHF");
     YearMonth month = YearMonth.from(today()).minusMonths(1);
@@ -472,7 +470,7 @@ class TransferControllerTest {
 
   @Test
   void aRejectedPairIsNeverProposedAgain() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(token, "SAVINGS", "CHF");
     record(token, current.id(), cash("WITHDRAWAL", "-150.00"));
@@ -495,7 +493,7 @@ class TransferControllerTest {
 
   @Test
   void theMatchListCanBeNarrowedToOneKind() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(token, "SAVINGS", "CHF");
     record(token, current.id(), cash("WITHDRAWAL", "-150.00"));
@@ -513,7 +511,7 @@ class TransferControllerTest {
 
   @Test
   void aCardSettlementConfirmedAutomaticallyRejectsATransferProposalForTheSamePayment() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(token, "SAVINGS", "CHF");
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
@@ -550,7 +548,7 @@ class TransferControllerTest {
 
   @Test
   void aPairIsOnlyDecidedWithEveryCompetitorInView() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(token, "SAVINGS", "CHF");
     LocalDate run = today().minusDays(60);
@@ -574,7 +572,7 @@ class TransferControllerTest {
 
   @Test
   void aOneSidedLegIsPendingUntilConfirmedAsATransferToAnUntrackedAccount() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     TransactionResponse leg = record(token, current.id(), transfer("-300.00", null, null));
 
@@ -622,7 +620,7 @@ class TransferControllerTest {
   // action it is a 412.
   @Test
   void confirmingAndUndoingAnUntrackedTransferRequireTheCurrentVersion() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     TransactionResponse leg = record(token, current.id(), transfer("-300.00", null, null));
     String untracked = rowUri(current.id(), leg.id()) + "/untracked-transfer";
@@ -670,7 +668,7 @@ class TransferControllerTest {
 
   @Test
   void aLegConfirmedAsUntrackedStillPairsWithACounterpartRecordedLater() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(token, "SAVINGS", "CHF");
     TransactionResponse leg = record(token, current.id(), transfer("-250.00", null, null));
@@ -703,7 +701,7 @@ class TransferControllerTest {
 
   @Test
   void onlyAnUnlinkedTransferLegCanBeConfirmedAsUntracked() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(token, "SAVINGS", "CHF");
     TransactionResponse expense = record(token, current.id(), cash("EXPENSE", "-20.00"));
@@ -730,7 +728,7 @@ class TransferControllerTest {
 
   @Test
   void aTransferBetweenCurrenciesNamesWhatTheOtherAccountReceives() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse euro = createAccount(token, "SAVINGS", "EUR");
 
@@ -746,7 +744,7 @@ class TransferControllerTest {
 
   @Test
   void aTransferIsRejectedWhereItDoesNotFit() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(token, "SAVINGS", "CHF");
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
@@ -780,7 +778,7 @@ class TransferControllerTest {
 
   @Test
   void aPensionContributionIsSaving() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse pension = createPension(token);
 
@@ -794,7 +792,7 @@ class TransferControllerTest {
 
   @Test
   void aTransferBetweenTwoCurrentAccountsIsInNoFigure() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse joint = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(token, "SAVINGS", "CHF");
@@ -811,7 +809,7 @@ class TransferControllerTest {
 
   @Test
   void theSavingFlagHasDefaultsAndCanBeOverridden() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     assertThat(createAccount(token, "CASH", "CHF").countsAsSaving()).isFalse();
     assertThat(createAccount(token, "SAVINGS", "CHF").countsAsSaving()).isTrue();
     assertThat(createAccount(token, "SECURITIES", "CHF").countsAsSaving()).isTrue();
@@ -837,10 +835,10 @@ class TransferControllerTest {
 
   @Test
   void anotherMemberRecordsATransferBetweenTheWorkspacesAccounts() {
-    String adminToken = bootstrapAdministrator();
+    String adminToken = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(adminToken, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(adminToken, "SAVINGS", "CHF");
-    createSecondMember(adminToken, "member@example.com");
+    createSecondMember("member@example.com");
     String memberToken = login("member@example.com");
 
     post(memberToken, current.id(), transfer("-100.00", savings.id(), null))
@@ -850,7 +848,7 @@ class TransferControllerTest {
 
   @Test
   void removingEitherLegRemovesTheWholeTransferAndRestoringBringsBothBack() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(token, "SAVINGS", "CHF");
     record(token, current.id(), transfer("-500.00", savings.id(), null));
@@ -1146,27 +1144,8 @@ class TransferControllerTest {
     }
   }
 
-  private UUID createSecondMember(String adminToken, String email) {
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isCreated();
-    try (Connection connection = dataSource.getConnection();
-        PreparedStatement statement =
-            connection.prepareStatement(
-                "SELECT workspace_member_id FROM app_user WHERE email = ?")) {
-      statement.setString(1, email);
-      try (ResultSet resultSet = statement.executeQuery()) {
-        resultSet.next();
-        return (UUID) resultSet.getObject(1);
-      }
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
+  private UUID createSecondMember(String email) {
+    return WorkspaceLoginFixtures.addMember(dataSource, "admin@example.com", email, PASSWORD);
   }
 
   private String login(String email) {
@@ -1185,18 +1164,9 @@ class TransferControllerTest {
         .accessToken();
   }
 
-  private String bootstrapAdministrator() {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Test Workspace", "CHF")
         .accessToken();
   }
 

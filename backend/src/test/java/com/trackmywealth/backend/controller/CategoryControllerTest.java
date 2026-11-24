@@ -3,20 +3,18 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CategoryResponse;
 import com.trackmywealth.backend.dto.CreateCategoryRequest;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.PageResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UpdateCategoryRequest;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CategoryService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.RowLevelSecurityRole;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import jakarta.persistence.EntityManager;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -129,7 +127,7 @@ class CategoryControllerTest {
 
   @Test
   void pagesRetainTreeOrderAcrossAParentChildBoundary() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     List<CategoryResponse> expected = list(token, false);
     List<CategoryResponse> retrieved = new java.util.ArrayList<>();
     for (int page = 0; page < expected.size(); page++) {
@@ -150,7 +148,7 @@ class CategoryControllerTest {
 
   @Test
   void aCustomSubcategoryIsCreatedAndAUsedDefaultIsDeactivatedNotDeleted() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID workspaceId = workspaceOf("admin@example.com");
     UUID leisure = defaultId("LEISURE");
 
@@ -214,7 +212,7 @@ class CategoryControllerTest {
 
   @Test
   void categoryGetReturnsVersionAndMatchingEtag() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     CategoryResponse created = created(token, new CreateCategoryRequest(null, "Hobby", "Hobby"));
 
     client(token)
@@ -232,7 +230,7 @@ class CategoryControllerTest {
 
   @Test
   void categoryUpdateWithoutIfMatchIsPreconditionRequired() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     CategoryResponse created = created(token, new CreateCategoryRequest(null, "Hobby", "Hobby"));
 
     client(token)
@@ -250,7 +248,7 @@ class CategoryControllerTest {
 
   @Test
   void staleCategoryUpdateIsRejectedAndTheWinningWriteIsKept() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     CategoryResponse readByBothClients =
         created(token, new CreateCategoryRequest(null, "Original", "Original"));
     int versionReadByBoth = readByBothClients.version();
@@ -287,7 +285,7 @@ class CategoryControllerTest {
 
   @Test
   void sharedDefaultVersionNeverResetsAcrossCustomizeRevertCustomize() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID leisure = defaultId("LEISURE");
     CategoryResponse original = getCategory(token, leisure);
 
@@ -348,7 +346,7 @@ class CategoryControllerTest {
 
   @Test
   void renamingADefaultLeavesHistoricalClassificationKeyedByItsCode() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID groceries = defaultId("GROCERIES");
     UUID transactionId = insertTransaction(token, workspaceOf("admin@example.com"), groceries);
 
@@ -380,7 +378,7 @@ class CategoryControllerTest {
 
   @Test
   void categoriesNestAtMostThreeLevelsDeep() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     CategoryResponse level2 =
         created(token, new CreateCategoryRequest(defaultId("LEISURE"), "Sport", "Sport"));
     CategoryResponse level3 =
@@ -394,7 +392,7 @@ class CategoryControllerTest {
 
   @Test
   void explicitNullMovesAWorkspaceCategoryToTheTopLevel() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     CategoryResponse category =
         created(token, new CreateCategoryRequest(defaultId("LEISURE"), "Music", "Musik"));
 
@@ -416,7 +414,7 @@ class CategoryControllerTest {
 
   @Test
   void nullParentKeepsAShippedChildInItsOriginalPosition() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID dining = defaultId("DINING");
 
     update(token, dining, new UpdateCategoryRequest(null, "Dining", "Essen gehen"))
@@ -428,7 +426,7 @@ class CategoryControllerTest {
 
   @Test
   void anOwnCategoryCanBeMovedButNotUnderItsOwnSubtree() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     CategoryResponse hobby = created(token, new CreateCategoryRequest(null, "Hobby", "Hobby"));
     CategoryResponse music =
         created(token, new CreateCategoryRequest(hobby.id(), "Music", "Musik"));
@@ -456,7 +454,7 @@ class CategoryControllerTest {
 
   @Test
   void aNeverUsedOwnCategoryIsDeletedButOneWithASubcategoryIsNot() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     CategoryResponse hobby = created(token, new CreateCategoryRequest(null, "Hobby", "Hobby"));
     CategoryResponse music =
         created(token, new CreateCategoryRequest(hobby.id(), "Music", "Musik"));
@@ -469,7 +467,7 @@ class CategoryControllerTest {
 
   @Test
   void protectedCategoriesCannotBeDeactivatedOrGivenSubcategories() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     deactivate(token, defaultId("UNCATEGORIZED"))
         .expectStatus()
@@ -485,7 +483,7 @@ class CategoryControllerTest {
 
   @Test
   void bothLabelsAreRequiredAndUniqueAmongSiblings() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     create(token, new CreateCategoryRequest(null, "Hobby", " ")).expectStatus().isBadRequest();
     create(token, new CreateCategoryRequest(null, "housing", "Anderes"))
@@ -495,7 +493,7 @@ class CategoryControllerTest {
 
   @Test
   void theShippedDefaultsAreListedInTreeOrder() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     assertThat(codes(list(token, false)))
         .containsExactly(
@@ -523,8 +521,8 @@ class CategoryControllerTest {
 
   @Test
   void anotherMemberReadsAndChangesTheTaxonomyWithoutAnyGrant() {
-    String adminToken = bootstrapAdministrator();
-    createSecondMember(adminToken, "member@example.com");
+    bootstrapStandardUser();
+    createSecondMember("member@example.com");
     String memberToken = login("member@example.com");
 
     client(memberToken).get().uri(BASE).exchange().expectStatus().isOk();
@@ -535,7 +533,7 @@ class CategoryControllerTest {
 
   @Test
   void anotherWorkspacesCategoryIsNotFound() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     CategoryResponse hobby = created(token, new CreateCategoryRequest(null, "Hobby", "Hobby"));
     AuthenticatedUserPrincipal other = seedSecondWorkspace();
 
@@ -552,7 +550,7 @@ class CategoryControllerTest {
   // role can write and the 409 is not an artefact of a role that can do nothing.
   @Test
   void aSharedDefaultIsCustomisedNotWrittenUnderRowLevelSecurity() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AuthenticatedUserPrincipal admin = adminPrincipal();
     // A leaf nothing refers to, so only the shipped-row rule can refuse its delete.
     UUID shipped =
@@ -613,7 +611,7 @@ class CategoryControllerTest {
 
   @Test
   void theSchemaRejectsInvalidLabelsAndInconsistentSystemDefaultFlags() throws Exception {
-    String token = bootstrapAdministrator();
+    bootstrapStandardUser();
     UUID workspaceId = workspaceOf("admin@example.com");
     UUID defaultCategoryId = defaultId("LEISURE");
     String tooLong = "x".repeat(101);
@@ -700,7 +698,7 @@ class CategoryControllerTest {
 
   @Test
   void theSchemaKeepsCodesUniqueAndInSeparateNamespaces() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID workspaceId = workspaceOf("admin@example.com");
 
     assertThatThrownBy(
@@ -736,7 +734,7 @@ class CategoryControllerTest {
   // end up each other's parent, vanishing from the tree. With it, the second sees the first.
   @Test
   void concurrentCrossMovesCannotFormACycle() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     CategoryResponse hobby = created(token, new CreateCategoryRequest(null, "Hobby", "Hobby"));
     CategoryResponse music = created(token, new CreateCategoryRequest(null, "Music", "Musik"));
     CountDownLatch start = new CountDownLatch(1);
@@ -766,7 +764,7 @@ class CategoryControllerTest {
 
   @Test
   void anOverrideGoesWithTheDefaultItCustomises() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID retired = UUID.randomUUID();
     execute(
         "INSERT INTO category (id, workspace_id, code, name_en, name_de, is_system_default)"
@@ -1015,16 +1013,8 @@ class CategoryControllerTest {
     }
   }
 
-  private UUID createSecondMember(String adminToken, String email) {
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isCreated();
-    return jdbcUuid("SELECT workspace_member_id FROM app_user WHERE email = ?", email);
+  private UUID createSecondMember(String email) {
+    return WorkspaceLoginFixtures.addMember(dataSource, "admin@example.com", email, PASSWORD);
   }
 
   private String login(String email) {
@@ -1043,18 +1033,9 @@ class CategoryControllerTest {
         .accessToken();
   }
 
-  private String bootstrapAdministrator() {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isCreated()
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Test Workspace", "CHF")
         .accessToken();
   }
 

@@ -9,9 +9,7 @@ import jakarta.validation.constraints.Pattern;
  * is actually provided, per standard Jakarta Validation null-safety. An empty string is not
  * rejected by {@code @Email} itself (Hibernate Validator treats "" as a valid email), so {@link
  * com.trackmywealth.backend.service.AdminUserService#editUser} explicitly rejects a
- * non-null-but-blank email rather than silently blanking the target's address. Demoting the
- * target's role away from {@code SYSTEM_ADMINISTRATOR} is subject to the same
- * last-active-administrator guard as disable (FR-USR-005).
+ * non-null-but-blank email. A supplied role must match the user's existing role (FR-USR-013).
  */
 public record EditUserRequest(
     @Email String email,

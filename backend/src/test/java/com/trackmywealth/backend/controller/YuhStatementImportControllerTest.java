@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.trackmywealth.backend.dto.AccountIdentifierRequest;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
@@ -16,10 +15,10 @@ import com.trackmywealth.backend.dto.ImportRowResponse;
 import com.trackmywealth.backend.dto.LinkSavingsPocketRequest;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.service.ShippedTemplateFixtures;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -122,7 +121,7 @@ class YuhStatementImportControllerTest {
               + " VALUES ('EUR', 'CHF', ?, 0.9437, 'ECB') ON CONFLICT DO NOTHING",
           date);
     }
-    token = bootstrapAdministrator();
+    token = bootstrapStandardUser();
     yuh = createAccount("Yuh", "CASH", "CHF");
     client()
         .put()
@@ -660,20 +659,13 @@ class YuhStatementImportControllerTest {
         .id();
   }
 
-  private String bootstrapAdministrator() {
-    return RestTestClient.bindToServer()
-        .baseUrl("http://localhost:%d".formatted(port))
-        .build()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "EUR"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            RestTestClient.bindToServer().baseUrl("http://localhost:%d".formatted(port)).build(),
+            "admin@example.com",
+            PASSWORD,
+            "Test Workspace",
+            "EUR")
         .accessToken();
   }
 

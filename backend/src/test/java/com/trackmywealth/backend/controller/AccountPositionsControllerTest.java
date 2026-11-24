@@ -8,9 +8,7 @@ import com.trackmywealth.backend.dto.AccountPositionsResponse;
 import com.trackmywealth.backend.dto.AccountPositionsSource;
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
@@ -19,14 +17,13 @@ import com.trackmywealth.backend.dto.PortfolioViewResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.SecurityResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.SnapshotHoldingRequest;
-import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.dto.ValueHistoryResponse;
 import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -116,7 +113,7 @@ class AccountPositionsControllerTest {
   // balance-only one. AC 3: a holding without a cost basis.
   @Test
   void positionsComeFromLatestHoldingsSnapshotNotNewerBalanceOnlySnapshot() throws SQLException {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "Depot", "SECURITIES");
     SecurityResponse first = createSecurity(token, "US9220427424", "Vanguard Total World");
     SecurityResponse second = createSecurity(token, "CH0038863350", "Nestle");
@@ -172,7 +169,7 @@ class AccountPositionsControllerTest {
   // AC 4, plus a holding without a reported value.
   @Test
   void estimatedCostBasisIsMarkedEstimatedAndMissingReportedValuesAreUnknown() throws SQLException {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "Depot", "SECURITIES");
     SecurityResponse first = createSecurity(token, "US9220427424", "Vanguard Total World");
     SecurityResponse second = createSecurity(token, "CH0038863350", "Nestle");
@@ -212,7 +209,7 @@ class AccountPositionsControllerTest {
   @Test
   void foreignCurrencyHoldingUsesTodaysFxRateAgainstACostBasisInTheAccountCurrency()
       throws SQLException {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "CHF Depot", "SECURITIES");
     SecurityResponse security = createSecurity(token, "US9220427424", "Vanguard Total World");
     LocalDate asOf = today().minusDays(2);
@@ -246,7 +243,7 @@ class AccountPositionsControllerTest {
 
   @Test
   void missingFxRateMarksAReportedHoldingUnknown() throws SQLException {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "CHF Depot", "SECURITIES");
     SecurityResponse security = createSecurity(token, "US9220427424", "Vanguard Total World");
     AccountSnapshotResponse snapshot =
@@ -271,7 +268,7 @@ class AccountPositionsControllerTest {
 
   @Test
   void aDepotWithoutHoldingsSnapshotHasAnEmptyList() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "Depot", "SECURITIES");
     recordOk(token, depot.id(), balanceOnly(today(), "100"));
 
@@ -285,7 +282,7 @@ class AccountPositionsControllerTest {
   // AC 6, first half.
   @Test
   void aCurrentAccountCannotHoldPositions() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "Cash", "CASH");
 
     client(token)
@@ -303,7 +300,7 @@ class AccountPositionsControllerTest {
   // holdings are never read.
   @Test
   void anotherWorkspacesDepotIsNotFoundLikeAnUnknownOne() throws SQLException {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID foreign = foreignDepot();
 
     for (UUID id : List.of(foreign, UUID.randomUUID())) {
@@ -320,8 +317,9 @@ class AccountPositionsControllerTest {
   // FR-TEN-007: once a Standard User joins, the administrator no longer sees financial data.
   @Test
   void theAdministratorCannotReadAMembersPositions() {
-    String adminToken = bootstrapAdministrator();
-    createSecondMember(adminToken, "first@example.com");
+    bootstrapStandardUser();
+    String adminToken = WorkspaceLoginFixtures.loginAdministrator(anonymousClient()).accessToken();
+    createSecondMember("first@example.com");
     String memberToken = login("first@example.com");
     AccountSummaryResponse depot = createAccount(memberToken, "Depot", "SECURITIES");
 
@@ -336,7 +334,7 @@ class AccountPositionsControllerTest {
 
   @Test
   void completeManualStatementUsesEachValuationDatesRate() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "Mixed Currency Depot", "SECURITIES");
     SecurityResponse domestic = createSecurity(token, "CH0038863350", "Nestle");
     SecurityResponse foreign = createSecurity(token, "US9220427424", "Vanguard Total World");
@@ -392,7 +390,7 @@ class AccountPositionsControllerTest {
 
   @Test
   void newestIncompleteStatementDoesNotFallBackToAnOlderCompleteValue() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "Incomplete Depot", "SECURITIES");
     SecurityResponse domestic = createSecurity(token, "CH0038863350", "Nestle");
     SecurityResponse missing = createSecurity(token, "US9220427424", "Vanguard Total World");
@@ -423,7 +421,7 @@ class AccountPositionsControllerTest {
 
   @Test
   void anOldStatementMakesTheDepotValueStale() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "Old Depot", "SECURITIES");
     SecurityResponse security = createSecurity(token, "CH0038863350", "Nestle");
     recordOk(
@@ -439,7 +437,7 @@ class AccountPositionsControllerTest {
 
   @Test
   void staleValuationFxMakesTheDepotValueStale() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "Stale Rate Depot", "SECURITIES");
     SecurityResponse security = createSecurity(token, "US9220427424", "Vanguard Total World");
     saveFxRate(today().minusDays(10), "0.90");
@@ -455,7 +453,7 @@ class AccountPositionsControllerTest {
 
   @Test
   void manualReportedFiguresComeAsValueAndCurrencyWithAnOptionalPrice() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "Depot", "SECURITIES");
     UUID security = createSecurity(token, "CH0038863350", "Nestle").id();
     BigDecimal price = new BigDecimal("50");
@@ -531,7 +529,7 @@ class AccountPositionsControllerTest {
   // purchase-date rate the CHF gain comes beside it (PO 2026-11-23).
   @Test
   void aUsdCostBasisGivesAUsdGainAndItsPurchaseRateCostACurrencyGain() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "CHF Depot", "SECURITIES");
     SecurityResponse security =
         createSecurity(token, "US9220427424", "Vanguard Total World", "USD");
@@ -560,7 +558,7 @@ class AccountPositionsControllerTest {
   // AC 2: a CHF cost basis of a USD position gives the gain in CHF against today's CHF value.
   @Test
   void aChfCostBasisOfAUsdPositionGivesAChfGain() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "CHF Depot", "SECURITIES");
     SecurityResponse security =
         createSecurity(token, "US9220427424", "Vanguard Total World", "USD");
@@ -584,7 +582,7 @@ class AccountPositionsControllerTest {
   // the account currency.
   @Test
   void aCostBasisWithoutCurrencyOfASecurityInTheAccountCurrencyIsInIt() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "CHF Depot", "SECURITIES");
     SecurityResponse security = createSecurity(token, "CH0038863350", "Nestle");
 
@@ -604,7 +602,7 @@ class AccountPositionsControllerTest {
   // and nothing is written.
   @Test
   void aCostBasisWithoutCurrencyOfAForeignSecurityIsABadRequestNamingTheField() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "CHF Depot", "SECURITIES");
     SecurityResponse franc = createSecurity(token, "CH0038863350", "Nestle");
     SecurityResponse dollar = createSecurity(token, "US9220427424", "Vanguard Total World", "USD");
@@ -635,7 +633,7 @@ class AccountPositionsControllerTest {
   // basis in it too, whatever the security's currency, so that gain stays.
   @Test
   void aCostBasisWithoutCurrencyOfAForeignSecurityValuedInTheAccountCurrencyIsInIt() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "CHF Depot", "SECURITIES");
     SecurityResponse security =
         createSecurity(token, "US9220427424", "Vanguard Total World", "USD");
@@ -660,7 +658,7 @@ class AccountPositionsControllerTest {
   // still needs its currency.
   @Test
   void anUnchangedCostBasisOfUnknownCurrencyCanBeSentBackAndStaysUnknown() throws SQLException {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "CHF Depot", "SECURITIES");
     SecurityResponse security =
         createSecurity(token, "US9220427424", "Vanguard Total World", "USD");
@@ -721,7 +719,7 @@ class AccountPositionsControllerTest {
 
   @Test
   void aCostBasisCurrencyOrAccountCurrencyCostNeedsItsCostBasis() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "CHF Depot", "SECURITIES");
     SecurityResponse security =
         createSecurity(token, "US9220427424", "Vanguard Total World", "USD");
@@ -855,16 +853,8 @@ class AccountPositionsControllerTest {
         .getResponseBody();
   }
 
-  private void createSecondMember(String adminToken, String email) {
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(UserSummaryResponse.class);
+  private void createSecondMember(String email) {
+    WorkspaceLoginFixtures.addMember(dataSource, "admin@example.com", email, PASSWORD);
   }
 
   // A depot in a second workspace, written past the API (and RLS) as another tenant's data.
@@ -927,18 +917,9 @@ class AccountPositionsControllerTest {
         .accessToken();
   }
 
-  private String bootstrapAdministrator() {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Test Workspace", "CHF")
         .accessToken();
   }
 

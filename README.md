@@ -128,7 +128,7 @@ The script writes `.demo-credentials.json` with private file permissions. Use
 `users.member.email` and `users.member.password` to sign in. Add
 `users.member.totpSecret` to an authenticator app for six-digit codes. If the
 current code was used by the seed, wait for the next code. The `users.partner`
-login sees the same account values and has MFA disabled. The `users.admin` login
+login has a separate empty workspace and has MFA disabled. The `users.admin` login
 is for administration. Keep the credentials file private and retain it while using
 that stack. When recreating the demo on a fresh database, use a new credentials file.
 

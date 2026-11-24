@@ -3,15 +3,14 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
 import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
 import com.trackmywealth.backend.dto.ReassignAccountPortfolioRequest;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UpdateAccountRequest;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -200,7 +199,7 @@ class AccountControllerTest {
   @MethodSource("accountTypeCases")
   void createsCorrectCapabilitiesAndExtensionRowForEveryAccountType(
       CreateAccountRequest request, ExpectedCapabilities expected) throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     AccountSummaryResponse created = createAccount(token, request);
 
@@ -240,7 +239,7 @@ class AccountControllerTest {
   void pensionHoldsPositionsOverrideIsHonored() {
     // US-05-04's own example: a VIAC-style Pillar 3a holds positions, unlike PostFinance's - not
     // a fixed type default, so this must be settable per account.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     AccountSummaryResponse created =
         createAccount(
@@ -257,7 +256,7 @@ class AccountControllerTest {
   void occupationalPensionSchemesAreMarkedOccupationalAndOthersAreNot() throws Exception {
     // FR-ACC-030: is_occupational is inherent to which scheme is chosen (CH Pillar 2 / DE bAV are
     // occupational-by-definition), not a per-account override like holdsPositions above.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     AccountSummaryResponse occupational =
         createAccount(
@@ -278,7 +277,7 @@ class AccountControllerTest {
 
   @Test
   void creditCardBillingCurrencyDefaultsToNativeCurrencyWhenOmitted() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Amex", "CREDIT_CARD", "USD").build());
@@ -297,7 +296,7 @@ class AccountControllerTest {
 
   @Test
   void mortgageWithoutOriginalPrincipalIsRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     client(token)
         .post()
@@ -314,7 +313,7 @@ class AccountControllerTest {
 
   @Test
   void pensionWithoutSchemeIsRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     client(token)
         .post()
@@ -328,7 +327,7 @@ class AccountControllerTest {
 
   @Test
   void omittingPortfolioIdDefaultsToThePersonalAssetsContainer() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Unassigned Cash", "CASH", "CHF").build());
@@ -353,7 +352,7 @@ class AccountControllerTest {
     // AC #2: a defensive/negative test proving trg_extension_type_guard (V5) rejects this at the
     // database level, independent of what AccountService does - a CREDIT_CARD account must never
     // be able to acquire an account_mortgage row.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse creditCard =
         createAccount(token, AccountRequests.account("Visa Card", "CREDIT_CARD", "CHF").build());
 
@@ -385,7 +384,7 @@ class AccountControllerTest {
 
   @Test
   void creatingAnAccountUnderAnUnknownInstitutionIdIsNotFound() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     client(token)
         .post()
@@ -400,7 +399,7 @@ class AccountControllerTest {
 
   @Test
   void accountGetReturnsVersionAndMatchingEtag() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Versioned", "CASH", "CHF").build());
 
@@ -419,7 +418,7 @@ class AccountControllerTest {
 
   @Test
   void accountUpdateWithoutIfMatchIsPreconditionRequired() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Versioned", "CASH", "CHF").build());
 
@@ -438,7 +437,7 @@ class AccountControllerTest {
 
   @Test
   void staleAccountUpdateIsRejectedAndTheWinningWriteIsKept() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse readByBothClients =
         createAccount(token, AccountRequests.account("Original", "CASH", "CHF").build());
     int versionReadByBoth = readByBothClients.version();
@@ -475,7 +474,7 @@ class AccountControllerTest {
 
   @Test
   void openingDateRoundTripsAndCanBeCleared() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     LocalDate openedAt = LocalDate.of(2020, 1, 1);
     AccountSummaryResponse created =
         createAccount(
@@ -503,7 +502,7 @@ class AccountControllerTest {
     // ValidationClockConfigTest's.
     assertThat(validatorFactory.getClockProvider().getClock().getZone())
         .isEqualTo(ZoneOffset.ofHours(14));
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     LocalDate future = LocalDate.now().plusYears(1);
     var request = AccountRequests.account("Checking", "CASH", "CHF");
     client(token)
@@ -543,7 +542,7 @@ class AccountControllerTest {
   void changingAccountTypeIsRejectedWithAStructuredConflict() {
     // AC #1 / DoD: the DB's trg_account_type_immutable (V4) rejection must surface as a clean
     // 409, referencing FR-ACC-005, never a raw 500.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
 
@@ -564,7 +563,7 @@ class AccountControllerTest {
   void changingNativeCurrencyIsRejectedWithAStructuredConflict() {
     // Same immutability guarantee extended to native_currency (V24) - not explicit in FR-ACC-002
     // itself, but the same historical-reinterpretation risk as account_type (US-05-02).
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
 
@@ -583,7 +582,7 @@ class AccountControllerTest {
 
   @Test
   void updateAppliesMutableFieldChanges() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
 
@@ -620,7 +619,7 @@ class AccountControllerTest {
 
   @Test
   void updatingAnUnknownAccountIsNotFound() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     client(token)
         .put()
@@ -635,7 +634,7 @@ class AccountControllerTest {
   @Test
   void archivingThenRestoringWithinTheWindowReturnsTheAccountToActive() {
     // DoD: archives, verifies status/archivedAt, then restores within the window.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
 
@@ -668,7 +667,7 @@ class AccountControllerTest {
     // stop offering the button. Backdates archived_at directly (there's no way to fast-forward 30
     // real days), mirroring how this test class already reaches into the DB for state the API
     // itself has no way to set up (e.g. isOccupational below).
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
     archive(token, created.id());
@@ -681,7 +680,7 @@ class AccountControllerTest {
   void archivingAnAlreadyArchivedAccountIsRejectedWithAStructuredConflict() {
     // FR-STA-001 lists ACTIVE -> ARCHIVED, not ARCHIVED -> ARCHIVED - transitions not listed are
     // prohibited.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
     archive(token, created.id());
@@ -695,7 +694,7 @@ class AccountControllerTest {
     // there. There's no delete-account endpoint yet (that's its own future story), so this sets
     // status directly via SQL to exercise the guard against whatever eventually produces a
     // DELETED account - archiveAccount must reject "not ACTIVE", not just "not already ARCHIVED".
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
     setStatusDirectly(created.id(), "DELETED");
@@ -705,7 +704,7 @@ class AccountControllerTest {
 
   @Test
   void restoringAnActiveAccountIsRejectedWithAStructuredConflict() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
 
@@ -714,7 +713,7 @@ class AccountControllerTest {
 
   @Test
   void archivingAnUnknownAccountIsNotFound() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     client(token)
         .post()
@@ -726,7 +725,7 @@ class AccountControllerTest {
 
   @Test
   void restoringAnUnknownAccountIsNotFound() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     client(token)
         .post()
@@ -741,7 +740,7 @@ class AccountControllerTest {
     // DoD: reassigns an account with a known value (a MORTGAGE's original_principal is the
     // simplest existing value source that needs no extra setup call - see PortfolioService's
     // resolveNativeValue) and confirms both institutions' summaries are correct before and after.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse institutionA =
         createPortfolio(
             token,
@@ -782,7 +781,7 @@ class AccountControllerTest {
 
   @Test
   void reassigningToAnUnknownInstitutionIsNotFound() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
 
@@ -793,7 +792,7 @@ class AccountControllerTest {
 
   @Test
   void reassigningAnUnknownAccountIsNotFound() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse institution =
         createPortfolio(
             token,
@@ -815,7 +814,7 @@ class AccountControllerTest {
     // there, the same principle archivingADeletedAccountIsRejectedWithAStructuredConflict already
     // covers for archiveAccount. There's no delete-account endpoint yet, so status is set directly
     // via SQL, same as that test.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
     PortfolioResponse destination =
@@ -834,7 +833,7 @@ class AccountControllerTest {
     // DoD/FR-INS-008/RULE-020: institution_type never restricts account_type - a pension provider
     // (VIAC-like) can hold a plain cash balance, a securities depot, and more than one pension
     // account side by side, with no validation error referencing institution type for any of them.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse pensionProvider =
         createPortfolio(
             token,
@@ -1023,22 +1022,13 @@ class AccountControllerTest {
         .getResponseBody();
   }
 
-  private String bootstrapAdministrator() {
-    return RestTestClient.bindToServer()
-        .baseUrl("http://localhost:%d".formatted(port))
-        .build()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new SetupAdministratorRequest(
-                "admin@example.com", "correct-horse-battery-staple", "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            RestTestClient.bindToServer().baseUrl("http://localhost:%d".formatted(port)).build(),
+            "admin@example.com",
+            "correct-horse-battery-staple",
+            "Test Workspace",
+            "CHF")
         .accessToken();
   }
 

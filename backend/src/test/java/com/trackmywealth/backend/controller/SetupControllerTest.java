@@ -4,9 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.entity.AppUser;
-import com.trackmywealth.backend.entity.Portfolio;
-import com.trackmywealth.backend.entity.Workspace;
-import com.trackmywealth.backend.entity.WorkspaceMember;
 import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.repository.PortfolioRepository;
 import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
@@ -15,7 +12,6 @@ import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -39,9 +35,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * US-01-03's Definition of Done: a fresh database can bootstrap exactly one administrator, a second
- * attempt is rejected, and the Personal Assets container exists with the requested currency - plus
- * the story's explicit concurrency edge case (two simultaneous attempts must still only ever
- * produce one administrator).
+ * attempt is rejected, and setup creates no workspace. It also verifies the story's explicit
+ * concurrency edge case (two simultaneous attempts must still only ever produce one administrator).
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -124,23 +119,10 @@ class SetupControllerTest {
                 "correct-horse-battery-staple", administrator.getPasswordHash()))
         .isTrue();
 
-    // administrator is detached (returned by a repository call whose own transaction has already
-    // closed), so its lazy associations are uninitialized proxies - .getId() is safe without a
-    // session (Hibernate resolves it from the owning row's own FK column), but navigating further
-    // (.getWorkspace(), .getName()) is not, hence the fresh, independent repository lookups below
-    // rather than walking the association chain directly.
-    UUID memberId = administrator.getWorkspaceMember().getId();
-    WorkspaceMember member = workspaceMemberRepository.findById(memberId).orElseThrow();
-    UUID workspaceId = member.getWorkspace().getId();
-    Workspace workspace = workspaceRepository.findById(workspaceId).orElseThrow();
-    assertThat(workspace.getName()).isEqualTo("The Example Workspace");
-
-    Portfolio personalAssets =
-        portfolioRepository
-            .findByWorkspaceIdAndPersonalAssetsDefaultTrue(workspace.getId())
-            .orElseThrow();
-    assertThat(personalAssets.getPortfolioCurrency()).isEqualTo("CHF");
-    assertThat(personalAssets.getInstitutionType()).isEqualTo("PERSONAL_ASSETS");
+    assertThat(administrator.getWorkspaceMember()).isNull();
+    assertThat(workspaceMemberRepository.count()).isZero();
+    assertThat(workspaceRepository.count()).isZero();
+    assertThat(portfolioRepository.count()).isZero();
 
     // Second attempt: setup is a one-time bootstrap, not a general "create admin" endpoint.
     SetupAdministratorRequest secondRequest =

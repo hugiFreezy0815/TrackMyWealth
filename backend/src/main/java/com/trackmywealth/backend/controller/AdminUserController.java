@@ -52,8 +52,7 @@ public class AdminUserController {
   public ResponseEntity<UserSummaryResponse> createUser(
       @Valid @RequestBody CreateUserRequest request,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    UserSummaryResponse response =
-        adminUserService.createUser(request, actor.userId(), actor.workspaceId());
+    UserSummaryResponse response = adminUserService.createUser(request, actor.userId());
     return VersionedResponse.created(response, response.version());
   }
 
@@ -65,7 +64,7 @@ public class AdminUserController {
     return VersionedResponse.ok(response, response.version());
   }
 
-  @Operation(operationId = "updateUser", summary = "Change a user's email, role or language")
+  @Operation(operationId = "updateUser", summary = "Change a user's email or language")
   @ProblemCodes({ProblemCode.CONFLICT})
   @PatchMapping("/{id}")
   @SendsHeaders(ResponseHeader.ETAG)

@@ -1,9 +1,12 @@
 package com.trackmywealth.backend.repository;
 
+import com.trackmywealth.backend.dto.AdminWorkspaceMetadata;
 import com.trackmywealth.backend.entity.Workspace;
 import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -12,6 +15,17 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
+
+  String ADMIN_METADATA_COUNT = "SELECT count(*) FROM public.admin_workspace_metadata()";
+
+  @Query(
+      value = "SELECT id, name FROM public.admin_workspace_metadata() ORDER BY id",
+      countQuery = ADMIN_METADATA_COUNT,
+      nativeQuery = true)
+  Page<AdminWorkspaceMetadata> findAdminMetadata(Pageable pageable);
+
+  @Query(value = ADMIN_METADATA_COUNT, nativeQuery = true)
+  long countAdminMetadata();
 
   // Same SELECT ... FOR UPDATE pattern as AccountRepository/AppUserRepository's own
   // findByIdForUpdate - serializes a read-modify-write sequence keyed off the whole workspace (e.g.

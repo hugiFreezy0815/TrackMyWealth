@@ -1,7 +1,6 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.PagingValues;
-import com.trackmywealth.backend.dto.UserRoleValues;
 import com.trackmywealth.backend.dto.WorkspaceMemberListItemResponse;
 import com.trackmywealth.backend.dto.WorkspaceMemberSummaryResponse;
 import com.trackmywealth.backend.entity.AppUser;
@@ -39,7 +38,6 @@ public class WorkspaceMemberService {
   private static final String INACTIVE = "INACTIVE";
   private static final String VERSIONED_RESOURCE = "workspace member";
   private static final String WORKSPACE_MEMBER_ENTITY_TYPE = "WorkspaceMember";
-  private static final String WORKSPACE_ENTITY_TYPE = "Workspace";
 
   // FR-HHL-015: a workspace must always retain at least this many active members - deactivating
   // one is only rejected when it would drop below this. Named for the same reason
@@ -70,31 +68,18 @@ public class WorkspaceMemberService {
    * US-03-05: the members of the caller's own workspace, inactive ones included, ordered by display
    * name. Any member of the workspace may list them ({@link AccessControlService}); the workspace
    * comes from the caller's session, never from the request, and RLS confines the query to it as
-   * well. Inactive memberships remain visible and administrators are excluded from the page and its
-   * totals.
-   *
-   * <p>Until FR-USR-013 stops it, first-run setup still makes the administrator a member, but the
-   * administrator is not one of the workspace's people (FR-USR-07, FR-TEN-007): it may not list
-   * them (the audited 404 every other denial gets), and its membership is left out of the list.
+   * well. Inactive memberships remain visible.
    */
   @Transactional(readOnly = true)
   public Page<WorkspaceMemberListItemResponse> listWorkspaceMembers(
       Pageable pageable, AuthenticatedUserPrincipal actor) {
     accessControlService.requireActingMember(actor);
-    if (UserRoleValues.SYSTEM_ADMINISTRATOR.equals(actor.role())) {
-      throw accessControlService.denyAsNotFound(actor, WORKSPACE_ENTITY_TYPE, actor.workspaceId());
-    }
-
     PagingValues.requireBoundedFixedOrder(pageable);
     Page<WorkspaceMember> members =
         PagingValues.jpaPage(
             pageable,
-            () ->
-                workspaceMemberRepository.findMembersForListing(
-                    actor.workspaceId(), UserRoleValues.SYSTEM_ADMINISTRATOR, pageable),
-            () ->
-                workspaceMemberRepository.countMembersForListing(
-                    actor.workspaceId(), UserRoleValues.SYSTEM_ADMINISTRATOR));
+            () -> workspaceMemberRepository.findMembersForListing(actor.workspaceId(), pageable),
+            () -> workspaceMemberRepository.countMembersForListing(actor.workspaceId()));
     if (members.isEmpty()) {
       return new PageImpl<>(List.of(), pageable, members.getTotalElements());
     }
@@ -130,7 +115,7 @@ public class WorkspaceMemberService {
   @Transactional(readOnly = true)
   public WorkspaceMemberSummaryResponse getMember(
       UUID targetMemberId, AuthenticatedUserPrincipal actor) {
-    UUID actingMemberId = requireActingMember(actor);
+    UUID actingMemberId = accessControlService.requireActingMember(actor);
     requireSelf(targetMemberId, actingMemberId, actor.userId());
     WorkspaceMember target =
         workspaceMemberRepository
@@ -145,7 +130,7 @@ public class WorkspaceMemberService {
   @Transactional
   public WorkspaceMemberSummaryResponse deactivateMember(
       UUID targetMemberId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
-    UUID actingMemberId = requireActingMember(actor);
+    UUID actingMemberId = accessControlService.requireActingMember(actor);
     requireSelf(targetMemberId, actingMemberId, actor.userId());
 
     // Locks the target plus every other currently-ACTIVE member of the same workspace in one
@@ -177,24 +162,6 @@ public class WorkspaceMemberService {
     target.setMemberUntil(LocalDate.now());
     target = workspaceMemberRepository.saveAndFlush(target);
     return toSummary(target);
-  }
-
-  // Mirrors AccessControlService.requireActingMember in spirit - resolving "who is
-  // making this request" as a workspace_member id. It predates that class. This is a narrow
-  // identity
-  // lookup, not a reimplementation of the membership check, so duplicating it here is not the
-  // per-service authorization reimplementation AccessControlService exists to prevent. It does not
-  // apply AccessControlService's administrator rule (FR-TEN-007), and need not: the operations
-  // that use it are limited to the caller's own membership (requireSelf). listWorkspaceMembers,
-  // which reaches other members, goes through AccessControlService instead. Not routed
-  // through AuthorizationDenialAuditService below: that service's own Javadoc scopes it to a
-  // caller-supplied id that doesn't resolve to a row the caller is entitled to - this is the
-  // caller's own identity failing to resolve at all, a different situation (mirrored by
-  // AccessControlService.requireActingMember, which doesn't route through it either).
-  private UUID requireActingMember(AuthenticatedUserPrincipal actor) {
-    return appUserRepository
-        .findWorkspaceMemberId(actor.userId())
-        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
   }
 
   // FR-TEN-006/US-28-02: the same audit-logged 404 every other single-resource authorization

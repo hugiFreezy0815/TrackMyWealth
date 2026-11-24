@@ -5,9 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.PageResponse;
@@ -16,12 +14,11 @@ import com.trackmywealth.backend.dto.SettlementMatchResponse;
 import com.trackmywealth.backend.dto.SettlementMatchRunResponse;
 import com.trackmywealth.backend.dto.SettlementMatchValues;
 import com.trackmywealth.backend.dto.SettlementSourceResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
-import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import jakarta.persistence.EntityManagerFactory;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -131,7 +128,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void aPaymentAndItsCardCreditAreMatchedAndBothLegsAreFlaggedAnInternalTransfer() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     purchase(token, a.card(), "-1200.00", AUG_10);
     TransactionResponse payment = withdrawal(token, a.current(), "-1200.00", SEP_3);
@@ -161,7 +158,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void theOrderThePaymentAndTheCreditAreRecordedInDoesNotMatter() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     TransactionResponse credit = cardCredit(token, a.card(), "1200.00", SEP_3);
     assertThat(credit.internalTransfer()).isFalse(); // one leg alone is not a settlement yet
@@ -174,7 +171,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void aSettlementTypedPaymentMatchesToo() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     settlementPayment(token, a.current(), "-1200.00", SEP_3);
     TransactionResponse credit = cardCredit(token, a.card(), "1200.00", SEP_3);
@@ -184,7 +181,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void aCreditFiveDaysAwayPairsButSixDaysAwayDoesNot() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     withdrawal(token, a.current(), "-1200.00", SEP_3);
     cardCredit(token, a.card(), "1200.00", SEP_3.plusDays(6));
@@ -199,7 +196,7 @@ class SettlementMatchControllerTest {
   @Test
   void theSettlementContributesZeroToSpendingOnlyThePurchasesDo() {
     // V-13: purchases in month 1, settled from the current account in month 2.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     purchase(token, a.card(), "-700.00", AUG_10);
     purchase(token, a.card(), "-500.00", AUG_28);
@@ -228,7 +225,7 @@ class SettlementMatchControllerTest {
   void aCardBillRecordedAsAnExpenseIsMatchedNotCountedAsSecondSpending() {
     // Review finding: a member paying the card by hand types the payment EXPENSE. It must pair
     // with the card-side credit like a WITHDRAWAL, or it doubles the spending it settles.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     purchase(token, a.card(), "-1200.00", AUG_10);
     record(token, a.current(), "EXPENSE", "-1200.00", SEP_3);
@@ -243,7 +240,7 @@ class SettlementMatchControllerTest {
   @Test
   void withoutASettlementSourceThePaymentCountsAsSpendingAndDoubleCounts() {
     // The control for the test above: matching is what prevents the double count.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithoutSource(token);
     purchase(token, a.card(), "-1200.00", AUG_10);
     withdrawal(token, a.current(), "-1200.00", SEP_3);
@@ -258,7 +255,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void aWrongMatchCanBeRejectedAndTheLegsRevertToOrdinaryTransactions() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     // A coincidence: rent equal to a card credit on the same day.
     TransactionResponse rent = withdrawal(token, a.current(), "-1200.00", SEP_3);
@@ -286,7 +283,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void aRejectedMatchIsNeverProposedAgainAndRunningMatchingIsIdempotent() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     withdrawal(token, a.current(), "-1200.00", SEP_3);
     cardCredit(token, a.card(), "1200.00", SEP_3);
@@ -305,7 +302,7 @@ class SettlementMatchControllerTest {
   // SQL, so the write-time detection has not seen them yet and the run is the first to match.
   @Test
   void runningMatchingCountsOnlyWhatThisRunProposedAndConfirmed() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     insertLeg(a.current(), "WITHDRAWAL", "-1200.00", SEP_3); // one exact pair: confirmed
     insertLeg(a.card(), "SETTLEMENT", "1200.00", SEP_3);
@@ -334,7 +331,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void listingTheMatchesOfAnUnknownCardIsNotFound() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     accountsWithSource(token);
 
     client(token)
@@ -347,7 +344,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void aRejectedMatchCannotBeConfirmedOrRejectedAgain() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     withdrawal(token, a.current(), "-1200.00", SEP_3);
     cardCredit(token, a.card(), "1200.00", SEP_3);
@@ -362,7 +359,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void aPaymentEqualToTheCardBalanceIsProposedNotAppliedAndSurfacedAsPendingReview() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     purchase(token, a.card(), "-1200.00", AUG_10);
     TransactionResponse payment = withdrawal(token, a.current(), "-1200.00", SEP_3);
@@ -389,7 +386,7 @@ class SettlementMatchControllerTest {
     // sum(amount) (mixing CHF and EUR figures) would equal -1780.00, matching no real payment.
     // The correctly-converted balance is 700.00 (CHF) + 1.10 * 1000.00 (EUR) = 1,800.00 CHF, and
     // the payment below is exactly that.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     purchase(token, a.card(), "-700.00", AUG_10);
     foreignPurchase(token, a.card(), "-1000.00", "EUR", "1.1000000000", AUG_10);
@@ -406,7 +403,7 @@ class SettlementMatchControllerTest {
   // If-Match a decision is not attempted (428).
   @Test
   void aStaleDecisionOnAProposalIsRejectedAndTheFirstIsKept() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     purchase(token, a.card(), "-1200.00", AUG_10);
     withdrawal(token, a.current(), "-1200.00", SEP_3);
@@ -435,7 +432,7 @@ class SettlementMatchControllerTest {
   // statement configuration. Without If-Match nothing changes (428); a stale one is a 412.
   @Test
   void changingTheSettlementSourceRequiresTheCurrentCardVersion() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     SettlementSourceResponse readByBoth = getSource(token, a.card());
 
@@ -461,7 +458,7 @@ class SettlementMatchControllerTest {
   // #207: rejecting a match is a version-checked decision like confirming one.
   @Test
   void rejectingAMatchWithoutIfMatchIsAPreconditionRequired() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     purchase(token, a.card(), "-1200.00", AUG_10);
     withdrawal(token, a.current(), "-1200.00", SEP_3);
@@ -483,7 +480,7 @@ class SettlementMatchControllerTest {
   // the row ends up with, so the client's next edit with it succeeds instead of a self-made 412.
   @Test
   void restoringAPairedPaymentAnswersWithTheVersionItWasStoredWith() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     TransactionResponse payment = withdrawal(token, a.current(), "-1200.00", SEP_3);
     cardCredit(token, a.card(), "1200.00", SEP_4);
@@ -524,7 +521,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void confirmingAOneSidedProposalFlagsThePaymentAndTheCardCreditLaterCompletesIt() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     purchase(token, a.card(), "-1200.00", AUG_10);
     withdrawal(token, a.current(), "-1200.00", SEP_3);
@@ -553,7 +550,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void aRejectedOneSidedProposalIsNotProposedAgain() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     purchase(token, a.card(), "-1200.00", AUG_10);
     withdrawal(token, a.current(), "-1200.00", SEP_3);
@@ -568,7 +565,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void aPaymentThatDoesNotEqualTheCardBalanceIsJustSpending() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     purchase(token, a.card(), "-1200.00", AUG_10);
     withdrawal(token, a.current(), "-800.00", SEP_3); // a partial amount: not a candidate
@@ -581,7 +578,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void aSettlementTypedPaymentWithNoMatchIsPendingReviewNotSilentlyDropped() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     settlementPayment(token, a.current(), "-500.00", SEP_3);
 
@@ -597,7 +594,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void twoIdenticalPaymentsForOneCreditAreOnlyProposedAndConfirmingOneRejectsTheOther() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     TransactionResponse first = withdrawal(token, a.current(), "-1200.00", SEP_3);
     TransactionResponse second = withdrawal(token, a.current(), "-1200.00", SEP_4);
@@ -635,7 +632,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void settingTheSettlementSourceMatchesWhatIsAlreadyInTheLedger() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithoutSource(token);
     withdrawal(token, a.current(), "-1200.00", SEP_3);
     cardCredit(token, a.card(), "1200.00", SEP_3);
@@ -650,7 +647,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void clearingTheSettlementSourceStopsFurtherMatching() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     setSource(token, a.card(), null, HttpStatus.OK);
 
@@ -663,7 +660,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void aBadSettlementSourceIsRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithoutSource(token);
     AccountSummaryResponse otherCard = createAccount(token, "Mastercard", "CREDIT_CARD", "CHF");
     AccountSummaryResponse euroAccount = createAccount(token, "Euro account", "CASH", "EUR");
@@ -678,7 +675,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void runningMatchingForACardWithNoSourceIsRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithoutSource(token);
 
     client(token)
@@ -693,7 +690,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void eachTransactionTypeMustCarryItsCashDirectionSign() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithoutSource(token);
     AccountSummaryResponse asset = createAccount(token, "Vintage Car", "CUSTOM_ASSET", "CHF");
 
@@ -729,7 +726,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void aPaymentInAnotherCurrencyIsNeverMatchedToACardInChf() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     // A EUR ledger row on the CHF source account is refused outright until US-09-04.
     post(token, a.current(), "WITHDRAWAL", "-1200.00", "EUR")
@@ -741,12 +738,12 @@ class SettlementMatchControllerTest {
 
   @Test
   void anotherMemberSeesAndDecidesAMatchWithoutAnyGrant() {
-    String adminToken = bootstrapAdministrator();
+    String adminToken = bootstrapStandardUser();
     Accounts a = accountsWithSource(adminToken);
     purchase(adminToken, a.card(), "-1200.00", AUG_10);
     withdrawal(adminToken, a.current(), "-1200.00", SEP_3);
     UUID proposalId = matches(adminToken, null).get(0).id();
-    createSecondMember(adminToken, "bob@example.com");
+    createSecondMember("bob@example.com");
     String bobToken = login("bob@example.com");
 
     assertThat(matches(bobToken, null))
@@ -757,14 +754,14 @@ class SettlementMatchControllerTest {
 
   @Test
   void anotherMemberSeesAndChangesTheSettlementSource() {
-    String adminToken = bootstrapAdministrator();
+    bootstrapStandardUser();
     // The first member is a Standard User: once anyone else joins, the administrator's own
     // membership no longer reaches financial data (FR-TEN-007, AccessControlService).
-    createSecondMember(adminToken, "alice@example.com");
+    createSecondMember("alice@example.com");
     String aliceToken = login("alice@example.com");
     Accounts a = accountsWithSource(aliceToken);
     UUID savings = createAccount(aliceToken, "Savings", "SAVINGS", "CHF").id();
-    createSecondMember(adminToken, "bob@example.com");
+    createSecondMember("bob@example.com");
     String bobToken = login("bob@example.com");
 
     assertThat(getSource(bobToken, a.card()).settlementSourceAccountId()).isEqualTo(a.current());
@@ -774,11 +771,11 @@ class SettlementMatchControllerTest {
 
   @Test
   void everyMemberSeesTheWholeWorkspacesSpending() {
-    String adminToken = bootstrapAdministrator();
+    String adminToken = bootstrapStandardUser();
     Accounts a = accountsWithSource(adminToken);
     purchase(adminToken, a.card(), "-300.00", AUG_10);
     withdrawal(adminToken, a.current(), "-100.00", AUG_10);
-    createSecondMember(adminToken, "bob@example.com");
+    createSecondMember("bob@example.com");
     String bobToken = login("bob@example.com");
 
     assertThat(cashFlow(bobToken, "2026-08").spending())
@@ -788,7 +785,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void aBadMonthOrStatusIsABadRequest() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     for (String uri :
         List.of(
             "/api/v1/cash-flow",
@@ -804,7 +801,7 @@ class SettlementMatchControllerTest {
   void concurrentWritesToOneCardAndItsSourceAccountAllSucceed() throws Exception {
     // Every write re-runs matching for the card. Two writes racing on the same card must serialise
     // cleanly - not deadlock (a 500 on a valid purchase) and not lose a row.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     int rounds = 6;
     int writers = 16;
@@ -853,7 +850,7 @@ class SettlementMatchControllerTest {
   void theCostOfAWriteDoesNotGrowWithTheHistoryOnTheSourceAccount() {
     // Each write re-runs matching. Years of ordinary withdrawals that never pair must not turn that
     // into one query per historical payment.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     purchase(token, a.card(), "-1200.00", AUG_10);
     insertHistoricWithdrawals(a.current(), 10);
@@ -912,7 +909,7 @@ class SettlementMatchControllerTest {
   void aRejectedOneSidedProposalIsNotOverriddenByALaterMatchingCredit() {
     // A member said "this payment is not a card settlement". A credit of the same amount arriving
     // later is new information, but it must not let the system decide against that on its own.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     purchase(token, a.card(), "-1200.00", AUG_10);
     TransactionResponse payment = withdrawal(token, a.current(), "-1200.00", SEP_3);
@@ -935,7 +932,7 @@ class SettlementMatchControllerTest {
   void matchesAreListedNewestFirstWithAStableTieBreak() throws Exception {
     // Rows created in one statement share created_at (now() is the transaction's start), so the
     // order among them must come from a tie-breaker, not from whatever order the database returns.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     insertProposedMatches(a.card(), a.current(), 40);
 
@@ -951,7 +948,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void moreThanTwoHundredMatchesArePagedWithAccurateCardFilteredTotals() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts accounts = accountsWithSource(token);
     insertProposedMatches(accounts.card(), accounts.current(), 250);
     UUID otherCard = createAccount(token, "Another Card", "CREDIT_CARD", "CHF").id();
@@ -1006,7 +1003,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void listingMatchesDoesNotIssueAQueryPerMatch() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     insertProposedMatches(a.card(), a.current(), 3);
     long withFew = statementsFor(() -> matches(token, null));
@@ -1021,7 +1018,7 @@ class SettlementMatchControllerTest {
   void aVoidedPaymentWithAProposalIsNotHeldOutOfSpendingWhileItsReversalCounts() {
     // The proposal on a payment that was later voided is moot. Excluding the voided original as
     // "pending" while still counting its reversing row would understate spending by the payment.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     purchase(token, a.card(), "-1200.00", SEP_3);
     TransactionResponse payment = withdrawal(token, a.current(), "-1200.00", SEP_3);
@@ -1039,7 +1036,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void aVoidedSettlementTypedPaymentIsNoLongerPendingReview() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     TransactionResponse payment = settlementPayment(token, a.current(), "-500.00", SEP_3);
     assertThat(cashFlow(token, "2026-09").pendingReview()).hasSize(1);
@@ -1053,7 +1050,7 @@ class SettlementMatchControllerTest {
 
   @Test
   void aProposalOnAVoidedPaymentCannotBeConfirmed() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     Accounts a = accountsWithSource(token);
     purchase(token, a.card(), "-1200.00", AUG_10);
     TransactionResponse payment = withdrawal(token, a.current(), "-1200.00", SEP_3);
@@ -1447,28 +1444,8 @@ class SettlementMatchControllerTest {
         .getResponseBody();
   }
 
-  private UUID createSecondMember(String adminToken, String email) {
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(UserSummaryResponse.class);
-    try (Connection connection = dataSource.getConnection();
-        PreparedStatement statement =
-            connection.prepareStatement(
-                "SELECT workspace_member_id FROM app_user WHERE email = ?")) {
-      statement.setString(1, email);
-      try (ResultSet resultSet = statement.executeQuery()) {
-        assertThat(resultSet.next()).as("app_user " + email).isTrue();
-        return (UUID) resultSet.getObject(1);
-      }
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
+  private UUID createSecondMember(String email) {
+    return WorkspaceLoginFixtures.addMember(dataSource, "admin@example.com", email, PASSWORD);
   }
 
   private String login(String email) {
@@ -1487,18 +1464,9 @@ class SettlementMatchControllerTest {
         .accessToken();
   }
 
-  private String bootstrapAdministrator() {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Test Workspace", "CHF")
         .accessToken();
   }
 

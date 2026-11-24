@@ -33,9 +33,7 @@ public class SetupController {
   }
 
   @SuccessStatus(HttpStatus.CREATED)
-  @Operation(
-      operationId = "setupAdministrator",
-      summary = "Create the first administrator and the workspace")
+  @Operation(operationId = "setupAdministrator", summary = "Create the first administrator")
   @ProblemCodes({ProblemCode.CONFLICT})
   @PostMapping(ADMINISTRATOR_PATH)
   public ResponseEntity<AuthTokensResponse> bootstrapAdministrator(

@@ -3,11 +3,9 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.CustomAssetValuationResponse;
 import com.trackmywealth.backend.dto.InstitutionCatalogueEntrySummaryResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
@@ -15,12 +13,11 @@ import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
-import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.repository.PortfolioRepository;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.Statement;
@@ -126,7 +123,7 @@ class PortfolioControllerTest {
 
   @Test
   void searchingCatalogueByNameSuggestsTheMatchingSeedInstitution() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     List<InstitutionCatalogueEntrySummaryResponse> results =
         searchCatalogue(token, "Post").content();
@@ -141,7 +138,7 @@ class PortfolioControllerTest {
 
   @Test
   void searchingCatalogueWithNoQueryReturnsEveryActiveEntry() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     // The V19 seed carries PostFinance, Yuh, VIAC, DKB, Sparkasse; V79 adds LBS Süd: six active
     // entries.
@@ -150,7 +147,7 @@ class PortfolioControllerTest {
 
   @Test
   void catalogueCountryFilterUsesServerSideCountAndSupportsCommaSeparatedValues() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PageResponse<InstitutionCatalogueEntrySummaryResponse> swiss =
         catalogue(token, "?country=CH&page=0&size=2");
     assertThat(swiss.page().totalElements()).isEqualTo(3);
@@ -168,7 +165,7 @@ class PortfolioControllerTest {
 
   @Test
   void blankCountryIsTheSameAsNoCountryFilter() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     // Built as a query parameter, not a URI string: the client would encode a literal "%20" again.
     for (String blank : List.of("", " ", " , ")) {
       assertThat(catalogueWith(token, "country", blank).page().totalElements())
@@ -179,7 +176,7 @@ class PortfolioControllerTest {
 
   @Test
   void catalogueRejectsMalformedCountryWithValidationProblemCode() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     client(token)
         .get()
         .uri("/api/v1/institutions/catalogue?country=chx")
@@ -193,7 +190,7 @@ class PortfolioControllerTest {
 
   @Test
   void likeWildcardsInTheQueryMatchOnlyThemselves() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     // Each sent as a query parameter, so the server receives the character itself.
     for (String wildcard : List.of("%", "_", "\\", "Post%", "D_B")) {
@@ -208,7 +205,7 @@ class PortfolioControllerTest {
 
   @Test
   void catalogueShowsSortedDistinctFormatsFromShippedTemplatesAndCamtFlag() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     var postFinance = catalogue(token, "?query=PostFinance").content().get(0);
     assertThat(postFinance.importFormats()).containsExactly("CAMT", "CSV", "PDF", "SPREADSHEET");
     var dkb = catalogue(token, "?query=DKB").content().get(0);
@@ -218,7 +215,7 @@ class PortfolioControllerTest {
 
   @Test
   void onlyActiveCurrentSharedTemplatesContributeTheirFormat() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID viac = catalogueId("VIAC");
     assertThat(formatsOf(token, "VIAC")).doesNotContain("PDF");
 
@@ -241,7 +238,7 @@ class PortfolioControllerTest {
   void aWorkspaceOwnTemplateDoesNotChangeTheSharedCatalogue() throws Exception {
     // The caller's own workspace template is visible to it under RLS; only the query's explicit
     // workspace_id IS NULL keeps it out, so every caller sees the same catalogue.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID viac = catalogueId("VIAC");
     List<String> before = formatsOf(token, "VIAC");
     assertThat(before).doesNotContain("SPREADSHEET");
@@ -386,7 +383,7 @@ class PortfolioControllerTest {
 
   @Test
   void creatingFromACatalogueEntryDefaultsCurrencyFromCountryAndLinksTheCatalogueId() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     var postFinance = searchCatalogue(token, "Post").content().get(0);
 
     PortfolioResponse created =
@@ -407,7 +404,7 @@ class PortfolioControllerTest {
   void aPortfolioLinkedToACatalogueEntryKeepsTheNameTheMemberGaveIt() {
     // US-04-06/FR-INS-001: portfolios are named by the member, e.g. "VIAC 3a"; the institution
     // behind it still comes from the catalogue.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     var viac = searchCatalogue(token, "VIAC").content().get(0);
 
     PortfolioResponse created =
@@ -421,7 +418,7 @@ class PortfolioControllerTest {
 
   @Test
   void creatingFromACatalogueEntryHonorsAnExplicitCurrencyOverride() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     var postFinance = searchCatalogue(token, "Post").content().get(0);
 
     PortfolioResponse created =
@@ -434,7 +431,7 @@ class PortfolioControllerTest {
 
   @Test
   void creatingACustomInstitutionWithNoCatalogueLinkSucceeds() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     PortfolioResponse created =
         createPortfolio(
@@ -450,7 +447,7 @@ class PortfolioControllerTest {
 
   @Test
   void customInstitutionDefaultsInstitutionTypeToOtherWhenNotChosen() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     PortfolioResponse created =
         createPortfolio(
@@ -462,7 +459,7 @@ class PortfolioControllerTest {
 
   @Test
   void customInstitutionWithoutANameIsRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     client(token)
         .post()
@@ -476,7 +473,7 @@ class PortfolioControllerTest {
 
   @Test
   void customInstitutionWithoutACurrencyIsRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     client(token)
         .post()
@@ -490,7 +487,7 @@ class PortfolioControllerTest {
 
   @Test
   void invalidCurrencyCodeIsRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     client(token)
         .post()
@@ -509,7 +506,7 @@ class PortfolioControllerTest {
   void personalAssetsIsNotASelectableInstitutionTypeForANewInstitution() {
     // Reserved for the one system-created default container per workspace (V19's trigger) - a
     // user must never be able to create a second one via this endpoint.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     client(token)
         .post()
@@ -525,7 +522,7 @@ class PortfolioControllerTest {
 
   @Test
   void creatingAnInstitutionFromAnUnknownCatalogueIdIsNotFound() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     client(token)
         .post()
@@ -542,7 +539,7 @@ class PortfolioControllerTest {
   @Test
   void summaryOfAnInstitutionWithNoAccountsIsValidAndAllZero() {
     // C7: a container with zero accounts must show a valid, empty summary, not an error.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse institution =
         createPortfolio(
             token, new CreatePortfolioRequest(null, "Empty Bank", null, null, null, null, "CHF"));
@@ -560,7 +557,7 @@ class PortfolioControllerTest {
   void summaryAggregatesAssetsAndLiabilitiesIntoANegativeNetValue() {
     // The story's own DoD scenario, exact numbers - see this class's own Javadoc for why a
     // CUSTOM_ASSET and a MORTGAGE stand in for its "current account" and "mortgage" examples.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse institution =
         createPortfolio(
             token, new CreatePortfolioRequest(null, "Sparkasse", "DE", "BANK", null, null, "EUR"));
@@ -593,7 +590,7 @@ class PortfolioControllerTest {
   @Test
   void foreignCurrencyAccountsConvertUsingTheDirectPairAndExposeTheRateUsed() {
     // AC #2: FR-INS-SUM-004/FR-CUR-011 - the rate/date used must be inspectable.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse institution =
         createPortfolio(
             token, new CreatePortfolioRequest(null, "US Broker", null, null, null, null, "CHF"));
@@ -626,7 +623,7 @@ class PortfolioControllerTest {
     // USD/CHF rate is a week old (no row for today) - convert() must still succeed via
     // carry-forward, but the summary must say so, not present the resulting figure identically to
     // one backed by an exact same-day rate.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse institution =
         createPortfolio(
             token, new CreatePortfolioRequest(null, "US Broker", null, null, null, null, "CHF"));
@@ -652,7 +649,7 @@ class PortfolioControllerTest {
 
   @Test
   void accountsWithNoValueSourceAreExcludedFromTotalsAndMarkTheSummaryIncomplete() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse institution =
         createPortfolio(
             token, new CreatePortfolioRequest(null, "Mixed Bank", null, null, null, null, "CHF"));
@@ -689,7 +686,7 @@ class PortfolioControllerTest {
   // View do, rather than presenting it as fresh.
   @Test
   void aContributionRestingOnAnOldValuationSaysHowOldAndThatItIsStale() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse institution =
         createPortfolio(
             token, new CreatePortfolioRequest(null, "Collectibles", null, null, null, null, "CHF"));
@@ -727,7 +724,7 @@ class PortfolioControllerTest {
 
   @Test
   void archivedAccountsAreExcludedFromTheSummaryEntirely() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse institution =
         createPortfolio(
             token,
@@ -762,7 +759,7 @@ class PortfolioControllerTest {
     // this request must never reach a try/catch around getConversionRate() in the first place
     // (PortfolioService now calls tryGetConversionRate() instead). Before the fix this 500'd
     // with UnexpectedRollbackException instead of returning the degraded contribution below.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse institution =
         createPortfolio(
             token,
@@ -790,7 +787,7 @@ class PortfolioControllerTest {
 
   @Test
   void summaryOfAnUnknownInstitutionIsNotFound() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     client(token)
         .get()
@@ -804,12 +801,12 @@ class PortfolioControllerTest {
   void anotherMemberSeesTheInstitutionSummaryWithoutAnyGrant() {
     // Proves AccessControlService is wired in on membership alone (US-03-06): a second member of
     // the workspace sees the first one's institution at once.
-    String adminToken = bootstrapAdministrator();
+    String adminToken = bootstrapStandardUser();
     PortfolioResponse institution =
         createPortfolio(
             adminToken,
             new CreatePortfolioRequest(null, "Admin's Bank", null, null, null, null, "CHF"));
-    createSecondMember(adminToken, "partner@example.com");
+    createSecondMember("partner@example.com");
     String partnerToken = login("partner@example.com", SECOND_MEMBER_PASSWORD);
 
     client(partnerToken)
@@ -841,7 +838,7 @@ class PortfolioControllerTest {
     // no longer authenticates - the same treatment a disabled AppUser already gets), not as a
     // per-endpoint 403, so every workspace-scoped endpoint is covered automatically, not just
     // this one.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     try (Connection connection = dataSource.getConnection();
         Statement statement = connection.createStatement()) {
       statement.execute("UPDATE workspace_member SET status = 'INACTIVE'");
@@ -870,7 +867,7 @@ class PortfolioControllerTest {
   void blankOptionalFieldsAreTreatedAsOmittedWhenLinkingACatalogueEntry() {
     // A client that reuses one form model for both create flows and defaults unset fields to ""
     // rather than null must not have that fail validation for fields the catalogue path ignores.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     var postFinance = searchCatalogue(token, "Post").content().get(0);
 
     PortfolioResponse created =
@@ -884,7 +881,7 @@ class PortfolioControllerTest {
 
   @Test
   void malformedCountryCodeIsRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     client(token)
         .post()
@@ -975,16 +972,9 @@ class PortfolioControllerTest {
     fxRateRepository.save(fxRate);
   }
 
-  private void createSecondMember(String adminToken, String email) {
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, SECOND_MEMBER_PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(UserSummaryResponse.class);
+  private void createSecondMember(String email) {
+    WorkspaceLoginFixtures.addMember(
+        dataSource, "admin@example.com", email, SECOND_MEMBER_PASSWORD);
   }
 
   private String login(String email, String password) {
@@ -1019,22 +1009,13 @@ class PortfolioControllerTest {
         .getResponseBody();
   }
 
-  private String bootstrapAdministrator() {
-    return RestTestClient.bindToServer()
-        .baseUrl("http://localhost:%d".formatted(port))
-        .build()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new SetupAdministratorRequest(
-                "admin@example.com", "correct-horse-battery-staple", "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            RestTestClient.bindToServer().baseUrl("http://localhost:%d".formatted(port)).build(),
+            "admin@example.com",
+            "correct-horse-battery-staple",
+            "Test Workspace",
+            "CHF")
         .accessToken();
   }
 

@@ -3,15 +3,13 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.AuthTokensResponse;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.RefreshTokenRequest;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
-import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.dto.WorkspaceMemberListItemResponse;
 import com.trackmywealth.backend.dto.WorkspaceMemberSummaryResponse;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -101,7 +99,7 @@ class WorkspaceMemberControllerTest {
   void deactivatingTheLastActiveMemberIsRejected() {
     // AC #1: a workspace with one active member - the bootstrap administrator is always that
     // workspace's sole member until a second is created.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID selfMemberId = workspaceMemberIdForEmail("admin@example.com");
 
     client(token)
@@ -122,7 +120,7 @@ class WorkspaceMemberControllerTest {
   // a 428; one with the current ETag succeeds.
   @Test
   void aStaleMemberDeactivationIsRejectedAndTheFirstIsKept() throws Exception {
-    bootstrapAdministrator();
+    bootstrapStandardUser();
     createSecondMember("partner@example.com");
     String partnerToken = login("partner@example.com", SECOND_MEMBER_PASSWORD);
     UUID partnerMemberId = workspaceMemberIdForEmail("partner@example.com");
@@ -182,7 +180,7 @@ class WorkspaceMemberControllerTest {
   void deactivatingSelfWithAnotherActiveMemberRemainingSucceeds() {
     // AC #2: a workspace with two active members - deactivating one succeeds and the other
     // remains ACTIVE.
-    String adminToken = bootstrapAdministrator();
+    bootstrapStandardUser();
     UUID adminMemberId = workspaceMemberIdForEmail("admin@example.com");
     createSecondMember("partner@example.com");
     String partnerToken = login("partner@example.com", SECOND_MEMBER_PASSWORD);
@@ -211,7 +209,7 @@ class WorkspaceMemberControllerTest {
   // rejected on first use and cannot tell "renew the session" from "sign in again".
   @Test
   void aDeactivatedMemberCanNeitherSignInAgainNorRefresh() {
-    bootstrapAdministrator();
+    bootstrapStandardUser();
     UUID partnerMemberId = createSecondMember("partner@example.com");
     AuthTokensResponse partner = loginTokens("partner@example.com", SECOND_MEMBER_PASSWORD);
     deactivateWith(
@@ -244,7 +242,7 @@ class WorkspaceMemberControllerTest {
   // never the 428 that would confirm it exists.
   @Test
   void anotherMembersRowCannotBeReadOrProbedWithoutIfMatch() {
-    String adminToken = bootstrapAdministrator();
+    String adminToken = bootstrapStandardUser();
     UUID adminUserId = appUserIdForEmail("admin@example.com");
     UUID partnerMemberId = createSecondMember("partner@example.com");
 
@@ -272,7 +270,7 @@ class WorkspaceMemberControllerTest {
     // else, even another member of their own workspace. Also verifies FR-TEN-006/US-28-02: this
     // denial must be audited via AuthorizationDenialAuditService, the same as every other
     // single-resource authorization denial in the app (see SessionService.revokeSession).
-    String adminToken = bootstrapAdministrator();
+    String adminToken = bootstrapStandardUser();
     UUID adminUserId = appUserIdForEmail("admin@example.com");
     UUID partnerMemberId = createSecondMember("partner@example.com");
 
@@ -295,7 +293,7 @@ class WorkspaceMemberControllerTest {
     // Javadoc for why that branch isn't reachable via this API today. Still worth pinning
     // separately: a syntactically-valid-but-nonexistent id must be rejected exactly as uniformly
     // as a real other member's id, never distinguishably.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     client(token)
         .post()
@@ -323,8 +321,8 @@ class WorkspaceMemberControllerTest {
   // administrator's bootstrap membership is not one of the workspace's people (FR-TEN-007).
   @Test
   void aMemberListsAllMembersOfTheWorkspaceIncludingDeactivatedOnes() throws Exception {
-    bootstrapAdministrator();
-    UUID anna = seedBusinessMember("anna@example.com");
+    bootstrapMember("anna@example.com");
+    UUID anna = workspaceMemberIdForEmail("anna@example.com");
     UUID ben = seedBusinessMember("ben@example.com");
     UUID clara = seedBusinessMember("clara@example.com");
     // Directly, not through the deactivation endpoint: that is self-service only.
@@ -362,8 +360,8 @@ class WorkspaceMemberControllerTest {
 
   @Test
   void listNeverReturnsMembersOfAnotherWorkspace() throws Exception {
-    bootstrapAdministrator();
-    UUID own = seedBusinessMember("own@example.com");
+    bootstrapMember("own@example.com");
+    UUID own = workspaceMemberIdForEmail("own@example.com");
     UUID foreign = seedBusinessMember("foreign@example.com");
     UUID otherWorkspace = UUID.randomUUID();
     try (Connection connection = dataSource.getConnection();
@@ -394,7 +392,8 @@ class WorkspaceMemberControllerTest {
   // makes it the sole member (until FR-USR-013) - so it gets the generic 404, not an empty list.
   @Test
   void theAdministratorCannotListMembers() {
-    String adminToken = bootstrapAdministrator();
+    String adminToken =
+        WorkspaceLoginFixtures.bootstrapAdministrator(anonymousClient()).accessToken();
 
     client(adminToken)
         .get()
@@ -408,8 +407,8 @@ class WorkspaceMemberControllerTest {
   // bytewise, which is the order of their lower-case text form.
   @Test
   void membersWithTheSameDisplayNameAreOrderedById() throws Exception {
-    bootstrapAdministrator();
-    UUID first = seedBusinessMember("sam@one.example.com");
+    bootstrapMember("sam@one.example.com");
+    UUID first = workspaceMemberIdForEmail("sam@one.example.com");
     UUID second = seedBusinessMember("sam@two.example.com");
 
     String token = login("sam@one.example.com", SECOND_MEMBER_PASSWORD);
@@ -427,8 +426,8 @@ class WorkspaceMemberControllerTest {
 
   @Test
   void retrievesMembershipBeyondTwoHundredRows() throws Exception {
-    bootstrapAdministrator();
-    UUID first = seedBusinessMember("sam@first.example.com");
+    bootstrapMember("sam@first.example.com");
+    UUID first = workspaceMemberIdForEmail("sam@first.example.com");
     try (Connection connection = dataSource.getConnection()) {
       connection.setAutoCommit(false);
       for (int i = 0; i < 200; i++) {
@@ -479,13 +478,13 @@ class WorkspaceMemberControllerTest {
             connection.prepareStatement(
                 "INSERT INTO workspace_member (id, workspace_id, display_name)"
                     + " SELECT ?, w.workspace_id, ? FROM workspace_member w"
-                    + " JOIN app_user a ON a.workspace_member_id = w.id"
-                    + " WHERE a.email = 'admin@example.com'");
+                    + " WHERE w.id = (SELECT id FROM workspace_member ORDER BY created_at, id LIMIT 1)");
         PreparedStatement user =
             connection.prepareStatement(
                 "INSERT INTO app_user (email, password_hash, role, workspace_member_id)"
                     + " SELECT ?, password_hash, 'STANDARD_USER', ?"
-                    + " FROM app_user WHERE email = 'admin@example.com'")) {
+                    + " FROM app_user WHERE workspace_member_id IS NOT NULL"
+                    + " ORDER BY created_at, id LIMIT 1")) {
       member.setObject(1, memberId);
       member.setString(2, email.split("@", 2)[0]);
       assertThat(member.executeUpdate()).isEqualTo(1);
@@ -598,17 +597,8 @@ class WorkspaceMemberControllerTest {
   }
 
   private UUID createSecondMember(String email) {
-    String adminToken = login("admin@example.com", "correct-horse-battery-staple");
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, SECOND_MEMBER_PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(UserSummaryResponse.class);
-    return workspaceMemberIdForEmail(email);
+    return WorkspaceLoginFixtures.addMember(
+        dataSource, "admin@example.com", email, SECOND_MEMBER_PASSWORD);
   }
 
   private String login(String email, String password) {
@@ -634,22 +624,18 @@ class WorkspaceMemberControllerTest {
     return RestTestClient.bindToServer().baseUrl("http://localhost:%d".formatted(port)).build();
   }
 
-  private String bootstrapAdministrator() {
-    return RestTestClient.bindToServer()
-        .baseUrl("http://localhost:%d".formatted(port))
-        .build()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new SetupAdministratorRequest(
-                "admin@example.com", "correct-horse-battery-staple", "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private void bootstrapMember(String email) {
+    WorkspaceLoginFixtures.bootstrapStandardUser(
+        anonymousClient(), email, SECOND_MEMBER_PASSWORD, "Test Workspace", "CHF");
+  }
+
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            RestTestClient.bindToServer().baseUrl("http://localhost:%d".formatted(port)).build(),
+            "admin@example.com",
+            "correct-horse-battery-staple",
+            "Test Workspace",
+            "CHF")
         .accessToken();
   }
 

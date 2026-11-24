@@ -113,6 +113,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V119` | #520: `idx_transaction_account_category_order` rebuilt with the same key but **not partial**: V115's predicate columns (`deleted_at`, `voided_at`, `replaces_transaction_id`) move into `INCLUDE`, so the inbox's `count(*)` stays index-only and removed rows are filtered in the index. PostgreSQL ignores extended statistics when it costs a partial index (the predicate enters the estimate as bare clauses), so with V118 alone the partial index kept the old estimate (cost 7,738) and the inbox's last page read `idx_transaction_category` (every workspace's uncategorized rows) and sorted (3,299); non-partial, the index costs 1,117 and serves every page sort-free. Live rows hold `NULL` in the included columns, which costs only the null bitmap. Plain `CREATE INDEX` at application start, as V115 |
 | `V124` | Idempotent creates (US-29-14, #574): `idempotency_key` (workspace, user, operation, key, SHA-256 request fingerprint, `IN_PROGRESS`/`COMPLETED`, stored response status and body, `expires_at`), unique per workspace, user, operation and key; workspace RLS; cascades with its workspace and user. `SECURITY DEFINER` `purge_expired_idempotency_keys(now, limit)`, `EXECUTE` revoked from `PUBLIC` and granted to `trackmywealth_runtime` only (see "Idempotent creates" below). Numbered after #628's `V122`/`V123` |
 | `V126` | Cost basis from holdings statements (US-15-08, #589): `import_holding_row.reported_cost_basis` (`NUMERIC(20,4)`, positions only, `>= 0`); version 2 of the Swissquote PDF and PF-5 XLSX holdings templates reads the average purchase price (`averagePrice`), version 1 no longer current; `snapshot_holding.cost_basis_import_batch_id` (the batch that filled a held position's empty cost basis; snapshot part `COST_BASIS`) |
+| `V127` | Administrator workspace boundary (US-03-08, #414): refuses legacy administrator-to-member links and adds a check against new links. The restricted workspace metadata function returns IDs and names. |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
 instance as part of this design (including a positive/negative row-level-security test as a
@@ -248,7 +249,7 @@ workspace (FR-USR-011).
 Every member is a user with a login (FR-USR-008). `app_user.workspace_member_id` is unique, so a
 member has at most one login. Two deferred constraint triggers in V110 keep it that way at commit:
 `workspace_member_requires_login` refuses a new `workspace_member` no `app_user` links to - member
-and user are written in one transaction in either order (`SetupService`, `AdminUserService`) - and
+and user are written in one transaction in either order (`AdminUserService`, `WorkspaceProvisioningService`) - and
 `app_user_keeps_member_login` refuses an `UPDATE` of `app_user.workspace_member_id` that lets go of
 a member unless that member is removed in the same transaction. The column stays nullable: a
 `SYSTEM_ADMINISTRATOR` needs no membership (FR-TEN-007). Users are disabled, never deleted
@@ -280,8 +281,8 @@ HTTP path - filter, listener, services - as `trackmywealth_runtime`.
 **Owner and grants.** `SECURITY DEFINER` alone does not bypass FORCE RLS: the functions' owner
 must. Flyway creates them, so they belong to the migration role, which has `BYPASSRLS` (see
 "Database roles" above; ADR 0005 says why no separate owner role). The application connects as
-`trackmywealth_runtime` and gets `EXECUTE` on these two functions and on V124's purge
-(see "Idempotent creates") only: `V81` grants it when the
+`trackmywealth_runtime` and gets `EXECUTE` on these two functions, on V124's purge
+(see "Idempotent creates"), and on V127's `admin_workspace_metadata()` (IDs and names only): `V81` grants it when the
 role exists before Flyway runs (a fresh split installation), and `role-split-database.sql` when an
 existing installation is split later. `V81` revokes PostgreSQL's default `PUBLIC` `EXECUTE`. A
 later migration that replaces a function must keep its grants. Both functions pin `search_path`,
@@ -882,9 +883,8 @@ provenance (FR-LIF-002b), and every response shows it as `removal`. Decisions ar
 
 `workspace.currency CHAR(3) NOT NULL DEFAULT 'CHF'` is the default currency for workspace-level consolidated
 figures such as net worth. Existing workspaces are backfilled from the oldest login-capable
-member's `app_user.reporting_currency`, falling back to CHF when no login exists. The column
-keeps its `DEFAULT 'CHF'` on purpose: setup always sets the currency (the administrator's), so
-the default only serves direct SQL inserts such as test fixtures. The per-user
+member's `app_user.reporting_currency`, falling back to CHF when no login exists. Since #414,
+Standard User provisioning uses the selected currency or the CHF default. The per-user
 `reporting_currency` remains a personal client preference and is not used by the server as the
 workspace-total default.
 

@@ -6,11 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.AmortisationScheduleEntryRequest;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CorrectTransactionRequest;
 import com.trackmywealth.backend.dto.CreateLoanRepaymentRequest;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoanRepaymentResponse;
 import com.trackmywealth.backend.dto.LoanRepaymentSplitValues;
 import com.trackmywealth.backend.dto.LoanRepaymentYearTotalResponse;
@@ -21,13 +19,13 @@ import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -123,7 +121,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void v14aMortgagePaymentIsSplitIntoInterestExpenseAndPrincipalRepayment() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse mortgage = createMortgage(token, "500000.00", "2.0");
     scheduleEntry(token, mortgage.id(), today(), "800.00", "1200.00", "498800.00");
@@ -173,7 +171,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void withoutMortgagePrincipalInTheMethodologyThePrincipalIsNotSaving() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse mortgage = createMortgage(token, "500000.00", "2.0");
     execute(
@@ -191,7 +189,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void principalPaidFromASavingsAccountMovesMoneyBetweenTwoSavingAccounts() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse savings = createAccount(token, "SAVINGS", "CHF");
     AccountSummaryResponse mortgage = createMortgage(token, "500000.00", "2.0");
 
@@ -207,7 +205,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void aStatedSplitIsRecordedAsGivenWithoutTheEstimateFlag() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse mortgage = createMortgage(token, "500000.00", "2.0");
     scheduleEntry(token, mortgage.id(), today(), "800.00", "1200.00", "498800.00");
@@ -225,7 +223,7 @@ class LoanRepaymentControllerTest {
   // id tie-breaker alone orders them.
   @Test
   void sixtyRepaymentsOnOneDateArePagedWithoutOverlap() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse paying = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse loan = createLoanWithoutRate(token, "20000.00");
     java.util.Set<UUID> recorded = new java.util.HashSet<>();
@@ -271,7 +269,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void anExtraRepaymentAgainstTheScheduleIsFlaggedAsAnEstimate() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse mortgage = createMortgage(token, "500000.00", "2.0");
     scheduleEntry(token, mortgage.id(), today(), "800.00", "1200.00", "498800.00");
@@ -286,7 +284,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void withoutAScheduleTheInterestIsEstimatedFromTheRateAndWhatIsStillOwed() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse mortgage = createMortgage(token, "480000.00", "2.0");
 
@@ -302,7 +300,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void anUnknownSplitIsPendingReviewNeverSilentlyInterestOrPrincipal() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse loan = createLoanWithoutRate(token, "20000.00");
 
@@ -330,7 +328,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void anInterestOnlyPaymentWritesOnlyTheExpenseAndLeavesTheDebtAsItWas() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse mortgage = createMortgage(token, "500000.00", "2.0");
 
@@ -356,7 +354,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void removingTheInterestRemovesTheWholePaymentAndRestoringItBringsItAllBack() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse mortgage = createMortgage(token, "500000.00", "2.0");
     LoanRepaymentResponse payment =
@@ -403,7 +401,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void aLoanPaymentRowTakesTextEditsButNoFinancialCorrection() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse mortgage = createMortgage(token, "500000.00", "2.0");
     LoanRepaymentResponse payment =
@@ -445,7 +443,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void aRetryWithTheSameKeyReplaysThePaymentAndAnotherPaymentUnderItIsAConflict() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse mortgage = createMortgage(token, "500000.00", "2.0");
     CreateLoanRepaymentRequest request = payment(current.id(), "2000.00", "800.00", "pay-03");
@@ -469,7 +467,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void aRemovedPaymentLeavesTheListAndKeepsItsKeyUntilItIsRestored() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse mortgage = createMortgage(token, "500000.00", "2.0");
     CreateLoanRepaymentRequest request = payment(current.id(), "2000.00", "800.00", "pay-07");
@@ -505,7 +503,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void deletingTheScheduleEntryAPaymentWasSplitByKeepsTheSplitAsRecorded() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse mortgage = createMortgage(token, "500000.00", "2.0");
     scheduleEntry(token, mortgage.id(), today(), "800.00", "1200.00", "498800.00");
@@ -535,7 +533,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void aLoanPaymentsRecordCannotBeChangedOrDeletedInTheDatabase() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse mortgage = createMortgage(token, "500000.00", "2.0");
     UUID paymentId =
@@ -558,7 +556,7 @@ class LoanRepaymentControllerTest {
   @Test
   void anotherWorkspacesLoanOrPayingAccountIsTheGenericNotFoundAndEachDenialIsAudited()
       throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse mortgage = createMortgage(token, "500000.00", "2.0");
     UUID foreign = accountInAnotherWorkspace();
@@ -602,7 +600,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void yearlyTotalsSumEachYearsPaymentsNewestYearFirstWithoutRemovedOnes() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse mortgage = createMortgage(token, "480000.00", "2.0");
     LocalDate lastYear = today().minusYears(1);
@@ -648,7 +646,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void anUnknownSplitIsNeitherPrincipalNorInterestButItsOwnAmountAndFlagsItsYear() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse loan = createLoanWithoutRate(token, "20000.00");
     assertThat(yearlyTotals(token, loan.id()).years()).isEmpty();
@@ -683,7 +681,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void anotherWorkspacesLoanHasNoYearlyTotals() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID foreign = accountInAnotherWorkspace();
 
     client(token)
@@ -725,7 +723,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void aDebtRepaymentCannotBeRecordedAsAPlainTransaction() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse mortgage = createMortgage(token, "500000.00", "2.0");
 
@@ -776,7 +774,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void aRepaymentNeedsALoanAnOrdinaryPayingAccountOneCurrencyAndAPlausibleSplit() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse euro = createAccount(token, "CASH", "EUR");
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
@@ -802,13 +800,13 @@ class LoanRepaymentControllerTest {
 
   @Test
   void anotherMemberRecordsAPaymentOnTheLoanWithoutAnyGrant() {
-    String adminToken = bootstrapAdministrator();
+    bootstrapStandardUser();
     // The first member is a Standard User: once anyone else joins, the administrator's own
     // membership no longer reaches financial data (FR-TEN-007, AccessControlService).
-    createSecondMember(adminToken, "first@example.com");
+    createSecondMember("first@example.com");
     String firstToken = login("first@example.com");
     AccountSummaryResponse mortgage = createMortgage(firstToken, "500000.00", "2.0");
-    createSecondMember(adminToken, "partner@example.com");
+    createSecondMember("partner@example.com");
     String memberToken = login("partner@example.com");
     AccountSummaryResponse own = createAccount(memberToken, "CASH", "CHF");
 
@@ -819,7 +817,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void anotherMemberSeesTheRepaymentsAndTheLoanLedgerKeepsThePayingAccountsText() {
-    String ownerToken = bootstrapAdministrator();
+    String ownerToken = bootstrapStandardUser();
     AccountSummaryResponse paying = createAccount(ownerToken, "CASH", "CHF");
     AccountSummaryResponse loan = createMortgage(ownerToken, "500000.00", "2.0");
     LoanRepaymentResponse original =
@@ -836,7 +834,7 @@ class LoanRepaymentControllerTest {
                 "private note",
                 "private-key"));
 
-    createSecondMember(ownerToken, "reader@example.com");
+    createSecondMember("reader@example.com");
     String readerToken = login("reader@example.com");
 
     assertThat(repayments(readerToken, loan.id()))
@@ -855,7 +853,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void unknownSplitLeavesLoanValueUnknownAndPendingPaymentVisibleFromPayingAccount() {
-    String ownerToken = bootstrapAdministrator();
+    String ownerToken = bootstrapStandardUser();
     AccountSummaryResponse paying = createAccount(ownerToken, "CASH", "CHF");
     AccountSummaryResponse loan = createLoanWithoutRate(ownerToken, "20000.00");
     repay(ownerToken, loan.id(), payment(paying.id(), "500.00", null, null));
@@ -866,7 +864,7 @@ class LoanRepaymentControllerTest {
     assertThat(netWorth(ownerToken).complete()).isFalse();
 
     // Another member sees both legs; the same payment still counts only once.
-    createSecondMember(ownerToken, "payer-reader@example.com");
+    createSecondMember("payer-reader@example.com");
     CashFlowResponse flow = cashFlow(login("payer-reader@example.com"));
     assertThat(chf(flow.pendingReview())).isEqualByComparingTo("500.00");
     assertThat(flow.complete()).isFalse();
@@ -877,7 +875,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void aLoansInterestIsNeverTakenForACardPaymentOfTheSameAmount() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse mortgage = createMortgage(token, "500000.00", "2.0");
     UUID card = createCardPaidFrom(token, current.id());
@@ -900,7 +898,7 @@ class LoanRepaymentControllerTest {
 
   @Test
   void aCardPaymentConfirmedAsASettlementStaysAnOrdinaryCorrectableExpense() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     UUID card = createCardPaidFrom(token, current.id());
     record(token, card, "CREDIT_CARD_PURCHASE", "-300.00", today().minusDays(5));
@@ -1244,27 +1242,8 @@ class LoanRepaymentControllerTest {
     }
   }
 
-  private UUID createSecondMember(String adminToken, String email) {
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isCreated();
-    try (Connection connection = dataSource.getConnection();
-        PreparedStatement statement =
-            connection.prepareStatement(
-                "SELECT workspace_member_id FROM app_user WHERE email = ?")) {
-      statement.setString(1, email);
-      try (ResultSet resultSet = statement.executeQuery()) {
-        resultSet.next();
-        return (UUID) resultSet.getObject(1);
-      }
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
+  private UUID createSecondMember(String email) {
+    return WorkspaceLoginFixtures.addMember(dataSource, "admin@example.com", email, PASSWORD);
   }
 
   private String login(String email) {
@@ -1283,18 +1262,9 @@ class LoanRepaymentControllerTest {
         .accessToken();
   }
 
-  private String bootstrapAdministrator() {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Test Workspace", "CHF")
         .accessToken();
   }
 

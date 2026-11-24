@@ -4,20 +4,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.IdempotencyClaim;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
-import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.repository.IdempotencyKeyRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.IdempotencyService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.RowLevelSecurityRole;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import jakarta.persistence.EntityManager;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
@@ -138,7 +135,7 @@ class ImportBatchIdempotencyTest {
         statement.execute(sql);
       }
     }
-    token = bootstrapAdministrator();
+    token = bootstrapStandardUser();
     account = createAccount(token, "Privatkonto");
   }
 
@@ -500,15 +497,7 @@ class ImportBatchIdempotencyTest {
   }
 
   private String createUserAndLogin(String email) {
-    client(token)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isCreated()
-        .expectBody(UserSummaryResponse.class);
+    WorkspaceLoginFixtures.addMember(dataSource, "admin@example.com", email, PASSWORD);
     return anonymousClient()
         .post()
         .uri("/api/v1/auth/login")
@@ -524,18 +513,9 @@ class ImportBatchIdempotencyTest {
         .accessToken();
   }
 
-  private String bootstrapAdministrator() {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isCreated()
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Test Workspace", "CHF")
         .accessToken();
   }
 

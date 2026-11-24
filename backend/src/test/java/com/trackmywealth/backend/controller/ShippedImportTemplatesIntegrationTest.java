@@ -3,7 +3,6 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.groups.Tuple.tuple;
 
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.ImportPreviewRowResponse;
 import com.trackmywealth.backend.dto.ImportRowErrorResponse;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
@@ -11,8 +10,8 @@ import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateTestResponse;
 import com.trackmywealth.backend.dto.PageResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.service.ShippedTemplateFixtures;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -136,7 +135,7 @@ class ShippedImportTemplatesIntegrationTest {
   @BeforeEach
   void signIn() {
     if (token == null) {
-      token = bootstrapAdministrator();
+      token = bootstrapStandardUser();
     }
   }
 
@@ -524,22 +523,13 @@ class ShippedImportTemplatesIntegrationTest {
     }
   }
 
-  private String bootstrapAdministrator() {
-    return RestTestClient.bindToServer()
-        .baseUrl("http://localhost:%d".formatted(port))
-        .build()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new SetupAdministratorRequest(
-                "admin@example.com", "correct-horse-battery-staple", "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isCreated()
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            RestTestClient.bindToServer().baseUrl("http://localhost:%d".formatted(port)).build(),
+            "admin@example.com",
+            "correct-horse-battery-staple",
+            "Test Workspace",
+            "CHF")
         .accessToken();
   }
 

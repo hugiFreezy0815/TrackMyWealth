@@ -5,20 +5,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.SecurityResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.SnapshotHoldingRequest;
 import com.trackmywealth.backend.dto.SnapshotHoldingResponse;
-import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -108,7 +105,7 @@ class AccountSnapshotControllerTest {
 
   @Test
   void typingTodaysBalanceCreatesAManualSnapshot() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse postFinance = createAccount(token, "PostFinance", "CASH");
 
     AccountSnapshotResponse created =
@@ -139,7 +136,7 @@ class AccountSnapshotControllerTest {
 
   @Test
   void aDepotSnapshotWithHoldingsCreatesHoldingRowsAlongsideTheBalance() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "Swissquote Depot", "SECURITIES");
     SecurityResponse vt = createSecurity(token, "US9220427424", "Vanguard Total World");
     SecurityResponse nesn = createSecurity(token, "CH0038863350", "Nestle");
@@ -180,7 +177,7 @@ class AccountSnapshotControllerTest {
 
   @Test
   void aDepotStatementMayListPositionsWithoutABalance() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "Depot", "SECURITIES");
     SecurityResponse vt = createSecurity(token, "US9220427424", "Vanguard Total World");
 
@@ -203,7 +200,7 @@ class AccountSnapshotControllerTest {
 
   @Test
   void aSecondSnapshotForTheSameDateIsAConflictNamingTheExistingOne() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     UUID first = recordOk(token, cash.id(), balanceOnly(today(), "12345.67")).id();
 
@@ -223,7 +220,7 @@ class AccountSnapshotControllerTest {
 
   @Test
   void updatingTodaysSnapshotReplacesItsBalanceAndHoldings() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "Depot", "SECURITIES");
     SecurityResponse vt = createSecurity(token, "US9220427424", "Vanguard Total World");
     SecurityResponse nesn = createSecurity(token, "CH0038863350", "Nestle");
@@ -266,7 +263,7 @@ class AccountSnapshotControllerTest {
   // rejected and the first one is kept. Without If-Match the replacement is not attempted at all.
   @Test
   void aStaleSnapshotReplacementIsRejectedAndTheFirstIsKept() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse account = createAccount(token, "Cash", "CASH");
     AccountSnapshotResponse readByBoth =
         recordOk(token, account.id(), balanceOnly(today(), "100.00"));
@@ -311,7 +308,7 @@ class AccountSnapshotControllerTest {
 
   @Test
   void aProviderReportedSnapshotCannotBeReplaced() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     UUID documentSnapshot = insertSnapshot(cash.id(), "DOCUMENT", "CHF");
 
@@ -328,7 +325,7 @@ class AccountSnapshotControllerTest {
 
   @Test
   void listingSnapshotsReturnsThemNewestFirst() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     recordOk(token, cash.id(), balanceOnly(today().minusMonths(1), "100.00"));
     recordOk(token, cash.id(), balanceOnly(today(), "200.00"));
@@ -353,7 +350,7 @@ class AccountSnapshotControllerTest {
   // #473 AC: 120 snapshots, page=1&size=50 -> snapshots 51-100 and page 1, 50, 120, 3.
   @Test
   void aLongSnapshotHistoryIsPagedNewestFirst() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse account = createAccount(token, "History", "CASH");
     for (int day = 0; day < 120; day++) {
       recordOk(token, account.id(), balanceOnly(today().minusDays(day), "100.00"));
@@ -389,7 +386,7 @@ class AccountSnapshotControllerTest {
 
   @Test
   void aSnapshotIsNotFoundUnderAnotherAccount() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     AccountSummaryResponse other = createAccount(token, "UBS", "CASH");
     UUID snapshot = recordOk(token, cash.id(), balanceOnly(today(), "1.00")).id();
@@ -411,7 +408,7 @@ class AccountSnapshotControllerTest {
 
   @Test
   void recordingForAnUnknownAccountIsNotFound() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     record(token, UUID.randomUUID(), balanceOnly(today(), "1.00"))
         .expectStatus()
@@ -422,7 +419,7 @@ class AccountSnapshotControllerTest {
 
   @Test
   void aFutureDatedSnapshotIsRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
 
     record(token, cash.id(), balanceOnly(today().plusDays(1), "1.00"))
@@ -432,7 +429,7 @@ class AccountSnapshotControllerTest {
 
   @Test
   void aSnapshotBeforeTheAccountWasOpenedIsRejected() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     execute("UPDATE account SET opened_at = ? WHERE id = ?", today().minusMonths(1), cash.id());
 
@@ -446,7 +443,7 @@ class AccountSnapshotControllerTest {
 
   @Test
   void holdingsOnAnAccountThatHoldsNoPositionsAreRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     SecurityResponse vt = createSecurity(token, "US9220427424", "Vanguard Total World");
 
@@ -461,7 +458,7 @@ class AccountSnapshotControllerTest {
 
   @Test
   void aSnapshotWithNeitherBalanceNorHoldingsIsRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "Depot", "SECURITIES");
 
     record(token, depot.id(), new RecordAccountSnapshotRequest(today(), null, null))
@@ -471,7 +468,7 @@ class AccountSnapshotControllerTest {
 
   @Test
   void theSameSecurityTwiceInOneSnapshotIsRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "Depot", "SECURITIES");
     SecurityResponse vt = createSecurity(token, "US9220427424", "Vanguard Total World");
 
@@ -486,7 +483,7 @@ class AccountSnapshotControllerTest {
 
   @Test
   void anUnknownSecurityIsRejectedAndNothingIsWritten() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "Depot", "SECURITIES");
 
     record(
@@ -502,7 +499,7 @@ class AccountSnapshotControllerTest {
 
   @Test
   void aNonPositiveQuantityIsABadRequest() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "Depot", "SECURITIES");
     SecurityResponse vt = createSecurity(token, "US9220427424", "Vanguard Total World");
 
@@ -516,7 +513,7 @@ class AccountSnapshotControllerTest {
 
   @Test
   void aNullHoldingLineIsABadRequest() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "Depot", "SECURITIES");
 
     client(token)
@@ -533,13 +530,13 @@ class AccountSnapshotControllerTest {
 
   @Test
   void anotherMemberRecordsAndListsSnapshotsWithoutAnyGrant() {
-    String adminToken = bootstrapAdministrator();
+    bootstrapStandardUser();
     // The first member is a Standard User: once anyone else joins, the administrator's own
     // membership no longer reaches financial data (FR-TEN-007, AccessControlService).
-    createSecondMember(adminToken, "first@example.com");
+    createSecondMember("first@example.com");
     String firstToken = login("first@example.com");
     AccountSummaryResponse cash = createAccount(firstToken, "PostFinance", "CASH");
-    createSecondMember(adminToken, "member@example.com");
+    createSecondMember("member@example.com");
     String memberToken = login("member@example.com");
 
     record(memberToken, cash.id(), balanceOnly(today(), "1.00"))
@@ -557,7 +554,7 @@ class AccountSnapshotControllerTest {
 
   @Test
   void theDatabaseRejectsASnapshotInAnotherCurrencyThanTheAccounts() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
 
     assertThatThrownBy(() -> insertSnapshot(cash.id(), "DOCUMENT", "EUR"))
@@ -676,28 +673,8 @@ class AccountSnapshotControllerTest {
         .getResponseBody();
   }
 
-  private UUID createSecondMember(String adminToken, String email) {
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(UserSummaryResponse.class);
-    try (Connection connection = dataSource.getConnection();
-        PreparedStatement statement =
-            connection.prepareStatement(
-                "SELECT workspace_member_id FROM app_user WHERE email = ?")) {
-      statement.setString(1, email);
-      try (ResultSet resultSet = statement.executeQuery()) {
-        assertThat(resultSet.next()).isTrue();
-        return (UUID) resultSet.getObject(1);
-      }
-    } catch (SQLException e) {
-      throw new IllegalStateException(e);
-    }
+  private UUID createSecondMember(String email) {
+    return WorkspaceLoginFixtures.addMember(dataSource, "admin@example.com", email, PASSWORD);
   }
 
   // Inserts as the provider-side import would, bypassing the service - which only ever writes
@@ -764,18 +741,9 @@ class AccountSnapshotControllerTest {
         .accessToken();
   }
 
-  private String bootstrapAdministrator() {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Test Workspace", "CHF")
         .accessToken();
   }
 

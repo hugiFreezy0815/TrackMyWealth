@@ -867,7 +867,7 @@ export interface paths {
     delete?: never;
     options?: never;
     head?: never;
-    /** Change a user's email, role or language */
+    /** Change a user's email or language */
     patch: operations['updateUser'];
     trace?: never;
   };
@@ -899,6 +899,26 @@ export interface paths {
     put?: never;
     /** Reactivate a disabled user */
     post: operations['reactivateUser'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/workspaces': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List workspace metadata
+     * @description Fixed order: id ascending. Takes page and size only; any sort is a 400 INVALID_SORT.
+     */
+    get: operations['listAdminWorkspaces'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1523,7 +1543,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Create the first administrator and the workspace */
+    /** Create the first administrator */
     post: operations['setupAdministrator'];
     delete?: never;
     options?: never;
@@ -2028,6 +2048,11 @@ export interface components {
       valueSourceStale: boolean;
       warnings: string[];
     };
+    AdminWorkspaceSummaryResponse: {
+      /** Format: uuid */
+      id: string;
+      name: string | null;
+    };
     AmortisationScheduleEntryRequest: {
       /** Format: date */
       dueDate: string;
@@ -2496,6 +2521,9 @@ export interface components {
       password: string;
       role: string;
       language: string;
+      workspaceName?: string;
+      /** @description Initial workspace, Personal Assets, and user reporting currency. Defaults to CHF for a Standard User. */
+      currencyCode?: string;
     };
     CurrencyAmount: {
       currency: string;
@@ -3382,6 +3410,10 @@ export interface components {
       content: components['schemas']['AccountSnapshotResponse'][];
       page: components['schemas']['PageMetadata'];
     };
+    PageResponseAdminWorkspaceSummaryResponse: {
+      content: components['schemas']['AdminWorkspaceSummaryResponse'][];
+      page: components['schemas']['PageMetadata'];
+    };
     PageResponseAmortisationScheduleEntryResponse: {
       content: components['schemas']['AmortisationScheduleEntryResponse'][];
       page: components['schemas']['PageMetadata'];
@@ -3889,6 +3921,10 @@ export interface components {
       /** Format: email */
       email: string;
       password: string;
+      /**
+       * @deprecated
+       * @description Legacy setup field. Create a Standard User to provision a workspace.
+       */
       workspaceName?: string;
       currencyCode: string;
     };
@@ -15189,6 +15225,118 @@ export interface operations {
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
+       */
+      500: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      default: components['responses']['ApiProblemResponse'];
+    };
+  };
+  listAdminWorkspaces: {
+    parameters: {
+      query?: {
+        /** @description Zero-based page number. */
+        page?: number;
+        /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
+        size?: number;
+      };
+      header?: {
+        /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
+        'X-Correlation-Id'?: string;
+        /** @description W3C trace context. Invalid or absent values start a trace. */
+        traceparent?: components['parameters']['Traceparent'];
+        /** @description The app's version, MAJOR.MINOR.PATCH (#576). An app sends it on every request; other callers leave it out and are always served. Older than the server's configured minimum app version: 426 APP_UPDATE_REQUIRED. Not MAJOR.MINOR.PATCH: 400 VALIDATION_FAILED. */
+        'X-App-Version'?: components['parameters']['AppVersion'];
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PageResponseAdminWorkspaceSummaryResponse'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       *     - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
+       */
+      400: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `UNAUTHENTICATED`: No valid access token, or a sign-in was refused.
+       */
+      401: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `FORBIDDEN`: Signed in, but not allowed to do this (e.g. an administration endpoint).
+       */
+      403: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          traceparent: components['headers']['Traceparent'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `APP_UPDATE_REQUIRED`: The X-App-Version sent is older than the oldest app version this server serves (#576).
+       */
+      426: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;

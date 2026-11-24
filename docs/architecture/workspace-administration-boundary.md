@@ -27,35 +27,22 @@
 - `WorkspaceMembershipAccessIntegrationTest` proves every acceptance criterion with two real
   members, and `WorkspaceMembershipMigrationTest` proves V110's refusals.
 
-## Follow-up: administrator never a member (FR-USR-013, FR-USR-016)
+## Administrator and workspace provisioning (US-03-08, #414)
 
-Today `SetupService` still links the bootstrap administrator to a workspace member, and
-`AdminUserService.createUser` adds every new user to the acting administrator's workspace.
-
-**Interim rule (in #389).** Before #389, ownership and grants kept the administrator out of
-another member's accounts. Membership-only access would have removed that barrier, so
-`AccessControlService.requireActingMember` refuses an administrator's membership as soon as the
-workspace has a second active member. Until then the bootstrap login can set up and use a fresh
-install; afterwards it reaches none of the workspace's financial data, not even what it created
-itself, and every refusal is an audited 404 (`authorization_denial_log`).
-`AdministratorFinancialAccessTest` proves it.
-
-The follow-up story replaces this rule with the real boundary. It changes all of the following
-together, because each part alone leaves a deployment unusable:
-
-1. First-run setup creates the administrator only, with no workspace and no membership.
-2. `createUser` sets up a new workspace for each Standard User, who becomes its only member
-   (FR-USR-016, closed-registration variant), and refuses to make an administrator a member.
-3. A role change across the boundary is refused: a member never becomes an administrator, and an
-   administrator never becomes a member (FR-USR-013).
-4. The principal carries no workspace for an administrator, enforced in one place
-   (`AuthenticatedUserPrincipal`), with a shared role constant instead of string literals.
-5. A forward migration stops with a message on a database whose administrator is linked to a
-   member (PO decision 2026-10-23: reset the development database rather than repair it).
-6. Test fixtures that use the bootstrap token for financial endpoints log in as a Standard User.
-7. Admin metadata reads (the workspace name, FR-USR-015) go through a narrow read path that
-   returns metadata only, since the `workspace` table is RLS-protected and an administrator has no
-   tenant context; a `SECURITY DEFINER` function like V81's is the likely shape.
+- First-run setup creates a workspace-free administrator. The selected currency is an
+  administrator profile preference. The legacy workspace name field remains accepted at setup.
+- Creating a Standard User provisions a workspace, its default Personal Assets portfolio,
+  the sole membership and the login in one transaction. User creation accepts an optional
+  workspace name and currency, with CHF as the default. The audit record includes the
+  workspace and membership IDs.
+- Additional administrators have no membership. The API refuses role changes between Standard
+  User and System Administrator. The database rejects an administrator with a member link, and
+  the authenticated administrator principal has no workspace context.
+- `GET /api/v1/admin/workspaces` returns paged IDs and names. Its database function uses
+  the same ownership and runtime grants as V81's authentication functions.
+- V127 stops an upgrade when it finds a legacy administrator linked to a member. It reports
+  the IDs and preserves the data. Reset only disposable development databases. An installation
+  whose data must be retained requires a separate data-preserving migration plan.
 
 ## Feature configuration (FR-ADM-001..008, separate story)
 

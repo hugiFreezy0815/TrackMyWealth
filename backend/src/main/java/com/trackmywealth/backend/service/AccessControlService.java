@@ -1,5 +1,7 @@
 package com.trackmywealth.backend.service;
 
+import static com.trackmywealth.backend.service.AuthorizationDenialAuditService.GENERIC_NOT_FOUND_DETAIL;
+
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AppUser;
 import com.trackmywealth.backend.entity.Portfolio;
@@ -20,9 +22,7 @@ import org.springframework.web.server.ResponseStatusException;
  * acting member may proceed. Membership is the only access grant: every {@code ACTIVE} member of a
  * workspace may see and change everything in it, and nobody else may see anything. There is no
  * account ownership, no per-account or per-scope grant and no access level (all withdrawn with
- * OPEN-021), so whatever one member creates or imports is there for every other member at once. The
- * one exception is an administrator still linked to a member (see {@link #requireActingMember}):
- * administration rights never reach another member's data (FR-TEN-007).
+ * OPEN-021), so whatever one member creates or imports is there for every other member at once.
  *
  * <p>Deny is always surfaced as {@link HttpStatus#NOT_FOUND}, identical to a genuinely
  * nonexistent/cross-workspace id (FR-TEN-006/US-28-02), so a denied caller can never distinguish
@@ -34,8 +34,6 @@ import org.springframework.web.server.ResponseStatusException;
 public class AccessControlService {
 
   private static final String ACTIVE = "ACTIVE";
-  private static final String SYSTEM_ADMINISTRATOR = "SYSTEM_ADMINISTRATOR";
-  private static final long SOLE_MEMBER = 1;
   private static final String ACCOUNT_ENTITY_TYPE = "Account";
   // As PortfolioLookupService's: "FinancialInstitution" in denials logged before V111.
   private static final String PORTFOLIO_ENTITY_TYPE = "Portfolio";
@@ -63,8 +61,7 @@ public class AccessControlService {
   // Non-throwing, bulk counterpart of requireAccountAccess, for an aggregation (e.g. net worth)
   // that must silently leave out the accounts the member cannot see rather than 404 the whole
   // request. One membership lookup for the whole collection, never one query per account.
-  // memberId must come from requireActingMember for the same request: only that applies the
-  // administrator rule (FR-TEN-007), which a bare member id cannot.
+  // memberId must come from requireActingMember for the same request.
   @Transactional(readOnly = true)
   public List<Account> accountsWithAccess(UUID memberId, Collection<Account> accounts) {
     UUID workspaceId = activeMemberWorkspaceId(memberId);
@@ -88,10 +85,13 @@ public class AccessControlService {
   }
 
   // The single core check every require* method above funnels through: the actor is an ACTIVE
-  // member of the resource's workspace. A caller without any membership gets requireActingMember's
-  // own 404; a member of another workspace gets the audited 404 of the resource itself.
+  // member of the resource's workspace. Requests identifying a resource are audited when the
+  // principal has no workspace context or belongs to a different workspace.
   private void requireWorkspaceMembership(
       AuthenticatedUserPrincipal actor, UUID workspaceId, String entityType, UUID entityId) {
+    if (actor.workspaceId() == null && entityId != null) {
+      throw denyAsNotFound(actor, entityType, entityId);
+    }
     // requireActingMember has already loaded the member, so the lookup below is answered from the
     // persistence context, not by a second query.
     UUID memberWorkspaceId = activeMemberWorkspaceId(requireActingMember(actor));
@@ -119,32 +119,22 @@ public class AccessControlService {
   // workspace-scoped resource to ever legitimately request. JwtAuthenticationFilter already
   // refuses a token whose linked membership is not ACTIVE; the status is checked here as well so
   // a deactivated member is refused by every caller, not only by those behind the HTTP filter.
-  //
-  // FR-TEN-007 (interim, until FR-USR-013 stops making the administrator a member): an
-  // administrator's membership grants access only while it is the workspace's sole active member,
-  // so a fresh install can still be set up and used through the bootstrap login. Once a Standard
-  // User joins the workspace, the administrator reaches none of its financial data, including what
-  // it created itself; the denial is audited like any other (US-28-02). Before #389 the ownership
-  // and grant model kept the administrator out of another member's accounts; without it, this rule
-  // is what does.
   @Transactional(readOnly = true)
   public UUID requireActingMember(AuthenticatedUserPrincipal actor) {
     if (actor.workspaceId() == null) {
-      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found.");
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, GENERIC_NOT_FOUND_DETAIL);
     }
     AppUser user =
         appUserRepository
             .findById(actor.userId())
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
+            .orElseThrow(
+                () -> new ResponseStatusException(HttpStatus.NOT_FOUND, GENERIC_NOT_FOUND_DETAIL));
     WorkspaceMember member = user.getWorkspaceMember();
     if (member == null || !ACTIVE.equals(member.getStatus())) {
-      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found.");
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, GENERIC_NOT_FOUND_DETAIL);
     }
-    UUID workspaceId = member.getWorkspace().getId();
-    if (SYSTEM_ADMINISTRATOR.equals(user.getRole())
-        && workspaceMemberRepository.countByWorkspaceIdAndStatus(workspaceId, ACTIVE)
-            > SOLE_MEMBER) {
-      throw denyAsNotFound(actor, WORKSPACE_ENTITY_TYPE, workspaceId);
+    if (!actor.workspaceId().equals(member.getWorkspace().getId())) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, GENERIC_NOT_FOUND_DETAIL);
     }
     return member.getId();
   }

@@ -4,9 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CorrectTransactionRequest;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.DataQualityWarningValues;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
@@ -15,12 +13,11 @@ import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.OpeningBalanceResponse;
 import com.trackmywealth.backend.dto.ReconciliationStatusValues;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
-import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -112,7 +109,7 @@ class ReconciliationControllerTest {
 
   @Test
   void snapshotMinusLedgerOpensA45Franc67DifferenceAndSurfacesTheWarning() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
     recordOpeningBalance(token, cash.id(), "10000.00");
     recordTransaction(token, cash.id(), SNAPSHOT_DATE.minusDays(1), "2300.00", "INCOME");
@@ -149,7 +146,7 @@ class ReconciliationControllerTest {
 
   @Test
   void addingTheMissingLedgerRowResolvesTheExistingDifference() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
     recordOpeningBalance(token, cash.id(), "10000.00");
     recordTransaction(token, cash.id(), SNAPSHOT_DATE.minusDays(1), "2300.00", "INCOME");
@@ -170,7 +167,7 @@ class ReconciliationControllerTest {
 
   @Test
   void aNewerSnapshotSupersedesTheOlderOpenDifference() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
     recordOpeningBalance(token, cash.id(), "10000.00");
     recordTransaction(token, cash.id(), SNAPSHOT_DATE.minusDays(40), "1000.00", "INCOME");
@@ -192,7 +189,7 @@ class ReconciliationControllerTest {
 
   @Test
   void exactAgreementCreatesNoOpenRowAndShowsReconciled() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
     recordOpeningBalance(token, cash.id(), "10000.00");
     recordTransaction(token, cash.id(), SNAPSHOT_DATE.minusDays(1), "2300.00", "INCOME");
@@ -207,7 +204,7 @@ class ReconciliationControllerTest {
 
   @Test
   void aSnapshotWithoutAnOpeningBalanceIsExplicitlyNotReconciliable() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
 
     recordSnapshot(token, cash.id(), SNAPSHOT_DATE, "12300.00");
@@ -223,7 +220,7 @@ class ReconciliationControllerTest {
 
   @Test
   void removingALedgerRowAfterAnExactSnapshotReopensTheDifference() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
     recordOpeningBalance(token, cash.id(), "10000.00");
     TransactionResponse income =
@@ -248,7 +245,7 @@ class ReconciliationControllerTest {
 
   @Test
   void resolvingAResultKeepsTheDifferenceItResolvedInTheHistory() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
     recordOpeningBalance(token, cash.id(), "10000.00");
     recordTransaction(token, cash.id(), SNAPSHOT_DATE.minusDays(1), "2300.00", "INCOME");
@@ -273,7 +270,7 @@ class ReconciliationControllerTest {
 
   @Test
   void correctingALedgerRowReEvaluatesTheSnapshot() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
     recordOpeningBalance(token, cash.id(), "10000.00");
     TransactionResponse income =
@@ -296,7 +293,7 @@ class ReconciliationControllerTest {
 
   @Test
   void restoringARemovedRowReconcilesTheSnapshotAgain() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
     recordOpeningBalance(token, cash.id(), "10000.00");
     TransactionResponse income =
@@ -326,7 +323,7 @@ class ReconciliationControllerTest {
 
   @Test
   void changingTheOpeningBalanceReEvaluatesTheSnapshot() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
     OpeningBalanceResponse opening = recordOpeningBalance(token, cash.id(), "10000.00");
     recordTransaction(token, cash.id(), SNAPSHOT_DATE.minusDays(1), "2300.00", "INCOME");
@@ -348,7 +345,7 @@ class ReconciliationControllerTest {
 
   @Test
   void aDuplicatedCardPurchaseIsClassifiedOnALiability() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card =
         client(token)
             .post()
@@ -386,7 +383,7 @@ class ReconciliationControllerTest {
   @Test
   void aPurchaseImportedTwiceInTwoWordingsIsStillClassifiedAsADuplicate() {
     // US-07-17: two export formats of one account describe the same booking differently.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card =
         client(token)
             .post()
@@ -421,12 +418,12 @@ class ReconciliationControllerTest {
 
   @Test
   void anotherMemberSeesTheSignalWithItsDetailsAndTheHistory() {
-    String adminToken = bootstrapAdministrator();
+    String adminToken = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(adminToken);
     recordOpeningBalance(adminToken, cash.id(), "10000.00");
     recordTransaction(adminToken, cash.id(), SNAPSHOT_DATE.minusDays(1), "2300.00", "INCOME");
     recordSnapshot(adminToken, cash.id(), SNAPSHOT_DATE, "12345.67");
-    createSecondMember(adminToken, "member@example.com");
+    createSecondMember("member@example.com");
     String memberToken = login("member@example.com");
 
     AccountSummaryResponse seen = account(memberToken, cash.id());
@@ -517,28 +514,8 @@ class ReconciliationControllerTest {
     }
   }
 
-  private UUID createSecondMember(String adminToken, String email) {
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(UserSummaryResponse.class);
-    try (Connection connection = dataSource.getConnection();
-        PreparedStatement statement =
-            connection.prepareStatement(
-                "SELECT workspace_member_id FROM app_user WHERE email = ?")) {
-      statement.setString(1, email);
-      try (ResultSet resultSet = statement.executeQuery()) {
-        assertThat(resultSet.next()).isTrue();
-        return (UUID) resultSet.getObject(1);
-      }
-    } catch (SQLException e) {
-      throw new IllegalStateException(e);
-    }
+  private UUID createSecondMember(String email) {
+    return WorkspaceLoginFixtures.addMember(dataSource, "admin@example.com", email, PASSWORD);
   }
 
   private String login(String email) {
@@ -623,18 +600,9 @@ class ReconciliationControllerTest {
         .getResponseBody();
   }
 
-  private String bootstrapAdministrator() {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Test Workspace", "CHF")
         .accessToken();
   }
 

@@ -6,14 +6,10 @@ import com.trackmywealth.backend.dto.UserRoleValues;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.entity.AdminAuditLog;
 import com.trackmywealth.backend.entity.AppUser;
-import com.trackmywealth.backend.entity.Workspace;
-import com.trackmywealth.backend.entity.WorkspaceMember;
 import com.trackmywealth.backend.repository.AdminAuditLogRepository;
 import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.repository.RefreshTokenRepository;
 import com.trackmywealth.backend.repository.UserSessionRepository;
-import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
-import com.trackmywealth.backend.repository.WorkspaceRepository;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
@@ -28,25 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.ObjectMapper;
 
-/**
- * US-02-01: administrator-driven user lifecycle management. Edit/disable/reactivate deliberately
- * touch only {@code app_user}/{@code refresh_token}/{@code admin_audit_log} - never a
- * workspace-scoped table, per FR-TEN-007's separation between administration rights and
- * financial-data access.
- *
- * <p>{@link #createUser} is the one deliberate, narrow exception: every login-capable person needs
- * both an {@code app_user} row (authentication) and a {@code workspace_member} row (financial-data
- * access, RULE-018) - {@code SetupService} creates both together for the bootstrap administrator,
- * and this mirrors that for every user created afterward (#47). Without it, the new user
- * authenticates successfully but {@code app.current_workspace_id} never resolves for their requests
- * ({@code WorkspaceContextTransactionExecutionListener}), so every workspace-scoped table denies
- * them by default. This is not the FR-TEN-007 boundary US-02-05 protects: that story is about the
- * {@code role} column itself never granting financial access - it does not forbid an administrator
- * from creating that membership in the first place, which is the entire point of this endpoint
- * existing. The new user joins the administrator's own workspace (until FR-USR-016 gives each user
- * a workspace of their own), and from then on the administrator's own membership no longer grants
- * any financial access ({@link AccessControlService#requireActingMember}).
- */
+/** Administrator-driven user lifecycle management and workspace provisioning. */
 @Service
 public class AdminUserService {
 
@@ -60,8 +38,7 @@ public class AdminUserService {
   private static final long MINIMUM_ACTIVE_ADMINISTRATORS = 1;
 
   private final AppUserRepository appUserRepository;
-  private final WorkspaceRepository workspaceRepository;
-  private final WorkspaceMemberRepository workspaceMemberRepository;
+  private final WorkspaceProvisioningService workspaceProvisioningService;
   private final RefreshTokenRepository refreshTokenRepository;
   private final UserSessionRepository userSessionRepository;
   private final AdminAuditLogRepository adminAuditLogRepository;
@@ -71,8 +48,7 @@ public class AdminUserService {
 
   public AdminUserService(
       AppUserRepository appUserRepository,
-      WorkspaceRepository workspaceRepository,
-      WorkspaceMemberRepository workspaceMemberRepository,
+      WorkspaceProvisioningService workspaceProvisioningService,
       RefreshTokenRepository refreshTokenRepository,
       UserSessionRepository userSessionRepository,
       AdminAuditLogRepository adminAuditLogRepository,
@@ -80,8 +56,7 @@ public class AdminUserService {
       ObjectMapper objectMapper,
       VersionPreconditionService versionPreconditionService) {
     this.appUserRepository = appUserRepository;
-    this.workspaceRepository = workspaceRepository;
-    this.workspaceMemberRepository = workspaceMemberRepository;
+    this.workspaceProvisioningService = workspaceProvisioningService;
     this.refreshTokenRepository = refreshTokenRepository;
     this.userSessionRepository = userSessionRepository;
     this.adminAuditLogRepository = adminAuditLogRepository;
@@ -91,36 +66,34 @@ public class AdminUserService {
   }
 
   @Transactional
-  public UserSummaryResponse createUser(
-      CreateUserRequest request, UUID actorUserId, UUID actorWorkspaceId) {
+  public UserSummaryResponse createUser(CreateUserRequest request, UUID actorUserId) {
     assertEmailAvailable(request.email());
-
-    if (actorWorkspaceId == null) {
-      // Only reachable for an administrator created before this fix landed (or the pre-fix
-      // bootstrap-only administrator's own account somehow losing its link) - no such state can
-      // arise going forward, and no persistent deployment predates this fix.
+    boolean standardUser = UserRoleValues.STANDARD_USER.equals(request.role());
+    if (!standardUser && (request.workspaceName() != null || request.currencyCode() != null)) {
       throw new ResponseStatusException(
-          HttpStatus.CONFLICT,
-          "Acting administrator has no workspace of their own to link the new user to.");
+          HttpStatus.CONFLICT, "Workspace settings apply only to Standard Users.");
     }
-    // A reference, not a fetch: `workspace` itself is RLS-scoped by its own id (V20's
-    // tenant_isolation_read policy), so a real SELECT here would need app.current_workspace_id
-    // already set to this exact id to return anything - which JwtAuthenticationFilter already
-    // established for actorWorkspaceId when it authenticated this same request, so a second
-    // round trip to re-confirm it would be redundant, not more correct.
-    Workspace workspace = workspaceRepository.getReferenceById(actorWorkspaceId);
-    WorkspaceMember member =
-        workspaceMemberRepository.save(WorkspaceMember.newLoginMember(workspace, request.email()));
 
     AppUser user = new AppUser();
     user.setEmail(request.email());
     user.setPasswordHash(passwordEncoder.encode(request.password()));
     user.setRole(request.role());
     user.setLanguage(request.language());
-    user.setWorkspaceMember(member);
+    Map<String, Object> audit = new LinkedHashMap<>();
+    audit.put("role", request.role());
+    if (standardUser) {
+      String currency =
+          request.currencyCode() == null ? user.getReportingCurrency() : request.currencyCode();
+      user.setReportingCurrency(currency);
+      var member =
+          workspaceProvisioningService.create(request.email(), request.workspaceName(), currency);
+      user.setWorkspaceMember(member);
+      audit.put("workspaceId", member.getWorkspace().getId());
+      audit.put("workspaceMemberId", member.getId());
+    }
     user = saveOrRejectDuplicateEmail(user);
 
-    writeAuditLog(actorUserId, "USER_CREATED", user.getId(), Map.of("role", request.role()));
+    writeAuditLog(actorUserId, "USER_CREATED", user.getId(), audit);
     return toSummary(user);
   }
 
@@ -152,12 +125,8 @@ public class AdminUserService {
       target.setLanguage(request.language());
     }
     if (request.role() != null && !request.role().equals(target.getRole())) {
-      if (UserRoleValues.SYSTEM_ADMINISTRATOR.equals(target.getRole())) {
-        // Demoting away from SYSTEM_ADMINISTRATOR - the same guard as disable (FR-USR-005).
-        assertNotLastActiveAdministrator(target, "demote");
-      }
-      changes.put("role", Map.of("from", target.getRole(), "to", request.role()));
-      target.setRole(request.role());
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT, "Cannot change a user's role across the workspace boundary.");
     }
 
     target = saveOrRejectDuplicateEmail(target);
@@ -273,23 +242,6 @@ public class AdminUserService {
   private boolean isCurrentlyActiveAdministrator(AppUser user) {
     return UserRoleValues.SYSTEM_ADMINISTRATOR.equals(user.getRole())
         && ACTIVE.equals(user.getStatus());
-  }
-
-  // editUser's demote path: no pre-locked active-administrator count is available here (editUser
-  // only locks the target itself, via a plain, non-locking findUserOrThrow, and only reaches for
-  // the broader lock at all when actually demoting an active administrator) - unlike
-  // disableUser(), that single-query-per-call shape has no two-step lock-order hazard, so it's
-  // safe for this overload to take its own lock here via countActiveAdministratorsForUpdate,
-  // which uses the same id-ordered acquisition as lockTargetAndActiveAdministrators below.
-  private void assertNotLastActiveAdministrator(AppUser target, String actionVerb) {
-    if (!isCurrentlyActiveAdministrator(target)) {
-      return;
-    }
-    // FR-USR-005: enforced here via a row-level lock over every active administrator, not a DB
-    // constraint - a natural-key uniqueness/count constraint can't express "at least one," and
-    // this must hold under concurrent requests, hence FOR UPDATE rather than a plain count().
-    assertAtLeastOneOtherActiveAdministrator(
-        appUserRepository.countActiveAdministratorsForUpdate(), actionVerb);
   }
 
   // disableUser's path: the caller has already locked the target and every active administrator
