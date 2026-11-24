@@ -174,3 +174,36 @@ it('shows the Investments cost-basis column and uses the snapshot date for a sta
   expect(screen.getByText("EUR 27'439.00")).toBeOnTheScreen();
   expect(screen.getByText('Price from 21 Nov 2026')).toBeOnTheScreen();
 });
+
+it('makes each Investments column sortable and announces the active sort direction', async () => {
+  const onSort = jest.fn();
+  await renderWithIntl(
+    <PositionView
+      positions={positions}
+      currency="EUR"
+      accountName="DKB Depot"
+      investments={{
+        asOf: '2026-11-21',
+        showDepotName: false,
+        sort: { key: 'value', direction: 'descending' },
+        onSort,
+      }}
+    />,
+  );
+  expect(host('th').map((th) => th.props['aria-sort'])).toEqual([
+    undefined,
+    undefined,
+    undefined,
+    'descending',
+    undefined,
+  ]);
+  expect(host('button').map((button) => textOf(button).trim())).toEqual([
+    'Position',
+    'Units',
+    'Cost basis',
+    'Value ↓',
+    'Unrealised gain',
+  ]);
+  await fireEvent(screen.getByText('Cost basis'), 'click');
+  expect(onSort).toHaveBeenCalledWith('costBasis');
+});

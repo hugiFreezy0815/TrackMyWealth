@@ -127,3 +127,11 @@ export function isInvestmentDepot(account: PortfolioAccount, section: PortfolioS
     (section.section === 'PILLAR_3A' && account.positionsCount != null)
   );
 }
+
+export type PositionSort = {
+  key: 'name' | 'units' | 'costBasis' | 'value' | 'gain';
+  direction: 'ascending' | 'descending';
+};
+
+/** Use list rows where the table columns would not fit, including at 200% zoom. */
+export const POSITION_TABLE_MIN_WIDTH = 600;

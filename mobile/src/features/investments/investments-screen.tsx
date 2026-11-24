@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useIntl } from 'react-intl';
 import { Platform, Pressable, RefreshControl, Text, useWindowDimensions } from 'react-native';
 
-import { usePortfolioHistory } from '@/api/queries/resources';
 import {
   ActionButton,
   Amount,
@@ -18,15 +17,14 @@ import {
 } from '@/components/shared';
 import { TypeScale } from '@/constants/theme';
 import { InfoText, msg } from '@/features/overview/overview-text';
-import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { ShellScreen } from '@/features/shell/screen';
-import { HistoryPanel, historyForDisplay } from '@/features/value-history/history-panel';
-import { useHistoryPeriod } from '@/features/value-history/period';
 import { formatDate } from '@/format/date';
 import { useOnline } from '@/hooks/use-online';
 import { useTheme } from '@/hooks/use-theme';
 
-import type { PositionOrder } from './model';
+import { POSITION_TABLE_MIN_WIDTH, type PositionSort } from '@/features/portfolio-view/model';
+
+import { InvestmentActivity } from './activity';
 import { PerformanceBreakdown, PerformanceCard } from './performance';
 import { DepotPositions } from './positions';
 import { useInvestments } from './use-investments';
@@ -38,40 +36,53 @@ export function InvestmentsScreen({
   accountId,
   onScope,
   onAddDepot,
-  onImport,
+  onAccount,
 }: {
   accountId?: string;
   onScope: (accountId?: string) => void;
   onAddDepot: (portfolioId?: string) => void;
-  onImport: (accountId?: string) => void;
+  onAccount: (accountId: string, tab: 'activity' | 'positions') => void;
 }) {
   const intl = useIntl();
   const theme = useTheme();
   const online = useOnline();
-  const hidden = useAmountsHidden();
   const { width } = useWindowDimensions();
   const desktop = Platform.OS === 'web' && width >= 1024;
-  const [order, setOrder] = useState<PositionOrder>('value');
+  const webTable = Platform.OS === 'web' && width >= POSITION_TABLE_MIN_WIDTH;
+  const [sort, setSort] = useState<PositionSort>({ key: 'value', direction: 'descending' });
+  const selectSort = (key: PositionSort['key']) =>
+    setSort((current) => ({
+      key,
+      direction:
+        current.key === key
+          ? current.direction === 'ascending'
+            ? 'descending'
+            : 'ascending'
+          : key === 'name'
+            ? 'ascending'
+            : 'descending',
+    }));
   const [performanceAccount, setPerformanceAccount] = useState<string>();
   const [showPortfolioPicker, setShowPortfolioPicker] = useState(false);
   const [explainedScope, setExplainedScope] = useState<string>();
-  const period = useHistoryPeriod();
   const data = useInvestments(accountId);
   const selectedId = data.depot?.account.accountId;
   const scope = selectedId ?? (data.showAll ? ALL_DEPOTS : undefined);
-  const historyId = data.depot?.historyPortfolioId;
-  const history = usePortfolioHistory(historyId ?? '', period, Boolean(historyId));
-  const displayedHistory = historyForDisplay(history, period, online);
   const results = [
     ...data.directoryQueries,
     ...data.valueQueries,
     ...data.positions,
-    ...(historyId ? [history] : []),
+    ...(selectedId ? [data.account] : []),
+    ...(data.activity ? [data.activity] : []),
   ];
   const refreshing = results.some(({ isRefetching }) => isRefetching);
   const refresh = () => void Promise.allSettled(results.map((result) => result.refetch()));
   const lastUpdated = Math.max(0, ...results.map(({ dataUpdatedAt }) => dataUpdatedAt));
   const { value, performance } = data.figures;
+  const marketValueTitle = msg(
+    intl,
+    data.showAll ? 'investments.depotSubtotal' : 'investments.performance.marketValue',
+  );
   const performanceOpen = selectedId != null && selectedId === performanceAccount;
   const closePerformance = () => setPerformanceAccount(undefined);
   const performanceTitle = msg(intl, 'investments.performance.title', {
@@ -128,17 +139,21 @@ export function InvestmentsScreen({
           style={{ alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' }}
         >
           <Text style={{ ...TypeScale.labelMedium, color: theme.brandLink }}>
-            {msg(intl, 'overview.refresh')}
+            {msg(intl, 'investments.refresh')}
           </Text>
         </Pressable>
       ) : null}
       <RefreshingIndicator active={refreshing} />
       {data.directoryPending ? <LoadingSkeleton count={2} /> : null}
-      {[...data.directoryQueries, ...data.valueQueries].map((result, index) =>
-        result.isError ? (
-          <ErrorBanner key={index} error={result.error} onRetry={() => void result.refetch()} />
-        ) : null,
+      {[...data.directoryQueries, ...data.valueQueries, ...(selectedId ? [data.account] : [])].map(
+        (result, index) =>
+          result.isError ? (
+            <ErrorBanner key={index} error={result.error} onRetry={() => void result.refetch()} />
+          ) : null,
       )}
+      {data.showAll && data.directoryFailed ? (
+        <InfoText warning>{msg(intl, 'investments.depotsIncomplete')}</InfoText>
+      ) : null}
       {data.invalidScope ? (
         <InfoText warning>{msg(intl, 'investments.depotMissing')}</InfoText>
       ) : null}
@@ -159,11 +174,7 @@ export function InvestmentsScreen({
               disabled={!online}
             />
           )}
-          <ActionButton
-            label={msg(intl, 'investments.import')}
-            onPress={() => onImport()}
-            disabled={!online}
-          />
+          <InfoText>{msg(intl, 'investments.holdingsUnavailable')}</InfoText>
         </SectionCard>
       ) : null}
       {data.depots.length > 0 ? (
@@ -189,7 +200,7 @@ export function InvestmentsScreen({
         <LoadingSkeleton count={2} />
       ) : null}
       {value && !noDepots ? (
-        <SectionCard title={msg(intl, 'investments.performance.marketValue')}>
+        <SectionCard title={marketValueTitle}>
           <Amount
             value={value.amount}
             currency={value.currency}
@@ -205,6 +216,10 @@ export function InvestmentsScreen({
               {msg(intl, 'overview.explain.asOf', { date: formatDate(value.asOf, intl.locale) })}
             </InfoText>
           ) : null}
+          {value.statusUnavailable ? (
+            <InfoText>{msg(intl, 'investments.valueStatusUnavailable')}</InfoText>
+          ) : null}
+          {data.showAll ? <InfoText>{msg(intl, 'investments.depotSubtotalScope')}</InfoText> : null}
           {!value.complete ? <InfoText warning>{msg(intl, 'total.incomplete')}</InfoText> : null}
           <Pressable
             accessibilityRole="button"
@@ -214,7 +229,7 @@ export function InvestmentsScreen({
           >
             <Text style={{ color: theme.brandLink }}>
               {msg(intl, 'investments.explain', {
-                label: msg(intl, 'investments.performance.marketValue'),
+                label: marketValueTitle,
               })}
             </Text>
           </Pressable>
@@ -228,29 +243,29 @@ export function InvestmentsScreen({
               )}
             </InfoText>
           ) : null}
-          {historyId ? (
-            <HistoryPanel
-              data={displayedHistory}
-              query={history}
-              online={online}
-              period={period}
-              hidden={hidden}
-            />
-          ) : null}
         </SectionCard>
       ) : null}
+      {data.showAll &&
+      !value &&
+      data.depots.length > 0 &&
+      !data.directoryPending &&
+      !data.directoryFailed &&
+      data.valueQueries.every(({ isSuccess }) => isSuccess) ? (
+        <InfoText>{msg(intl, 'investments.depotSubtotalAbsent')}</InfoText>
+      ) : null}
       {!desktop ? performanceCard : null}
-      {data.groups.some(({ query }) => query.data?.positions.length) ? (
+      {!webTable && data.groups.some(({ query }) => query.data?.positions.length) ? (
         <ChipGroup
           label={msg(intl, 'investments.sort')}
           options={ORDERS.map((value) => ({
             value,
             label: msg(intl, 'investments.sort.' + value),
           }))}
-          selected={[order]}
+          selected={[sort.key]}
           onSelect={(next) => {
             const option = ORDERS.find((value) => value === next);
-            if (option) setOrder(option);
+            if (option)
+              setSort({ key: option, direction: option === 'name' ? 'ascending' : 'descending' });
           }}
         />
       ) : null}
@@ -259,11 +274,17 @@ export function InvestmentsScreen({
           key={group.account.accountId}
           group={group}
           showDepotName={data.showAll}
-          order={order}
-          onImport={() => onImport(group.account.accountId)}
-          online={online}
+          sort={sort}
+          onSort={selectSort}
+          onAccount={() => onAccount(group.account.accountId, 'positions')}
         />
       ))}
+      {selectedId && data.activity ? (
+        <InvestmentActivity
+          activity={data.activity}
+          onOpen={() => onAccount(selectedId, 'activity')}
+        />
+      ) : null}
       {!desktop && breakdown ? (
         <BottomSheet
           title={performanceTitle}

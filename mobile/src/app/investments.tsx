@@ -24,12 +24,8 @@ export default function InvestmentsRoute() {
             : '/portfolios/new',
         )
       }
-      onImport={(accountId) =>
-        router.push(
-          accountId
-            ? { pathname: '/accounts/[accountId]/imports/new', params: { accountId } }
-            : '/imports/new',
-        )
+      onAccount={(accountId, tab) =>
+        router.push({ pathname: '/accounts/[accountId]', params: { accountId, tab } })
       }
     />
   );

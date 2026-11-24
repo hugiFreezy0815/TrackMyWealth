@@ -15,7 +15,7 @@ import { msg } from '@/features/overview/overview-text';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { useTheme } from '@/hooks/use-theme';
 
-import type { Position } from './model';
+import type { Position, PositionSort } from './model';
 import { shownGain } from './position-gain';
 
 export type PositionViewProps = {
@@ -25,7 +25,12 @@ export type PositionViewProps = {
   accountName: string;
   /** Optional: S3 displays positions read-only until a position-detail route exists. */
   onOpen?: () => void;
-  investments?: { asOf: string | null; showDepotName: boolean };
+  investments?: {
+    asOf: string | null;
+    showDepotName: boolean;
+    sort?: PositionSort;
+    onSort?: (key: PositionSort['key']) => void;
+  };
 };
 
 /** A message id and its values. */
@@ -82,6 +87,7 @@ export function usePositionLabel(
   currency: string,
   asOf?: string | null,
   depotName?: string,
+  showPrice = true,
 ): string {
   const intl = useIntl();
   const hidden = useAmountsHidden();
@@ -110,7 +116,7 @@ export function usePositionLabel(
           .label
       : null;
   const price =
-    asOf === undefined && position.price != null && position.priceCurrency
+    showPrice && position.price != null && position.priceCurrency
       ? amountTexts(intl, {
           value: position.price,
           currency: position.priceCurrency,
@@ -149,7 +155,7 @@ function PositionRow({
   const hidden = useAmountsHidden();
   const units = figureTexts(intl, { value: position.quantity, kind: 'quantity', masked: hidden });
   const depotName = investments?.showDepotName ? accountName : undefined;
-  const label = usePositionLabel(position, currency, investments?.asOf, depotName);
+  const label = usePositionLabel(position, currency, investments?.asOf, depotName, !investments);
   const gain = shownGain(position, currency);
   const rowStyle = {
     minHeight: 44,
@@ -167,7 +173,10 @@ function PositionRow({
           </View>
         ) : null}
         <View style={{ flex: 1, minWidth: 120, gap: Spacing.one }}>
-          <Text style={{ ...TypeScale.labelMedium, color: theme.textPrimary }}>
+          <Text
+            numberOfLines={investments ? 1 : undefined}
+            style={{ ...TypeScale.labelMedium, color: theme.textPrimary }}
+          >
             {position.displayName}
           </Text>
           <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>

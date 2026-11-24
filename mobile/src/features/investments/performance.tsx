@@ -80,7 +80,7 @@ function PerformanceLine({
   reason,
   children,
 }: {
-  name: (typeof BREAKDOWN)[number] | 'totalReturn' | 'marketValue';
+  name: (typeof BREAKDOWN)[number] | 'totalReturn' | 'returnPercent' | 'marketValue';
   reason?: string;
   children?: ReactNode;
 }) {
@@ -128,7 +128,15 @@ export function PerformanceBreakdown({ data, value }: { data: Performance; value
         </InfoText>
       ) : null}
       <PerformanceLine name="totalReturn" reason={data.amount == null ? returnReason : undefined}>
-        <ReturnFigures data={data} currency={value.currency} />
+        <Amount value={data.amount} currency={value.currency} signRole="change" />
+      </PerformanceLine>
+      <PerformanceLine
+        name="returnPercent"
+        reason={
+          data.percent == null ? msg(intl, 'investments.performance.percentUnavailable') : undefined
+        }
+      >
+        <Figure value={data.percent} kind="percent" signRole="change" tone="gainLoss" />
       </PerformanceLine>
       <PerformanceLine
         name="marketValue"
@@ -136,6 +144,9 @@ export function PerformanceBreakdown({ data, value }: { data: Performance; value
       >
         <Amount value={value.amount} currency={value.currency} valueKnown={valueKnown} />
         <ValueStatusBadge status={value.status} valueSourceDate={value.asOf} />
+        {value.statusUnavailable ? (
+          <InfoText>{msg(intl, 'investments.valueStatusUnavailable')}</InfoText>
+        ) : null}
       </PerformanceLine>
       {BREAKDOWN.map((name) => (
         <PerformanceLine key={name} name={name} reason={unavailable} />

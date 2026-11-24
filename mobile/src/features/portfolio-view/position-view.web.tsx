@@ -15,11 +15,8 @@ import {
   usePositionLabel,
   type PositionViewProps,
 } from './position-list';
-import type { Position } from './model';
+import { POSITION_TABLE_MIN_WIDTH, type Position, type PositionSort } from './model';
 import { shownGain } from './position-gain';
-
-/** Below the tablet breakpoint four columns do not fit 320 CSS px (200 % zoom): use the list. */
-export const POSITION_TABLE_MIN_WIDTH = 600;
 
 const SR_ONLY: CSSProperties = {
   position: 'absolute',
@@ -111,13 +108,50 @@ export function PositionView(props: PositionViewProps) {
     verticalAlign: 'top',
     overflowWrap: 'anywhere',
   };
-  const header: CSSProperties = cell;
   const headerText = {
     ...TypeScale.caption,
     fontWeight: '600',
     color: theme.textSecondary,
   } as const;
   const numeric: CSSProperties = { textAlign: 'end' };
+  function column(key: PositionSort['key'], labelId: string) {
+    const label = msg(intl, labelId);
+    const onSort = investments?.onSort;
+    const direction = investments?.sort?.key === key ? investments.sort.direction : undefined;
+    return (
+      <th
+        key={key}
+        scope="col"
+        aria-sort={direction}
+        style={{ ...cell, textAlign: key === 'name' ? 'start' : 'end' }}
+      >
+        {onSort ? (
+          <button
+            type="button"
+            onClick={() => onSort(key)}
+            style={{
+              ...headerText,
+              minHeight: 44,
+              padding: 0,
+              border: 0,
+              background: 'transparent',
+              color: theme.brandLink,
+              cursor: 'pointer',
+            }}
+          >
+            <Text style={{ color: theme.brandLink }}>{label}</Text>
+            {direction ? (
+              <Text aria-hidden style={{ color: theme.brandLink }}>
+                {direction === 'ascending' ? ' ↑' : ' ↓'}
+              </Text>
+            ) : null}
+          </button>
+        ) : (
+          <Text style={headerText}>{label}</Text>
+        )}
+      </th>
+    );
+  }
   return (
     <table
       data-testid="positions-table"
@@ -128,23 +162,11 @@ export function PositionView(props: PositionViewProps) {
       </caption>
       <thead>
         <tr>
-          <th scope="col" style={{ ...header, textAlign: 'start' }}>
-            <Text style={headerText}>{msg(intl, 'portfolio.positions.column.position')}</Text>
-          </th>
-          <th scope="col" style={{ ...header, ...numeric }}>
-            <Text style={headerText}>{msg(intl, 'portfolio.positions.column.units')}</Text>
-          </th>
-          {investments ? (
-            <th scope="col" style={{ ...header, ...numeric }}>
-              <Text style={headerText}>{msg(intl, 'investments.costBasis')}</Text>
-            </th>
-          ) : null}
-          <th scope="col" style={{ ...header, ...numeric }}>
-            <Text style={headerText}>{msg(intl, 'portfolio.positions.column.value')}</Text>
-          </th>
-          <th scope="col" style={{ ...header, ...numeric }}>
-            <Text style={headerText}>{msg(intl, 'portfolio.positions.column.gain')}</Text>
-          </th>
+          {column('name', 'portfolio.positions.column.position')}
+          {column('units', 'portfolio.positions.column.units')}
+          {investments ? column('costBasis', 'investments.costBasis') : null}
+          {column('value', 'portfolio.positions.column.value')}
+          {column('gain', 'portfolio.positions.column.gain')}
         </tr>
       </thead>
       <tbody>

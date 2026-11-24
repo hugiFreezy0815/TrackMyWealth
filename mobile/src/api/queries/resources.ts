@@ -94,6 +94,30 @@ export const useAccount = (accountId: string) =>
     queryFn: () => typedApi.get('/api/v1/accounts/{accountId}', { params: { accountId } }),
     enabled: !!accountId,
   });
+export const useAccountBalance = (accountId: string, currency?: string) =>
+  useQuery({
+    queryKey: [...queryKeys.account(accountId), 'balance', currency],
+    queryFn: ({ signal }) =>
+      typedApi.get('/api/v1/accounts/{accountId}/balance', {
+        params: { accountId },
+        query: { currency },
+        signal,
+      }),
+    enabled: !!accountId && !!currency,
+  });
+
+export const useRecentAccountActivity = (accountId: string, enabled: boolean) =>
+  useQuery({
+    queryKey: queryKeys.accountTransactions(accountId, { recent: true }),
+    queryFn: ({ signal }) =>
+      typedApi.get('/api/v1/accounts/{accountId}/transactions', {
+        params: { accountId },
+        query: { size: 10, sort: ['bookingDate,desc'] },
+        signal,
+      }),
+    enabled: !!accountId && enabled,
+  });
+
 export type TransactionSort = 'bookingDate,desc' | 'bookingDate,asc' | 'amount,desc' | 'amount,asc';
 
 /** Each sort/filter gets a separate cache. Changing either begins at page zero. */
@@ -140,16 +164,33 @@ export const useArchivedAccounts = (portfolioId: string, enabled = true) =>
     enabled: !!portfolioId && enabled,
   });
 
-// Share the four-request limit and the cache across the screens that read depot positions.
+// Share the four-request limit and the cache across screens that read depot positions.
 const positionRequestQueue: (() => void)[] = [];
 let activePositionRequests = 0;
 
-async function readAccountPositions(accountId: string, signal: AbortSignal) {
-  if (activePositionRequests >= 4) {
-    await new Promise<void>((resume) => positionRequestQueue.push(resume));
-  } else {
+async function waitForPositionSlot(signal: AbortSignal) {
+  if (signal.aborted) throw signal.reason ?? new Error('Positions request cancelled');
+  if (activePositionRequests < 4) {
     activePositionRequests++;
+    return;
   }
+  await new Promise<void>((resolve, reject) => {
+    const resume = () => {
+      signal.removeEventListener('abort', cancel);
+      resolve();
+    };
+    const cancel = () => {
+      const index = positionRequestQueue.indexOf(resume);
+      if (index >= 0) positionRequestQueue.splice(index, 1);
+      reject(signal.reason ?? new Error('Positions request cancelled'));
+    };
+    positionRequestQueue.push(resume);
+    signal.addEventListener('abort', cancel, { once: true });
+  });
+}
+
+async function readAccountPositions(accountId: string, signal: AbortSignal) {
+  await waitForPositionSlot(signal);
   try {
     if (signal.aborted) throw signal.reason ?? new Error('Positions request cancelled');
     return await typedApi.get('/api/v1/accounts/{accountId}/positions', {

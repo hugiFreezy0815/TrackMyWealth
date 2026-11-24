@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
-import { Platform, useWindowDimensions, View } from 'react-native';
+import { Platform, View } from 'react-native';
 
 import { ActionButton, ErrorBanner, LoadingSkeleton, SectionCard } from '@/components/shared';
 import { Spacing } from '@/constants/theme';
 import { InfoText, msg } from '@/features/overview/overview-text';
+import type { PositionSort } from '@/features/portfolio-view/model';
 import { PositionView } from '@/features/portfolio-view/position-view';
 
-import { orderPositions, type PositionOrder } from './model';
+import { orderPositions } from './model';
 import type { useInvestments } from './use-investments';
 
 const COLLAPSED_ROWS = 20;
@@ -15,24 +16,22 @@ const COLLAPSED_ROWS = 20;
 export function DepotPositions({
   group,
   showDepotName,
-  order,
-  onImport,
-  online,
+  sort,
+  onSort,
+  onAccount,
 }: {
   group: ReturnType<typeof useInvestments>['groups'][number];
   showDepotName: boolean;
-  order: PositionOrder;
-  onImport: () => void;
-  online: boolean;
+  sort: PositionSort;
+  onSort: (key: PositionSort['key']) => void;
+  onAccount: () => void;
 }) {
   const intl = useIntl();
-  const { width } = useWindowDimensions();
   const [expanded, setExpanded] = useState(false);
   const { account, query } = group;
   const data = query.data;
-  const sorted = data ? orderPositions(data, order, intl.locale) : [];
-  const collapsed =
-    (Platform.OS !== 'web' || width < 600) && !expanded && sorted.length > COLLAPSED_ROWS;
+  const sorted = data ? orderPositions(data, sort, intl.locale) : [];
+  const collapsed = Platform.OS !== 'web' && !expanded && sorted.length > COLLAPSED_ROWS;
   const title = showDepotName ? account.name : msg(intl, 'investments.positions');
 
   return (
@@ -50,7 +49,7 @@ export function DepotPositions({
             positions={collapsed ? sorted.slice(0, COLLAPSED_ROWS) : sorted}
             currency={data.currency}
             accountName={account.name}
-            investments={{ asOf: data.asOf, showDepotName }}
+            investments={{ asOf: data.asOf, showDepotName, sort, onSort }}
           />
           {collapsed ? (
             <ActionButton
@@ -63,11 +62,8 @@ export function DepotPositions({
       {data && sorted.length === 0 ? (
         <>
           <InfoText>{msg(intl, 'investments.noPositions')}</InfoText>
-          <ActionButton
-            label={msg(intl, 'investments.import')}
-            onPress={onImport}
-            disabled={!online}
-          />
+          <InfoText>{msg(intl, 'investments.holdingsUnavailable')}</InfoText>
+          <ActionButton label={msg(intl, 'investments.openAccount')} onPress={onAccount} />
         </>
       ) : null}
     </SectionCard>
