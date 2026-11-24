@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.dto.AccountPositionResponse;
 import com.trackmywealth.backend.dto.AccountPositionsResponse;
+import com.trackmywealth.backend.dto.CostBasisSource;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
 import com.trackmywealth.backend.dto.NativeAccountValue;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
@@ -443,7 +444,7 @@ class AccountPositionsServiceTest {
             security,
             BigDecimal.TEN);
     statement(reported(false, "0", "CHF"), position("500", "CHF", "410"), lacking);
-    when(transactions.findTradesAsOf(List.of(accountId), AS_OF))
+    when(transactions.findTradesAsOf(List.of(accountId), List.of(security), AS_OF))
         .thenReturn(
             List.of(
                 new TradeLeg(
@@ -455,6 +456,69 @@ class AccountPositionsServiceTest {
     assertThat(summary.missingCostBasisCount()).isNull();
     assertThat(summary.totalReturn()).isEqualByComparingTo("170");
     assertThat(summary.totalReturnPercent()).isEqualByComparingTo("18.28");
+  }
+
+  // #719 review: a value alone (net worth, history) reads no orders, even for a lacking position.
+  @Test
+  void aValueAloneReadsNoOrders() {
+    statement(
+        reported(false, "0", "CHF"),
+        new Line(
+            accountId,
+            AS_OF,
+            false,
+            new BigDecimal("600"),
+            "CHF",
+            true,
+            null,
+            null,
+            null,
+            UUID.randomUUID(),
+            BigDecimal.TEN));
+
+    List<ReportedHoldingValue> components =
+        service.reportedHoldingsFor(List.of(accountId), AS_OF, false).get(accountId);
+
+    assertThat(components).allMatch(component -> component.getReportedCostBasis() == null);
+    verifyNoInteractions(transactions);
+  }
+
+  // #719 review: only the securities without a cost basis are read, not the account's history.
+  @Test
+  void onlyTheOrdersOfPositionsWithoutACostBasisAreRead() {
+    allowedDepot("CHF");
+    holding("Recorded", "10", "CHF", "8");
+    SnapshotHolding lacking = holding("Lacking", "10", "CHF", null);
+
+    read();
+
+    verify(transactions)
+        .findTradesAsOf(List.of(accountId), List.of(lacking.getSecurityId()), AS_OF);
+  }
+
+  // #719 review: a cost basis from the orders is calculated, never estimated - whatever flag the
+  // snapshot holds for the cost it lacks.
+  @Test
+  void aCostBasisFromOrdersIsNotEstimated() {
+    allowedDepot("CHF");
+    SnapshotHolding lacking = holding("Lacking", "600", "CHF", null);
+    lacking.setCostBasisEstimated(true);
+    when(transactions.findTradesAsOf(List.of(accountId), List.of(lacking.getSecurityId()), AS_OF))
+        .thenReturn(
+            List.of(
+                new TradeLeg(
+                    accountId,
+                    lacking.getSecurityId(),
+                    BigDecimal.TEN,
+                    new BigDecimal("52"),
+                    "CHF",
+                    AS_OF)));
+
+    AccountPositionResponse position = read().positions().get(0);
+
+    assertThat(position.costBasisSource()).isEqualTo(CostBasisSource.ORDERS);
+    assertThat(position.costBasisEstimated()).isFalse();
+    assertThat(position.valueStatus()).isNotEqualTo(ValueStatus.ESTIMATED);
   }
 
   // PO 2026-11-23 (#527): a foreign position counts towards the depot's gain with its cost at the
@@ -570,7 +634,7 @@ class AccountPositionsServiceTest {
 
   private List<ReportedHoldingValue> components() {
     return service
-        .reportedHoldingsFor(List.of(accountId), AS_OF)
+        .reportedHoldingsFor(List.of(accountId), AS_OF, true)
         .getOrDefault(accountId, List.of());
   }
 

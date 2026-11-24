@@ -1085,19 +1085,20 @@ public interface TransactionRepository
   List<UUID> findLiveIdsAmong(@Param("ids") Collection<UUID> ids);
 
   /**
-   * US-15-15 (#714): the buys and sells in effect on {@code accountIds} up to {@code asOf} by trade
-   * date (the booking date where a row has none) - neither voided, nor a reversal, nor deleted - in
-   * the order they were traded, then recorded.
+   * US-15-15 (#714): the buys and sells of {@code securityIds} in effect on {@code accountIds} up
+   * to {@code asOf} by trade date (the booking date where a row has none) - neither voided, nor a
+   * reversal, nor deleted. Unordered: {@code OrderCostBasisService#costBasis} orders them itself.
    */
   @Query(
       "select new com.trackmywealth.backend.dto.TradeLeg(t.account.id, t.securityId, t.quantity,"
           + " t.unitPrice, t.currency, coalesce(t.tradeDate, t.bookingDate))"
           + " from Transaction t"
-          + " where t.account.id in :accountIds and t.transactionType in ('BUY', 'SELL')"
+          + " where t.account.id in :accountIds and t.securityId in :securityIds"
+          + " and t.transactionType in ('BUY', 'SELL')"
           + " and coalesce(t.tradeDate, t.bookingDate) <= :asOf"
-          + NOT_VOIDED_OR_REVERSAL
-          + " order by t.account.id, t.securityId, coalesce(t.tradeDate, t.bookingDate),"
-          + " t.createdAt, t.id")
+          + NOT_VOIDED_OR_REVERSAL)
   List<TradeLeg> findTradesAsOf(
-      @Param("accountIds") Collection<UUID> accountIds, @Param("asOf") LocalDate asOf);
+      @Param("accountIds") Collection<UUID> accountIds,
+      @Param("securityIds") Collection<UUID> securityIds,
+      @Param("asOf") LocalDate asOf);
 }

@@ -8,6 +8,7 @@ import java.math.MathContext;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -26,6 +27,10 @@ import org.springframework.stereotype.Service;
  *       the average price, so the average price stays. Fees are not part of it.
  *   <li>Only the orders up to the snapshot's date count (by trade date, else booking date), and
  *       only those in effect: a voided, reversed or deleted order does not.
+ *   <li>The orders count day by day, a day's buys before its sells: the ledger holds no time of
+ *       day, and rows of one import share their recording time, so nothing else orders a same-day
+ *       buy and sell. Buys among themselves, and sells among themselves, give the same cost in any
+ *       order.
  *   <li>The orders must add up to exactly the quantity held: an order missing, a transfer-in or an
  *       opening holding without orders (#233), a split, or a sale of more than was bought leaves
  *       the position without a cost basis. Nothing is estimated (FR-PERF-018).
@@ -46,19 +51,32 @@ public class OrderCostBasisService {
     this.transactionRepository = transactionRepository;
   }
 
-  /** The buys and sells in effect up to {@code asOf}, per account, in trade order. */
-  public Map<UUID, List<TradeLeg>> tradesFor(Collection<UUID> accountIds, LocalDate asOf) {
-    if (accountIds.isEmpty()) {
+  /**
+   * The buys and sells of {@code securityIds} in effect on {@code accountIds} up to {@code asOf},
+   * per account and security. Only the securities asked for are read, not the account's whole order
+   * history.
+   */
+  public Map<UUID, Map<UUID, List<TradeLeg>>> tradesFor(
+      Collection<UUID> accountIds, Collection<UUID> securityIds, LocalDate asOf) {
+    if (accountIds.isEmpty() || securityIds.isEmpty()) {
       return Map.of();
     }
-    return transactionRepository.findTradesAsOf(accountIds, asOf).stream()
-        .collect(Collectors.groupingBy(TradeLeg::accountId));
+    return transactionRepository.findTradesAsOf(accountIds, securityIds, asOf).stream()
+        .collect(
+            Collectors.groupingBy(
+                TradeLeg::accountId, Collectors.groupingBy(TradeLeg::securityId)));
+  }
+
+  /** {@code securityId}'s trades on {@code accountId} out of {@link #tradesFor}; empty if none. */
+  public static List<TradeLeg> tradesOf(
+      Map<UUID, Map<UUID, List<TradeLeg>>> trades, UUID accountId, UUID securityId) {
+    return trades.getOrDefault(accountId, Map.of()).getOrDefault(securityId, List.of());
   }
 
   /**
    * The cost basis of {@code heldQuantity} units of {@code securityId} held on {@code date}, from
-   * the account's {@code trades} (as {@link #tradesFor} lists them); empty when the orders do not
-   * explain the position (see the class comment).
+   * the account's {@code trades}, in any order; empty when the orders do not explain the position
+   * (see the class comment).
    *
    * @param positionCurrency the currency the position is quoted in, null when not reported
    */
@@ -71,10 +89,15 @@ public class OrderCostBasisService {
     BigDecimal quantity = BigDecimal.ZERO;
     BigDecimal cost = BigDecimal.ZERO;
     String currency = null;
-    for (TradeLeg trade : trades) {
-      if (!trade.securityId().equals(securityId) || trade.tradeDate().isAfter(date)) {
-        continue;
-      }
+    List<TradeLeg> ordered =
+        trades.stream()
+            .filter(trade -> trade.securityId().equals(securityId))
+            .filter(trade -> !trade.tradeDate().isAfter(date))
+            .sorted(
+                Comparator.comparing(TradeLeg::tradeDate)
+                    .thenComparing(trade -> trade.quantity().signum() < 0))
+            .toList();
+    for (TradeLeg trade : ordered) {
       if (currency != null && !currency.equals(trade.currency())) {
         return Optional.empty();
       }

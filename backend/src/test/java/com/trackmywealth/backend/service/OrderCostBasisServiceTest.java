@@ -37,10 +37,36 @@ class OrderCostBasisServiceTest {
 
   @Test
   void aPositionSoldOffStartsAgainAtTheNextBuy() {
-    List<TradeLeg> trades = List.of(trade("10", "50"), trade("-10", "70"), trade("5", "100"));
+    List<TradeLeg> trades =
+        List.of(
+            trade("10", "50", DATE.minusDays(2)),
+            trade("-10", "70", DATE.minusDays(1)),
+            trade("5", "100", DATE));
 
     assertThat(cost(trades, "5", "CHF"))
         .contains(new CostFromOrders(new BigDecimal("500.0000"), "CHF"));
+  }
+
+  // #719 review: one import records a day's orders at the same time, so nothing but the rule
+  // orders a same-day buy and sell - a day's buys count before its sells, in whatever order the
+  // orders come.
+  @Test
+  void aDaysBuysCountBeforeItsSellsInAnyOrder() {
+    LocalDate day = DATE.minusDays(5);
+    TradeLeg buy = trade("10", "50", day);
+    TradeLeg sell = trade("-10", "70", day);
+    TradeLeg later = trade("5", "100", DATE);
+
+    assertThat(cost(List.of(sell, buy, later), "5", "CHF"))
+        .contains(new CostFromOrders(new BigDecimal("500.0000"), "CHF"))
+        .isEqualTo(cost(List.of(later, buy, sell), "5", "CHF"));
+
+    // On top of a holding: 10 at 100, then a same-day buy of 10 at 50 and a sale of 10 - the
+    // average of 75 stays for the 10 left, whichever comes first in the list.
+    TradeLeg held = trade("10", "100", day.minusDays(1));
+    assertThat(cost(List.of(held, sell, buy), "10", "CHF"))
+        .contains(new CostFromOrders(new BigDecimal("750.0000"), "CHF"))
+        .isEqualTo(cost(List.of(buy, held, sell), "10", "CHF"));
   }
 
   @Test
@@ -62,7 +88,11 @@ class OrderCostBasisServiceTest {
 
   @Test
   void aSaleOfMoreThanWasBoughtGivesNone() {
-    List<TradeLeg> trades = List.of(trade("10", "50"), trade("-15", "60"), trade("15", "40"));
+    List<TradeLeg> trades =
+        List.of(
+            trade("10", "50", DATE.minusDays(2)),
+            trade("-15", "60", DATE.minusDays(1)),
+            trade("15", "40", DATE));
 
     assertThat(cost(trades, "10", "CHF")).isEmpty();
   }
@@ -101,5 +131,10 @@ class OrderCostBasisServiceTest {
   private TradeLeg trade(String quantity, String price, String currency) {
     return new TradeLeg(
         account, security, new BigDecimal(quantity), new BigDecimal(price), currency, DATE);
+  }
+
+  private TradeLeg trade(String quantity, String price, LocalDate date) {
+    return new TradeLeg(
+        account, security, new BigDecimal(quantity), new BigDecimal(price), "CHF", date);
   }
 }

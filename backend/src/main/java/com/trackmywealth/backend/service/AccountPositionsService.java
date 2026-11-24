@@ -118,12 +118,17 @@ public class AccountPositionsService {
             quotes.computeIfAbsent(
                 from, key -> fxRateService.tryGetConversionRate(key, currency, today, fxSource));
     // US-15-15: the orders only matter for a position the snapshot holds no cost basis for.
-    List<TradeLeg> trades =
-        holdings.stream().anyMatch(holding -> holding.getReportedCostBasis() == null)
-            ? orderCostBasisService
-                .tradesFor(List.of(accountId), snapshot.getSnapshotDate())
-                .getOrDefault(accountId, List.of())
-            : List.of();
+    List<UUID> lacking =
+        holdings.stream()
+            .filter(holding -> holding.getReportedCostBasis() == null)
+            .map(SnapshotHolding::getSecurityId)
+            .distinct()
+            .toList();
+    Map<UUID, Map<UUID, List<TradeLeg>>> trades =
+        lacking.isEmpty()
+            ? Map.of()
+            : orderCostBasisService.tradesFor(
+                List.of(accountId), lacking, snapshot.getSnapshotDate());
     CostBasisSource recorded =
         MANUAL.equals(snapshot.getSource()) ? CostBasisSource.ENTERED : CostBasisSource.STATEMENT;
     List<AccountPositionResponse> positions = new ArrayList<>();
@@ -135,7 +140,7 @@ public class AccountPositionsService {
       Optional<CostFromOrders> fromOrders =
           holding.getReportedCostBasis() == null
               ? OrderCostBasisService.costBasis(
-                  trades,
+                  OrderCostBasisService.tradesOf(trades, accountId, holding.getSecurityId()),
                   holding.getSecurityId(),
                   snapshot.getSnapshotDate(),
                   holding.getQuantity(),
@@ -155,26 +160,35 @@ public class AccountPositionsService {
   }
 
   /**
-   * Read the statement components for accounts already authorized by the caller. A position without
-   * a cost basis carries the one its orders give, if they explain it (US-15-15).
+   * Read the statement components for accounts already authorized by the caller. With {@code
+   * withOrderCost}, a position without a cost basis carries the one its orders give, if they
+   * explain it (US-15-15) - only a caller that reads the cost (the depot gain, {@link #summary})
+   * asks for it, so a value alone costs no order query.
    */
-  Map<UUID, List<ReportedHoldingValue>> reportedHoldingsFor(List<UUID> accountIds, LocalDate asOf) {
+  Map<UUID, List<ReportedHoldingValue>> reportedHoldingsFor(
+      List<UUID> accountIds, LocalDate asOf, boolean withOrderCost) {
     List<ReportedHoldingValue> components =
         snapshotRepository.findLatestReportedHoldings(accountIds, asOf);
-    List<UUID> lacking =
+    if (!withOrderCost) {
+      return components.stream().collect(Collectors.groupingBy(ReportedHoldingValue::getAccountId));
+    }
+    List<ReportedHoldingValue> lacking =
         components.stream()
             .filter(component -> component.isHolding() && component.getReportedCostBasis() == null)
-            .map(ReportedHoldingValue::getAccountId)
-            .distinct()
+            .filter(component -> component.getSecurityId() != null)
             .toList();
-    Map<UUID, List<TradeLeg>> trades = orderCostBasisService.tradesFor(lacking, asOf);
+    Map<UUID, Map<UUID, List<TradeLeg>>> trades =
+        orderCostBasisService.tradesFor(
+            lacking.stream().map(ReportedHoldingValue::getAccountId).distinct().toList(),
+            lacking.stream().map(ReportedHoldingValue::getSecurityId).distinct().toList(),
+            asOf);
     return components.stream()
         .map(component -> withOrderCost(component, trades))
         .collect(Collectors.groupingBy(ReportedHoldingValue::getAccountId));
   }
 
   private static ReportedHoldingValue withOrderCost(
-      ReportedHoldingValue component, Map<UUID, List<TradeLeg>> trades) {
+      ReportedHoldingValue component, Map<UUID, Map<UUID, List<TradeLeg>>> trades) {
     UUID securityId = component.getSecurityId();
     BigDecimal quantity = component.getQuantity();
     if (!component.isHolding()
@@ -184,7 +198,7 @@ public class AccountPositionsService {
       return component;
     }
     return OrderCostBasisService.costBasis(
-            trades.getOrDefault(component.getAccountId(), List.of()),
+            OrderCostBasisService.tradesOf(trades, component.getAccountId(), securityId),
             securityId,
             component.getSnapshotDate(),
             quantity,
@@ -294,13 +308,17 @@ public class AccountPositionsService {
         inAccountCurrency(reported, reportedCurrency, accountCurrency, rate);
     BigDecimal costBasis = holding.getReportedCostBasis();
     String costCurrency = holding.getReportedCostBasisCurrency();
-    BigDecimal costInAccountCurrency = holding.getCostBasisInAccountCurrency();
+    // A cost from the orders has no account-currency cost (no FX is applied).
+    BigDecimal costInAccountCurrency =
+        fromOrders.isPresent() ? null : holding.getCostBasisInAccountCurrency();
     CostBasisSource source = costBasis == null ? null : recorded;
+    boolean estimated = holding.isCostBasisEstimated();
     if (fromOrders.isPresent()) {
       costBasis = fromOrders.get().costBasis();
       costCurrency = fromOrders.get().currency();
-      costInAccountCurrency = null;
       source = CostBasisSource.ORDERS;
+      // Calculated from recorded orders, not estimated - whatever the flag of the missing cost.
+      estimated = false;
     }
 
     // The gain in the cost basis' own currency: against the account-currency value for a cost in
@@ -318,7 +336,7 @@ public class AccountPositionsService {
         accountCost(costBasis, costCurrency, costInAccountCurrency, accountCurrency);
     BigDecimal accountGain = difference(inAccountCurrency, accountCost);
 
-    ValueStatus status = status(inAccountCurrency, rate, holding.isCostBasisEstimated());
+    ValueStatus status = status(inAccountCurrency, rate, estimated);
     return new AccountPositionResponse(
         security.getId(),
         security.getDisplayName(),
@@ -331,7 +349,7 @@ public class AccountPositionsService {
         costBasis,
         costCurrency,
         costInAccountCurrency,
-        holding.isCostBasisEstimated(),
+        estimated,
         source,
         gain,
         gain == null ? null : gainPercent(gain, costBasis),
