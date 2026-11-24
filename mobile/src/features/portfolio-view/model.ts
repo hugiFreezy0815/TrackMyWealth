@@ -119,3 +119,11 @@ export function unknownAccounts(sections: readonly PortfolioSection[]): Portfoli
     .flatMap((section) => section.accounts)
     .filter((account) => !account.valueKnown || account.valueStatus === 'UNKNOWN');
 }
+
+/** The Investments scope includes depots and Pillar 3a accounts with positions. */
+export function isInvestmentDepot(account: PortfolioAccount, section: PortfolioSection): boolean {
+  return (
+    section.section === 'DEPOT' ||
+    (section.section === 'PILLAR_3A' && account.positionsCount != null)
+  );
+}

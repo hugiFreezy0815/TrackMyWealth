@@ -47,6 +47,7 @@ function renderShell(identity: Identity | null = MEMBER, initialUrl = '/overview
     {
       _layout: () => withIntl(<AppShell identity={identity} />),
       overview: () => <ShellScreen title="Overview screen">{null}</ShellScreen>,
+      investments: () => null,
       more: () => null,
       settings: () => null,
       'reference-data': () => null,
@@ -63,12 +64,16 @@ afterEach(() => {
 });
 
 describe('AppShell navigation per device (US-01-13)', () => {
-  it('shows a bottom tab bar with Overview and More on a phone', async () => {
+  it('shows a bottom tab bar with Overview, Investments and More on a phone', async () => {
     viewport(390);
     await renderShell();
 
     const tabs = screen.getAllByRole('tab');
-    expect(tabs.map((tab) => tab.props.accessibilityLabel)).toEqual(['Overview', 'More']);
+    expect(tabs.map((tab) => tab.props.accessibilityLabel)).toEqual([
+      'Overview',
+      'Investments',
+      'More',
+    ]);
     expect(screen.queryByTestId('shell-sidebar')).toBeNull();
     expect(screen.getByRole('tab', { name: 'Overview' })).toBeSelected();
     expect(screen.getByRole('tab', { name: 'More' })).not.toBeSelected();
@@ -78,11 +83,11 @@ describe('AppShell navigation per device (US-01-13)', () => {
     viewport(800);
     await renderShell();
 
-    expect(screen.getAllByRole('tab')).toHaveLength(2);
+    expect(screen.getAllByRole('tab')).toHaveLength(3);
     expect(screen.queryByTestId('shell-sidebar')).toBeNull();
   });
 
-  it('shows a 248 px sidebar with Overview and Settings in a 1280 px browser', async () => {
+  it('shows a 248 px sidebar with Overview, Investments and Settings in a 1280 px browser', async () => {
     viewport(1280, 'web');
     await renderShell();
 
@@ -92,7 +97,11 @@ describe('AppShell navigation per device (US-01-13)', () => {
     const nav = within(sidebar).getByLabelText('Main navigation');
     expect(nav.props.role).toBe('navigation');
     const links = within(nav).getAllByRole('link');
-    expect(links.map((link) => link.props.accessibilityLabel)).toEqual(['Overview', 'Settings']);
+    expect(links.map((link) => link.props.accessibilityLabel)).toEqual([
+      'Overview',
+      'Investments',
+      'Settings',
+    ]);
     expect(links[0].props['aria-current']).toBe('page');
     expect(links[1].props['aria-current']).toBeUndefined();
     for (const link of links) {

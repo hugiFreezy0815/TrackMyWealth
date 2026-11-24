@@ -1,13 +1,8 @@
-/**
- * Sprint-7 navigation (docs/ux/01-information-architecture.md §1, PO 2026-11-05): phone and
- * tablet show Overview + More, desktop Overview + Settings. Investments and Cash flow stay absent
- * (never disabled), and portfolios live in the Overview tab strip, not in a second section.
- */
 export type Layout = 'phone' | 'tablet' | 'desktop';
 
 export type NavigationItem = {
-  href: '/overview' | '/more' | '/settings' | '/reference-data';
-  labelKey: 'nav.overview' | 'nav.more' | 'nav.settings' | 'nav.referenceData';
+  href: '/overview' | '/investments' | '/more' | '/settings' | '/reference-data';
+  labelKey: 'nav.overview' | 'nav.investments' | 'nav.more' | 'nav.settings' | 'nav.referenceData';
   icon: string;
 };
 
@@ -19,6 +14,11 @@ export function layoutFor(width: number): Layout {
 }
 
 const OVERVIEW: NavigationItem = { href: '/overview', labelKey: 'nav.overview', icon: '◉' };
+const INVESTMENTS: NavigationItem = {
+  href: '/investments',
+  labelKey: 'nav.investments',
+  icon: '↗',
+};
 const MORE: NavigationItem = { href: '/more', labelKey: 'nav.more', icon: '☰' };
 const SETTINGS: NavigationItem = { href: '/settings', labelKey: 'nav.settings', icon: '⚙' };
 const REFERENCE_DATA: NavigationItem = {
@@ -33,7 +33,8 @@ const REFERENCE_DATA: NavigationItem = {
  * the role again.
  */
 export function navigationFor(layout: Layout, administrator: boolean): NavigationItem[] {
-  return [administrator ? REFERENCE_DATA : OVERVIEW, layout === 'desktop' ? SETTINGS : MORE];
+  const settings = layout === 'desktop' ? SETTINGS : MORE;
+  return administrator ? [REFERENCE_DATA, settings] : [OVERVIEW, INVESTMENTS, settings];
 }
 
 /** Where a signed-in person lands: Overview for a member, Reference data for the administrator. */

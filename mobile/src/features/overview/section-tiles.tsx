@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useIntl, type IntlShape } from 'react-intl';
-import { Platform, Text, View } from 'react-native';
+import { Platform, Pressable, Text, View } from 'react-native';
 
 import { labelFor } from '@/api/enum-label';
 import { Amount, ValueStatusBadge } from '@/components/shared';
+import { linkKeyProps } from '@/components/shared/link-key';
 import { amountTexts } from '@/components/shared/amount';
 import { valueStatusTexts } from '@/components/shared/value-status';
 import { Radii, Spacing, TypeScale } from '@/constants/theme';
@@ -55,6 +56,7 @@ export function SectionTiles({
   changes,
   changePeriod,
   changeUncertain = false,
+  onInvestments,
 }: {
   data: NetWorth;
   hidden: boolean;
@@ -63,6 +65,7 @@ export function SectionTiles({
   /** The period of `changes`, and whether the server flags that change as possibly distorted. */
   changePeriod?: ValueHistory['period'];
   changeUncertain?: boolean;
+  onInvestments?: () => void;
 }) {
   const theme = useTheme();
   const [width, setWidth] = useState(0);
@@ -80,6 +83,8 @@ export function SectionTiles({
           intl,
           labelFor(SECTION_LABELS, section.section, 'overview.unknownSection'),
         );
+        const open = section.section === 'DEPOT' ? onInvestments : undefined;
+        const TileHeading = open ? Pressable : View;
         const change = changes?.find((item) => item.section === section.section)?.change;
         const valueKnown = section.valueStatus !== 'UNKNOWN';
         const texts = amountTexts(intl, {
@@ -104,10 +109,13 @@ export function SectionTiles({
               backgroundColor: theme.bgSurface,
             }}
           >
-            <View
+            <TileHeading
               accessible
+              accessibilityRole={open ? 'link' : undefined}
               accessibilityLabel={[title, texts.label, status].filter(Boolean).join(', ')}
-              style={{ gap: Spacing.one }}
+              onPress={open}
+              {...(open ? linkKeyProps(open) : {})}
+              style={{ gap: Spacing.one, minHeight: open ? 44 : undefined }}
             >
               <Text style={{ ...TypeScale.bodyMedium, color: theme.textSecondary }}>{title}</Text>
               <Amount
@@ -124,7 +132,7 @@ export function SectionTiles({
                   color: theme.textPrimary,
                 }}
               />
-            </View>
+            </TileHeading>
             {change && changePeriod ? (
               <SectionChangeLine
                 amount={change.amount}

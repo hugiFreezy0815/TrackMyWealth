@@ -12,11 +12,11 @@ import { useTheme } from '@/hooks/use-theme';
 import {
   PositionList,
   NoGainNote,
-  shownGain,
   usePositionLabel,
   type PositionViewProps,
 } from './position-list';
 import type { Position } from './model';
+import { shownGain } from './position-gain';
 
 /** Below the tablet breakpoint four columns do not fit 320 CSS px (200 % zoom): use the list. */
 export const POSITION_TABLE_MIN_WIDTH = 600;
@@ -34,14 +34,18 @@ function PositionCell({
   position,
   currency,
   onOpen,
+  depotName,
+  asOf,
 }: {
   position: Position;
   currency: string;
   onOpen?: () => void;
+  depotName?: string;
+  asOf?: string | null;
 }) {
   const theme = useTheme();
   const intl = useIntl();
-  const label = usePositionLabel(position, currency);
+  const label = usePositionLabel(position, currency, asOf, depotName);
   const content = (
     <>
       <Text
@@ -51,6 +55,9 @@ function PositionCell({
       </Text>
       {position.isin ? (
         <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>{position.isin}</Text>
+      ) : null}
+      {depotName ? (
+        <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>{depotName}</Text>
       ) : null}
       {position.price != null && position.priceCurrency ? (
         <View
@@ -93,7 +100,7 @@ function PositionCell({
  * gain (amount + %). Narrow viewports fall back to the native list.
  */
 export function PositionView(props: PositionViewProps) {
-  const { positions, currency, accountName, onOpen } = props;
+  const { positions, currency, accountName, onOpen, investments } = props;
   const theme = useTheme();
   const intl = useIntl();
   const { width } = useWindowDimensions();
@@ -102,6 +109,7 @@ export function PositionView(props: PositionViewProps) {
     padding: `${Spacing.two}px ${Spacing.compact}px`,
     borderBottom: `1px solid ${theme.borderDefault}`,
     verticalAlign: 'top',
+    overflowWrap: 'anywhere',
   };
   const header: CSSProperties = cell;
   const headerText = {
@@ -126,6 +134,11 @@ export function PositionView(props: PositionViewProps) {
           <th scope="col" style={{ ...header, ...numeric }}>
             <Text style={headerText}>{msg(intl, 'portfolio.positions.column.units')}</Text>
           </th>
+          {investments ? (
+            <th scope="col" style={{ ...header, ...numeric }}>
+              <Text style={headerText}>{msg(intl, 'investments.costBasis')}</Text>
+            </th>
+          ) : null}
           <th scope="col" style={{ ...header, ...numeric }}>
             <Text style={headerText}>{msg(intl, 'portfolio.positions.column.value')}</Text>
           </th>
@@ -138,11 +151,26 @@ export function PositionView(props: PositionViewProps) {
         {positions.map((position) => (
           <tr key={position.securityId}>
             <td style={cell}>
-              <PositionCell position={position} currency={currency} onOpen={onOpen} />
+              <PositionCell
+                position={position}
+                currency={currency}
+                onOpen={onOpen}
+                depotName={investments?.showDepotName ? accountName : undefined}
+                asOf={investments?.asOf}
+              />
             </td>
             <td style={{ ...cell, ...numeric }}>
               <Figure value={position.quantity} kind="quantity" style={TypeScale.bodyMedium} />
             </td>
+            {investments ? (
+              <td style={{ ...cell, ...numeric }}>
+                <Amount
+                  value={position.costBasis}
+                  currency={position.costBasisCurrency ?? currency}
+                  valueKnown={position.costBasisCurrency != null}
+                />
+              </td>
+            ) : null}
             <td style={{ ...cell, ...numeric }}>
               <View style={{ alignItems: 'flex-end', gap: Spacing.one }}>
                 <Amount
@@ -150,13 +178,24 @@ export function PositionView(props: PositionViewProps) {
                   currency={currency}
                   valueKnown={isValueKnown(position.valueStatus)}
                 />
-                <ValueStatusBadge status={position.valueStatus} />
+                <ValueStatusBadge
+                  status={position.valueStatus}
+                  valueSourceDate={investments?.asOf}
+                />
               </View>
             </td>
             <td style={{ ...cell, ...numeric }}>
               <View style={{ alignItems: 'flex-end', gap: Spacing.one }}>
-                <GainFigures position={position} currency={currency} />
-                <NoGainNote position={position} currency={currency} />
+                <GainFigures
+                  position={position}
+                  currency={currency}
+                  omitMissing={Boolean(investments)}
+                />
+                <NoGainNote
+                  position={position}
+                  currency={currency}
+                  investments={Boolean(investments)}
+                />
                 {position.costBasisEstimated ? (
                   <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
                     {msg(intl, 'portfolio.position.estimated')}
@@ -172,7 +211,15 @@ export function PositionView(props: PositionViewProps) {
 }
 
 /** The gain amount in its own currency and its percentage (#527); "–" without a gain. */
-function GainFigures({ position, currency }: { position: Position; currency: string }) {
+function GainFigures({
+  position,
+  currency,
+  omitMissing,
+}: {
+  position: Position;
+  currency: string;
+  omitMissing: boolean;
+}) {
   const gain = shownGain(position, currency);
   return (
     <>
@@ -184,13 +231,15 @@ function GainFigures({ position, currency }: { position: Position; currency: str
           style={TypeScale.bodyMedium}
         />
       ) : null}
-      <Figure
-        value={gain?.percent ?? null}
-        kind="percent"
-        signRole="change"
-        tone="gainLoss"
-        style={TypeScale.caption}
-      />
+      {(!omitMissing || gain?.percent != null) && (
+        <Figure
+          value={gain?.percent ?? null}
+          kind="percent"
+          signRole="change"
+          tone="gainLoss"
+          style={TypeScale.caption}
+        />
+      )}
     </>
   );
 }

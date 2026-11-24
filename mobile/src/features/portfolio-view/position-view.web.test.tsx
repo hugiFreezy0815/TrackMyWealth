@@ -154,3 +154,23 @@ describe('Depot positions on web (ADR 0007, W02/W03)', () => {
     expect(screen.getByText('310 units · IE00B4L5Y983')).toBeTruthy();
   });
 });
+
+it('shows the Investments cost-basis column and uses the snapshot date for a stale price', async () => {
+  await renderWithIntl(
+    <PositionView
+      positions={[{ ...positions[0], valueStatus: 'STALE' }]}
+      currency="EUR"
+      accountName="DKB Depot"
+      investments={{ asOf: '2026-11-21', showDepotName: true }}
+    />,
+  );
+  expect(host('th').map(textOf)).toEqual([
+    'Position',
+    'Units',
+    'Cost basis',
+    'Value',
+    'Unrealised gain',
+  ]);
+  expect(screen.getByText("EUR 27'439.00")).toBeOnTheScreen();
+  expect(screen.getByText('Price from 21 Nov 2026')).toBeOnTheScreen();
+});

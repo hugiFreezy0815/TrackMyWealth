@@ -1,4 +1,5 @@
 import {
+  queryOptions,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -29,13 +30,16 @@ export const usePortfolios = () =>
     queryFn: ({ signal }) =>
       readAllPages((page) => typedApi.get('/api/v1/portfolios', { query: { page }, signal })),
   });
-export const usePortfolioView = (portfolioId: string, { enabled = true }: QueryGate = {}) =>
-  useQuery({
+export const portfolioViewQuery = (portfolioId: string, enabled = true) =>
+  queryOptions({
     queryKey: queryKeys.portfolioView(portfolioId),
-    queryFn: () =>
-      typedApi.get('/api/v1/portfolios/{portfolioId}/view', { params: { portfolioId } }),
+    queryFn: ({ signal }) =>
+      typedApi.get('/api/v1/portfolios/{portfolioId}/view', { params: { portfolioId }, signal }),
     enabled: enabled && !!portfolioId,
   });
+
+export const usePortfolioView = (portfolioId: string, { enabled = true }: QueryGate = {}) =>
+  useQuery(portfolioViewQuery(portfolioId, enabled));
 /** `enabled: false` holds the request back, e.g. until the scope currency is known (S1). */
 export type QueryGate = { enabled?: boolean };
 
@@ -136,15 +140,38 @@ export const useArchivedAccounts = (portfolioId: string, enabled = true) =>
     enabled: !!portfolioId && enabled,
   });
 
-export const useAccountPositions = (accountId: string, enabled = true) =>
-  useQuery({
+// Share the four-request limit and the cache across the screens that read depot positions.
+const positionRequestQueue: (() => void)[] = [];
+let activePositionRequests = 0;
+
+async function readAccountPositions(accountId: string, signal: AbortSignal) {
+  if (activePositionRequests >= 4) {
+    await new Promise<void>((resume) => positionRequestQueue.push(resume));
+  } else {
+    activePositionRequests++;
+  }
+  try {
+    if (signal.aborted) throw signal.reason ?? new Error('Positions request cancelled');
+    return await typedApi.get('/api/v1/accounts/{accountId}/positions', {
+      params: { accountId },
+      signal,
+    });
+  } finally {
+    const next = positionRequestQueue.shift();
+    if (next) next();
+    else activePositionRequests--;
+  }
+}
+
+export const accountPositionsQuery = (accountId: string, enabled = true) =>
+  queryOptions({
     queryKey: queryKeys.accountPositions(accountId),
-    queryFn: () =>
-      typedApi.get('/api/v1/accounts/{accountId}/positions', {
-        params: { accountId },
-      }),
+    queryFn: ({ signal }) => readAccountPositions(accountId, signal),
     enabled: !!accountId && enabled,
   });
+
+export const useAccountPositions = (accountId: string, enabled = true) =>
+  useQuery(accountPositionsQuery(accountId, enabled));
 
 /** Every write sends the exact version read from the server. */
 export function useAccountArchiveAction(accountId: string) {

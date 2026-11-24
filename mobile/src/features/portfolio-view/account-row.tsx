@@ -3,6 +3,7 @@ import { useIntl, type IntlShape } from 'react-intl';
 import { Platform, Pressable, Text, View } from 'react-native';
 
 import { Amount, Figure, ValueStatusBadge, amountTexts, isValueKnown } from '@/components/shared';
+import { linkKeyProps } from '@/components/shared/link-key';
 import { Spacing, TypeScale } from '@/constants/theme';
 import { isNegativeAmount } from '@/features/overview/overview-model';
 import { msg } from '@/features/overview/overview-text';
@@ -15,6 +16,7 @@ import {
   accountTypeMessageKey,
   daysUntil,
   hasPositions,
+  isInvestmentDepot,
   type PortfolioAccount,
   type PortfolioSection,
 } from './model';
@@ -140,6 +142,7 @@ export function PortfolioAccountRow({
   nested,
   portfolioCurrency,
   onAccount,
+  onInvestments,
 }: {
   account: PortfolioAccount;
   section: PortfolioSection;
@@ -147,6 +150,7 @@ export function PortfolioAccountRow({
   nested: boolean;
   portfolioCurrency: string;
   onAccount: (accountId: string, tab?: 'positions') => void;
+  onInvestments?: (accountId: string) => void;
 }) {
   const intl = useIntl();
   const theme = useTheme();
@@ -253,6 +257,19 @@ export function PortfolioAccountRow({
           <HoldingsReturn account={account} />
         ) : null}
       </View>
+      {onInvestments && isInvestmentDepot(account, section) ? (
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel={msg(intl, 'investments.openDepot', { depot: account.name })}
+          onPress={() => onInvestments(account.accountId)}
+          {...linkKeyProps(() => onInvestments(account.accountId))}
+          style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}
+        >
+          <Text style={{ ...TypeScale.labelMedium, color: theme.brandLink }}>
+            {msg(intl, 'investments.open')}
+          </Text>
+        </Pressable>
+      ) : null}
       {hasPositions(account, section) ? (
         <DepotPositions account={account} onAccount={onAccount} />
       ) : null}
