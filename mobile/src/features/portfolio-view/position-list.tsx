@@ -139,8 +139,7 @@ export function usePositionLabel(
     position.displayName,
     depotName,
     value,
-    // No date: the snapshot's asOf is not the price's date, and STALE can mean an old FX rate.
-    asOf !== undefined ? valueStatusTexts(position.valueStatus, null, intl)?.label : undefined,
+    asOf !== undefined ? valueStatusTexts(position.valueStatus, asOf, intl)?.label : undefined,
     msg(intl, 'portfolio.positions.units', { units: units.label }),
     ...(price ? [msg(intl, 'portfolio.positions.price') + ': ' + price] : []),
     gain,
@@ -253,8 +252,11 @@ function PositionRow({
       <View
         style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.two }}
       >
-        {/* No date, like the row label: the snapshot's asOf does not date the price. */}
-        <ValueStatusBadge status={position.valueStatus} interactive={false} />
+        <ValueStatusBadge
+          status={position.valueStatus}
+          valueSourceDate={investments?.asOf}
+          interactive={false}
+        />
         <NoGainNote position={position} currency={currency} investments={Boolean(investments)} />
         {position.costBasisEstimated ? (
           <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>

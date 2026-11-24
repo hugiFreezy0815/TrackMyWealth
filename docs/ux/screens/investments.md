@@ -52,7 +52,7 @@ Positions · 12                         [↕ Value ⌄]
 │ [i] iShares Core SPI                CHF 18'770.00    │
 │     CSSPI · 120 units · VIAC 3a      no cost basis   │
 │ [₿] Bitcoin ETP                     CHF  6'100.00    │
-│     … [Price outdated]              ↘ −CHF 410.00    │
+│     … [Price from 31 Oct]           ↘ −CHF 410.00    │
 │                                       −6.3 %         │
 └──────────────────────────────────────────────────────┘
 ┌ ALLOCATION                                           ┐
@@ -238,7 +238,6 @@ A full screen from the card (phone push, web main column).
   position".
 - Given "All depots", positions are grouped by depot, and no total return, chart or allocation
   renders while G11-1/2/4 are not delivered.
-- Given a position with `valueStatus = STALE`, the row shows "Price outdated" without a date: the
-  positions `asOf` dates the snapshot, not the price, and STALE can also come from an old FX rate.
+- Given a position with `valueStatus = STALE`, the row shows "Price from {date}".
 - No figure on the screen is the result of client arithmetic (code review check plus a unit test
   on the view model).

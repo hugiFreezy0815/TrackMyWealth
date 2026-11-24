@@ -368,9 +368,7 @@ describe('Investments screen', () => {
       expect(screen.queryByText('Swiss Fund')).toBeNull();
       expect(screen.getByText('No cost basis')).toBeOnTheScreen();
       const row = screen.getByLabelText(/^Example Fund, /);
-      // The snapshot date does not date a position's price, so the stale badge names none.
-      expect(row.props.accessibilityLabel).toContain('Price outdated');
-      expect(row.props.accessibilityLabel).not.toContain('Price from');
+      expect(row.props.accessibilityLabel).toContain('Price from 21 Nov 2026');
       await fireEvent.press(screen.getByRole('switch', { name: 'Hide amounts' }));
       expect(screen.getByLabelText(/^Example Fund, /).props.accessibilityLabel).toContain('hidden');
       await fireEvent.press(screen.getByRole('switch', { name: 'Hide amounts' }));
@@ -380,7 +378,7 @@ describe('Investments screen', () => {
       expect(screen.getByText('+USD 12.34')).toBeOnTheScreen();
       expect(screen.queryByText('+USD 99.99')).toBeNull();
       expect(screen.getByText('Cost basis missing for 1 position')).toBeOnTheScreen();
-      expect(screen.getAllByText('Price outdated').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Price from 21 Nov 2026').length).toBeGreaterThan(0);
       await fireEvent.press(screen.getByRole('button', { name: 'View performance breakdown' }));
       const sheet = screen.getByTestId(
         platform === 'web' ? 'shell-detail-panel' : 'shared-dialog-modal',
