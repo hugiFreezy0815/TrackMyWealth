@@ -65,7 +65,8 @@ export function SectionTiles({
   /** The period of `changes`, and whether the server flags that change as possibly distorted. */
   changePeriod?: ValueHistory['period'];
   changeUncertain?: boolean;
-  onInvestments?: () => void;
+  /** Gets the currency the tiles show, so Investments shows the same subtotal. */
+  onInvestments?: (currency: string) => void;
 }) {
   const theme = useTheme();
   const [width, setWidth] = useState(0);
@@ -83,7 +84,10 @@ export function SectionTiles({
           intl,
           labelFor(SECTION_LABELS, section.section, 'overview.unknownSection'),
         );
-        const open = section.section === 'DEPOT' ? onInvestments : undefined;
+        const open =
+          section.section === 'DEPOT' && onInvestments
+            ? () => onInvestments(data.currency)
+            : undefined;
         const TileHeading = open ? Pressable : View;
         const change = changes?.find((item) => item.section === section.section)?.change;
         const valueKnown = section.valueStatus !== 'UNKNOWN';

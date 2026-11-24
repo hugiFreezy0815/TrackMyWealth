@@ -17,9 +17,11 @@ import {
   daysUntil,
   hasPositions,
   isInvestmentDepot,
+  needsHoldsPositions,
   type PortfolioAccount,
   type PortfolioSection,
 } from './model';
+import { usePositionAccounts } from './use-position-accounts';
 
 const date = (intl: IntlShape, value: string) => formatDate(value, intl.locale);
 /** Test hook only, never shown or announced. */
@@ -156,6 +158,10 @@ export function PortfolioAccountRow({
   const theme = useTheme();
   const hidden = useAmountsHidden();
   const descriptionId = useId();
+  // Only a depot without a snapshot needs its account summary to decide on the Investments link.
+  const positionAccounts = usePositionAccounts(
+    onInvestments && needsHoldsPositions(account, section) ? [account.accountId] : [],
+  );
   const web = Platform.OS === 'web';
   const known = account.valueKnown && isValueKnown(account.valueStatus);
   const detail = rowDetail(intl, account, section);
@@ -257,7 +263,7 @@ export function PortfolioAccountRow({
           <HoldingsReturn account={account} />
         ) : null}
       </View>
-      {onInvestments && isInvestmentDepot(account, section) ? (
+      {onInvestments && isInvestmentDepot(account, section, positionAccounts.ids) ? (
         <Pressable
           accessibilityRole="link"
           accessibilityLabel={msg(intl, 'investments.openDepot', { depot: account.name })}

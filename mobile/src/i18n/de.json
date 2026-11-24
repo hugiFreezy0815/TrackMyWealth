@@ -837,6 +837,7 @@
   "nav.investments": "Anlagen",
   "investments.all": "Alle Depots",
   "investments.scope": "Depot",
+  "investments.scopeInPortfolio": "{depot} ({portfolio})",
   "investments.positions": "Positionen",
   "investments.costBasis": "Einstandswert",
   "investments.noBasis": "Kein Einstandswert",

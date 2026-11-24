@@ -11,14 +11,31 @@ import {
   useWorkspace,
 } from '@/api/queries/resources';
 
+import { needsHoldsPositions } from '@/features/portfolio-view/model';
+import { usePositionAccounts } from '@/features/portfolio-view/use-position-accounts';
+
 import { investmentDepots, investmentFigures } from './model';
 
-export function useInvestments(accountId?: string) {
+/** `scopeCurrency`: the currency of the Overview Depot tile that opened the screen, if any. */
+export function useInvestments(accountId?: string, scopeCurrency?: string) {
   const portfolios = usePortfolios();
   const views = useQueries({
     queries: (portfolios.data ?? []).map(({ id }) => portfolioViewQuery(id)),
   });
-  const depots = investmentDepots(views.map(({ data }) => data));
+  const positionAccounts = usePositionAccounts(
+    views.flatMap(
+      ({ data }) =>
+        data?.sections.flatMap((section) =>
+          section.accounts
+            .filter((account) => needsHoldsPositions(account, section))
+            .map(({ accountId }) => accountId),
+        ) ?? [],
+    ),
+  );
+  const depots = investmentDepots(
+    views.map(({ data }) => data),
+    positionAccounts.ids,
+  );
   const depot = depots.find(({ account }) => account.accountId === accountId);
   const depotView = depot
     ? views.find(({ data }) =>
@@ -27,17 +44,23 @@ export function useInvestments(accountId?: string) {
         ),
       )
     : undefined;
-  const directoryQueries = [portfolios, ...views];
+  const directoryQueries = [portfolios, ...views, ...positionAccounts.queries];
   const directoryPending = directoryQueries.some(({ isPending }) => isPending);
-  const directoryComplete = portfolios.data != null && views.every(({ data }) => data != null);
+  const directoryComplete =
+    portfolios.data != null &&
+    views.every(({ data }) => data != null) &&
+    positionAccounts.queries.every(({ data }) => data != null);
   const directoryFailed = directoryQueries.some(({ isError, data }) => isError && data == null);
   // A depot missing from every view that loaded falls back to All depots once no view is still
   // loading: one failed view must not leave the screen blank (its error banner still shows).
-  const directorySettled = portfolios.data != null && views.every(({ isPending }) => !isPending);
+  const directorySettled =
+    portfolios.data != null &&
+    views.every(({ isPending }) => !isPending) &&
+    positionAccounts.queries.every(({ isPending }) => !isPending);
   const invalidScope = Boolean(accountId && !depot && directorySettled);
   const showAll = !accountId || invalidScope;
   const workspace = useWorkspace();
-  const currency = workspace.data?.currency;
+  const currency = scopeCurrency ?? workspace.data?.currency;
   const netWorth = useNetWorth(currency, { enabled: showAll && currency != null });
   const selectedId = depot?.account.accountId ?? '';
   const needsBalance = depot != null && depot.account.currency !== depot.portfolioCurrency;

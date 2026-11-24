@@ -21,7 +21,9 @@ When S11 ships, the IA unhides **Investments**:
 
 The Depot tile on S1 and the depot rows on S2/S9 lead here. See
 [01-information-architecture.md](../01-information-architecture.md) §2. Route `/investments`, and
-`/investments?account={accountId}` for one depot.
+`/investments?account={accountId}` for one depot. The S1 Depot tile adds `currency={Cur}`, the S1
+scope currency it shows, so the Depot section subtotal here matches the tile; without it, `Cur` is
+the workspace currency. A scope chip keeps `currency`.
 
 ## Layout
 
@@ -85,7 +87,7 @@ Activity                                       See all   ← trades, dividends, 
 
 | # | Request | Used for |
 |---|---|---|
-| 1 | The depot `AccountRow`s: `GET /api/v1/portfolios/{id}/view` per portfolio (as S9 request 2, cached from S2), the rows of section `DEPOT` (and `PILLAR_3A` rows with `positionsCount ≠ null`) | scope chips, per-depot `totalReturn`, `totalReturnPercent`, `missingCostBasisCount`, `foreignCurrencyCostBasisCount`, `positionsAsOf` |
+| 1 | The depot `AccountRow`s: `GET /api/v1/portfolios/{id}/view` per portfolio (as S9 request 2, cached from S2), the rows of section `DEPOT` that hold positions (and `PILLAR_3A` rows with `positionsCount ≠ null`). A `DEPOT` row with `positionsCount ≠ null` holds positions; for one with `positionsCount = null` the row cannot tell, so `GET /api/v1/accounts/{accountId}` decides (`holdsPositions`). A balance-only depot (e.g. a managed mandate) is left out: its positions request answers 422 `POSITIONS_NOT_APPLICABLE`. The same rule decides the S2 "View investments" link. A chip shows the depot name, and "{depot} ({portfolio})" when another listed depot has the same name | scope chips, per-depot `totalReturn`, `totalReturnPercent`, `missingCostBasisCount`, `foreignCurrencyCostBasisCount`, `positionsAsOf` |
 | 2 | `GET /api/v1/accounts/{accountId}/positions` per depot (max 4 in parallel) | positions list (`AccountPositionResponse`) |
 | 3 | `GET /api/v1/net-worth?currency=Cur` → `sections[]` with `section = DEPOT` | the Depot section subtotal and its status |
 | 4 | `GET /api/v1/accounts/{accountId}/balance?currency={accountCurrency}` for a depot whose currency differs from its portfolio currency | the amount and valuation metadata in the depot currency |
@@ -192,7 +194,7 @@ A full screen from the card (phone push, web main column).
 
 | Action | Result |
 |---|---|
-| Scope chip | Reload with `account` |
+| Scope chip | Reload with `account` (and the `currency` it was opened with) |
 | Tap a position | [S12 Position detail](position-detail.md) |
 | "+" | Menu: Import statement ([S7](import-statement.md)), Add transaction (hidden until M18 ships) |
 | Check card "Compare" | [S15](data-checks.md) units comparison |

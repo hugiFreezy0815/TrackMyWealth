@@ -30,7 +30,9 @@ export default function OverviewRoute() {
         onImportStatement={
           Platform.OS === 'web' ? () => router.push('/imports/new' as Href) : undefined
         }
-        onInvestments={() => router.push('/investments')}
+        onInvestments={(currency) =>
+          router.push({ pathname: '/investments', params: { currency } })
+        }
         onReviewAccount={(accountId) =>
           router.push({ pathname: '/accounts/[accountId]', params: { accountId } })
         }

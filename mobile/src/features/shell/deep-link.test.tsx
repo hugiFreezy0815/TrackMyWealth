@@ -252,7 +252,8 @@ it.each(['ios', 'android', 'web'] as const)(
           sections: [{ section: 'DEPOT', accounts: [linkedDepot] }],
         } as never;
       }
-      if (path === '/api/v1/accounts/{accountId}') return { hasTransactions: false } as never;
+      if (path === '/api/v1/accounts/{accountId}')
+        return { hasTransactions: false, holdsPositions: true } as never;
       if (path === '/api/v1/accounts/{accountId}/positions') {
         return {
           accountId: linkedDepot.accountId,

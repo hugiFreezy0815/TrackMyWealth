@@ -198,6 +198,7 @@ describe('Investments view model', () => {
       const scope = {
         account: { ...depot, valueKnown: valueStatus !== 'UNKNOWN', valueStatus },
         portfolioCurrency: 'CHF',
+        portfolioName: 'Test Portfolio',
         section: 'DEPOT' as const,
       };
       expect(investmentFigures(scope, undefined, snapshot, ownBalance).value).toMatchObject({
@@ -392,7 +393,7 @@ describe('Investments screen', () => {
   );
 });
 
-function setupScreen() {
+function setupScreen(currency?: string) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: Infinity } },
   });
@@ -403,6 +404,7 @@ function setupScreen() {
       {withIntl(
         <InvestmentsScreen
           accountId={accountId}
+          currency={currency}
           onScope={jest.fn()}
           onAccount={onAccount}
           onAddDepot={onAddDepot}
@@ -417,6 +419,8 @@ type FixtureOptions = {
   views: PortfolioView[];
   netWorth?: NetWorth;
   snapshot?: PositionsResponse;
+  /** Account summaries: only `holdsPositions` matters to Investments. */
+  accounts?: { id: string; holdsPositions: boolean }[];
 };
 
 function mockInvestments(options: FixtureOptions, holdSecondPortfolio = false) {
@@ -441,8 +445,11 @@ function mockInvestments(options: FixtureOptions, holdSecondPortfolio = false) {
       }
       case '/api/v1/net-worth':
         return (options.netWorth ?? netWorth) as never;
-      case '/api/v1/accounts/{accountId}':
-        return { hasTransactions: false } as never;
+      case '/api/v1/accounts/{accountId}': {
+        const id = params && 'accountId' in params ? params.accountId : undefined;
+        const summary = options.accounts?.find((account) => account.id === id);
+        return { id, hasTransactions: false, holdsPositions: summary?.holdsPositions } as never;
+      }
       case '/api/v1/accounts/{accountId}/balance':
         return ownBalance as never;
       case '/api/v1/accounts/{accountId}/positions':
@@ -753,4 +760,87 @@ it('frees a positions slot after its deadline when a request never settles', asy
     // Retried like the client's own timeout.
     expect(shouldRetry(0, error)).toBe(true);
   }
+});
+
+const positionsRequested = (get: jest.MockedFunction<typeof typedApi.get>) =>
+  get.mock.calls
+    .filter(([path]) => path === '/api/v1/accounts/{accountId}/positions')
+    .map(([, request]) => {
+      const params = request?.params;
+      return params && 'accountId' in params ? params.accountId : undefined;
+    });
+
+it('leaves balance-only depots out and keeps a depot that holds positions but has no snapshot', async () => {
+  const noSnapshot = { positionsCount: null, positionsAsOf: null };
+  const mandate = { ...depot, ...noSnapshot, accountId: 'mandate', name: 'Managed mandate' };
+  const fresh = { ...depot, ...noSnapshot, accountId: 'fresh', name: 'New depot' };
+  const { get } = mockInvestments({
+    views: [{ ...view, sections: [{ ...view.sections[0], accounts: [depot, mandate, fresh] }] }],
+    accounts: [
+      { id: mandate.accountId, holdsPositions: false },
+      { id: fresh.accountId, holdsPositions: true },
+    ],
+    snapshot: { ...snapshot, positions: [] },
+  });
+  const { route } = setupScreen();
+  await render(route());
+  expect(await screen.findByRole('radio', { name: fresh.name })).toBeOnTheScreen();
+  expect(screen.getByRole('radio', { name: depot.name })).toBeOnTheScreen();
+  expect(screen.queryByRole('radio', { name: mandate.name })).toBeNull();
+  await waitFor(() => expect(positionsRequested(get)).toContain(fresh.accountId));
+  expect(positionsRequested(get)).not.toContain(mandate.accountId);
+});
+
+it('names the portfolio on scope chips of depots that share a name', async () => {
+  const named = (portfolioId: string, name: string, accountId: string): PortfolioView => ({
+    ...view,
+    portfolioId,
+    name,
+    sections: [{ ...view.sections[0], accounts: [{ ...depot, accountId, name: 'Depot' }] }],
+  });
+  mockInvestments({
+    views: [named('ubs', 'UBS', 'depot-ubs'), named('sq', 'Swissquote', 'depot-sq')],
+    snapshot: { ...snapshot, positions: [] },
+  });
+  const { route } = setupScreen();
+  await render(route());
+  expect(await screen.findByRole('radio', { name: 'Depot (UBS)' })).toBeOnTheScreen();
+  expect(screen.getByRole('radio', { name: 'Depot (Swissquote)' })).toBeOnTheScreen();
+});
+
+it('reads the Depot subtotal in the Overview scope currency it was opened with', async () => {
+  const { get } = mockInvestments({
+    views: [view],
+    netWorth: { ...netWorth, currency: 'EUR' },
+    snapshot: { ...snapshot, positions: [] },
+  });
+  const { route } = setupScreen('EUR');
+  await render(route());
+  expect(await screen.findByText("EUR 1'999.17")).toBeOnTheScreen();
+  const currencies = get.mock.calls
+    .filter(([path]) => path === '/api/v1/net-worth')
+    .map(([, request]) => (request?.query as { currency?: string } | undefined)?.currency);
+  expect(currencies).toEqual(['EUR']);
+});
+
+it('rejects queued positions requests on reset instead of leaving them pending', async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  jest.mocked(typedApi.get).mockImplementation(
+    async (_, options) =>
+      new Promise<never>((_, reject) => {
+        const signal = options?.signal;
+        signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+      }),
+  );
+  const active = ['a', 'b', 'c', 'd'].map((id) =>
+    client.fetchQuery(accountPositionsQuery(id)).catch((error: unknown) => error),
+  );
+  const queued = client.fetchQuery(accountPositionsQuery('queued'));
+  await waitFor(() => expect(typedApi.get).toHaveBeenCalledTimes(4));
+  resetPositionRequests();
+  await expect(queued).rejects.toThrow('Positions requests reset');
+  await client.cancelQueries();
+  await Promise.all(active);
 });

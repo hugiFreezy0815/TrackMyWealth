@@ -89,12 +89,13 @@ export const useAccounts = (portfolioId?: string, { enabled = true }: QueryGate 
       ),
     enabled,
   });
-export const useAccount = (accountId: string) =>
-  useQuery({
+export const accountQuery = (accountId: string) =>
+  queryOptions({
     queryKey: queryKeys.account(accountId),
     queryFn: () => typedApi.get('/api/v1/accounts/{accountId}', { params: { accountId } }),
     enabled: !!accountId,
   });
+export const useAccount = (accountId: string) => useQuery(accountQuery(accountId));
 export const useAccountBalance = (accountId: string, currency?: string) =>
   useQuery({
     queryKey: [...queryKeys.account(accountId), 'balance', currency],
@@ -172,48 +173,66 @@ const POSITION_REQUEST_LIMIT = 4;
 // renewal after its 401 and the resend - and reading the response body has none of its own, so
 // the slot allows one more on top: it only ends a request the client's own deadlines missed.
 export const POSITION_SLOT_TIMEOUT_MS = 4 * REQUEST_TIMEOUT_MS;
-let positionRequestQueue: (() => void)[] = [];
+type PositionWaiter = { resume: () => void; abandon: (reason: Error) => void };
+let positionRequestQueue: PositionWaiter[] = [];
 let activePositionRequests = 0;
+// Bumped by resetPositionRequests: a request admitted before a reset must not release a slot
+// counted after it.
+let positionGeneration = 0;
 
-/** Test hook: forget queued and active positions requests left over by an earlier test. */
+/**
+ * Test hook: forget queued and active positions requests left over by an earlier test. Queued
+ * requests are rejected, so none of their queries stays pending for good.
+ */
 export function resetPositionRequests() {
+  const abandoned = positionRequestQueue;
   positionRequestQueue = [];
   activePositionRequests = 0;
+  positionGeneration++;
+  for (const waiter of abandoned) waiter.abandon(new Error('Positions requests reset'));
 }
 
 function cancelled(signal: AbortSignal) {
   return signal.reason ?? new Error('Positions request cancelled');
 }
 
-async function waitForPositionSlot(signal: AbortSignal) {
+/** Resolves with the generation the slot belongs to, which releasePositionSlot needs. */
+async function waitForPositionSlot(signal: AbortSignal): Promise<number> {
   if (signal.aborted) throw cancelled(signal);
   if (activePositionRequests < POSITION_REQUEST_LIMIT) {
     activePositionRequests++;
-    return;
+    return positionGeneration;
   }
-  await new Promise<void>((resolve, reject) => {
-    const resume = () => {
-      signal.removeEventListener('abort', cancel);
-      resolve();
+  return new Promise<number>((resolve, reject) => {
+    const waiter: PositionWaiter = {
+      resume: () => {
+        signal.removeEventListener('abort', cancel);
+        resolve(positionGeneration);
+      },
+      abandon: (reason) => {
+        signal.removeEventListener('abort', cancel);
+        reject(reason);
+      },
     };
     const cancel = () => {
-      const index = positionRequestQueue.indexOf(resume);
+      const index = positionRequestQueue.indexOf(waiter);
       if (index >= 0) positionRequestQueue.splice(index, 1);
       reject(cancelled(signal));
     };
-    positionRequestQueue.push(resume);
+    positionRequestQueue.push(waiter);
     signal.addEventListener('abort', cancel, { once: true });
   });
 }
 
-function releasePositionSlot() {
+function releasePositionSlot(generation: number) {
+  if (generation !== positionGeneration) return;
   const next = positionRequestQueue.shift();
-  if (next) next();
+  if (next) next.resume();
   else activePositionRequests = Math.max(0, activePositionRequests - 1);
 }
 
 async function readAccountPositions(accountId: string, signal: AbortSignal) {
-  await waitForPositionSlot(signal);
+  const generation = await waitForPositionSlot(signal);
   const controller = new AbortController();
   const forwardAbort = () => controller.abort(signal.reason);
   signal.addEventListener('abort', forwardAbort, { once: true });
@@ -238,7 +257,7 @@ async function readAccountPositions(accountId: string, signal: AbortSignal) {
   } finally {
     clearTimeout(timer);
     signal.removeEventListener('abort', forwardAbort);
-    releasePositionSlot();
+    releasePositionSlot(generation);
   }
 }
 

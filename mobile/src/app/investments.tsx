@@ -8,14 +8,27 @@ import { homeFor } from '@/features/shell/navigation';
 export default function InvestmentsRoute() {
   const identity = useIdentity();
   const router = useRouter();
-  const { account } = useLocalSearchParams<{ account?: string | string[] }>();
+  const { account, currency } = useLocalSearchParams<{
+    account?: string | string[];
+    currency?: string | string[];
+  }>();
   if (isAdministrator(identity)) return <Redirect href={homeFor(true)} />;
+  // The Overview scope currency, so the subtotal matches the Depot tile that led here.
+  const scopeCurrency =
+    typeof currency === 'string' && /^[A-Z]{3}$/.test(currency) ? currency : undefined;
 
   return (
     <InvestmentsScreen
       accountId={typeof account === 'string' ? account : undefined}
+      currency={scopeCurrency}
       onScope={(id) =>
-        router.replace({ pathname: '/investments', params: id ? { account: id } : {} })
+        router.replace({
+          pathname: '/investments',
+          params: {
+            ...(id ? { account: id } : {}),
+            ...(scopeCurrency ? { currency: scopeCurrency } : {}),
+          },
+        })
       }
       onAddDepot={(portfolioId) =>
         router.push(

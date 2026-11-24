@@ -31,8 +31,18 @@ const section = (
 ) => ({ section: name, subtotal, valueStatus, complete: true, accountCount: 1 });
 
 // SectionTiles receives intl from the screen; this wrapper reads it inside the provider.
-function Tiles({ data, hidden = false }: { data: NetWorth; hidden?: boolean }) {
-  return <SectionTiles data={data} hidden={hidden} intl={useIntl()} />;
+function Tiles({
+  data,
+  hidden = false,
+  onInvestments,
+}: {
+  data: NetWorth;
+  hidden?: boolean;
+  onInvestments?: (currency: string) => void;
+}) {
+  return (
+    <SectionTiles data={data} hidden={hidden} intl={useIntl()} onInvestments={onInvestments} />
+  );
 }
 
 async function layout(width: number) {
@@ -131,6 +141,20 @@ describe('section tiles (M03/W01)', () => {
     ]);
     expect(screen.queryByText('Credit card')).toBeNull();
     expect(screen.getByText('Not all values are included')).toBeTruthy();
+  });
+
+  it('opens Investments in the currency the Depot tile shows', async () => {
+    const onInvestments = jest.fn();
+    await render(
+      withIntl(
+        <Tiles
+          data={{ ...netWorth([section('DEPOT', '50000.00')]), currency: 'EUR' }}
+          onInvestments={onInvestments}
+        />,
+      ),
+    );
+    await fireEvent.press(screen.getByRole('link'));
+    expect(onInvestments).toHaveBeenCalledWith('EUR');
   });
 
   it('omits the tile grid when the server returns no sections', async () => {

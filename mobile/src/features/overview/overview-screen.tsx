@@ -45,7 +45,8 @@ export type OverviewScreenProps = {
   onPortfolio?: (portfolioId: string) => void;
   missingPortfolioNotice?: boolean;
   onImportStatement?: () => void;
-  onInvestments?: () => void;
+  /** Opens Investments for the Depot tile, in the scope currency the tile shows. */
+  onInvestments?: (currency: string) => void;
 };
 
 /** S1 web layout: two columns from 1024 px, the right one 360 px wide. */

@@ -837,6 +837,7 @@
   "nav.investments": "Investments",
   "investments.all": "All depots",
   "investments.scope": "Depot",
+  "investments.scopeInPortfolio": "{depot} ({portfolio})",
   "investments.positions": "Positions",
   "investments.costBasis": "Cost basis",
   "investments.noBasis": "No cost basis",

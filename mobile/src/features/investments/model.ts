@@ -21,19 +21,25 @@ type ValueStatus = PortfolioAccount['valueStatus'];
 export type Depot = {
   account: PortfolioAccount;
   portfolioCurrency: string;
+  /** Names the depot apart from a namesake in another portfolio (scope chips). */
+  portfolioName: string;
   /** DEPOT, or PILLAR_3A for a Pillar 3a account with positions (outside the Depot subtotal). */
   section: PortfolioSection['section'];
 };
 
-export function investmentDepots(views: readonly (PortfolioView | undefined)[]): Depot[] {
+export function investmentDepots(
+  views: readonly (PortfolioView | undefined)[],
+  positionAccountIds?: ReadonlySet<string>,
+): Depot[] {
   return views.flatMap(
     (view) =>
       view?.sections.flatMap((section) =>
         section.accounts
-          .filter((account) => isInvestmentDepot(account, section))
+          .filter((account) => isInvestmentDepot(account, section, positionAccountIds))
           .map((account) => ({
             account,
             portfolioCurrency: view.portfolioCurrency,
+            portfolioName: view.name,
             section: section.section,
           })),
       ) ?? [],

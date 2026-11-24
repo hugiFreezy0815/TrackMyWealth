@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useIntl } from 'react-intl';
+import { useIntl, type IntlShape } from 'react-intl';
 import { Platform, Pressable, RefreshControl, Text, useWindowDimensions } from 'react-native';
 
 import {
@@ -25,7 +25,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { POSITION_TABLE_MIN_WIDTH, type PositionSort } from '@/features/portfolio-view/model';
 
 import { InvestmentActivity } from './activity';
-import { CHIP_SORT_KEYS, DEFAULT_POSITION_SORT, visiblePositionSort } from './model';
+import { CHIP_SORT_KEYS, DEFAULT_POSITION_SORT, visiblePositionSort, type Depot } from './model';
 import { PerformanceBreakdown, PerformanceCard } from './performance';
 import { DepotPositions } from './positions';
 import { useInvestments } from './use-investments';
@@ -34,11 +34,14 @@ const ALL_DEPOTS = 'all-depots';
 
 export function InvestmentsScreen({
   accountId,
+  currency,
   onScope,
   onAddDepot,
   onAccount,
 }: {
   accountId?: string;
+  /** The Overview scope currency the Depot tile showed; the subtotal uses it (default: workspace). */
+  currency?: string;
   onScope: (accountId?: string) => void;
   onAddDepot: (portfolioId?: string) => void;
   onAccount: (accountId: string, tab: 'activity' | 'positions') => void;
@@ -66,7 +69,7 @@ export function InvestmentsScreen({
   const [performanceAccount, setPerformanceAccount] = useState<string>();
   const [showPortfolioPicker, setShowPortfolioPicker] = useState(false);
   const [explainedScope, setExplainedScope] = useState<string>();
-  const data = useInvestments(accountId);
+  const data = useInvestments(accountId, currency);
   const selectedId = data.depot?.account.accountId;
   const scope = selectedId ?? (data.showAll ? ALL_DEPOTS : undefined);
   const results = [
@@ -196,9 +199,9 @@ export function InvestmentsScreen({
           label={msg(intl, 'investments.scope')}
           options={[
             { value: ALL_DEPOTS, label: msg(intl, 'investments.all') },
-            ...data.depots.map(({ account }) => ({
-              value: account.accountId,
-              label: account.name,
+            ...data.depots.map((depot) => ({
+              value: depot.account.accountId,
+              label: depotLabel(intl, depot, data.depots),
             })),
           ]}
           selected={scope ? [scope] : []}
@@ -328,4 +331,15 @@ export function InvestmentsScreen({
       ) : null}
     </ShellScreen>
   );
+}
+
+/** A depot named like another one (in another portfolio) also names its portfolio. */
+function depotLabel(intl: IntlShape, depot: Depot, depots: readonly Depot[]) {
+  const namesakes = depots.filter(({ account }) => account.name === depot.account.name);
+  return namesakes.length > 1
+    ? msg(intl, 'investments.scopeInPortfolio', {
+        depot: depot.account.name,
+        portfolio: depot.portfolioName,
+      })
+    : depot.account.name;
 }
