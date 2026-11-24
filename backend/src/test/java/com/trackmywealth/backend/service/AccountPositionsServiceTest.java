@@ -16,6 +16,7 @@ import com.trackmywealth.backend.dto.NativeAccountValue;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ReportedAccountHoldings;
 import com.trackmywealth.backend.dto.ReportedHoldingValue;
+import com.trackmywealth.backend.dto.TradeLeg;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.Account;
@@ -27,6 +28,7 @@ import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.SecurityRepository;
 import com.trackmywealth.backend.repository.SnapshotHoldingRepository;
+import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
@@ -56,6 +58,7 @@ class AccountPositionsServiceTest {
   private final FxRateService fx = mock(FxRateService.class);
   private final AuthenticatedUserPrincipal actor = mock(AuthenticatedUserPrincipal.class);
   private final BusinessDateService businessDates = mock(BusinessDateService.class);
+  private final TransactionRepository transactions = mock(TransactionRepository.class);
   private final AccountPositionsService service =
       new AccountPositionsService(
           accountLookup,
@@ -65,6 +68,7 @@ class AccountPositionsServiceTest {
           holdings,
           securities,
           fx,
+          new OrderCostBasisService(transactions),
           businessDates,
           "ECB");
 
@@ -421,6 +425,38 @@ class AccountPositionsServiceTest {
     assertThat(summary.foreignCurrencyCostBasisCount()).isEqualTo(1);
   }
 
+  // US-15-15: the depot total counts a position without a cost basis once its orders explain it.
+  @Test
+  void aPositionWithoutACostBasisCountsTowardsTheDepotGainWithItsOrdersCost() {
+    UUID security = UUID.randomUUID();
+    ReportedHoldingValue lacking =
+        new Line(
+            accountId,
+            AS_OF,
+            false,
+            new BigDecimal("600"),
+            "CHF",
+            true,
+            null,
+            null,
+            null,
+            security,
+            BigDecimal.TEN);
+    statement(reported(false, "0", "CHF"), position("500", "CHF", "410"), lacking);
+    when(transactions.findTradesAsOf(List.of(accountId), AS_OF))
+        .thenReturn(
+            List.of(
+                new TradeLeg(
+                    accountId, security, BigDecimal.TEN, new BigDecimal("52"), "CHF", AS_OF)));
+
+    ReportedAccountHoldings summary = summary();
+
+    // (500 - 410) + (600 - 520) = 170 of 930 cost = 18.28 %.
+    assertThat(summary.missingCostBasisCount()).isNull();
+    assertThat(summary.totalReturn()).isEqualByComparingTo("170");
+    assertThat(summary.totalReturnPercent()).isEqualByComparingTo("18.28");
+  }
+
   // PO 2026-11-23 (#527): a foreign position counts towards the depot's gain with its cost at the
   // purchase-date rate - its CHF value today minus that cost, never its USD gain converted today.
   @Test
@@ -438,7 +474,9 @@ class AccountPositionsServiceTest {
             true,
             new BigDecimal("80"),
             "USD",
-            new BigDecimal("72")));
+            new BigDecimal("72"),
+            UUID.randomUUID(),
+            BigDecimal.ONE));
 
     ReportedAccountHoldings summary = summary();
 
@@ -553,6 +591,8 @@ class AccountPositionsServiceTest {
         false,
         null,
         null,
+        null,
+        null,
         null);
   }
 
@@ -568,7 +608,9 @@ class AccountPositionsServiceTest {
         // In the quoted currency: certain for a position in the account currency, without a
         // purchase-rate cost for any other (#527).
         costBasis == null ? null : currency,
-        null);
+        null,
+        UUID.randomUUID(),
+        BigDecimal.ONE);
   }
 
   private record Line(
@@ -580,8 +622,20 @@ class AccountPositionsServiceTest {
       boolean holding,
       BigDecimal reportedCostBasis,
       String reportedCostBasisCurrency,
-      BigDecimal costBasisInAccountCurrency)
+      BigDecimal costBasisInAccountCurrency,
+      UUID securityId,
+      BigDecimal quantity)
       implements ReportedHoldingValue {
+
+    @Override
+    public UUID getSecurityId() {
+      return securityId;
+    }
+
+    @Override
+    public BigDecimal getQuantity() {
+      return quantity;
+    }
 
     @Override
     public String getReportedCostBasisCurrency() {

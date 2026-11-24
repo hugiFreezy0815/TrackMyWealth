@@ -3,10 +3,14 @@ package com.trackmywealth.backend.service;
 import com.trackmywealth.backend.dto.AccountPositionResponse;
 import com.trackmywealth.backend.dto.AccountPositionsResponse;
 import com.trackmywealth.backend.dto.AccountPositionsSource;
+import com.trackmywealth.backend.dto.CostBasisSource;
+import com.trackmywealth.backend.dto.CostFromOrders;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
+import com.trackmywealth.backend.dto.HoldingWithOrderCost;
 import com.trackmywealth.backend.dto.NativeAccountValue;
 import com.trackmywealth.backend.dto.ReportedAccountHoldings;
 import com.trackmywealth.backend.dto.ReportedHoldingValue;
+import com.trackmywealth.backend.dto.TradeLeg;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.Account;
@@ -39,13 +43,16 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * US-15-05: read the latest provider/manual snapshot with holdings, independently of newer
- * balance-only snapshots. Never infer a market price or a cost basis that was not reported. Account
- * access is checked before reading holdings (which have no independent RLS policy).
+ * balance-only snapshots. Never infer a market price or a cost basis that was not reported - except
+ * a cost basis the account's orders explain (US-15-15, {@link OrderCostBasisService}) for a
+ * position the snapshot holds none for. Account access is checked before reading holdings (which
+ * have no independent RLS policy).
  */
 @Service
 public class AccountPositionsService {
 
   private static final AccountPositionsSource SOURCE = AccountPositionsSource.HOLDINGS_SNAPSHOT;
+  private static final String MANUAL = "MANUAL";
 
   private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
@@ -54,6 +61,7 @@ public class AccountPositionsService {
   private final SnapshotHoldingRepository holdingRepository;
   private final SecurityRepository securityRepository;
   private final FxRateService fxRateService;
+  private final OrderCostBasisService orderCostBasisService;
   private final BusinessDateService businessDates;
   private final String fxSource;
 
@@ -65,6 +73,7 @@ public class AccountPositionsService {
       SnapshotHoldingRepository holdingRepository,
       SecurityRepository securityRepository,
       FxRateService fxRateService,
+      OrderCostBasisService orderCostBasisService,
       BusinessDateService businessDates,
       @Value("${app.fx.default-source}") String fxSource) {
     this.accountLookupService = accountLookupService;
@@ -74,6 +83,7 @@ public class AccountPositionsService {
     this.holdingRepository = holdingRepository;
     this.securityRepository = securityRepository;
     this.fxRateService = fxRateService;
+    this.orderCostBasisService = orderCostBasisService;
     this.businessDates = businessDates;
     this.fxSource = fxSource;
   }
@@ -107,13 +117,31 @@ public class AccountPositionsService {
         from ->
             quotes.computeIfAbsent(
                 from, key -> fxRateService.tryGetConversionRate(key, currency, today, fxSource));
+    // US-15-15: the orders only matter for a position the snapshot holds no cost basis for.
+    List<TradeLeg> trades =
+        holdings.stream().anyMatch(holding -> holding.getReportedCostBasis() == null)
+            ? orderCostBasisService
+                .tradesFor(List.of(accountId), snapshot.getSnapshotDate())
+                .getOrDefault(accountId, List.of())
+            : List.of();
+    CostBasisSource recorded =
+        MANUAL.equals(snapshot.getSource()) ? CostBasisSource.ENTERED : CostBasisSource.STATEMENT;
     List<AccountPositionResponse> positions = new ArrayList<>();
     for (SnapshotHolding holding : holdings) {
       Security security = securities.get(holding.getSecurityId());
       if (security == null) {
         throw new IllegalStateException("Snapshot holding refers to a missing security.");
       }
-      positions.add(toPosition(holding, security, currency, rates));
+      Optional<CostFromOrders> fromOrders =
+          holding.getReportedCostBasis() == null
+              ? OrderCostBasisService.costBasis(
+                  trades,
+                  holding.getSecurityId(),
+                  snapshot.getSnapshotDate(),
+                  holding.getQuantity(),
+                  holding.getReportedCurrency())
+              : Optional.empty();
+      positions.add(toPosition(holding, security, currency, rates, recorded, fromOrders));
     }
     positions.sort(
         Comparator.comparing(
@@ -126,10 +154,43 @@ public class AccountPositionsService {
         accountId, currency, snapshot.getSnapshotDate(), SOURCE, complete, positions);
   }
 
-  /** Read the statement components for accounts already authorized by the caller. */
+  /**
+   * Read the statement components for accounts already authorized by the caller. A position without
+   * a cost basis carries the one its orders give, if they explain it (US-15-15).
+   */
   Map<UUID, List<ReportedHoldingValue>> reportedHoldingsFor(List<UUID> accountIds, LocalDate asOf) {
-    return snapshotRepository.findLatestReportedHoldings(accountIds, asOf).stream()
+    List<ReportedHoldingValue> components =
+        snapshotRepository.findLatestReportedHoldings(accountIds, asOf);
+    List<UUID> lacking =
+        components.stream()
+            .filter(component -> component.isHolding() && component.getReportedCostBasis() == null)
+            .map(ReportedHoldingValue::getAccountId)
+            .distinct()
+            .toList();
+    Map<UUID, List<TradeLeg>> trades = orderCostBasisService.tradesFor(lacking, asOf);
+    return components.stream()
+        .map(component -> withOrderCost(component, trades))
         .collect(Collectors.groupingBy(ReportedHoldingValue::getAccountId));
+  }
+
+  private static ReportedHoldingValue withOrderCost(
+      ReportedHoldingValue component, Map<UUID, List<TradeLeg>> trades) {
+    UUID securityId = component.getSecurityId();
+    BigDecimal quantity = component.getQuantity();
+    if (!component.isHolding()
+        || component.getReportedCostBasis() != null
+        || securityId == null
+        || quantity == null) {
+      return component;
+    }
+    return OrderCostBasisService.costBasis(
+            trades.getOrDefault(component.getAccountId(), List.of()),
+            securityId,
+            component.getSnapshotDate(),
+            quantity,
+            component.getReportedCurrency())
+        .<ReportedHoldingValue>map(cost -> new HoldingWithOrderCost(component, cost))
+        .orElse(component);
   }
 
   /** Convert each component directly to the target. An incomplete statement has no value. */
@@ -223,7 +284,9 @@ public class AccountPositionsService {
       SnapshotHolding holding,
       Security security,
       String accountCurrency,
-      Function<String, Optional<CurrencyConversionResult>> rates) {
+      Function<String, Optional<CurrencyConversionResult>> rates,
+      CostBasisSource recorded,
+      Optional<CostFromOrders> fromOrders) {
     BigDecimal reported = holding.getReportedValue();
     String reportedCurrency = holding.getReportedCurrency();
     CurrencyConversionResult rate = rate(reported, reportedCurrency, accountCurrency, rates);
@@ -231,6 +294,14 @@ public class AccountPositionsService {
         inAccountCurrency(reported, reportedCurrency, accountCurrency, rate);
     BigDecimal costBasis = holding.getReportedCostBasis();
     String costCurrency = holding.getReportedCostBasisCurrency();
+    BigDecimal costInAccountCurrency = holding.getCostBasisInAccountCurrency();
+    CostBasisSource source = costBasis == null ? null : recorded;
+    if (fromOrders.isPresent()) {
+      costBasis = fromOrders.get().costBasis();
+      costCurrency = fromOrders.get().currency();
+      costInAccountCurrency = null;
+      source = CostBasisSource.ORDERS;
+    }
 
     // The gain in the cost basis' own currency: against the account-currency value for a cost in
     // the account currency, against the statement's value for a cost in the quoted currency.
@@ -244,8 +315,7 @@ public class AccountPositionsService {
       gainCurrency = reportedCurrency;
     }
     BigDecimal accountCost =
-        accountCost(
-            costBasis, costCurrency, holding.getCostBasisInAccountCurrency(), accountCurrency);
+        accountCost(costBasis, costCurrency, costInAccountCurrency, accountCurrency);
     BigDecimal accountGain = difference(inAccountCurrency, accountCost);
 
     ValueStatus status = status(inAccountCurrency, rate, holding.isCostBasisEstimated());
@@ -260,8 +330,9 @@ public class AccountPositionsService {
         inAccountCurrency,
         costBasis,
         costCurrency,
-        holding.getCostBasisInAccountCurrency(),
+        costInAccountCurrency,
         holding.isCostBasisEstimated(),
+        source,
         gain,
         gain == null ? null : gainPercent(gain, costBasis),
         gain == null ? null : gainCurrency,

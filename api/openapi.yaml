@@ -23210,7 +23210,8 @@ components:
           - string
           - "null"
           format: decimal
-          description: "Cost basis as the statement printed it, never converted."
+          description: "Cost basis as the snapshot holds it (printed or entered),\
+            \ or else as the orders give it (costBasisSource); never converted."
         costBasisCurrency:
           type:
           - string
@@ -23226,6 +23227,19 @@ components:
             \ today's rate."
         costBasisEstimated:
           type: boolean
+        costBasisSource:
+          type:
+          - string
+          - "null"
+          description: "Where costBasis comes from (US-15-15): STATEMENT as an imported\
+            \ statement printed it, ENTERED by the member, ORDERS calculated at the\
+            \ average price of the account's buys and sells (fees excluded) when the\
+            \ snapshot has none. Null without a cost basis."
+          enum:
+          - STATEMENT
+          - ENTERED
+          - ORDERS
+          - null
         unrealisedGain:
           type:
           - string
@@ -23275,6 +23289,7 @@ components:
       - costBasisCurrency
       - costBasisEstimated
       - costBasisInAccountCurrency
+      - costBasisSource
       - displayName
       - isin
       - price

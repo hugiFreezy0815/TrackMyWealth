@@ -123,6 +123,11 @@ Every row comes from `sections[].accounts[]` (`AccountRow`) and opens [Account d
 "{quantity} units · {isin}", `valueInAccountCurrency`, and `unrealisedGainPercent` as a
 signed % with gain/loss colour **plus sign**. `costBasisEstimated` adds "Estimated". Without
 a cost basis the % is "–" with the explanation "No cost basis yet" (M24, insufficient data).
+A position whose snapshot has no cost basis gets one from its orders when its buys and sells
+up to the snapshot date add up to the quantity held, at their average price, fees excluded
+(US-15-15, #714): `costBasisSource` is then `ORDERS` (`STATEMENT` or `ENTERED` for one the
+snapshot holds). It is in the orders' currency, with no cost in the depot currency for a
+foreign one.
 The gain shown is labelled with its own currency (#527):
 
 - `unrealisedGainInAccountCurrency` (+ its %) in the depot currency when the position's cost
