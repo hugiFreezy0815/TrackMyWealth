@@ -8,11 +8,12 @@ the web export, with every API call mocked in Playwright (`page.route`) using sy
   state.
 - **Checks per run:**
   - field 7 is present, or absent in the hidden state;
-  - it sits between the panel title row and the first repayment row;
+  - it sits between the panel title row and the first repayment row, and is the panel's
+    second child (the block right after the title row);
   - "See all" is in the title row;
   - nothing overflows horizontally.
 - **axe** (WCAG 2.1 AA): runs at 320 px on the error, partial and dark runs.
-- **Result:** 114 of 114 checks pass ([results.json](results.json)). The screenshots
+- **Result:** 138 of 138 checks pass ([results.json](results.json)). The screenshots
   (`<lang>-<scheme>-<width>-<state>.png`) show the Repayments panel.
 
 Run it again:

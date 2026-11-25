@@ -172,7 +172,11 @@ function InterestThisYear({ accountId, unavailable }: { accountId: string; unava
   const secondary = { ...TypeScale.caption, color: theme.textSecondary };
   if (failed || !current || !totals.data) {
     return (
-      <View accessible accessibilityLabel={msg(intl, 'loan.interestYtdUnavailable', { year })}>
+      <View
+        accessible
+        role="group"
+        accessibilityLabel={msg(intl, 'loan.interestYtdUnavailable', { year })}
+      >
         <Text style={{ ...TypeScale.labelSmall, color: theme.textSecondary }}>{title}</Text>
         <Text style={{ ...TypeScale.numberLarge, color: theme.textPrimary }}>–</Text>
       </View>
@@ -197,13 +201,16 @@ function InterestThisYear({ accountId, unavailable }: { accountId: string; unava
     interest?.label ?? msg(intl, 'loan.interestUnknown'),
     meta,
     splitEstimated ? msg(intl, 'loan.estimatedSplit') : null,
+    // The children are not read on their own, so the visible explanation must be in the label.
+    splitEstimated ? msg(intl, 'loan.interestYtdEstimated') : null,
     unsplit ? msg(intl, 'loan.interestYtdPartial', { amount: unsplit.label }) : null,
   ]
     .filter(Boolean)
     .join(', ');
 
   return (
-    <View accessible accessibilityLabel={label} style={{ gap: Spacing.one }}>
+    // `role="group"`: on web an aria-label is only valid on an element with a role.
+    <View accessible role="group" accessibilityLabel={label} style={{ gap: Spacing.one }}>
       <Text style={{ ...TypeScale.labelSmall, color: theme.textSecondary }}>{title}</Text>
       {known ? (
         <Amount value={interestPaid} currency={currency} style={TypeScale.numberLarge} />
@@ -222,7 +229,10 @@ function InterestThisYear({ accountId, unavailable }: { accountId: string; unava
       >
         <Text style={secondary}>{meta}</Text>
         {splitEstimated ? (
-          <LiabilityBadge tone="warning" label={msg(intl, 'loan.estimatedSplit')} />
+          // The wrapper takes the row's centering; the badge itself keeps `alignSelf`.
+          <View>
+            <LiabilityBadge tone="warning" label={msg(intl, 'loan.estimatedSplit')} />
+          </View>
         ) : null}
       </View>
       {splitEstimated ? (

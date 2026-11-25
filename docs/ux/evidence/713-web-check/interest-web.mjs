@@ -144,20 +144,22 @@ try {
           const title = page.getByText(t.title, { exact: true });
           const shown = (await title.count()) > 0;
           check(`${tag}: field 7 ${state === 'hidden' ? 'absent' : 'present'}`, state === 'hidden' ? !shown : shown);
-          const m = await page.evaluate(({ titleText, headerText }) => {
-            const all = [...document.querySelectorAll('div,span')];
-            const h = all.find((el) => el.textContent === headerText && el.getAttribute('role') === 'heading');
-            const ti = all.find((el) => el.textContent === titleText && el.children.length === 0);
-            const panel = h?.parentElement?.parentElement;
+          // Start from the heading Playwright found: RN-web may render it as an h* element.
+          const m = await header.first().evaluate((h, titleText) => {
+            const panel = h.parentElement?.parentElement;
             const rows = panel ? [...panel.children] : [];
+            const ti = panel
+              ? [...panel.querySelectorAll('*')].find((el) => el.textContent === titleText && el.children.length === 0)
+              : undefined;
             return {
               pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
               // Field 7 is the first block after the title row.
               firstBlockIsField: ti ? rows[1]?.contains(ti) ?? false : null,
               panelOverflow: panel ? panel.scrollWidth - panel.clientWidth : null,
             };
-          }, { titleText: t.title, headerText: t.header });
-          check(`${tag}: no horizontal overflow`, m.pageOverflow <= 0 && (m.panelOverflow ?? 0) <= 0, JSON.stringify(m));
+          }, t.title);
+          if (shown) check(`${tag}: field 7 is rows[1] of the panel`, m.firstBlockIsField === true, JSON.stringify(m));
+          check(`${tag}: no horizontal overflow`, m.pageOverflow <= 0 && m.panelOverflow !== null && m.panelOverflow <= 0, JSON.stringify(m));
           if (shown) {
             // Field 7 sits between the title row and the first repayment row.
             const hb = await header.boundingBox();

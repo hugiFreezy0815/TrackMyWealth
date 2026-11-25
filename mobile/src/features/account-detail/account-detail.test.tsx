@@ -664,7 +664,9 @@ describe('S10 liability detail (#685)', () => {
       // One badge for the year sum, one for the estimated repayment row.
       expect(screen.getAllByText('Estimated split')).toHaveLength(2);
       expect(screen.getByText('Some of this year’s splits were estimated.')).toBeTruthy();
-      expect(field().props.accessibilityLabel).toMatch(/, From 2 repayments, Estimated split$/);
+      expect(field().props.accessibilityLabel).toMatch(
+        /, From 2 repayments, Estimated split, Some of this year’s splits were estimated\.$/,
+      );
     });
 
     it('names the payments the sum leaves out because their split is unknown', async () => {

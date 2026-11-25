@@ -39,7 +39,8 @@ export function LiabilityPanel({
         >
           {title}
         </Text>
-        {action}
+        {/* The wrapper takes the row's centering; the link itself keeps `alignSelf`. */}
+        {action ? <View>{action}</View> : null}
       </View>
       {children}
     </View>
