@@ -43,6 +43,26 @@ public class WorkspaceProvisioningService {
                     "SELECT COALESCE(current_setting('app.current_workspace_id', true), '')")
                 .getSingleResult();
     setWorkspaceContext(workspaceId.toString());
+    WorkspaceMember member;
+    try {
+      member = provision(workspaceId, email, workspaceName, currency);
+    } catch (RuntimeException e) {
+      // A caller that catches the failure must not go on in the new tenant's RLS context. After a
+      // failed write PostgreSQL has aborted the transaction and the restore fails too; the
+      // original failure is the one to report.
+      try {
+        setWorkspaceContext(previousContext);
+      } catch (RuntimeException restoreFailure) {
+        e.addSuppressed(restoreFailure);
+      }
+      throw e;
+    }
+    setWorkspaceContext(previousContext);
+    return member;
+  }
+
+  private WorkspaceMember provision(
+      UUID workspaceId, String email, String workspaceName, String currency) {
     Workspace workspace = new Workspace();
     workspace.setId(workspaceId);
     workspace.setName(WorkspaceNames.normalize(workspaceName));
@@ -54,10 +74,8 @@ public class WorkspaceProvisioningService {
             .orElseThrow(
                 () -> new IllegalStateException("Missing default Personal Assets portfolio."));
     personalAssets.setPortfolioCurrency(currency);
-    WorkspaceMember member = members.saveAndFlush(WorkspaceMember.newLoginMember(workspace, email));
     // The caller links the login before commit. A failed write rolls back all three rows.
-    setWorkspaceContext(previousContext);
-    return member;
+    return members.saveAndFlush(WorkspaceMember.newLoginMember(workspace, email));
   }
 
   private void setWorkspaceContext(String workspaceId) {

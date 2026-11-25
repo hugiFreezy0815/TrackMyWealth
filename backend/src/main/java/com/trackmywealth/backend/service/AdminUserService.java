@@ -10,6 +10,7 @@ import com.trackmywealth.backend.repository.AdminAuditLogRepository;
 import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.repository.RefreshTokenRepository;
 import com.trackmywealth.backend.repository.UserSessionRepository;
+import com.trackmywealth.backend.validation.WorkspaceNames;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
@@ -69,9 +70,13 @@ public class AdminUserService {
   public UserSummaryResponse createUser(CreateUserRequest request, UUID actorUserId) {
     assertEmailAvailable(request.email());
     boolean standardUser = UserRoleValues.STANDARD_USER.equals(request.role());
-    if (!standardUser && (request.workspaceName() != null || request.currencyCode() != null)) {
+    // A field combination the request alone gets wrong, so 400 rather than a state conflict. A
+    // blank name means "no name" (WorkspaceNames), so it is no workspace setting.
+    if (!standardUser
+        && (WorkspaceNames.normalize(request.workspaceName()) != null
+            || request.currencyCode() != null)) {
       throw new ResponseStatusException(
-          HttpStatus.CONFLICT, "Workspace settings apply only to Standard Users.");
+          HttpStatus.BAD_REQUEST, "Workspace settings apply only to Standard Users.");
     }
 
     AppUser user = new AppUser();
@@ -124,9 +129,10 @@ public class AdminUserService {
       changes.put("language", request.language());
       target.setLanguage(request.language());
     }
+    // FR-USR-013: a role is fixed at creation. Rejected as bad input (400), not as a conflict a
+    // refetch could resolve.
     if (request.role() != null && !request.role().equals(target.getRole())) {
-      throw new ResponseStatusException(
-          HttpStatus.CONFLICT, "Cannot change a user's role across the workspace boundary.");
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A user's role cannot be changed.");
     }
 
     target = saveOrRejectDuplicateEmail(target);

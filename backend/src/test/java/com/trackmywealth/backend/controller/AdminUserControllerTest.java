@@ -201,7 +201,7 @@ class AdminUserControllerTest {
         .body(new EditUserRequest(null, "SYSTEM_ADMINISTRATOR", null))
         .exchange()
         .expectStatus()
-        .isEqualTo(HttpStatus.CONFLICT);
+        .isEqualTo(HttpStatus.BAD_REQUEST);
 
     adminClient(adminToken)
         .post()
@@ -217,7 +217,24 @@ class AdminUserControllerTest {
                 null))
         .exchange()
         .expectStatus()
-        .isEqualTo(HttpStatus.CONFLICT);
+        .isEqualTo(HttpStatus.BAD_REQUEST);
+
+    // A blank name means "no name", so it is no workspace setting.
+    adminClient(adminToken)
+        .post()
+        .uri("/api/v1/admin/users")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateUserRequest(
+                "blank-name-admin@example.com",
+                "another-strong-password",
+                "SYSTEM_ADMINISTRATOR",
+                "EN",
+                "   ",
+                null))
+        .exchange()
+        .expectStatus()
+        .isCreated();
   }
 
   @Test
@@ -596,7 +613,7 @@ class AdminUserControllerTest {
         .body(new EditUserRequest(null, "STANDARD_USER", null))
         .exchange()
         .expectStatus()
-        .isEqualTo(HttpStatus.CONFLICT);
+        .isEqualTo(HttpStatus.BAD_REQUEST);
 
     AppUser stillAdmin = appUserRepository.findById(admin.getId()).orElseThrow();
     assertThat(stillAdmin.getStatus()).isEqualTo("ACTIVE");
@@ -637,7 +654,7 @@ class AdminUserControllerTest {
         .body(new EditUserRequest(null, "STANDARD_USER", null))
         .exchange()
         .expectStatus()
-        .isEqualTo(HttpStatus.CONFLICT);
+        .isEqualTo(HttpStatus.BAD_REQUEST);
 
     // Two active administrators: disabling one is fine.
     adminClient(adminToken)

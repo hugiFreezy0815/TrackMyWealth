@@ -2564,6 +2564,7 @@ export interface components {
     EditUserRequest: {
       /** Format: email */
       email?: string;
+      /** @description Must equal the user's current role: a role is fixed at creation. Any other value is rejected with 400. */
       role?: string;
       language?: string;
     };
@@ -3923,7 +3924,7 @@ export interface components {
       password: string;
       /**
        * @deprecated
-       * @description Legacy setup field. Create a Standard User to provision a workspace.
+       * @description Legacy setup field, validated but ignored: setup creates no workspace. Create a Standard User to provision one.
        */
       workspaceName?: string;
       currencyCode: string;

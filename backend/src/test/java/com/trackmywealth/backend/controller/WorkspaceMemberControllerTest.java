@@ -388,10 +388,10 @@ class WorkspaceMemberControllerTest {
         .containsExactly(foreign);
   }
 
-  // FR-USR-07: the administrator is not one of the workspace's people, even while setup still
-  // makes it the sole member (until FR-USR-013) - so it gets the generic 404, not an empty list.
+  // FR-USR-07/FR-USR-013: the administrator belongs to no workspace, so it gets the generic 404,
+  // not an empty list - audited like every other denial (US-28-02), with no workspace id to name.
   @Test
-  void theAdministratorCannotListMembers() {
+  void theAdministratorCannotListMembers() throws Exception {
     String adminToken =
         WorkspaceLoginFixtures.bootstrapAdministrator(anonymousClient()).accessToken();
 
@@ -401,6 +401,18 @@ class WorkspaceMemberControllerTest {
         .exchange()
         .expectStatus()
         .isNotFound();
+
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT count(*) FROM authorization_denial_log WHERE principal_user_id = ? AND"
+                    + " requested_entity_type = 'Workspace' AND requested_entity_id IS NULL")) {
+      statement.setObject(1, appUserIdForEmail("fixture-admin@example.com"));
+      try (ResultSet resultSet = statement.executeQuery()) {
+        resultSet.next();
+        assertThat(resultSet.getLong(1)).isEqualTo(1);
+      }
+    }
   }
 
   // The id tie-break makes the order stable when display names repeat. PostgreSQL orders uuid

@@ -24911,6 +24911,8 @@ components:
           format: email
         role:
           type: string
+          description: "Must equal the user's current role: a role is fixed at creation.\
+            \ Any other value is rejected with 400."
           pattern: SYSTEM_ADMINISTRATOR|STANDARD_USER
         language:
           type: string
@@ -28429,7 +28431,8 @@ components:
         workspaceName:
           type: string
           deprecated: true
-          description: Legacy setup field. Create a Standard User to provision a workspace.
+          description: "Legacy setup field, validated but ignored: setup creates no\
+            \ workspace. Create a Standard User to provision one."
         currencyCode:
           type: string
           minLength: 1

@@ -14,7 +14,9 @@ public record SetupAdministratorRequest(
     @NotBlank @Size(min = 12) String password,
     @Schema(
             deprecated = true,
-            description = "Legacy setup field. Create a Standard User to provision a workspace.")
+            description =
+                "Legacy setup field, validated but ignored: setup creates no workspace. Create a"
+                    + " Standard User to provision one.")
         @ValidWorkspaceName
         String workspaceName,
     // US-04-01: validated against java.util.Currency (via @ValidCurrencyCode), not just

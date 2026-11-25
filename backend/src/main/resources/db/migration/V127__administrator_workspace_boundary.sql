@@ -21,7 +21,9 @@ ADD CONSTRAINT chk_app_user_admin_has_no_workspace_member
 CHECK (role <> 'SYSTEM_ADMINISTRATOR' OR workspace_member_id IS NULL);
 
 -- Metadata only. This uses the same owner and RLS configuration as V81's auth lookups.
-CREATE FUNCTION public.admin_workspace_metadata()
+-- SECURITY DEFINER functions are never inlined, so the page is cut inside the function: a caller's
+-- LIMIT/OFFSET outside it would run only after the whole table was read and sorted.
+CREATE FUNCTION public.admin_workspace_metadata(page_limit INTEGER, page_offset BIGINT)
 RETURNS TABLE (id UUID, name TEXT)
 LANGUAGE sql
 STABLE
@@ -30,15 +32,31 @@ SET search_path = pg_catalog, pg_temp
 SET row_security = off
 AS $$
     SELECT w.id, w.name
-    FROM public.workspace AS w;
+    FROM public.workspace AS w
+    ORDER BY w.id
+    LIMIT page_limit OFFSET page_offset;
 $$;
 
-REVOKE ALL ON FUNCTION public.admin_workspace_metadata() FROM PUBLIC;
+CREATE FUNCTION public.admin_workspace_count()
+RETURNS BIGINT
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+SET row_security = off
+AS $$
+    SELECT count(*) FROM public.workspace;
+$$;
+
+REVOKE ALL ON FUNCTION public.admin_workspace_metadata(INTEGER, BIGINT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_workspace_count() FROM PUBLIC;
 
 DO $$
 BEGIN
     IF to_regrole('trackmywealth_runtime') IS NOT NULL THEN
-        GRANT EXECUTE ON FUNCTION public.admin_workspace_metadata() TO trackmywealth_runtime;
+        GRANT EXECUTE ON FUNCTION public.admin_workspace_metadata(INTEGER, BIGINT)
+        TO trackmywealth_runtime;
+        GRANT EXECUTE ON FUNCTION public.admin_workspace_count() TO trackmywealth_runtime;
     END IF;
 END;
 $$;

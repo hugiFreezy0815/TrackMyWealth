@@ -191,13 +191,13 @@ class AdministratorFinancialAccessTest {
     assertThat((Long) query("SELECT count(*) FROM portfolio WHERE name = ?", "Sneaky Bank"))
         .isZero();
 
-    // Refusals of resource lookups remain audited.
+    // Every refusal is audited, workspace-level ones included, and administration still works.
     assertThat(
             (Long)
                 query(
                     "SELECT count(*) FROM authorization_denial_log d"
                         + " JOIN app_user u ON u.id = d.principal_user_id"
-                        + " WHERE u.email = ?",
+                        + " WHERE u.email = ? AND d.requested_entity_type = 'Workspace'",
                     "admin@example.com"))
         .isPositive();
     client(adminToken).get().uri("/api/v1/admin/reference-data").exchange().expectStatus().isOk();

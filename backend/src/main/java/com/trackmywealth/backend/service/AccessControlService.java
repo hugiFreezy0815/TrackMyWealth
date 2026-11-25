@@ -119,10 +119,13 @@ public class AccessControlService {
   // workspace-scoped resource to ever legitimately request. JwtAuthenticationFilter already
   // refuses a token whose linked membership is not ACTIVE; the status is checked here as well so
   // a deactivated member is refused by every caller, not only by those behind the HTTP filter.
+  //
+  // FR-TEN-007/US-28-02: a principal without a workspace is an administrator reaching for
+  // workspace data. That denial is audited like any other, with no workspace id to name.
   @Transactional(readOnly = true)
   public UUID requireActingMember(AuthenticatedUserPrincipal actor) {
     if (actor.workspaceId() == null) {
-      throw new ResponseStatusException(HttpStatus.NOT_FOUND, GENERIC_NOT_FOUND_DETAIL);
+      throw denyAsNotFound(actor, WORKSPACE_ENTITY_TYPE, null);
     }
     AppUser user =
         appUserRepository

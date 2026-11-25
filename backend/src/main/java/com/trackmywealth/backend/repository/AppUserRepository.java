@@ -36,12 +36,6 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
       nativeQuery = true)
   boolean existsByEmail(@Param("email") String email);
 
-  // WorkspaceMemberService's "who is making this request" lookup - a single query against the
-  // FK column itself, not app_user's full column set followed by a lazy-association round trip
-  // (findById(...).map(AppUser::getWorkspaceMember) triggers exactly that second query).
-  @Query("SELECT u.workspaceMember.id FROM AppUser u WHERE u.id = :userId")
-  Optional<UUID> findWorkspaceMemberId(@Param(USER_ID) UUID userId);
-
   // US-02-06: the linked workspace_member's status, empty without a membership - for login, MFA
   // verification and refresh, which run before any workspace context exists. #321: RLS hides the
   // member row from a NOSUPERUSER NOBYPASSRLS runtime role at that point, so the status comes from
@@ -92,36 +86,15 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
   Optional<AppUserAuthSnapshotRow> findAuthSnapshotRow(
       @Param(USER_ID) UUID userId, @Param("sessionId") UUID sessionId);
 
-  // US-02-01's last-active-administrator guard (FR-USR-005): a row-level lock over every
-  // currently active administrator, not a DB constraint - see the comment on this rule in V2 and
-  // in the story itself. Must be called inside the same @Transactional method that then performs
-  // the disable/demote, so the lock is held until that method's own commit. PostgreSQL rejects
-  // FOR UPDATE directly on an aggregate query ("FOR UPDATE is not allowed with aggregate
-  // functions") - the inner subquery locks the actual rows, the outer aggregate then just counts
-  // the (already-locked) result. ORDER BY id on the inner subquery: this and {@code
-  // lockTargetAndActiveAdministrators} below both lock overlapping sets of these same rows from
-  // different call sites (editUser's demote path calls this one directly; disableUser calls the
-  // other) - without both acquiring them in the same deterministic order, two concurrent callers
-  // could each lock a different row in this set first and then deadlock reaching for the other's
-  // (see #62's follow-up finding: id is a random UUID, not sequential, so relying on the
-  // planner's unordered scan order to happen to agree between two different query texts is not
-  // safe).
-  @Query(
-      value =
-          "SELECT count(*) FROM (SELECT id FROM app_user WHERE role = 'SYSTEM_ADMINISTRATOR' AND"
-              + " status = 'ACTIVE' ORDER BY id FOR UPDATE) locked_active_administrators",
-      nativeQuery = true)
-  long countActiveAdministratorsForUpdate();
-
   // #62 follow-up: disableUser() must lock its target row AND (if applicable) every other
   // currently active administrator in ONE statement, not two separate ones - an earlier version
   // of this fix locked the target first via a standalone findByIdForUpdate, then conditionally
-  // took countActiveAdministratorsForUpdate's broader lock; two concurrent disableUser() calls on
-  // *different* active-administrator targets could then each hold their own target's lock first
-  // and deadlock reaching for the other's (confirmed empirically). ORDER BY id gives this query
-  // the same deterministic acquisition order as countActiveAdministratorsForUpdate above for
-  // whatever rows the two queries both end up matching, which is what actually rules a cycle out
-  // - not merely that this is "one query" per call.
+  // took a second, broader lock over every active administrator; two concurrent disableUser()
+  // calls on *different* active-administrator targets could then each hold their own target's
+  // lock first and deadlock reaching for the other's (confirmed empirically). This is now the only
+  // statement that locks active administrators (#414 removed the role change and its separate
+  // count lock). Any new lock over these rows must use the same ORDER BY id, or the two-step
+  // deadlock comes back across different SQL text.
   //
   // The second OR-branch is deliberately gated by the EXISTS check, not just "role/status =
   // active" unconditionally: an earlier version of this query always matched every active

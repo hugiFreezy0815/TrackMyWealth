@@ -5,6 +5,7 @@ import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.repository.WorkspaceRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.support.PageableExecutionUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,7 +21,13 @@ public class AdminWorkspaceService {
   public Page<AdminWorkspaceSummaryResponse> list(Pageable pageable) {
     PagingValues.requireBoundedFixedOrder(pageable);
     return PagingValues.jpaPage(
-            pageable, () -> workspaces.findAdminMetadata(pageable), workspaces::countAdminMetadata)
+            pageable,
+            () ->
+                PageableExecutionUtils.getPage(
+                    workspaces.findAdminMetadataPage(pageable.getPageSize(), pageable.getOffset()),
+                    pageable,
+                    workspaces::countAdminMetadata),
+            workspaces::countAdminMetadata)
         .map(row -> new AdminWorkspaceSummaryResponse(row.getId(), row.getName()));
   }
 }
