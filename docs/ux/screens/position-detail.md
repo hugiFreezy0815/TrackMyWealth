@@ -69,7 +69,7 @@ Details  ▸   (ISIN, symbol, currency, asset class, country, data completeness)
 | 3 | Holding value | one depot: (2) `valueInAccountCurrency`; several: G11-3 | `Amount`; status badge from `valueStatus` |
 | 4 | Units and price | (2) `quantity`, `price`, `priceCurrency`, snapshot `asOf` | "price … on {asOf}" makes the price date visible |
 | 5 | Unrealised gain | (2) `unrealisedGain`, `unrealisedGainPercent` | `PLChip`; null rules as in S11 |
-| 6 | Cost basis | (2) `costBasis`, `costBasisEstimated` | null ⇒ "No cost basis" + "Add cost basis" (→ S15 item) |
+| 6 | Cost basis | (2) `costBasis`, `costBasisEstimated`, `costBasisSource` | null ⇒ "No cost basis" + "Add cost basis" (→ S15 item). `costBasisSource = ORDERS` (calculated from the buys and sells, US-15-15 #714) ⇒ tag `portfolio.position.fromOrders` "Cost basis from orders", as on S2; never "Estimated" |
 | 7 | Held-in rows | (2) per depot | tap → S3 of that depot |
 | 8 | Activity row | G12-1: `transactionType`, `tradeDate`, `quantity`, `unitPrice`, `feeAmount`, `taxWithheldAmount`, `netAmount` | "Buy · {q} units at {price}"; fee and tax as a second line |
 | 9 | Data completeness `[advanced]` | (1) `completeness.missingFields[]` | "Missing: asset class, country". This explains the "Unknown" share in the allocation |

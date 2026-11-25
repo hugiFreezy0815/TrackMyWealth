@@ -27,10 +27,13 @@ import org.springframework.stereotype.Service;
  *       the average price, so the average price stays. Fees are not part of it.
  *   <li>Only the orders up to the snapshot's date count (by trade date, else booking date), and
  *       only those in effect: a voided, reversed or deleted order does not.
- *   <li>The orders count day by day, a day's buys before its sells: the ledger holds no time of
- *       day, and rows of one import share their recording time, so nothing else orders a same-day
- *       buy and sell. Buys among themselves, and sells among themselves, give the same cost in any
- *       order.
+ *   <li>The orders count day by day. The ledger holds no time of day, and rows of one import share
+ *       their recording time, so nothing orders a same-day buy and sell. Buys among themselves, and
+ *       sells among themselves, give the same cost in any order. A day with both counts its buys
+ *       before its sells only when the order cannot change the cost: every lot in play - the units
+ *       held before the day and the day's buys - has one unit price. Otherwise (say 10 held at 100,
+ *       then a sale of 10 and a buy of 10 at 50 on one day: 500 or 750) the position has no cost
+ *       basis (#719 review).
  *   <li>The orders must add up to exactly the quantity held: an order missing, a transfer-in or an
  *       opening holding without orders (#233), a split, or a sale of more than was bought leaves
  *       the position without a cost basis. Nothing is estimated (FR-PERF-018).
@@ -76,7 +79,7 @@ public class OrderCostBasisService {
   /**
    * The cost basis of {@code heldQuantity} units of {@code securityId} held on {@code date}, from
    * the account's {@code trades}, in any order; empty when the orders do not explain the position
-   * (see the class comment).
+   * or a same-day buy and sell leave it open (see the class comment).
    *
    * @param positionCurrency the currency the position is quoted in, null when not reported
    */
@@ -97,7 +100,14 @@ public class OrderCostBasisService {
                 Comparator.comparing(TradeLeg::tradeDate)
                     .thenComparing(trade -> trade.quantity().signum() < 0))
             .toList();
+    LocalDate checkedDay = null;
     for (TradeLeg trade : ordered) {
+      if (!trade.tradeDate().equals(checkedDay)) {
+        checkedDay = trade.tradeDate();
+        if (sameDayOrderMatters(ordered, checkedDay, quantity, cost)) {
+          return Optional.empty();
+        }
+      }
       if (currency != null && !currency.equals(trade.currency())) {
         return Optional.empty();
       }
@@ -126,5 +136,32 @@ public class OrderCostBasisService {
     return Optional.of(
         new CostFromOrders(
             cost.setScale(FxRateService.MONEY_SCALE, RoundingMode.HALF_UP), currency));
+  }
+
+  /**
+   * Whether the unknown order of {@code day}'s buys and sells could change the cost: the day has
+   * both, and the lots in play - {@code heldQuantity} held before the day at {@code heldCost}, and
+   * the day's buys - do not all have one unit price.
+   */
+  private static boolean sameDayOrderMatters(
+      List<TradeLeg> ordered, LocalDate day, BigDecimal heldQuantity, BigDecimal heldCost) {
+    List<TradeLeg> sameDay =
+        ordered.stream().filter(trade -> trade.tradeDate().equals(day)).toList();
+    if (sameDay.stream().noneMatch(trade -> trade.quantity().signum() < 0)) {
+      return false;
+    }
+    List<BigDecimal> buyPrices =
+        sameDay.stream()
+            .filter(trade -> trade.quantity().signum() > 0)
+            .map(TradeLeg::unitPrice)
+            .toList();
+    if (buyPrices.isEmpty()) {
+      return false;
+    }
+    BigDecimal price = buyPrices.get(0);
+    if (buyPrices.stream().anyMatch(other -> other.compareTo(price) != 0)) {
+      return true;
+    }
+    return heldQuantity.signum() > 0 && heldCost.compareTo(heldQuantity.multiply(price)) != 0;
   }
 }

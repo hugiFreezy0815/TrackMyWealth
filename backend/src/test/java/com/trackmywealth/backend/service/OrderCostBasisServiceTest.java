@@ -29,7 +29,11 @@ class OrderCostBasisServiceTest {
   @Test
   void aSaleKeepsTheAveragePrice() {
     // An average of 60.00 after the buys; 20 units left at 60.00.
-    List<TradeLeg> trades = List.of(trade("20", "50"), trade("10", "80"), trade("-10", "90"));
+    List<TradeLeg> trades =
+        List.of(
+            trade("20", "50", DATE.minusDays(1)),
+            trade("10", "80", DATE.minusDays(1)),
+            trade("-10", "90", DATE));
 
     assertThat(cost(trades, "20", "CHF"))
         .contains(new CostFromOrders(new BigDecimal("1200.0000"), "CHF"));
@@ -47,32 +51,60 @@ class OrderCostBasisServiceTest {
         .contains(new CostFromOrders(new BigDecimal("500.0000"), "CHF"));
   }
 
-  // #719 review: one import records a day's orders at the same time, so nothing but the rule
-  // orders a same-day buy and sell - a day's buys count before its sells, in whatever order the
-  // orders come.
+  // #719 review: one import records a day's orders at the same time, so nothing orders a
+  // same-day buy and sell. A day's buys count before its sells only where the order cannot change
+  // the cost: every lot in play has one unit price.
   @Test
-  void aDaysBuysCountBeforeItsSellsInAnyOrder() {
+  void aDaysBuysCountBeforeItsSellsWhenTheOrderCannotChangeTheCost() {
     LocalDate day = DATE.minusDays(5);
     TradeLeg buy = trade("10", "50", day);
     TradeLeg sell = trade("-10", "70", day);
     TradeLeg later = trade("5", "100", DATE);
 
+    // Nothing held before the day: the sale can only follow the buy.
     assertThat(cost(List.of(sell, buy, later), "5", "CHF"))
         .contains(new CostFromOrders(new BigDecimal("500.0000"), "CHF"))
         .isEqualTo(cost(List.of(later, buy, sell), "5", "CHF"));
 
-    // On top of a holding: 10 at 100, then a same-day buy of 10 at 50 and a sale of 10 - the
-    // average of 75 stays for the 10 left, whichever comes first in the list.
+    // 10 held at 50 before the day, and the day's buy at 50 too: 500 either way.
+    TradeLeg heldAtTheSamePrice = trade("10", "50", day.minusDays(1));
+    assertThat(cost(List.of(heldAtTheSamePrice, sell, buy), "10", "CHF"))
+        .contains(new CostFromOrders(new BigDecimal("500.0000"), "CHF"))
+        .isEqualTo(cost(List.of(buy, heldAtTheSamePrice, sell), "10", "CHF"));
+  }
+
+  @Test
+  void aSameDayBuyAndSellWhoseOrderChangesTheCostGiveNone() {
+    LocalDate day = DATE.minusDays(5);
+    TradeLeg sell = trade("-10", "70", day);
+
+    // 10 held at 100, then a sale of 10 and a buy of 10 at 50 on one day: 500 if the sale came
+    // first, 750 if the buy did.
     TradeLeg held = trade("10", "100", day.minusDays(1));
-    assertThat(cost(List.of(held, sell, buy), "10", "CHF"))
-        .contains(new CostFromOrders(new BigDecimal("750.0000"), "CHF"))
-        .isEqualTo(cost(List.of(buy, held, sell), "10", "CHF"));
+    assertThat(cost(List.of(held, sell, trade("10", "50", day)), "10", "CHF")).isEmpty();
+
+    // Nothing held, but two buys at different prices around a sale: 300 or 350.
+    assertThat(
+            cost(
+                List.of(trade("10", "20", day), trade("5", "50", day), trade("-5", "60", day)),
+                "10",
+                "CHF"))
+        .isEmpty();
+
+    // A later day's orders do not reopen it.
+    assertThat(
+            cost(List.of(held, sell, trade("10", "50", day), trade("5", "50", DATE)), "15", "CHF"))
+        .isEmpty();
   }
 
   @Test
   void anAverageThatDoesNotDivideEvenlyIsRoundedOnlyAtTheEnd() {
     // 3 units cost 100.00; selling 1 leaves two thirds of it: 66.6666... -> 66.6667.
-    List<TradeLeg> trades = List.of(trade("1", "10"), trade("2", "45"), trade("-1", "1"));
+    List<TradeLeg> trades =
+        List.of(
+            trade("1", "10", DATE.minusDays(1)),
+            trade("2", "45", DATE.minusDays(1)),
+            trade("-1", "1", DATE));
 
     assertThat(cost(trades, "2", "CHF"))
         .contains(new CostFromOrders(new BigDecimal("66.6667"), "CHF"));
