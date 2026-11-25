@@ -1858,7 +1858,7 @@ export interface components {
       costBasisInAccountCurrency: DecimalString | null;
       costBasisEstimated: boolean;
       /**
-       * @description Where costBasis comes from (US-15-15): STATEMENT as an imported statement printed it, ENTERED by the member, ORDERS calculated at the average price of the account's buys and sells (fees excluded) when the snapshot has none. Null without a cost basis.
+       * @description Where costBasis comes from (US-15-15): STATEMENT as an imported statement printed it or a provider reported it (API or aggregator snapshot), ENTERED by the member, ORDERS calculated at the average price of the account's buys and sells (fees excluded) when the snapshot has none. Null without a cost basis.
        * @enum {string|null}
        */
       costBasisSource: 'STATEMENT' | 'ENTERED' | 'ORDERS' | null;

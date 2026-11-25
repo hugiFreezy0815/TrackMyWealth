@@ -127,8 +127,11 @@ A position whose snapshot has no cost basis gets one from its orders when its bu
 up to the snapshot date add up to the quantity held, at their average price, fees excluded
 (US-15-15, #714): `costBasisSource` is then `ORDERS` (`STATEMENT` or `ENTERED` for one the
 snapshot holds). It is in the orders' currency, with no cost in the depot currency for a
-foreign one. A day with a buy and a sell whose order would change the cost (different unit
-prices) leaves the position without one: the ledger has no time of day.
+foreign one. The ledger has no time of day, so a day with a buy and a sell leaves the position
+without one when their order could change the cost. It cannot when no sale fits before any of
+the day's buys (selling first would sell more than is held), when nothing is left at the end of
+the day, or when the units held before the day and every buy share one unit price (see
+`OrderCostBasisService`).
 The gain shown is labelled with its own currency (#527):
 
 - `unrealisedGainInAccountCurrency` (+ its %) in the depot currency when the position's cost
