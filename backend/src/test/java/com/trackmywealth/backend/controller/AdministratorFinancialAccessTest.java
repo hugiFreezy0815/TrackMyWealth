@@ -38,8 +38,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 /**
  * US-02-05/FR-TEN-007: administration rights never confer financial-data access. The administrator
  * is one of the attack personas (FR-TEN-010): without a workspace link it reaches no financial data
- * at all, and as an administrator of one workspace it is denied another workspace's data exactly as
- * a standard user is - the same status and body, so the denial says nothing more.
+ * at all. Its denial matches an out-of-workspace member's denial.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -91,8 +90,9 @@ class AdministratorFinancialAccessTest {
   @Test
   void anAdministratorWithoutAWorkspaceLinkReachesNoFinancialData() throws Exception {
     String adminToken = bootstrapAdministrator();
-    AccountSummaryResponse account = createAccount(adminToken);
-    removeAdministratorsMembership();
+    client(adminToken).get().uri("/api/v1/workspace").exchange().expectStatus().isNotFound();
+    createStandardUser(adminToken, "member@example.com");
+    AccountSummaryResponse account = createAccount(login("member@example.com"));
 
     for (String path : financialReadPaths(account.id())) {
       client(adminToken).get().uri(path).exchange().expectStatus().isNotFound();
@@ -128,24 +128,16 @@ class AdministratorFinancialAccessTest {
     }
   }
 
-  // #389: without ownership and grants, membership alone would hand the bootstrap administrator a
-  // Standard User's data in their shared workspace. The administrator's membership counts only
-  // while it is the workspace's sole active member; once a user joins, the administrator reaches
-  // none of the workspace's financial data - not even what it created itself - and the user, as a
-  // member, reaches all of it.
   @Test
-  void anAdministratorReachesNoFinancialDataOnceAStandardUserJoinsTheWorkspace() throws Exception {
+  void anAdministratorReachesNoFinancialDataAfterAStandardUserIsCreated() throws Exception {
     String adminToken = bootstrapAdministrator();
-    AccountSummaryResponse adminsAccount = createAccount(adminToken);
     createStandardUser(adminToken, "member@example.com");
     String memberToken = login("member@example.com");
     AccountSummaryResponse membersAccount = createAccount(memberToken);
 
-    for (UUID account : List.of(adminsAccount.id(), membersAccount.id())) {
-      for (String path : financialReadPaths(account)) {
-        client(adminToken).get().uri(path).exchange().expectStatus().isNotFound();
-        client(memberToken).get().uri(path).exchange().expectStatus().isOk();
-      }
+    for (String path : financialReadPaths(membersAccount.id())) {
+      client(adminToken).get().uri(path).exchange().expectStatus().isNotFound();
+      client(memberToken).get().uri(path).exchange().expectStatus().isOk();
     }
     UUID portfolio = membersAccount.portfolioId();
     // US-07-37: the direct transaction read follows the same rule as the account's list.
@@ -199,7 +191,7 @@ class AdministratorFinancialAccessTest {
     assertThat((Long) query("SELECT count(*) FROM portfolio WHERE name = ?", "Sneaky Bank"))
         .isZero();
 
-    // Every refusal is audited, and administration itself still works (FR-TEN-007).
+    // Every refusal is audited, workspace-level ones included, and administration still works.
     assertThat(
             (Long)
                 query(
@@ -211,33 +203,16 @@ class AdministratorFinancialAccessTest {
     client(adminToken).get().uri("/api/v1/admin/reference-data").exchange().expectStatus().isOk();
   }
 
-  // The interim rule follows the membership count, not history: once the Standard User is
-  // deactivated, the administrator is the sole active member again and can run the instance.
-  @Test
-  void theAdministratorRegainsAccessWhenItIsTheSoleActiveMemberAgain() throws Exception {
-    String adminToken = bootstrapAdministrator();
-    AccountSummaryResponse account = createAccount(adminToken);
-    UUID member = createStandardUser(adminToken, "member@example.com");
-    String path = "/api/v1/accounts/" + account.id();
-    client(adminToken).get().uri(path).exchange().expectStatus().isNotFound();
-
-    execute("UPDATE workspace_member SET status = 'INACTIVE' WHERE id = ?", member);
-
-    client(adminToken).get().uri(path).exchange().expectStatus().isOk();
-  }
-
   // US-07-38 (#480), FR-USR-015: a transaction's change history is financial data like the row.
   @Test
   void aTransactionsHistoryIsReadByMembersOnlyAndNeverAcrossWorkspaces() throws Exception {
     String adminToken = bootstrapAdministrator();
-    AccountSummaryResponse account = createAccount(adminToken);
-    UUID transaction = recordExpense(adminToken, account.id());
-    String history =
-        "/api/v1/accounts/" + account.id() + "/transactions/" + transaction + "/history";
-    client(adminToken).get().uri(history).exchange().expectStatus().isOk();
-
     createStandardUser(adminToken, "member@example.com");
     String memberToken = login("member@example.com");
+    AccountSummaryResponse account = createAccount(memberToken);
+    UUID transaction = recordExpense(memberToken, account.id());
+    String history =
+        "/api/v1/accounts/" + account.id() + "/transactions/" + transaction + "/history";
     client(adminToken).get().uri(history).exchange().expectStatus().isNotFound();
     client(memberToken).get().uri(history).exchange().expectStatus().isOk();
 
@@ -360,25 +335,6 @@ class AdministratorFinancialAccessTest {
   }
 
   // A member never stays without its login (V110), so the link and the member go together.
-  private void removeAdministratorsMembership() throws Exception {
-    UUID member =
-        (UUID)
-            query("SELECT workspace_member_id FROM app_user WHERE email = ?", "admin@example.com");
-    try (Connection connection = dataSource.getConnection()) {
-      connection.setAutoCommit(false);
-      try (PreparedStatement unlink =
-              connection.prepareStatement(
-                  "UPDATE app_user SET workspace_member_id = NULL WHERE workspace_member_id = ?");
-          PreparedStatement delete =
-              connection.prepareStatement("DELETE FROM workspace_member WHERE id = ?")) {
-        unlink.setObject(1, member);
-        unlink.executeUpdate();
-        delete.setObject(1, member);
-        delete.executeUpdate();
-      }
-      connection.commit();
-    }
-  }
 
   private void execute(String sql, Object parameter) throws Exception {
     try (Connection connection = dataSource.getConnection();

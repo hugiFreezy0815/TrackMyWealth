@@ -27,26 +27,24 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * Regression test for #62's follow-up finding: an earlier version of the #62 fix locked {@link
  * AdminUserService#disableUser}'s target row via a standalone statement, then - only if that target
  * turned out to be a currently active {@code SYSTEM_ADMINISTRATOR} - separately locked every active
- * administrator via {@link AppUserRepository#countActiveAdministratorsForUpdate} for the FR-USR-005
- * last-active-administrator guard. Two concurrent {@code disableUser} calls on *different*
- * active-administrator targets could then each hold their own target's lock first and deadlock
- * reaching for the other's - a classic two-step, opposite-order lock acquisition, confirmed against
- * a real Postgres instance during code review of the original fix.
+ * administrator via a separate count-for-update query for the FR-USR-005 last-active-administrator
+ * guard. Two concurrent {@code disableUser} calls on *different* active-administrator targets could
+ * then each hold their own target's lock first and deadlock reaching for the other's - a classic
+ * two-step, opposite-order lock acquisition, confirmed against a real Postgres instance during code
+ * review of the original fix.
  *
  * <p>Closed by {@link AppUserRepository#lockTargetAndActiveAdministrators}: {@code disableUser} now
  * locks its target and every active administrator in one {@code ORDER BY id FOR UPDATE} statement,
- * so there is no longer a separate, independently-ordered first lock to race against. {@code
- * countActiveAdministratorsForUpdate} (still used by {@code editUser}'s demote path) got the same
- * {@code ORDER BY id} for the same reason - two different queries locking overlapping rows must
- * still agree on acquisition order, or the same class of deadlock resurfaces across *different* SQL
- * text, not just identical calls.
+ * so there is no longer a separate, independently-ordered first lock to race against. Since #414
+ * removed role changes, it is the only query that locks active administrators. Any future query
+ * locking overlapping rows must use the same {@code ORDER BY id}, or the same class of deadlock
+ * resurfaces across *different* SQL text, not just identical calls.
  *
  * <p>Unlike {@link AdminUserDisableReactivateConcurrencyTest} (which needs many concurrent writers
  * to the *same* row to reproduce its deadlock), this one is the classic AB-BA shape and reproduces
  * reliably with a single racing pair per round - confirmed empirically: reverting {@code
  * lockTargetAndActiveAdministrators} back to a standalone {@code findByIdForUpdate} plus the
- * existing {@code countActiveAdministratorsForUpdate} call reliably deadlocked this test on the
- * very first round.
+ * separate count-for-update call reliably deadlocked this test on the very first round.
  */
 @Testcontainers
 @SpringBootTest

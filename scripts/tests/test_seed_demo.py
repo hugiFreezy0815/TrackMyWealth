@@ -123,7 +123,7 @@ class AccountValuesTest(unittest.TestCase):
         first = dict(self.values)
         for key, value in changes.items():
             first[f"id-{key}"] = value
-        return seed_demo.check_account_values(self.ids, first, dict(first))
+        return seed_demo.check_account_values(self.ids, first, {})
 
     def test_every_account_needs_its_expected_value(self):
         self.assertEqual(self.check(), self.values)
@@ -136,13 +136,13 @@ class AccountValuesTest(unittest.TestCase):
         with self.assertRaisesRegex(seed_demo.SeedError, "depot account did not have the expected balance"):
             self.check(depot=("25000", "CURRENT"))
 
-    def test_members_must_see_the_same_values_and_only_the_demo_accounts(self):
+    def test_only_the_seeded_workspace_sees_the_demo_accounts(self):
         partner = {**self.values, "id-eur": ("2499", "CURRENT")}
-        with self.assertRaisesRegex(seed_demo.SeedError, "same demo account values"):
+        with self.assertRaisesRegex(seed_demo.SeedError, "separate demo workspace"):
             seed_demo.check_account_values(self.ids, self.values, partner)
         extra = {**self.values, "other": ("1", "CURRENT")}
-        with self.assertRaisesRegex(seed_demo.SeedError, "same demo account values"):
-            seed_demo.check_account_values(self.ids, extra, dict(extra))
+        with self.assertRaisesRegex(seed_demo.SeedError, "exactly the seeded accounts"):
+            seed_demo.check_account_values(self.ids, extra, {})
 
 
 class ValuationFixtureTest(unittest.TestCase):

@@ -5,17 +5,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.trackmywealth.backend.dto.AccountListItemResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LinkSavingsPocketRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.PortfolioResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.SignedAmounts;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.dto.ValueStatus;
@@ -23,6 +20,7 @@ import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import jakarta.persistence.EntityManagerFactory;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -130,7 +128,7 @@ class AccountListControllerTest {
 
   @Test
   void equallyOldAccountsAppearOnceAcrossPages() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID first = createAccount(token, cash("First", "CHF", null)).id();
     UUID second = createAccount(token, cash("Second", "CHF", null)).id();
     execute(
@@ -149,7 +147,7 @@ class AccountListControllerTest {
   @Test
   void everyAccountOfBothPortfoliosAppearsOnceWithItsBalanceInAccountAndWorkspaceCurrency()
       throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse postFinance = createPortfolio(token, "PostFinance", "CHF");
     PortfolioResponse dkb = createPortfolio(token, "DKB", "EUR");
     UUID privat = createAccount(token, cash("Privatkonto", "CHF", postFinance.id())).id();
@@ -205,9 +203,9 @@ class AccountListControllerTest {
 
   @Test
   void aSecondMemberWhoCreatedNoneOfTheAccountsSeesExactlyTheSameList() throws Exception {
-    String adminToken = bootstrapAdministrator();
-    createStandardUser(adminToken, "anna@example.com");
-    createStandardUser(adminToken, "ben@example.com");
+    bootstrapStandardUser();
+    createStandardUser("anna@example.com");
+    createStandardUser("ben@example.com");
     String anna = login("anna@example.com");
     String ben = login("ben@example.com");
     UUID annas = createAccount(anna, cash("Anna's account", "CHF", null)).id();
@@ -226,7 +224,7 @@ class AccountListControllerTest {
 
   @Test
   void aPortfolioOfAnotherWorkspaceMatchesNothingExactlyLikeAnUnknownId() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse own = createPortfolio(token, "Own", "CHF");
     UUID inOwn = createAccount(token, cash("Mine", "CHF", own.id())).id();
     createAccount(token, cash("Elsewhere", "CHF", null));
@@ -241,7 +239,7 @@ class AccountListControllerTest {
 
   @Test
   void oversizedOffsetKeepsTheRequestedPageAndFilteredWorkspaceTotal() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse own = createPortfolio(token, "Own", "CHF");
     createAccount(token, cash("Matching", "CHF", own.id()));
     createAccount(token, cash("Other portfolio", "CHF", null));
@@ -255,7 +253,7 @@ class AccountListControllerTest {
 
   @Test
   void anArchivedAccountIsListedOnlyWithArchivedTrue() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID active = createAccount(token, cash("Active", "CHF", null)).id();
     AccountSummaryResponse old = createAccount(token, cash("Old", "CHF", null));
     AccountSummaryResponse linked =
@@ -285,7 +283,7 @@ class AccountListControllerTest {
 
   @Test
   void aValueFromAnOldSnapshotIsStaleWithItsDateAndNoValueIsUnknown() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID oldVested =
         createAccount(token, AccountRequests.account("Old FZ", "VESTED_BENEFITS", "CHF").build())
             .id();
@@ -332,7 +330,7 @@ class AccountListControllerTest {
   // and how old the valuation behind that balance is.
   @Test
   void aBalanceWithoutAnFxRateStillCarriesTheDateItRestsOn() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID car =
         createAccount(
                 token,
@@ -358,7 +356,7 @@ class AccountListControllerTest {
   // its reversal), not an instalment dated after the valuation date.
   @Test
   void aMortgageIsKeptCurrentByPaymentsOnItAndGoesStaleWithoutThem() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID current = createAccount(token, cash("Current account", "CHF", null)).id();
     UUID instalment = mortgage(token, "Instalment");
     UUID interestOnly = mortgage(token, "Interest only");
@@ -400,7 +398,7 @@ class AccountListControllerTest {
 
   @Test
   void fiftyAccountsAreListedWithTheSameNumberOfQueriesAsSix() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     createMixedAccounts(token, 1);
     // Both requests fill a page, so both include the count query for the page totals.
     long forSix = statementsFor(() -> assertThat(list(token, "?size=6")).hasSize(6));
@@ -419,7 +417,7 @@ class AccountListControllerTest {
 
   @Test
   void eachBalanceInTheWorkspaceCurrencyIsTheAccountsNetWorthContribution() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse dkb = createPortfolio(token, "DKB", "EUR");
     UUID giro = createAccount(token, cash("Giro", "EUR", dkb.id())).id();
     UUID privat = createAccount(token, cash("Privatkonto", "CHF", null)).id();
@@ -462,7 +460,7 @@ class AccountListControllerTest {
   // #466: the app's savings pocket picker filters on these without reading each account.
   @Test
   void eachRowCarriesTheFlagsTheSavingsPocketPickerFiltersOn() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID cash = createAccount(token, cash("Cash", "CHF", null)).id();
     UUID card =
         createAccount(token, AccountRequests.account("Visa", "CREDIT_CARD", "CHF").build()).id();
@@ -494,7 +492,7 @@ class AccountListControllerTest {
 
   @Test
   void theAccountTypeFilterNarrowsTheListAndAnUnknownTypeIsABadRequest() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID cash = createAccount(token, cash("Cash", "CHF", null)).id();
     createAccount(token, AccountRequests.account("FZ", "VESTED_BENEFITS", "CHF").build());
 
@@ -522,7 +520,7 @@ class AccountListControllerTest {
 
   @Test
   void aWorkspaceWithoutAccountsListsNothingAndAnAnonymousCallerIsRefused() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     assertThat(list(token, "")).isEmpty();
     anonymousClient()
@@ -778,15 +776,8 @@ class AccountListControllerTest {
     return LocalDate.now(ZoneId.of("Europe/Zurich"));
   }
 
-  private void createStandardUser(String adminToken, String email) {
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isCreated();
+  private void createStandardUser(String email) {
+    WorkspaceLoginFixtures.addMember(dataSource, "admin@example.com", email, PASSWORD);
   }
 
   private String login(String email) {
@@ -805,18 +796,9 @@ class AccountListControllerTest {
         .accessToken();
   }
 
-  private String bootstrapAdministrator() {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Test Workspace", "CHF")
         .accessToken();
   }
 

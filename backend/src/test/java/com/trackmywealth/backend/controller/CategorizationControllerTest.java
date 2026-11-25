@@ -3,24 +3,22 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CategorizationRuleResponse;
 import com.trackmywealth.backend.dto.CategoryResponse;
 import com.trackmywealth.backend.dto.CreateCategorizationRuleRequest;
 import com.trackmywealth.backend.dto.CreateCategoryRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.service.CategorizationService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -142,7 +140,7 @@ class CategorizationControllerTest {
   @MethodSource("layers")
   void eachLayerAssignsItsCategory(
       String type, String merchant, String mcc, String expectedCode, String expectedAssignedBy) {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     createRule(token, "MERCHANT", "mietzins", defaultId("HOUSING"), null);
     AccountSummaryResponse account =
         PURCHASE.equals(type) ? createAccount(token, "CREDIT_CARD") : createAccount(token, "CASH");
@@ -164,7 +162,7 @@ class CategorizationControllerTest {
 
   @Test
   void equalPriorityRulesKeepTheirEvaluationOrderAcrossPages() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     var first = createRule(token, "MERCHANT", "First shop", defaultId("GROCERIES"), 10);
     var second = createRule(token, "MERCHANT", "Second shop", defaultId("GROCERIES"), 10);
     String tieDate =
@@ -192,7 +190,7 @@ class CategorizationControllerTest {
 
   @Test
   void aUserRuleBeatsTheShippedMappingAndIsNamedInTheLog() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     CategorizationRuleResponse rule =
         createRule(token, "MERCHANT", "MIGROS", defaultId("SHOPPING"), null);
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
@@ -210,7 +208,7 @@ class CategorizationControllerTest {
 
   @Test
   void theLowestPriorityRuleWins() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     createRule(token, "MERCHANT", "coop", defaultId("SHOPPING"), 100);
     createRule(token, "MERCHANT", "coop pronto", defaultId("GROCERIES"), 10);
     AccountSummaryResponse cash = createAccount(token, "CASH");
@@ -222,7 +220,7 @@ class CategorizationControllerTest {
 
   @Test
   void aSourceCodeRuleCanRedirectAnMccToAWorkspaceCategory() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID coffee =
         createCategory(token, new CreateCategoryRequest(defaultId("LEISURE"), "Coffee", "Kaffee"));
     createRule(token, "SOURCE_CODE", "mcc:5812", coffee, null);
@@ -236,7 +234,7 @@ class CategorizationControllerTest {
 
   @Test
   void aCategoryTheWorkspaceDeactivatedIsSkippedNotAssigned() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     // Deactivating LEISURE deactivates DINING under it for this workspace.
     deactivateCategory(token, defaultId("LEISURE")).expectStatus().isOk();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
@@ -249,7 +247,7 @@ class CategorizationControllerTest {
   @Test
   void anIso20022PurposeCodeIsMoreSpecificThanAnMcc() throws Exception {
     // Only an import writes ISO 20022 codes, so the row is inserted the way one would leave it.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "CASH");
     UUID id = UUID.randomUUID();
     try (Connection connection = dataSource.getConnection();
@@ -274,7 +272,7 @@ class CategorizationControllerTest {
   @Test
   void aBankTransactionCodeRuleCategorizesAnImportedRow() throws Exception {
     // Only an import writes ISO 20022 codes, so the row is inserted the way one would leave it.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     createRule(token, "SOURCE_CODE", "iso20022_btc:pmnt-rcdt-esct", defaultId("INCOME"), null);
     AccountSummaryResponse cash = createAccount(token, "CASH");
     UUID id =
@@ -290,7 +288,7 @@ class CategorizationControllerTest {
 
   @Test
   void aFeeOrTaxWithNothingMoreSpecificLandsInItsTypesCategory() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "CASH");
 
     TransactionResponse fee = record(token, cash.id(), "FEE", "Kontofuehrung", null);
@@ -307,7 +305,7 @@ class CategorizationControllerTest {
   void aForeignCardPurchasesFeeRowLandsInFeesNotUncategorized() {
     // Review follow-up: the FEE row created alongside a foreign-currency purchase has no merchant
     // or code of its own, so without the type layer it always ended up in UNCATEGORIZED.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
 
     post(
@@ -347,7 +345,7 @@ class CategorizationControllerTest {
     // similarity() >= t alone cannot use V10's GIN trigram index; pg_trgm's % can. If the query
     // filters with %, a threshold of 0.99 set for the transaction hides a 0.3-similar candidate
     // that the explicit threshold alone would return.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     createRule(token, "MERCHANT", "migros zuerich", defaultId("GROCERIES"), null);
     AccountSummaryResponse cash = createAccount(token, "CASH");
     record(token, cash.id(), EXPENSE, "MIGROS ZUERICH", null);
@@ -385,7 +383,7 @@ class CategorizationControllerTest {
 
   @Test
   void aSimilarMerchantOfTheSameBrandLearnsFromARuleAssignedRow() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     createRule(token, "MERCHANT", "migros zuerich", defaultId("GROCERIES"), null);
     AccountSummaryResponse cash = createAccount(token, "CASH");
     record(token, cash.id(), EXPENSE, "MIGROS ZUERICH", null);
@@ -405,7 +403,7 @@ class CategorizationControllerTest {
   void aSharedCityIsNotEnoughForAFuzzyMatch() {
     // COOP BASEL is as trigram-similar to MIGROS BASEL as MIGROS ZUERICH is; only the brand
     // differs.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     createRule(token, "MERCHANT", "migros basel", defaultId("GROCERIES"), null);
     AccountSummaryResponse cash = createAccount(token, "CASH");
     record(token, cash.id(), EXPENSE, "MIGROS BASEL", null);
@@ -417,7 +415,7 @@ class CategorizationControllerTest {
 
   @Test
   void aFuzzyMatchNeverLearnsFromAShippedMappingOrAnEarlierGuess() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
     record(token, card.id(), PURCHASE, "DENNER ZUERICH", "5411"); // SOURCE_CODE
 
@@ -430,7 +428,7 @@ class CategorizationControllerTest {
 
   @Test
   void aSettlementIsNotCategorized() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
 
     TransactionResponse settlement =
@@ -447,7 +445,7 @@ class CategorizationControllerTest {
 
   @Test
   void uncategorizedRowsFormTheirOwnList() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
     record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
     TransactionResponse open = record(token, card.id(), PURCHASE, "Unknown Shop", null);
@@ -462,7 +460,7 @@ class CategorizationControllerTest {
 
   @Test
   void aRuleIsStoredNormalizedAndListedInEvaluationOrder() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     createRule(token, "MERCHANT", "  Migros   Zürich ", defaultId("GROCERIES"), 50);
     createRule(token, "SOURCE_CODE", "iso20022_purpose:sala", defaultId("INCOME"), 5);
 
@@ -476,7 +474,7 @@ class CategorizationControllerTest {
 
   @Test
   void unsupportedOrMalformedRulesAreRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID groceries = defaultId("GROCERIES");
 
     for (CreateCategorizationRuleRequest invalid :
@@ -501,7 +499,7 @@ class CategorizationControllerTest {
 
   @Test
   void aRuleCannotTargetAnInactiveCategory() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     deactivateCategory(token, defaultId("SHOPPING")).expectStatus().isOk();
 
     postRule(
@@ -515,7 +513,7 @@ class CategorizationControllerTest {
   // If-Match a 428; the first deactivation is kept.
   @Test
   void aStaleRuleDeactivationIsRejectedAndTheFirstIsKept() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     CategorizationRuleResponse readByBoth =
         createRule(token, "MERCHANT", "corner shop", defaultId("SHOPPING"), null);
 
@@ -548,7 +546,7 @@ class CategorizationControllerTest {
   // #207 / FR-CNC-001: "reset to automatic" is a version-checked write like the override itself.
   @Test
   void resettingACategoryRequiresTheCurrentVersion() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "CASH");
     TransactionResponse row = record(token, cash.id(), EXPENSE, "Corner Shop", null);
     TransactionResponse overridden = setCategory(token, cash.id(), row.id(), defaultId("SHOPPING"));
@@ -584,7 +582,7 @@ class CategorizationControllerTest {
 
   @Test
   void aStaleCategoryOverrideIsRejectedAndTheFirstIsKept() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "CASH");
     TransactionResponse readByBoth = record(token, cash.id(), EXPENSE, "Corner Shop", null);
 
@@ -622,7 +620,7 @@ class CategorizationControllerTest {
 
   @Test
   void aDeactivatedRuleNoLongerAppliesAndDeactivatingIsIdempotent() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     CategorizationRuleResponse rule =
         createRule(token, "MERCHANT", "unknown shop", defaultId("SHOPPING"), null);
     for (int attempt = 0; attempt < 2; attempt++) {
@@ -647,8 +645,8 @@ class CategorizationControllerTest {
 
   @Test
   void anotherMemberReadsAndChangesTheRulesWithoutAnyGrant() {
-    String adminToken = bootstrapAdministrator();
-    createSecondMember(adminToken, "member@example.com");
+    bootstrapStandardUser();
+    createSecondMember("member@example.com");
     String memberToken = login("member@example.com");
     CreateCategorizationRuleRequest request =
         new CreateCategorizationRuleRequest("MERCHANT", "migros", defaultId("GROCERIES"), null);
@@ -659,7 +657,7 @@ class CategorizationControllerTest {
 
   @Test
   void anotherWorkspacesRuleCannotBeDeactivated() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID foreignRule = UUID.randomUUID();
     UUID foreignWorkspace = UUID.randomUUID();
     execute("INSERT INTO workspace (id, name) VALUES (?, 'Other')", foreignWorkspace);
@@ -692,7 +690,7 @@ class CategorizationControllerTest {
   // The story's DoD: override, re-run the automatic job, the override persists.
   @Test
   void aUserOverrideSurvivesAnAutomaticReRunWhileTheRestIsRecategorized() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID workspace =
         createCategory(token, new CreateCategoryRequest(null, "Workspace", "Arbeitsplatz"));
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
@@ -724,7 +722,7 @@ class CategorizationControllerTest {
 
   @Test
   void aReRunWritesNothingWhereTheCategoryWouldNotChange() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
     TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
 
@@ -734,7 +732,7 @@ class CategorizationControllerTest {
 
   @Test
   void resettingToAutomaticRecategorizesAtOnceAndLiftsTheProtection() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
     TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
     setCategory(token, card.id(), recorded.id(), defaultId("SHOPPING"));
@@ -765,7 +763,7 @@ class CategorizationControllerTest {
   // does not log the same decision again (which the history would show as a second assignment).
   @Test
   void aReRunAfterAResetToARuleWritesNothing() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
     CategorizationRuleResponse rule =
         createRule(token, "MERCHANT", "coop", defaultId("SHOPPING"), null);
@@ -790,7 +788,7 @@ class CategorizationControllerTest {
   // the row from the next run.
   @Test
   void aResetThatLandsInUncategorizedNoLongerCountsAsAnOverride() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "CASH");
     TransactionResponse recorded = record(token, cash.id(), EXPENSE, "Unknown Shop", null);
     setCategory(token, cash.id(), recorded.id(), defaultId("SHOPPING"));
@@ -814,7 +812,7 @@ class CategorizationControllerTest {
 
   @Test
   void aTypeTheEngineNeverCategorizesCanStillBeOverriddenAndResetToNone() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
     TransactionResponse settlement =
         post(token, card.id(), transaction("SETTLEMENT", "85.00", null, null))
@@ -842,7 +840,7 @@ class CategorizationControllerTest {
 
   @Test
   void overridingTwiceWritesOnceAndResettingAnAutomaticRowChangesNothing() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
     TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
 
@@ -858,7 +856,7 @@ class CategorizationControllerTest {
 
   @Test
   void anOverrideIsRejectedForAnInvalidTargetOrRow() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
     AccountSummaryResponse cash = createAccount(token, "CASH");
     TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
@@ -896,10 +894,10 @@ class CategorizationControllerTest {
 
   @Test
   void anotherMemberChangesTheCategoryOfARowTheFirstOneRecorded() {
-    String adminToken = bootstrapAdministrator();
+    String adminToken = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(adminToken, "CREDIT_CARD");
     TransactionResponse recorded = record(adminToken, card.id(), PURCHASE, "COOP PRONTO", "5411");
-    createSecondMember(adminToken, "member@example.com");
+    createSecondMember("member@example.com");
     String memberToken = login("member@example.com");
 
     putCategory(memberToken, card.id(), recorded.id(), defaultId("SHOPPING")).expectStatus().isOk();
@@ -908,7 +906,7 @@ class CategorizationControllerTest {
   // Fuzzy matching learns from USER rows too: the member's correction teaches the next similar row.
   @Test
   void anOverrideTeachesTheFuzzyMatchForTheSameBrand() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "CASH");
     TransactionResponse first = record(token, cash.id(), EXPENSE, "MIGROS ZUERICH", null);
     setCategory(token, cash.id(), first.id(), defaultId("GROCERIES"));
@@ -923,7 +921,7 @@ class CategorizationControllerTest {
 
   @Test
   void confirmingTheAutomaticCategoryProtectsItFromALaterRule() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
     TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
 
@@ -942,7 +940,7 @@ class CategorizationControllerTest {
 
   @Test
   void aReRunRecordsARuleThatNowExplainsAFuzzyGuessButRepeatsNothing() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     createRule(token, "MERCHANT", "migros zuerich", defaultId("GROCERIES"), null);
     AccountSummaryResponse cash = createAccount(token, "CASH");
     record(token, cash.id(), EXPENSE, "MIGROS ZUERICH", null);
@@ -963,7 +961,7 @@ class CategorizationControllerTest {
 
   @Test
   void anOverrideRecordsTheMemberWhoMadeIt() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
     TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
 
@@ -988,7 +986,7 @@ class CategorizationControllerTest {
   void aReRunCoversAWorkspaceLargerThanOnePage() throws Exception {
     // More rows than one page, all with the same created_at (one INSERT), so paging must break
     // the tie by id to neither skip nor repeat a row.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "CASH");
     int rows = 2 * CategorizationService.RECATEGORIZATION_PAGE_SIZE + 1;
     execute(
@@ -1015,7 +1013,7 @@ class CategorizationControllerTest {
   void theReRunsPageAndTheOverridesRowAreLockedUntilTheirTransactionEnds() {
     // The lock is what keeps a re-run from writing over an override made between its check and
     // its write: while one transaction holds a row, another cannot lock it.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
     TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
     UUID workspace = workspaceOf(card.id());
@@ -1331,16 +1329,8 @@ class CategorizationControllerTest {
     return assignments;
   }
 
-  private UUID createSecondMember(String adminToken, String email) {
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isCreated();
-    return jdbcUuid("SELECT workspace_member_id FROM app_user WHERE email = ?", email);
+  private UUID createSecondMember(String email) {
+    return WorkspaceLoginFixtures.addMember(dataSource, "admin@example.com", email, PASSWORD);
   }
 
   private void execute(String sql, Object parameter) throws Exception {
@@ -1392,18 +1382,9 @@ class CategorizationControllerTest {
         .accessToken();
   }
 
-  private String bootstrapAdministrator() {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Test Workspace", "CHF")
         .accessToken();
   }
 

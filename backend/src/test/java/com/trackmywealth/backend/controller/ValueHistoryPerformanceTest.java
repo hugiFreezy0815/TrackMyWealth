@@ -3,10 +3,9 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.ValueHistoryResponse;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import jakarta.persistence.EntityManagerFactory;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -74,20 +73,12 @@ class ValueHistoryPerformanceTest {
     RestTestClient anonymous =
         RestTestClient.bindToServer().baseUrl("http://localhost:%d".formatted(port)).build();
     String token =
-        anonymous
-            .post()
-            .uri("/api/v1/setup/administrator")
-            .contentType(MediaType.APPLICATION_JSON)
-            .body(
-                new SetupAdministratorRequest(
-                    "history-benchmark@example.com", "correct-horse-battery-staple",
-                    "History benchmark", "CHF"))
-            .exchange()
-            .expectStatus()
-            .isCreated()
-            .expectBody(AuthTokensResponse.class)
-            .returnResult()
-            .getResponseBody()
+        WorkspaceLoginFixtures.bootstrapStandardUser(
+                anonymous,
+                "history-benchmark@example.com",
+                "correct-horse-battery-staple",
+                "History benchmark",
+                "CHF")
             .accessToken();
     RestTestClient client =
         RestTestClient.bindToServer()

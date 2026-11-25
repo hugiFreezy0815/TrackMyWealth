@@ -3,18 +3,16 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.SecurityCreation;
 import com.trackmywealth.backend.dto.SecurityResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.SecurityService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import com.trackmywealth.backend.validation.IsinValidator;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -412,12 +410,12 @@ class SecurityControllerTest {
   // Creating a security needs an active account in the caller's workspace, whoever created it.
   @Test
   void aWorkspaceWithoutAnAccountMayLookUpButNotCreateAndAnyMemberMayOnceItHasOne() {
-    String adminToken = bootstrapAdministrator();
+    bootstrapStandardUser();
     // The first member is a Standard User: once anyone else joins, the administrator's own
     // membership no longer reaches financial data (FR-TEN-007, AccessControlService).
-    createSecondMember(adminToken, "first@example.com");
+    createSecondMember("first@example.com");
     String firstToken = login("first@example.com");
-    createSecondMember(adminToken, "member@example.com");
+    createSecondMember("member@example.com");
     String memberToken = login("member@example.com");
 
     post(memberToken, etf(ETF_ISIN, "iShares")).expectStatus().isNotFound();
@@ -785,7 +783,7 @@ class SecurityControllerTest {
                 + " = wm.id WHERE u.id = ?",
             userId);
     return new AuthenticatedUserPrincipal(
-        userId, "SYSTEM_ADMINISTRATOR", workspaceId, UUID.randomUUID(), "EN");
+        userId, "STANDARD_USER", workspaceId, UUID.randomUUID(), "EN");
   }
 
   // A second, fully independent workspace: its own member, user and (EDIT-able, as sole member)
@@ -831,7 +829,7 @@ class SecurityControllerTest {
   }
 
   private String adminWithAccount() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     client(token)
         .post()
         .uri("/api/v1/accounts")
@@ -870,16 +868,8 @@ class SecurityControllerTest {
     return client(token).get().uri("/api/v1/securities?isin=" + isin).exchange();
   }
 
-  private UUID createSecondMember(String adminToken, String email) {
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED);
-    return jdbcUuid("SELECT workspace_member_id FROM app_user WHERE email = ?", email);
+  private UUID createSecondMember(String email) {
+    return WorkspaceLoginFixtures.addMember(dataSource, "admin@example.com", email, PASSWORD);
   }
 
   private String login(String email) {
@@ -898,18 +888,9 @@ class SecurityControllerTest {
         .accessToken();
   }
 
-  private String bootstrapAdministrator() {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Test Workspace", "CHF")
         .accessToken();
   }
 

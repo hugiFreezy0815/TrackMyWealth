@@ -6,9 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.DataQualityWarningValues;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
@@ -19,14 +17,13 @@ import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
-import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -133,7 +130,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void aCashAccountWithLedgerRowsButNoOpeningBalanceHasAnUnknownValue() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     insertTransaction(cash.id(), "EXPENSE", "-120.00", openingDate.plusDays(1), MANUAL);
 
@@ -148,7 +145,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void theBalanceIsTheOpeningBalancePlusTheLedgerAfterItAndNetWorthIncludesIt() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     // On the opening date: already contained in the balance, so not added again.
     insertTransaction(cash.id(), "EXPENSE", "-50.00", openingDate, MANUAL);
@@ -194,7 +191,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void aBalanceReadBeforeTheOpeningDateIsUnknownAndOnItIsTheOpeningBalance() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     insertTransaction(cash.id(), "EXPENSE", "-200.00", openingDate.plusDays(5), MANUAL);
     recordOk(token, cash.id(), request(openingDate, "10000.00", "CHF"));
@@ -210,7 +207,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void aBalanceReadForAFutureDateIsRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
 
     client(token)
@@ -225,7 +222,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void anOpeningBalanceAfterExistingTransactionsIsRejectedWithTheEarliestBookingDate() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     LocalDate earliest = openingDate.minusDays(20);
     insertTransaction(cash.id(), "EXPENSE", "-40.00", earliest, MANUAL);
@@ -253,7 +250,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void replacingPastExistingTransactionsNeedsTheAcknowledgementOnEveryReplace() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     insertTransaction(cash.id(), "EXPENSE", "-40.00", openingDate.minusDays(5), MANUAL);
     OpeningBalanceResponse recorded =
@@ -295,7 +292,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void acknowledgedEarlierTransactionsAreLeftOutAndWarnedAboutOnTheAccountAndTheHeadline() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     insertTransaction(cash.id(), "EXPENSE", "-40.00", openingDate.minusDays(20), MANUAL);
     insertTransaction(cash.id(), "EXPENSE", "-100.00", openingDate.plusDays(1), MANUAL);
@@ -324,7 +321,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void aSecuritiesAccountStoresTheOpeningCashBalanceButItsValueStaysUnknown() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "Swissquote Depot", "SECURITIES");
 
     OpeningBalanceResponse recorded =
@@ -338,7 +335,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void aMortgageOrACustomAssetTakesNoOpeningBalance() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse mortgage =
         createAccount(
             token,
@@ -365,7 +362,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void anAccountWithoutALedgerIsWorthItsOpeningBalance() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse vested =
         createAccount(
             token, AccountRequests.account("Vested Benefits", "VESTED_BENEFITS", "CHF").build());
@@ -382,7 +379,7 @@ class OpeningBalanceControllerTest {
   // newer one supersedes the opening balance, and its date says how old the figure is.
   @Test
   void anAccountWithoutALedgerIsWorthItsLatestSnapshotNotItsOpeningBalanceForever() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse vested =
         createAccount(
             token, AccountRequests.account("Vested Benefits", "VESTED_BENEFITS", "CHF").build());
@@ -404,7 +401,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void anAccountWithoutALedgerIsKnownBeforeItsOpeningBalanceFromAnEarlierSnapshot() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse vested =
         createAccount(
             token, AccountRequests.account("Vested Benefits", "VESTED_BENEFITS", "CHF").build());
@@ -425,7 +422,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void replacingNeedsTheCurrentVersionAndAStaleOneIsRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     OpeningBalanceResponse recorded =
         recordOk(token, cash.id(), request(openingDate, "1000.00", "CHF"));
@@ -452,7 +449,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void anOpeningBalanceInAnotherCurrencyIsRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
 
     record(token, cash.id(), request(openingDate, "1000.00", "EUR"))
@@ -463,7 +460,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void aSecondOpeningBalanceIsAConflictNamingTheFirst() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     OpeningBalanceResponse first =
         recordOk(token, cash.id(), request(openingDate, "1000.00", "CHF"));
@@ -481,7 +478,7 @@ class OpeningBalanceControllerTest {
   // one row exists. Repeated on fresh accounts so the index path is exercised in practice too.
   @Test
   void twoConcurrentFirstOpeningBalancesYieldOneCreatedAndOneConflict() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     ExecutorService pool = Executors.newFixedThreadPool(2);
     try {
       for (int round = 0; round < 5; round++) {
@@ -515,7 +512,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void theDateIsNotInTheFutureNorBeforeTheAccountWasOpened() throws SQLException {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
 
     record(token, cash.id(), request(today().plusDays(1), "1.00", "CHF"))
@@ -531,7 +528,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void removedTransactionsAfterTheOpeningDateDoNotCount() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     recordOk(token, cash.id(), request(openingDate, "1000.00", "CHF"));
     insertTransaction(cash.id(), "EXPENSE", "-100.00", openingDate.plusDays(1), MANUAL);
@@ -550,7 +547,7 @@ class OpeningBalanceControllerTest {
   // value. The member learns it from the row itself, at once - not only from the account.
   @Test
   void aTransactionBookedBeforeTheOpeningBalanceSaysSoOnTheRow() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     recordOk(token, cash.id(), request(openingDate, "1000.00", "CHF"));
 
@@ -581,7 +578,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void removedTransactionsBeforeTheOpeningDateTriggerNeitherTheGuardNorTheWarning() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     UUID typo = insertTransaction(cash.id(), "EXPENSE", "-10.00", openingDate.minusDays(5), MANUAL);
     removeTransaction(token, cash.id(), typo, null);
@@ -594,7 +591,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void aCardWithAnOpeningBalanceOwesItPlusLaterPurchases() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "Visa", "CREDIT_CARD");
     insertTransaction(card.id(), "CREDIT_CARD_PURCHASE", "-80.00", openingDate.plusDays(2), MANUAL);
     insertTransaction(card.id(), "CREDIT_CARD_PURCHASE", "-20.00", openingDate.plusDays(3), MANUAL);
@@ -612,7 +609,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void aCardsOpeningBalanceAndSnapshotsAreInItsBillingCurrency() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card =
         createAccount(
             token,
@@ -643,7 +640,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void theDatabaseKeepsACardSnapshotInItsBillingCurrency() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card =
         createAccount(
             token,
@@ -660,7 +657,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void theDatabaseAllowsOneOpeningBalancePerAccountAndOnlyAsAManualBalance() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     recordOk(token, cash.id(), request(openingDate, "1000.00", "CHF"));
 
@@ -677,7 +674,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void aRegularSnapshotOnTheSameDateConflictsBothWays() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     AccountSnapshotResponse snapshot = recordSnapshot(token, cash.id(), openingDate, "999.00");
 
@@ -712,7 +709,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void theOpeningBalanceIsListedAmongTheSnapshotsButOnlyEditableThroughItsOwnEndpoint() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     OpeningBalanceResponse opening =
         recordOk(token, cash.id(), request(openingDate, "1000.00", "CHF"));
@@ -754,7 +751,7 @@ class OpeningBalanceControllerTest {
 
   @Test
   void deletingTheOpeningBalanceMakesTheValueUnknownAgain() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
     OpeningBalanceResponse opening =
         recordOk(token, cash.id(), request(openingDate, "1000.00", "CHF"));
@@ -785,13 +782,13 @@ class OpeningBalanceControllerTest {
 
   @Test
   void anotherMemberRecordsReadsAndDeletesTheOpeningBalance() {
-    String adminToken = bootstrapAdministrator();
+    bootstrapStandardUser();
     // The first member is a Standard User: once anyone else joins, the administrator's own
     // membership no longer reaches financial data (FR-TEN-007, AccessControlService).
-    createSecondMember(adminToken, "first@example.com");
+    createSecondMember("first@example.com");
     String firstToken = login("first@example.com");
     AccountSummaryResponse cash = createAccount(firstToken, "PostFinance", "CASH");
-    createSecondMember(adminToken, "member@example.com");
+    createSecondMember("member@example.com");
     String memberToken = login("member@example.com");
 
     OpeningBalanceResponse recorded =
@@ -1058,28 +1055,8 @@ class OpeningBalanceControllerTest {
         accountId);
   }
 
-  private UUID createSecondMember(String adminToken, String email) {
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(UserSummaryResponse.class);
-    try (Connection connection = dataSource.getConnection();
-        PreparedStatement statement =
-            connection.prepareStatement(
-                "SELECT workspace_member_id FROM app_user WHERE email = ?")) {
-      statement.setString(1, email);
-      try (ResultSet resultSet = statement.executeQuery()) {
-        assertThat(resultSet.next()).isTrue();
-        return (UUID) resultSet.getObject(1);
-      }
-    } catch (SQLException e) {
-      throw new IllegalStateException(e);
-    }
+  private UUID createSecondMember(String email) {
+    return WorkspaceLoginFixtures.addMember(dataSource, "admin@example.com", email, PASSWORD);
   }
 
   private void execute(String sql, Object... parameters) throws SQLException {
@@ -1126,18 +1103,9 @@ class OpeningBalanceControllerTest {
         .accessToken();
   }
 
-  private String bootstrapAdministrator() {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Test Workspace", "CHF")
         .accessToken();
   }
 

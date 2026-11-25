@@ -4,23 +4,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UpdateWorkspaceCurrencyRequest;
 import com.trackmywealth.backend.dto.WorkspaceResponse;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -117,7 +115,7 @@ class WorkspaceCurrencyControllerTest {
 
   @Test
   void workspaceCurrencyIsVersionedValidatedAndProtectedByIfMatch() {
-    String token = bootstrapAdministrator("CHF");
+    String token = bootstrapStandardUser("CHF");
     EntityExchangeResult<WorkspaceResponse> initial = getWorkspace(token);
 
     assertThat(initial.getResponseBody().currency()).isEqualTo("CHF");
@@ -186,7 +184,7 @@ class WorkspaceCurrencyControllerTest {
   // US-03-07: a currency change is audited like a rename; an unchanged currency writes nothing.
   @Test
   void aCurrencyChangeIsAuditedAndAnUnchangedOneIsNot() throws Exception {
-    String token = bootstrapAdministrator("CHF");
+    String token = bootstrapStandardUser("CHF");
     EntityExchangeResult<WorkspaceResponse> initial = getWorkspace(token);
     EntityExchangeResult<WorkspaceResponse> updated =
         changeCurrency(token, initial.getResponseHeaders().getETag(), "USD");
@@ -217,7 +215,7 @@ class WorkspaceCurrencyControllerTest {
   // its cross rates (V54's currencies in use), even when no account or transaction uses it.
   @Test
   void aNewWorkspaceCurrencyBecomesACurrencyInUse() throws Exception {
-    String token = bootstrapAdministrator("CHF");
+    String token = bootstrapStandardUser("CHF");
     String etag = getWorkspace(token).getResponseHeaders().getETag();
 
     client(token)
@@ -242,12 +240,12 @@ class WorkspaceCurrencyControllerTest {
 
   @Test
   void anyActiveLoginMemberUsesAndMayChangeTheSameWorkspaceCurrency() {
-    String adminToken = bootstrapAdministrator("CHF");
+    bootstrapStandardUser("CHF");
     // The first member is a Standard User: once anyone else joins, the administrator's own
     // membership no longer reaches financial data (FR-TEN-007, AccessControlService).
-    createStandardUser(adminToken, "first@example.com");
+    createStandardUser("first@example.com");
     String firstToken = login("first@example.com");
-    createStandardUser(adminToken, "member@example.com");
+    createStandardUser("member@example.com");
     String memberToken = login("member@example.com");
 
     EntityExchangeResult<WorkspaceResponse> memberWorkspace = getWorkspace(memberToken);
@@ -270,7 +268,7 @@ class WorkspaceCurrencyControllerTest {
 
   @Test
   void netWorthInstitutionAndAccountBalanceUseValuationDateFxAndAllowAdHocCurrency() {
-    String token = bootstrapAdministrator("CHF");
+    String token = bootstrapStandardUser("CHF");
     AccountSummaryResponse asset = createCustomAsset(token, "EUR");
     recordValuation(token, asset.id(), "100.00");
 
@@ -322,7 +320,7 @@ class WorkspaceCurrencyControllerTest {
   // workspace currency, while net worth over the same account is in CHF.
   @Test
   void aContainerDefaultsToItsOwnCurrencyNotTheWorkspaces() {
-    String token = bootstrapAdministrator("CHF");
+    String token = bootstrapStandardUser("CHF");
     UUID euroBank = createPortfolio(token, "Euro Bank", "EUR");
     AccountSummaryResponse asset = createCustomAsset(token, "USD", euroBank);
     recordValuation(token, asset.id(), "100.00");
@@ -344,7 +342,7 @@ class WorkspaceCurrencyControllerTest {
   // unknown, never zero or 1:1, the response is incomplete, and every other account still counts.
   @Test
   void anAdHocCurrencyWithoutARateMakesOnlyThatAccountUnknown() {
-    String token = bootstrapAdministrator("CHF");
+    String token = bootstrapStandardUser("CHF");
     AccountSummaryResponse euro = createCustomAsset(token, "EUR");
     recordValuation(token, euro.id(), "100.00");
     AccountSummaryResponse yen = createCustomAsset(token, "JPY");
@@ -375,7 +373,7 @@ class WorkspaceCurrencyControllerTest {
 
   @Test
   void anEmptyCurrencyParameterMeansTheDefault() {
-    String token = bootstrapAdministrator("CHF");
+    String token = bootstrapStandardUser("CHF");
 
     assertThat(netWorth(token, "").currency()).isEqualTo("CHF");
     assertThat(cashFlow(token, YearMonth.from(today()), "").complete()).isTrue();
@@ -384,7 +382,7 @@ class WorkspaceCurrencyControllerTest {
   @Test
   void cashFlowKeepsOriginalAmountsWithoutOverrideAndUsesEachBookingDaysFxWithOverride()
       throws Exception {
-    String token = bootstrapAdministrator("CHF");
+    String token = bootstrapStandardUser("CHF");
     AccountSummaryResponse cash = createCashAccount(token);
     YearMonth month = YearMonth.from(today());
     LocalDate first = month.atDay(1);
@@ -423,7 +421,7 @@ class WorkspaceCurrencyControllerTest {
 
   @Test
   void missingCashFlowFxMakesOnlyThatFigureUnknownNeverZero() throws Exception {
-    String token = bootstrapAdministrator("CHF");
+    String token = bootstrapStandardUser("CHF");
     AccountSummaryResponse cash = createCashAccount(token);
     YearMonth month = YearMonth.from(today());
     insertExpense(cash.id(), month.atDay(1), "-10.00", "EUR");
@@ -449,7 +447,7 @@ class WorkspaceCurrencyControllerTest {
 
   @Test
   void invalidAdHocCurrencyIsRejectedEvenWhenThereAreNoAccounts() {
-    String token = bootstrapAdministrator("CHF");
+    String token = bootstrapStandardUser("CHF");
 
     client(token)
         .get()
@@ -674,15 +672,8 @@ class WorkspaceCurrencyControllerTest {
     fxRateRepository.saveAndFlush(fxRate);
   }
 
-  private void createStandardUser(String adminToken, String email) {
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isCreated();
+  private void createStandardUser(String email) {
+    WorkspaceLoginFixtures.addMember(dataSource, "admin@example.com", email, PASSWORD);
   }
 
   private String login(String email) {
@@ -701,18 +692,9 @@ class WorkspaceCurrencyControllerTest {
         .accessToken();
   }
 
-  private String bootstrapAdministrator(String currency) {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Workspace A", currency))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser(String currency) {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Workspace A", currency)
         .accessToken();
   }
 

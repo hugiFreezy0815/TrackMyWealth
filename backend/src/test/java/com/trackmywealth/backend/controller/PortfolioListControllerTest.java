@@ -8,10 +8,8 @@ import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.verify;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
@@ -21,7 +19,6 @@ import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.PortfolioType;
 import com.trackmywealth.backend.dto.PortfolioViewResponse;
 import com.trackmywealth.backend.dto.ReassignAccountPortfolioRequest;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.ValueHistoryResponse;
 import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.Account;
@@ -29,6 +26,7 @@ import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.service.AccountValuationService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import jakarta.persistence.EntityManagerFactory;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -135,7 +133,7 @@ class PortfolioListControllerTest {
 
   @Test
   void monthlyChangeUsesMembershipAtEachValuationDateAcrossPortfolioPages() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse source = createPortfolio(token, "Source", "CHF");
     PortfolioResponse destination = createPortfolio(token, "Destination", "CHF");
     AccountSummaryResponse moving = createAccount(token, cash("Moving", source.id()));
@@ -223,7 +221,7 @@ class PortfolioListControllerTest {
 
   @Test
   void equallyOldPortfoliosAppearOnceAcrossPages() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     createPortfolio(token, "First", "CHF");
     createPortfolio(token, "Second", "CHF");
     execute("UPDATE portfolio SET created_at = '2026-01-01T00:00:00Z'");
@@ -247,9 +245,9 @@ class PortfolioListControllerTest {
 
   @Test
   void eachPortfolioShowsTheCountAndTotalOfItsActiveAccountsToEveryMember() throws Exception {
-    String adminToken = bootstrapAdministrator();
-    createStandardUser(adminToken, "anna@example.com");
-    createStandardUser(adminToken, "ben@example.com");
+    bootstrapStandardUser();
+    createStandardUser("anna@example.com");
+    createStandardUser("ben@example.com");
     String anna = login("anna@example.com");
     String ben = login("ben@example.com");
     PortfolioResponse postFinance = createPortfolio(anna, "PostFinance", "CHF");
@@ -276,7 +274,7 @@ class PortfolioListControllerTest {
 
   @Test
   void aMortgageLargerThanThePropertyInPersonalAssetsMakesItsTotalNegative() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     // No portfolio given: both land in the workspace's Personal Assets portfolio.
     UUID property =
         createAccount(
@@ -304,7 +302,7 @@ class PortfolioListControllerTest {
 
   @Test
   void oneAccountWithAnEstimatedValueMakesThePortfolioEstimated() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse bank = createPortfolio(token, "Bank", "CHF");
     UUID giro = createAccount(token, cash("Giro", bank.id())).id();
     seedOpeningBalance(giro, "1000.0000");
@@ -325,7 +323,7 @@ class PortfolioListControllerTest {
 
   @Test
   void anEmptyPortfolioIsListedWithCountZeroAndTotalZero() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse empty = createPortfolio(token, "Empty", "EUR");
 
     PortfolioListItemResponse row = byId(list(token)).get(empty.id());
@@ -342,7 +340,7 @@ class PortfolioListControllerTest {
 
   @Test
   void thePortfolioTotalsInTheWorkspaceCurrencyAddUpToNetWorth() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse postFinance = createPortfolio(token, "PostFinance", "CHF");
     PortfolioResponse dkb = createPortfolio(token, "DKB", "EUR");
     UUID privat = createAccount(token, cash("Privatkonto", postFinance.id())).id();
@@ -389,7 +387,7 @@ class PortfolioListControllerTest {
 
   @Test
   void eachRowShowsTheSameTotalsTypeAndStatusAsThePortfoliosView() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse dkb = createPortfolio(token, "DKB", "EUR");
     PortfolioResponse viac = createPortfolio(token, "VIAC", "CHF");
     UUID giro =
@@ -438,7 +436,7 @@ class PortfolioListControllerTest {
 
   @Test
   void portfoliosAreListedInCreationOrderWithTheirOwnFieldsAsInTheSingleRead() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID postFinanceEntry =
         queryUuid("SELECT id FROM institution_catalogue WHERE name = 'PostFinance'");
     PortfolioResponse fromCatalogue =
@@ -480,7 +478,7 @@ class PortfolioListControllerTest {
 
   @Test
   void anotherWorkspacesPortfoliosAreNeverListedAndAnAnonymousCallerIsRefused() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID foreign = foreignPortfolioWithAnAccount();
 
     List<PortfolioListItemResponse> rows = list(token);
@@ -499,7 +497,7 @@ class PortfolioListControllerTest {
 
   @Test
   void aMissingRateIntoTheWorkspaceCurrencyMarksOnlyThatPortfolioIncomplete() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse dkb = createPortfolio(token, "DKB", "EUR");
     PortfolioResponse postFinance = createPortfolio(token, "PostFinance", "CHF");
     UUID giro =
@@ -525,7 +523,7 @@ class PortfolioListControllerTest {
 
   @Test
   void morePortfoliosAndAccountsAreListedWithTheSameNumberOfQueries() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     createPortfolioWithAccounts(token, "First");
     long forTwo = statementsFor(() -> assertThat(list(token)).hasSize(2));
 
@@ -543,7 +541,7 @@ class PortfolioListControllerTest {
   // for more portfolios in the same currencies - not for more currencies.
   @Test
   void morePortfoliosInTheSameCurrenciesAreListedWithTheSameNumberOfQueries() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     seedFxRate("CHF", "EUR", "1.0500000000");
     seedFxRate("CHF", "USD", "1.1000000000");
     createPortfolioWithAccounts(token, "Euro", "EUR");
@@ -564,7 +562,7 @@ class PortfolioListControllerTest {
   // possible by hand until #439 decides how archiving treats them) is in no row and changes none.
   @Test
   void anArchivedPortfolioIsNotListedAndItsAccountsChangeNoOtherRow() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse kept = createPortfolio(token, "Kept", "CHF");
     PortfolioResponse closed = createPortfolio(token, "Closed", "CHF");
     UUID keptCash = createAccount(token, cash("Kept cash", kept.id())).id();
@@ -588,7 +586,7 @@ class PortfolioListControllerTest {
   // wealth change is +50 %, the return 0 %, as on the portfolio's own 1M chip.
   @Test
   void anAccountEnteringAPortfolioWithItsFirstBalanceIsNoReturnInItsRow() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse portfolio = createPortfolio(token, "Savings", "CHF");
     LocalDate from = today().minusMonths(1);
     seedOpeningBalance(
@@ -624,7 +622,7 @@ class PortfolioListControllerTest {
   @Test
   void aRowsReturnIsUnknownWithAnUnknownValueAndStartsAtThePortfoliosFirstTrackedDay()
       throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     LocalDate from = today().minusMonths(1);
     PortfolioResponse unknown = createPortfolio(token, "Unknown", "CHF");
     UUID giro =
@@ -890,15 +888,8 @@ class PortfolioListControllerTest {
     return LocalDate.now(ZoneId.of("Europe/Zurich"));
   }
 
-  private void createStandardUser(String adminToken, String email) {
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isCreated();
+  private void createStandardUser(String email) {
+    WorkspaceLoginFixtures.addMember(dataSource, "admin@example.com", email, PASSWORD);
   }
 
   private String login(String email) {
@@ -917,18 +908,9 @@ class PortfolioListControllerTest {
         .accessToken();
   }
 
-  private String bootstrapAdministrator() {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Test Workspace", "CHF")
         .accessToken();
   }
 

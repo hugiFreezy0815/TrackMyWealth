@@ -3,7 +3,6 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
@@ -14,7 +13,6 @@ import com.trackmywealth.backend.dto.PortfolioListItemResponse;
 import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.PortfolioSection;
 import com.trackmywealth.backend.dto.ReassignAccountPortfolioRequest;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UpdateAccountRequest;
 import com.trackmywealth.backend.dto.ValueHistoryResponse;
 import com.trackmywealth.backend.dto.ValueHistoryWarningValues;
@@ -23,6 +21,7 @@ import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -121,7 +120,7 @@ class NetWorthControllerTest {
   // sections can only come back in that order if the server sorts them.
   @Test
   void sectionsFollowThePortfolioViewOrderAndAddUpToNetWorth() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse portfolio = createPortfolio(token, "PostFinance", "CHF");
     UUID depot = createAccount(token, depot("Depot", portfolio.id())).id();
     UUID pillar = createAccount(token, pillar3a("Pillar 3a", portfolio.id())).id();
@@ -155,7 +154,7 @@ class NetWorthControllerTest {
   // none yet: it is counted in its section, left out of the subtotal, and marks it incomplete.
   @Test
   void anUnknownValueIsCountedButLeftOutOfItsSectionsSubtotal() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse portfolio = createPortfolio(token, "PostFinance", "CHF");
     UUID valued = createAccount(token, depot("Depot", portfolio.id())).id();
     createAccount(
@@ -188,7 +187,7 @@ class NetWorthControllerTest {
   // AC 4. The workspace currency is CHF; the subtotal is converted exactly as netWorth is.
   @Test
   void sectionsUseTheRequestedCurrencyAndTheSameFxRateAsNetWorth() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse portfolio = createPortfolio(token, "DKB", "EUR");
     UUID giro =
         createAccount(
@@ -217,7 +216,7 @@ class NetWorthControllerTest {
   // As in the Portfolio View, property and its mortgage share one section, net of the mortgage.
   @Test
   void thePropertyAndMortgageSectionIsNetOfTheMortgage() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID property =
         createAccount(
                 token,
@@ -247,7 +246,7 @@ class NetWorthControllerTest {
   // FR-CC-003: a card's outstanding balance is subtracted, in its own section as in netWorth.
   @Test
   void aCardSectionIsNegative() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse portfolio = createPortfolio(token, "Yuh", "CHF");
     UUID cash = createAccount(token, cash("Cash", portfolio.id())).id();
     UUID card =
@@ -274,7 +273,7 @@ class NetWorthControllerTest {
   // app.valuation.snapshot-stale-after (P45D) makes the whole section STALE, still complete.
   @Test
   void aSectionTakesTheWorstValueStatusOfItsAccounts() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID gold = createAccount(token, customAsset("Gold", "PRECIOUS_METAL")).id();
     UUID car = createAccount(token, customAsset("Car", "VEHICLE")).id();
     recordValuation(token, gold, today(), "12000");
@@ -294,7 +293,7 @@ class NetWorthControllerTest {
 
   @Test
   void aWorkspaceWithoutAccountsHasNoSections() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     NetWorthResponse response = netWorth(token, null);
 
@@ -307,7 +306,7 @@ class NetWorthControllerTest {
 
   @Test
   void yearlyHistoryIsBoundedAndItsFinalPointEqualsTheCurrentNetWorth() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     ValueHistoryResponse history = history(token, "1Y");
     NetWorthResponse current = netWorth(token, null);
@@ -324,7 +323,7 @@ class NetWorthControllerTest {
   @Test
   void declaredOpeningDateRemovesYearlyInceptionWarningAndEarlierEvidenceStillCounts()
       throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     LocalDate yearStart = today().minusYears(1);
     UUID baseline =
         createAccount(
@@ -386,7 +385,7 @@ class NetWorthControllerTest {
   // #607 AC 2: 100 / (2,000 + 30/365 × 1,000) = 4.80 %; the gold section alone gained 5 %.
   @Test
   void periodReturnWeightsAnAccountEnteringTrackingByTheTimeItWasHeld() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     LocalDate yearStart = today().minusYears(1);
     UUID gold = createAccount(token, customAsset("Gold", "PRECIOUS_METAL")).id();
     recordValuation(token, gold, yearStart.minusDays(10), "2000.00");
@@ -409,7 +408,7 @@ class NetWorthControllerTest {
   // #607 AC 3: the workspace is tracked only since its first balance, so the return starts there.
   @Test
   void periodReturnStartsAtTheEarliestTrackingStartWhenThatIsInsideThePeriod() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     LocalDate firstBalance = today().minusDays(34);
     UUID cash = createAccount(token, AccountRequests.account("Cash", "CASH", "CHF").build()).id();
     seedOpeningBalance(cash, "5000", firstBalance);
@@ -425,7 +424,7 @@ class NetWorthControllerTest {
   // return 0 %.
   @Test
   void netSavingChangesWealthButNotTheReturn() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID cash = createAccount(token, AccountRequests.account("Cash", "CASH", "CHF").build()).id();
     seedOpeningBalance(cash, "10000", today().minusYears(1).minusDays(5));
     seedBooking(cash, "INCOME", today().minusDays(200), "5000");
@@ -441,7 +440,7 @@ class NetWorthControllerTest {
   // #607 AC 7: an account that starts at an opening balance of 0 has nothing to earn a return on.
   @Test
   void periodReturnIsUnknownForADenominatorOfZero() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID cash = createAccount(token, AccountRequests.account("Cash", "CASH", "CHF").build()).id();
     seedOpeningBalance(cash, "0", today().minusDays(3));
 
@@ -456,7 +455,7 @@ class NetWorthControllerTest {
   // 80 / (10,000 + 150/365 × 5,000 − 50/365 × 1,000) = 0.67 %.
   @Test
   void interestAndFeesAreReturnWhileDepositsAndTaxBillsAreFlows() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID cash = createAccount(token, AccountRequests.account("Cash", "CASH", "CHF").build()).id();
     seedOpeningBalance(cash, "10000", today().minusYears(1).minusDays(5));
     seedBooking(cash, "INTEREST", today().minusDays(200), "100");
@@ -476,7 +475,7 @@ class NetWorthControllerTest {
   // here), so its fee lowers the return: −20 / (10,000 − 200) = −0.20 %.
   @Test
   void aCardWithoutAnOpeningBalanceIsTrackedFromItsInception() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     LocalDate yearStart = today().minusYears(1);
     UUID cash = createAccount(token, AccountRequests.account("Cash", "CASH", "CHF").build()).id();
     seedOpeningBalance(cash, "10000", yearStart.minusDays(5));
@@ -495,7 +494,7 @@ class NetWorthControllerTest {
   // all year gains CHF 200 of FX. 200 / (1,000 + 100/365 × 600) = 17.18 %.
   @Test
   void aForeignCurrencyFlowConvertsAtItsBookingDaysRate() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     LocalDate yearStart = today().minusYears(1);
     seedFxRateOn("EUR", "CHF", yearStart, "1.00");
     seedFxRateOn("EUR", "CHF", today().minusDays(100), "1.20");
@@ -513,7 +512,7 @@ class NetWorthControllerTest {
   // workspace's.
   @Test
   void aPortfoliosReturnStartsAtItsOwnEarliestTrackingStart() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     LocalDate yearStart = today().minusYears(1);
     UUID gold = createAccount(token, customAsset("Gold", "PRECIOUS_METAL")).id();
     recordValuation(token, gold, yearStart.minusDays(10), "2000.00");
@@ -531,7 +530,7 @@ class NetWorthControllerTest {
 
   @Test
   void historicalSnapshotValuesAreStepsAndEstimatedBetweenObservations() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID gold = createAccount(token, customAsset("Gold", "PRECIOUS_METAL")).id();
     recordValuation(token, gold, today().minusDays(25), "10000.00");
     recordValuation(token, gold, today().minusDays(5), "12000.00");
@@ -555,7 +554,7 @@ class NetWorthControllerTest {
 
   @Test
   void anAccountWithoutAnFxRateIsAValueUnknownCodeWithoutItsName() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse portfolio = createPortfolio(token, "DKB", "EUR");
     UUID cash =
         createAccount(
@@ -580,7 +579,7 @@ class NetWorthControllerTest {
 
   @Test
   void portfolioHistoryUsesItsOwnCurrencyWhileWorkspaceHistoryUsesHistoricalFx() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse portfolio = createPortfolio(token, "DKB", "EUR");
     UUID cash =
         createAccount(
@@ -618,7 +617,7 @@ class NetWorthControllerTest {
 
   @Test
   void newlyCreatedAccountWithoutHistoricalEvidenceDoesNotAppearBeforeCreation() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID cash =
         createAccount(token, cash("New cash", createPortfolio(token, "Bank", "CHF").id())).id();
     seedOpeningBalance(cash, "2000");
@@ -638,7 +637,7 @@ class NetWorthControllerTest {
 
   @Test
   void migratedBaselineBeforePeriodIsAuthoritativeForRecentHistory() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse portfolio = createPortfolio(token, "Migrated portfolio", "CHF");
     UUID accountId = createAccount(token, cash("Migrated cash", portfolio.id())).id();
     seedOpeningBalance(accountId, "2000", today().minusDays(21));
@@ -655,7 +654,7 @@ class NetWorthControllerTest {
 
   @Test
   void migratedBaselineStillWarnsBeforeTrackingBegan() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse portfolio = createPortfolio(token, "Migration uncertainty", "CHF");
     UUID accountId = createAccount(token, cash("Old cash", portfolio.id())).id();
     seedOpeningBalance(accountId, "2000", today().minusDays(21));
@@ -672,7 +671,7 @@ class NetWorthControllerTest {
 
   @Test
   void unrelatedPortfolioInceptionCannotInvalidateTheRequestedPortfolio() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse portfolioA = createPortfolio(token, "Established", "CHF");
     PortfolioResponse portfolioB = createPortfolio(token, "Recent", "CHF");
     UUID known = createAccount(token, cash("Established cash", portfolioA.id())).id();
@@ -696,7 +695,7 @@ class NetWorthControllerTest {
 
   @Test
   void maximumPortfolioHistoryStartsWithHistoricalMembershipNotOtherActivity() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse older = createPortfolio(token, "Older", "CHF");
     PortfolioResponse newer = createPortfolio(token, "Newer", "CHF");
     AccountSummaryResponse oldAccount = createAccount(token, cash("Old", older.id()));
@@ -731,7 +730,7 @@ class NetWorthControllerTest {
 
   @Test
   void foreignWorkspacePortfolioHistoryReturnsNotFound() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID foreignWorkspace = UUID.randomUUID();
     UUID foreignPortfolio;
     try (Connection connection = dataSource.getConnection()) {
@@ -769,7 +768,7 @@ class NetWorthControllerTest {
 
   @Test
   void historyUsesDifferentFxRatesOnDifferentDates() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse portfolio = createPortfolio(token, "EUR Bank", "EUR");
     UUID cash =
         createAccount(
@@ -796,7 +795,7 @@ class NetWorthControllerTest {
 
   @Test
   void historicalPortfolioReassignmentPreservesThePreviousPortfolioValues() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse source = createPortfolio(token, "Source", "CHF");
     PortfolioResponse destination = createPortfolio(token, "Destination", "CHF");
     AccountSummaryResponse account = createAccount(token, cash("Moving account", source.id()));
@@ -826,7 +825,7 @@ class NetWorthControllerTest {
 
   @Test
   void archiveAndRestoreRetainThePreviousArchivedInterval() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse portfolio = createPortfolio(token, "History", "CHF");
     AccountSummaryResponse account =
         createAccount(token, cash("Temporarily archived", portfolio.id()));
@@ -868,7 +867,7 @@ class NetWorthControllerTest {
 
   @Test
   void internalTransferBetweenPortfoliosDoesNotBecomeMarketPerformance() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse source = createPortfolio(token, "Sending portfolio", "CHF");
     PortfolioResponse destination = createPortfolio(token, "Receiving portfolio", "CHF");
     UUID from = createAccount(token, cash("Source cash", source.id())).id();
@@ -903,7 +902,7 @@ class NetWorthControllerTest {
 
   @Test
   void unresolvedTransferIsReflectedInHistoryCompleteness() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     PortfolioResponse portfolio = createPortfolio(token, "Needs review", "CHF");
     UUID cash = createAccount(token, cash("Cash", portfolio.id())).id();
     seedOpeningBalance(cash, "2000");
@@ -926,7 +925,7 @@ class NetWorthControllerTest {
 
   @Test
   void invalidHistoryPeriodIsRejectedWithValidationFailed() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     client(token)
         .get()
@@ -940,7 +939,7 @@ class NetWorthControllerTest {
 
   @Test
   void portfolioListIncludesOneMonthChangeComputedOnTheServer() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
 
     PortfolioListItemResponse[] rows =
         client(token)
@@ -1197,22 +1196,13 @@ class NetWorthControllerTest {
     return LocalDate.now(ZoneId.of("Europe/Zurich"));
   }
 
-  private String bootstrapAdministrator() {
-    return RestTestClient.bindToServer()
-        .baseUrl("http://localhost:%d".formatted(port))
-        .build()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new SetupAdministratorRequest(
-                "admin@example.com", "correct-horse-battery-staple", "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            RestTestClient.bindToServer().baseUrl("http://localhost:%d".formatted(port)).build(),
+            "admin@example.com",
+            "correct-horse-battery-staple",
+            "Test Workspace",
+            "CHF")
         .accessToken();
   }
 

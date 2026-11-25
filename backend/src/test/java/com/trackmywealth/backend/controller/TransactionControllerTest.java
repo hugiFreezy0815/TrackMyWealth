@@ -6,22 +6,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
 import com.trackmywealth.backend.dto.SecurityResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionHistoryEntryResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
-import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.error.ProblemCode;
@@ -29,6 +25,7 @@ import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -135,7 +132,7 @@ class TransactionControllerTest {
 
   @Test
   void historyPaginatesAllCategoryChangesAndEnforcesSortAndAccountAccess() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     AccountSummaryResponse other = createCashAccount(token);
     UUID id = insertLedgerRow(card.id(), "-17.00", false);
@@ -215,7 +212,7 @@ class TransactionControllerTest {
 
   @Test
   void historyShowsVoidsRestoresAndCorrectionChain() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     UUID original = insertLedgerRow(card.id(), "-12.00", true);
     UUID replacement = UUID.randomUUID();
@@ -281,7 +278,7 @@ class TransactionControllerTest {
 
   @Test
   void directReadIncludesPortfolioAndStrongEtagWhileManualProvenanceIsNull() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     TransactionResponse created = recordWithKey(token, card.id(), "-24.00", "manual-detail");
 
@@ -314,7 +311,7 @@ class TransactionControllerTest {
 
   @Test
   void importedCamtCodeAndBatchAreReturnedWithoutRawSourceData() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
     UUID batch = UUID.randomUUID();
     UUID transactionId = UUID.randomUUID();
@@ -393,7 +390,7 @@ class TransactionControllerTest {
 
   @Test
   void counterpartyAccountNameAndConvertedCardAmountAreIncluded() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCardWithBillingCurrency(token, "EUR", "EUR");
     AccountSummaryResponse pocket = createCashAccount(token);
     TransactionResponse purchase =
@@ -426,7 +423,7 @@ class TransactionControllerTest {
 
   @Test
   void directReadAllowsVoidsButHidesDeletedAndWrongAccountIds() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     AccountSummaryResponse other = createCashAccount(token);
     UUID voided = insertLedgerRow(card.id(), "-8.00", true);
@@ -459,7 +456,7 @@ class TransactionControllerTest {
 
   @Test
   void directReadOfAnotherWorkspacesTransactionIsNotFound() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     UUID foreignAccount = accountInAnotherWorkspace();
     UUID foreignTransaction = insertLedgerRow(foreignAccount, "-9.00", false);
@@ -512,7 +509,7 @@ class TransactionControllerTest {
 
   @Test
   void recordingACardPurchaseCreatesALedgerRowAndTheBalanceReflectsItImmediately() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
 
     TransactionResponse created =
@@ -541,7 +538,7 @@ class TransactionControllerTest {
 
   @Test
   void severalPurchasesAccumulateIntoTheOutstandingBalanceAndAreListedNewestFirst() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     recordPurchaseOn(token, card.id(), "-85.00", today().minusDays(2));
     recordPurchaseOn(token, card.id(), "-15.50", today());
@@ -556,7 +553,7 @@ class TransactionControllerTest {
 
   @Test
   void aPurchaseBookedInTheFutureDoesNotCountUntilItsBookingDate() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     recordPurchaseOn(token, card.id(), "-85.00", today());
     recordPurchaseOn(token, card.id(), "-40.00", today().plusDays(3));
@@ -569,7 +566,7 @@ class TransactionControllerTest {
   @Test
   void theOutstandingBalanceIsSubtractedFromNetWorthNeverAdded() {
     // DoD: records a purchase, asserts both the card balance and workspace net worth.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     AccountSummaryResponse asset = createCustomAsset(token);
     recordValuation(token, asset.id(), "1000.00");
@@ -595,7 +592,7 @@ class TransactionControllerTest {
 
   @Test
   void aCardOnItsOwnMakesNetWorthNegative() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     recordPurchaseOn(token, card.id(), "-85.00", today());
 
@@ -609,7 +606,7 @@ class TransactionControllerTest {
   void theInstitutionSummaryCountsTheCardAsALiabilityToo() {
     // Guards the extraction of value resolution out of PortfolioService: a card under an
     // institution now has a value source, and must show up in its liabilities.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     recordPurchaseOn(token, card.id(), "-85.00", today());
 
@@ -636,7 +633,7 @@ class TransactionControllerTest {
   void aCardWithNoLedgerHistoryHasAKnownZeroBalance() {
     // Product decision: a card with nothing recorded owes exactly CHF 0 - a known value, so it does
     // not make net worth incomplete.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     AccountSummaryResponse asset = createCustomAsset(token);
     recordValuation(token, asset.id(), "1000.00");
@@ -655,7 +652,7 @@ class TransactionControllerTest {
 
   @Test
   void aCardWhosePurchasesNetToExactlyZeroIsAKnownZero() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     insertLedgerRow(card.id(), "-50.00", false);
     insertLedgerRow(card.id(), "50.00", false);
@@ -672,7 +669,7 @@ class TransactionControllerTest {
     // FR-LIF-002: "both records remain in the ledger". Dropping only the voided original would
     // count the +85.00 reversal alone - a balance of -85.00 (a phantom credit) instead of the
     // correct 0; the pair counts as zero together.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     UUID voided = insertLedgerRow(card.id(), "-85.00", true);
     insertReversalOf(card.id(), "85.00", voided);
@@ -685,7 +682,7 @@ class TransactionControllerTest {
 
   @Test
   void theMccIsRetainedSeparatelyFromTheReportingCategory() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     TransactionResponse created =
         recordPurchase(token, card.id(), "-85.00", "Migros", "5411")
@@ -718,7 +715,7 @@ class TransactionControllerTest {
 
   @Test
   void aPurchaseWithoutAnMccStoresNoSourceData() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
 
     TransactionResponse created =
@@ -736,7 +733,7 @@ class TransactionControllerTest {
 
   @Test
   void aNonNegativePurchaseAmountIsRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
 
     recordPurchase(token, card.id(), "85.00", "Migros", null)
@@ -751,7 +748,7 @@ class TransactionControllerTest {
   void aPurchaseOnANonCardAccountIsRejectedByTheServiceLayer() {
     // No DB trigger guards transaction.account_id against the account's type (trg_extension_type_
     // guard only fires on the extension tables), so the service check is the only defence.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
 
     recordPurchase(token, cash.id(), "-85.00", "Migros", null)
@@ -764,7 +761,7 @@ class TransactionControllerTest {
 
   @Test
   void aForeignCurrencyPurchaseWithAnExplicitRateRetainsTheOriginalAmountAndConvertsTheBalance() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token); // billed in CHF
     recordPurchaseOn(token, card.id(), "-30.00", today()); // an ordinary CHF purchase too
 
@@ -793,7 +790,7 @@ class TransactionControllerTest {
 
   @Test
   void aDisclosedBilledAmountDerivesTheRateInstead() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
 
     TransactionResponse created =
@@ -812,7 +809,7 @@ class TransactionControllerTest {
 
   @Test
   void withNeitherARateNorABilledAmountAGenericDailyRateIsUsedAndFlaggedEstimated() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     seedFxRate("EUR", "CHF", today(), "1.0500000000");
 
@@ -834,7 +831,7 @@ class TransactionControllerTest {
   void withNoDerivableRateAtAllTheRequestIsRejectedNotSilentlyRecordedWithoutOne() {
     // The story's own edge case: never leave fx_rate_to_account_currency null with no indication
     // why. Deliberately no seedFxRate: EUR/CHF has no rate at all to fall back to.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
 
     postTransaction(token, card.id(), foreignPurchase("-50.00", "EUR", "Hotel", null, null, null))
@@ -845,7 +842,7 @@ class TransactionControllerTest {
 
   @Test
   void anExplicitRateAndABilledAmountTogetherIsRejectedAsAmbiguous() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
 
     postTransaction(
@@ -856,7 +853,7 @@ class TransactionControllerTest {
 
   @Test
   void fxFieldsAreRejectedOnAnOrdinarySameCurrencyPurchase() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
 
     postTransaction(
@@ -871,7 +868,7 @@ class TransactionControllerTest {
 
   @Test
   void aDisclosedForeignTransactionFeeIsItsOwnLinkedFeeRowNotFoldedIntoThePurchase() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
 
     TransactionResponse purchase =
@@ -921,7 +918,7 @@ class TransactionControllerTest {
   void aCardsBalanceIsInItsBillingCurrencyEvenWhenItDiffersFromNativeCurrency() {
     // Regression: the balance used to be reported as if it were in account.nativeCurrency even
     // when the card's billing_currency (what the ledger is actually converted to) differs.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCardWithBillingCurrency(token, "USD", "EUR");
 
     // Matches billing_currency (EUR): domestic from the card's own point of view, so no FX rate
@@ -940,7 +937,7 @@ class TransactionControllerTest {
   void aCardsBalanceNeverCarriesMoreThanFourDecimalPlaces() {
     // Regression: amount (NUMERIC 20,4) * fxRateToAccountCurrency (NUMERIC 20,10) can carry far
     // more than 4 decimal places once summed - the same-currency read path must still round.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     postTransaction(
             token, card.id(), foreignPurchase("-50.00", "EUR", "Hotel", "1.0345678912", null, null))
@@ -954,7 +951,7 @@ class TransactionControllerTest {
 
   @Test
   void aBilledAmountThatWouldOverflowTheRateColumnIsRejectedNotA500() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
 
     postTransaction(
@@ -968,7 +965,7 @@ class TransactionControllerTest {
 
   @Test
   void aReplayWithADifferentBilledAmountIsAConflictNotASilentReplay() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     String key = UUID.randomUUID().toString();
     postTransaction(token, card.id(), foreignPurchaseWithKey("-50.00", "EUR", "-55.00", null, key))
@@ -983,7 +980,7 @@ class TransactionControllerTest {
 
   @Test
   void aReplayWithADifferentFeeAmountIsAConflictNotASilentReplay() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     seedFxRate("EUR", "CHF", today(), "1.0500000000"); // neither rate nor billedAmount given below
     String key = UUID.randomUUID().toString();
@@ -1048,7 +1045,7 @@ class TransactionControllerTest {
 
   @Test
   void anUnsupportedTransactionTypeIsRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
 
     postTransaction(
@@ -1072,7 +1069,7 @@ class TransactionControllerTest {
 
   @Test
   void aMalformedMccOrTooPreciseAmountIsABadRequest() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
 
     recordPurchase(token, card.id(), "-85.00", "Migros", "54")
@@ -1089,7 +1086,7 @@ class TransactionControllerTest {
 
   @Test
   void anArchivedCardRejectsNewPurchases() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     client(token)
         .post()
@@ -1106,7 +1103,7 @@ class TransactionControllerTest {
 
   @Test
   void anUnknownAccountIsNotFoundOnEveryEndpoint() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID unknown = UUID.randomUUID();
 
     recordPurchase(token, unknown, "-85.00", null, null)
@@ -1140,10 +1137,10 @@ class TransactionControllerTest {
 
   @Test
   void anotherMemberSeesAndRecordsOnTheFirstMembersCard() {
-    String adminToken = bootstrapAdministrator();
+    String adminToken = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(adminToken);
     recordPurchaseOn(adminToken, card.id(), "-85.00", today());
-    createSecondMember(adminToken, "bob@example.com");
+    createSecondMember("bob@example.com");
     String bobToken = login("bob@example.com");
 
     recordPurchase(bobToken, card.id(), "-1.00", null, null)
@@ -1160,10 +1157,10 @@ class TransactionControllerTest {
 
   @Test
   void anotherMemberListsAndRecordsOnTheCardWithoutAnyGrant() {
-    String adminToken = bootstrapAdministrator();
+    String adminToken = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(adminToken);
     recordPurchaseOn(adminToken, card.id(), "-85.00", today());
-    createSecondMember(adminToken, "bob@example.com");
+    createSecondMember("bob@example.com");
     String bobToken = login("bob@example.com");
 
     assertThat(balance(bobToken, card.id()).value()).isEqualByComparingTo("85.00");
@@ -1180,16 +1177,16 @@ class TransactionControllerTest {
 
   @Test
   void everyMembersNetWorthCoversTheWholeWorkspace() {
-    String adminToken = bootstrapAdministrator();
+    bootstrapStandardUser();
     // The first member is a Standard User: once anyone else joins, the administrator's own
     // membership no longer reaches financial data (FR-TEN-007, AccessControlService).
-    createSecondMember(adminToken, "alice@example.com");
+    createSecondMember("alice@example.com");
     String aliceToken = login("alice@example.com");
     AccountSummaryResponse card = createCard(aliceToken);
     AccountSummaryResponse asset = createCustomAsset(aliceToken);
     recordValuation(aliceToken, asset.id(), "1000.00");
     recordPurchaseOn(aliceToken, card.id(), "-85.00", today());
-    createSecondMember(adminToken, "bob@example.com");
+    createSecondMember("bob@example.com");
     String bobToken = login("bob@example.com");
 
     NetWorthResponse bobs = netWorth(bobToken);
@@ -1205,7 +1202,7 @@ class TransactionControllerTest {
 
   @Test
   void retryingAPurchaseWithTheSameExternalIdReturnsTheOriginalInsteadOfRecordingItTwice() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     String key = UUID.randomUUID().toString();
 
@@ -1220,7 +1217,7 @@ class TransactionControllerTest {
 
   @Test
   void theSameExternalIdWithDifferentFinancialFieldsIsAConflictNotASilentReplay() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     String key = UUID.randomUUID().toString();
     recordWithKey(token, card.id(), "-85.00", key);
@@ -1233,7 +1230,7 @@ class TransactionControllerTest {
 
   @Test
   void aReplayStillAnswersAfterTheCardHasBeenArchived() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     String key = UUID.randomUUID().toString();
     TransactionResponse first = recordWithKey(token, card.id(), "-85.00", key);
@@ -1252,7 +1249,7 @@ class TransactionControllerTest {
 
   @Test
   void anExternalIdIsScopedToItsAccount() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cardA = createCard(token);
     AccountSummaryResponse cardB = createCard(token);
     String key = UUID.randomUUID().toString();
@@ -1268,7 +1265,7 @@ class TransactionControllerTest {
 
   @Test
   void theTransactionListIsPagedNewestFirstUnlessAWhitelistedSortSaysOtherwise() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     recordPurchaseOn(token, card.id(), "-10.00", today().minusDays(2));
     recordPurchaseOn(token, card.id(), "-20.00", today().minusDays(1));
@@ -1296,7 +1293,7 @@ class TransactionControllerTest {
   // booking made in another currency.
   @Test
   void anAmountSortComparesForeignCurrencyBookingsByTheirValueInTheAccountCurrency() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token); // billed in CHF
     recordPurchaseOn(token, card.id(), "-105.00", today());
     // -100 EUR at 1.1 cost the account -110 CHF: more than the CHF purchase, though -100 > -105.
@@ -1319,7 +1316,7 @@ class TransactionControllerTest {
   // generated column must hold every product the two columns allow, or the insert itself fails.
   @Test
   void aBookingWhoseValueInTheAccountCurrencyNeedsMoreThanSixteenIntegerDigitsIsStillRecorded() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token); // billed in CHF
     recordPurchaseOn(token, card.id(), "-10.00", today());
     postTransaction(
@@ -1337,7 +1334,7 @@ class TransactionControllerTest {
 
   @Test
   void aSortOnAnUnknownPropertyIsA400InvalidSortNotA500() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     recordPurchaseOn(token, card.id(), "-10.00", today());
 
@@ -1354,7 +1351,7 @@ class TransactionControllerTest {
 
   @Test
   void anMccStoredAsANumberByAnImporterStillReadsBackAsAFourDigitCode() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     insertLedgerRowWithSourceData(card.id(), "-1.00", "{\"mcc\": 742}");
     insertLedgerRowWithSourceData(card.id(), "-2.00", "{\"mcc\": \"5411\"}");
@@ -1369,7 +1366,7 @@ class TransactionControllerTest {
 
   @Test
   void theBalanceSaysWhereItsFigureCameFrom() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     AccountSummaryResponse asset = createCustomAsset(token);
     AccountSummaryResponse cash = createCashAccount(token);
@@ -1388,7 +1385,7 @@ class TransactionControllerTest {
 
   @Test
   void netWorthIsApproximateWhileAnIncludedFigureIsAnAssumptionAndExactOnceItIsMeasured() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
     AccountSummaryResponse asset = createCustomAsset(token);
     recordValuation(token, asset.id(), "1000.00");
@@ -1406,7 +1403,7 @@ class TransactionControllerTest {
 
   @Test
   void aLoanCountedAtItsOriginalPrincipalMakesNetWorthApproximate() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse mortgage =
         client(token)
             .post()
@@ -1436,7 +1433,7 @@ class TransactionControllerTest {
 
   @Test
   void aForeignCurrencyCardIsConvertedIntoTheReportingCurrencyInNetWorth() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "EUR Card", "CREDIT_CARD", "EUR", null);
     recordPurchaseIn(token, card.id(), "-100.00", "EUR");
     seedFxRate("EUR", "CHF", today(), "0.9500000000");
@@ -1466,7 +1463,7 @@ class TransactionControllerTest {
     // The FX-degradation regression (#78) on the new /net-worth path: a missing rate must leave the
     // one account out and flag the figure incomplete - not roll the shared transaction back and
     // 500.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "EUR Card", "CREDIT_CARD", "EUR", null);
     AccountSummaryResponse asset = createCustomAsset(token);
     recordValuation(token, asset.id(), "1000.00");
@@ -1489,7 +1486,7 @@ class TransactionControllerTest {
   @Test
   void aCashExpenseIsRecordedAsManualWithTodaysBookingDateAndNoSecurity() {
     // The story's DoD: a CHF 45.00 expense on a CASH account, end to end through the API and DB.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
 
     TransactionResponse created =
@@ -1518,7 +1515,7 @@ class TransactionControllerTest {
 
   @Test
   void aManualEntryKeepsItsCounterpartyNameApartFromItsDescription() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
     CreateTransactionRequest groceries =
         TransactionRequests.withCounterpartyName(
@@ -1542,7 +1539,7 @@ class TransactionControllerTest {
 
   @Test
   void aBlankCounterpartyNameIsStoredAsNone() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
 
     TransactionResponse created =
@@ -1562,7 +1559,7 @@ class TransactionControllerTest {
 
   @Test
   void aCounterpartyNameLongerThan255CharactersIsA400NamingTheField() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
 
     postTransaction(
@@ -1582,7 +1579,7 @@ class TransactionControllerTest {
 
   @Test
   void everyCashTypeIsAcceptedWithItsOwnSignAndRejectedWithTheOpposite() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
 
     for (String outflow : List.of("EXPENSE", "WITHDRAWAL", "FEE", "TAX")) {
@@ -1614,7 +1611,7 @@ class TransactionControllerTest {
   void typesThatBelongToLaterStoriesAreRejectedOnACashAccount() {
     // DEBT_REPAYMENT -> US-10-02; a PENSION_CONTRIBUTION without its pension account is incomplete;
     // BUY/SELL/DIVIDEND need an account that holds positions.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
 
     for (String type :
@@ -1629,7 +1626,7 @@ class TransactionControllerTest {
 
   @Test
   void aCardAccountRejectsCashTypes() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createCard(token);
 
     for (String type : List.of("INCOME", "DEPOSIT", "REFUND", "FEE", "TAX", "WITHDRAWAL")) {
@@ -1642,7 +1639,7 @@ class TransactionControllerTest {
 
   @Test
   void aForeignCurrencyCashEntryWithAnExplicitRateKeepsTheOriginalAmountAndTheRate() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
 
     TransactionResponse created =
@@ -1662,7 +1659,7 @@ class TransactionControllerTest {
 
   @Test
   void aDisclosedBilledAmountDerivesTheRateForACashEntryToo() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
 
     TransactionResponse created =
@@ -1679,7 +1676,7 @@ class TransactionControllerTest {
 
   @Test
   void aForeignCurrencyCashEntryWithNoRateFallsBackToTheDailyRateFlaggedEstimated() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
     seedFxRate("EUR", "CHF", today(), "1.0500000000");
 
@@ -1697,7 +1694,7 @@ class TransactionControllerTest {
 
   @Test
   void aForeignCurrencyCashEntryWithNoDerivableRateIsRejectedNotRecordedWithoutOne() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
 
     postTransaction(token, cash.id(), foreignCash("EXPENSE", "-50.00", "EUR", null, null))
@@ -1708,7 +1705,7 @@ class TransactionControllerTest {
 
   @Test
   void fxFieldsAndAForeignFeeAreRejectedWhereTheyDoNotApplyToACashEntry() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
     seedFxRate("EUR", "CHF", today(), "1.0500000000");
 
@@ -1739,7 +1736,7 @@ class TransactionControllerTest {
 
   @Test
   void aCashEntryOnAnArchivedAccountIsRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
     client(token)
         .post()
@@ -1756,7 +1753,7 @@ class TransactionControllerTest {
 
   @Test
   void aCashEntryRetriedWithTheSameExternalIdIsRecordedOnce() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
     CreateTransactionRequest request =
         TransactionRequests.cash(
@@ -1795,9 +1792,9 @@ class TransactionControllerTest {
 
   @Test
   void anotherMemberRecordsACashEntry() {
-    String adminToken = bootstrapAdministrator();
+    String adminToken = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(adminToken);
-    createSecondMember(adminToken, "member@example.com");
+    createSecondMember("member@example.com");
     String memberToken = login("member@example.com");
 
     postTransaction(memberToken, cash.id(), cashTransaction("EXPENSE", "-5.00", "CHF"))
@@ -1830,7 +1827,7 @@ class TransactionControllerTest {
   void cashExpensesAndTaxCountAsSpendingButInflowsDoNot() {
     // Review finding: EXPENSE/TAX were accepted but missing from SPENDING_TYPES, so a recorded
     // CHF 45 expense showed as 0 spending with no incomplete flag.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
     for (CreateTransactionRequest request :
         List.of(
@@ -1855,7 +1852,7 @@ class TransactionControllerTest {
 
   @Test
   void aCustodianAccountTakesOnlyItsOwnCashMovements() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "Depot", "SECURITIES", "CHF", null);
 
     for (String outflow : List.of("WITHDRAWAL", "FEE", "TAX")) {
@@ -1884,7 +1881,7 @@ class TransactionControllerTest {
   void aLoanOrPensionTakesNoCashTypesBecauseTheyHaveTheirOwn() {
     // INTEREST is forced positive, which on a liability would move the balance the wrong way;
     // DEBT_REPAYMENT (US-10-02) and PENSION_CONTRIBUTION (US-10-01) are the types for these.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse loan = createLoan(token);
     AccountSummaryResponse pension = createPension(token);
 
@@ -1908,7 +1905,7 @@ class TransactionControllerTest {
   @Test
   void aSecurityBuyRecordsQuantityPriceFeeAndItsNetCashImpactEndToEnd() {
     // The story's DoD: BUY 10 shares at CHF 100 with a CHF 5 fee on a depot.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
     LocalDate tradeDate = today().minusDays(2);
@@ -1951,7 +1948,7 @@ class TransactionControllerTest {
 
   @Test
   void aSaleCarriesANegativeQuantityAndItsProceedsNetOfCosts() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
 
@@ -1970,7 +1967,7 @@ class TransactionControllerTest {
   @Test
   void aSaleWhoseCostsExceedItsProceedsIsRecordedWithItsNegativeOrZeroCashLeg() {
     // Selling a near-worthless remnant: 1 share at 0.50 with a 5.00 fee costs 4.50 in cash.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
 
@@ -1992,7 +1989,7 @@ class TransactionControllerTest {
 
   @Test
   void tradeSignsFollowTheirDirection() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
 
@@ -2033,7 +2030,7 @@ class TransactionControllerTest {
 
   @Test
   void aTradeAmountMustAgreeWithQuantityTimesPriceWithinStatementRounding() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
 
@@ -2054,7 +2051,7 @@ class TransactionControllerTest {
   void aLargeTradeAtARoundedAveragePriceIsAcceptedButATypoIsNot() {
     // Review finding: 25,000 shares at an exact 12.345678, shown as 12.3457. The booked amount is
     // 308,641.95; the shown price gives 308,642.50. A fixed 0.01 rejected this real statement.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
 
@@ -2074,7 +2071,7 @@ class TransactionControllerTest {
   @Test
   void aCurrencyWithoutCentsAllowsItsOwnMinorUnit() {
     // A fractional JPY savings-plan buy: 1.2345 x 2,345 = 2,894.9025, booked as 2,895 yen.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
 
@@ -2093,7 +2090,7 @@ class TransactionControllerTest {
 
   @Test
   void aTradeNeedsAnExistingSecurityAQuantityAndAPrice() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
 
@@ -2122,7 +2119,7 @@ class TransactionControllerTest {
 
   @Test
   void investmentTypesNeedAnAccountThatHoldsPositionsWhateverItsType() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse cash = createCashAccount(token);
     AccountSummaryResponse plainPension = createPension(token);
     AccountSummaryResponse fundPension = createPensionHoldingPositions(token);
@@ -2144,10 +2141,10 @@ class TransactionControllerTest {
 
   @Test
   void anotherMemberTradesInTheDepot() {
-    String adminToken = bootstrapAdministrator();
+    String adminToken = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(adminToken, "CHF");
     UUID security = createSecurity(adminToken);
-    createSecondMember(adminToken, "member@example.com");
+    createSecondMember("member@example.com");
     String memberToken = login("member@example.com");
 
     postTransaction(memberToken, depot.id(), trade("BUY", security, "10", "100", null, "-1000.00"))
@@ -2158,7 +2155,7 @@ class TransactionControllerTest {
   @Test
   void aDividendKeepsGrossWithheldAndNetDistinguishable() {
     // FR-TAXR-001's example: a gross dividend of 100 with 35% withheld puts 65 in the account.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
 
@@ -2177,7 +2174,7 @@ class TransactionControllerTest {
 
   @Test
   void aDividendWithoutWithholdingNeedsOnlyItsAmount() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
 
@@ -2195,7 +2192,7 @@ class TransactionControllerTest {
 
   @Test
   void dividendFiguresThatDoNotReconcileAreRejected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
 
@@ -2270,7 +2267,7 @@ class TransactionControllerTest {
 
   @Test
   void investmentFieldsAreRejectedOnEveryOtherType() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
 
@@ -2308,7 +2305,7 @@ class TransactionControllerTest {
 
   @Test
   void tradeSettlementAndBookingDatesAreOrdered() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
 
@@ -2369,7 +2366,7 @@ class TransactionControllerTest {
   void aForeignCurrencyBuyKeepsTheTradeCurrencyAndTheBrokersRate() {
     // A CHF depot whose cash is also held in USD: the trade stays in USD; the rate is the one the
     // broker disclosed, not an estimate, and the fee stays on the trade.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
 
@@ -2394,7 +2391,7 @@ class TransactionControllerTest {
 
   @Test
   void aForeignCurrencyTradeWithoutADisclosedRateFallsBackToTheDailyRateFlaggedEstimated() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
     seedFxRate("USD", "CHF", today(), "0.88");
@@ -2417,7 +2414,7 @@ class TransactionControllerTest {
 
   @Test
   void aRetriedTradeIsRecordedOnceAndTheSameKeyForADifferentTradeIsAConflict() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
     UUID otherSecurity = createSecurity(token, "US0378331005");
@@ -2529,7 +2526,7 @@ class TransactionControllerTest {
 
   @Test
   void aRetriedDividendWithDifferentWithholdingIsAConflict() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
     String key = UUID.randomUUID().toString();
@@ -2558,7 +2555,7 @@ class TransactionControllerTest {
 
   @Test
   void tradesAndDividendsAreNotSpending() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
     postTransaction(token, depot.id(), trade("BUY", security, "10", "100", "5", "-1005.00"))
@@ -2575,7 +2572,7 @@ class TransactionControllerTest {
 
   @Test
   void theSchemaRejectsMalformedInvestmentRowsFromAnyWriter() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
 
@@ -2631,7 +2628,7 @@ class TransactionControllerTest {
   void aReversingRowMirrorsTheSignsOfTheTradeItReverses() throws Exception {
     // FR-LIF-002: the (not yet built) void path inserts the same type with amounts negated and
     // replaces_transaction_id set. V36's sign rules must not block it; its shape rules still hold.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
     UUID original =
@@ -3084,17 +3081,8 @@ class TransactionControllerTest {
         .isEqualTo(HttpStatus.CREATED);
   }
 
-  private UUID createSecondMember(String adminToken, String email) {
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(UserSummaryResponse.class);
-    return jdbcUuid("SELECT workspace_member_id FROM app_user WHERE email = ?", email);
+  private UUID createSecondMember(String email) {
+    return WorkspaceLoginFixtures.addMember(dataSource, "admin@example.com", email, PASSWORD);
   }
 
   // The zone app.business-zone defaults to: what the service treats as "today", so a test's own
@@ -3304,18 +3292,9 @@ class TransactionControllerTest {
         .accessToken();
   }
 
-  private String bootstrapAdministrator() {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Test Workspace", "CHF")
         .accessToken();
   }
 

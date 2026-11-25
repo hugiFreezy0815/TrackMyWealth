@@ -4,20 +4,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.PortfolioResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -35,7 +33,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -109,7 +106,7 @@ class WorkspaceTransactionControllerTest {
 
   @Test
   void withoutFiltersEveryAccountsRowsAppearNewestFirstAndPaged() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse checking = createAccount(token, "Checking", "CASH", "CHF", null);
     AccountSummaryResponse savings = createAccount(token, "Savings", "SAVINGS", "CHF", null);
     AccountSummaryResponse card = createAccount(token, "Card", "CREDIT_CARD", "CHF", null);
@@ -137,9 +134,9 @@ class WorkspaceTransactionControllerTest {
 
   @Test
   void anotherMembersRowsAppearLikeAnyOther() {
-    String adminToken = bootstrapAdministrator();
-    createStandardUser(adminToken, "anna@example.com");
-    createStandardUser(adminToken, "ben@example.com");
+    bootstrapStandardUser();
+    createStandardUser("anna@example.com");
+    createStandardUser("ben@example.com");
     String anna = login("anna@example.com");
     String ben = login("ben@example.com");
     AccountSummaryResponse annas = createAccount(anna, "Anna's account", "CASH", "CHF", null);
@@ -153,7 +150,7 @@ class WorkspaceTransactionControllerTest {
   @Test
   void anAccountOrPortfolioOfAnotherWorkspaceMatchesNothingExactlyLikeAnUnknownId()
       throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse checking = createAccount(token, "Checking", "CASH", "CHF", null);
     record(token, checking.id(), expense(DAY_1, "-10.00", "Rent"));
     UUID foreignAccount = accountInAnotherWorkspace();
@@ -174,7 +171,7 @@ class WorkspaceTransactionControllerTest {
 
   @Test
   void uncategorizedListsOnlyRowsInUncategorizedAcrossAccounts() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse checking = createAccount(token, "Checking", "CASH", "CHF", null);
     AccountSummaryResponse card = createAccount(token, "Card", "CREDIT_CARD", "CHF", null);
     TransactionResponse open1 = record(token, checking.id(), expense(DAY_1, "-1.00", "A"));
@@ -194,7 +191,7 @@ class WorkspaceTransactionControllerTest {
 
   @Test
   void qFindsTheDescriptionOrTheCounterpartyIgnoringCaseAndAccents() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse checking = createAccount(token, "Checking", "CASH", "CHF", null);
     TransactionResponse byDescription =
         record(token, checking.id(), expense(DAY_1, "-5.00", "MIGROS M-Budget"));
@@ -225,7 +222,7 @@ class WorkspaceTransactionControllerTest {
 
   @Test
   void aSoftDeletedRowIsNotListed() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse checking = createAccount(token, "Checking", "CASH", "CHF", null);
     TransactionResponse typo = record(token, checking.id(), expense(DAY_1, "-50.00", "Typo"));
     TransactionResponse kept = record(token, checking.id(), expense(DAY_2, "-5.00", "Kept"));
@@ -247,7 +244,7 @@ class WorkspaceTransactionControllerTest {
 
   @Test
   void accountAndPortfolioFiltersTakeSeveralValues() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     UUID bank = createPortfolio(token, "Bank");
     AccountSummaryResponse checking = createAccount(token, "Checking", "CASH", "CHF", null);
     AccountSummaryResponse savings = createAccount(token, "Savings", "SAVINGS", "CHF", bank);
@@ -269,7 +266,7 @@ class WorkspaceTransactionControllerTest {
 
   @Test
   void dateAmountAndCurrencyFiltersAreInclusiveAndAmountsAreInTheAccountsCurrency() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse checking = createAccount(token, "Checking", "CASH", "CHF", null);
     TransactionResponse small = record(token, checking.id(), expense(DAY_1, "-10.00", "Small"));
     TransactionResponse large = record(token, checking.id(), expense(DAY_2, "-100.00", "Large"));
@@ -293,7 +290,7 @@ class WorkspaceTransactionControllerTest {
 
   @Test
   void wildcardsInQMatchThemselves() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse checking = createAccount(token, "Checking", "CASH", "CHF", null);
     TransactionResponse percent = record(token, checking.id(), expense(DAY_1, "-1.00", "100% Bio"));
     record(token, checking.id(), expense(DAY_2, "-2.00", "100 Bio"));
@@ -316,7 +313,7 @@ class WorkspaceTransactionControllerTest {
 
   @Test
   void qIgnoresSurroundingSpaceAndNeverMatchesAcrossTheTwoFields() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse checking = createAccount(token, "Checking", "CASH", "CHF", null);
     TransactionResponse migros =
         record(
@@ -336,7 +333,7 @@ class WorkspaceTransactionControllerTest {
 
   @Test
   void aFilterThatCannotMatchByConstructionIsA400() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     String tooManyAccounts =
         IntStream.rangeClosed(0, 50)
             .mapToObj(i -> "accountId=" + UUID.randomUUID())
@@ -526,15 +523,8 @@ class WorkspaceTransactionControllerTest {
     }
   }
 
-  private void createStandardUser(String adminToken, String email) {
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isCreated();
+  private void createStandardUser(String email) {
+    WorkspaceLoginFixtures.addMember(dataSource, "admin@example.com", email, PASSWORD);
   }
 
   private String login(String email) {
@@ -553,18 +543,9 @@ class WorkspaceTransactionControllerTest {
         .accessToken();
   }
 
-  private String bootstrapAdministrator() {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Workspace A", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Workspace A", "CHF")
         .accessToken();
   }
 

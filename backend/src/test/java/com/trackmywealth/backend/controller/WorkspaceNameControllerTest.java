@@ -2,19 +2,17 @@ package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UpdateWorkspaceNameRequest;
 import com.trackmywealth.backend.dto.WorkspaceResponse;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
-import java.util.UUID;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -163,32 +161,14 @@ class WorkspaceNameControllerTest {
   }
 
   @Test
-  void setupWithoutANameStoresNull() {
-    client(null)
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            "{\"email\":\"admin@example.com\",\"password\":\""
-                + PASSWORD
-                + "\",\"currencyCode\":\"CHF\"}")
-        .exchange()
-        .expectStatus()
-        .isCreated();
+  void createsWorkspaceWithNameOmitted() {
+    member(null);
     assertThat(workspaceNameInDatabase()).isNull();
   }
 
   @Test
-  void setupWithABlankNameStoresNull() {
-    client(null)
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        // Spaces only: a tab is a control character, which the name refuses even at its edges.
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "   ", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isCreated();
+  void createsWorkspaceWithNameBlank() {
+    member("   ");
     assertThat(workspaceNameInDatabase()).isNull();
   }
 
@@ -196,15 +176,8 @@ class WorkspaceNameControllerTest {
   @Test
   void aSecondMemberOfTheSameWorkspaceRenamesIt() {
     String first = member("Initial");
-    String adminToken = login("admin@example.com");
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest("second@example.com", PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isCreated();
+    WorkspaceLoginFixtures.addMember(
+        dataSource, "member@example.com", "second@example.com", PASSWORD);
     String second = login("second@example.com");
 
     rename(second, current(second).getResponseHeaders().getETag(), "Renamed by the second");
@@ -213,12 +186,15 @@ class WorkspaceNameControllerTest {
   }
 
   @Test
-  void setupRejectsInvalidName() {
-    client(null)
+  void creatingAWorkspaceRejectsInvalidName() {
+    String adminToken = WorkspaceLoginFixtures.bootstrapAdministrator(client(null)).accessToken();
+    client(adminToken)
         .post()
-        .uri("/api/v1/setup/administrator")
+        .uri("/api/v1/admin/users")
         .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "x".repeat(61), "CHF"))
+        .body(
+            new CreateUserRequest(
+                "member@example.com", PASSWORD, "STANDARD_USER", "EN", "x".repeat(61), "CHF"))
         .exchange()
         .expectStatus()
         .isBadRequest();
@@ -269,31 +245,9 @@ class WorkspaceNameControllerTest {
   void workspaceNameCannotBeChangedThroughAnotherWorkspacesSession() throws Exception {
     String tokenA = member("Workspace A");
     String workspaceAId = current(tokenA).getResponseBody().id().toString();
-    // A second user is a separate workspace member with a real login. A separate workspace
-    // is created directly because the current setup API bootstraps only once.
-    String adminToken = login("admin@example.com");
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest("other@example.com", PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isCreated();
-    try (Connection connection = dataSource.getConnection();
-        PreparedStatement workspace =
-            connection.prepareStatement(
-                "INSERT INTO workspace (id, name, currency) VALUES (?, 'Workspace B', 'CHF')");
-        PreparedStatement move =
-            connection.prepareStatement(
-                "UPDATE workspace_member SET workspace_id = ? WHERE id ="
-                    + " (SELECT workspace_member_id FROM app_user WHERE email = 'other@example.com')")) {
-      UUID workspaceB = UUID.randomUUID();
-      workspace.setObject(1, workspaceB);
-      workspace.executeUpdate();
-      move.setObject(1, workspaceB);
-      move.executeUpdate();
-    }
+    String adminToken = WorkspaceLoginFixtures.loginAdministrator(client(null)).accessToken();
+    WorkspaceLoginFixtures.createStandardUser(
+        client(null), adminToken, "other@example.com", PASSWORD, "Workspace B", "CHF");
     String tokenB = login("other@example.com");
     assertThat(current(tokenB).getResponseBody().name()).isEqualTo("Workspace B");
     rename(tokenB, current(tokenB).getResponseHeaders().getETag(), "Renamed B");
@@ -314,16 +268,9 @@ class WorkspaceNameControllerTest {
   }
 
   private String member(String name) {
-    String adminToken = bootstrap(name);
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest("member@example.com", PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isCreated();
-    return login("member@example.com");
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            client(null), "member@example.com", PASSWORD, name, "CHF")
+        .accessToken();
   }
 
   private long auditCount() throws Exception {
@@ -363,21 +310,6 @@ class WorkspaceNameControllerTest {
         .isOk()
         .expectBody(WorkspaceResponse.class)
         .returnResult();
-  }
-
-  private String bootstrap(String name) {
-    return client(null)
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, name, "CHF"))
-        .exchange()
-        .expectStatus()
-        .isCreated()
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
-        .accessToken();
   }
 
   private String login(String email) {

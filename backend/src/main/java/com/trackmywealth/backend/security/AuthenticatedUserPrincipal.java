@@ -1,12 +1,13 @@
 package com.trackmywealth.backend.security;
 
+import com.trackmywealth.backend.dto.UserRoleValues;
 import java.util.UUID;
 
 /**
  * The real {@code Authentication.getPrincipal()} value {@link JwtAuthenticationFilter} constructs
  * for every successfully-authenticated request - the first production implementation of {@link
- * WorkspacePrincipal}. {@code workspaceId} is {@code null} for a {@code SYSTEM_ADMINISTRATOR} with
- * no linked {@code workspace_member} (US-02-05: administration rights confer no financial-data
+ * WorkspacePrincipal}. {@code workspaceId} is {@code null} for a {@code SYSTEM_ADMINISTRATOR} even
+ * if a legacy lookup returned a workspace (US-02-05: administration rights confer no financial-data
  * access), which {@link
  * com.trackmywealth.backend.config.WorkspaceContextTransactionExecutionListener} already handles
  * correctly - a {@code null} workspace id leaves {@code app.current_workspace_id} unset, and every
@@ -21,7 +22,9 @@ public record AuthenticatedUserPrincipal(
 
   // No constructor without a language: one would let a caller silently drop the user's stored
   // preference. Anything that is not DE is English, the documented fallback (#153).
+  @SuppressWarnings("PMD.NullAssignment") // Administrators have no workspace context.
   public AuthenticatedUserPrincipal {
+    workspaceId = UserRoleValues.SYSTEM_ADMINISTRATOR.equals(role) ? null : workspaceId;
     language = "DE".equalsIgnoreCase(language) ? "DE" : "EN";
   }
 }

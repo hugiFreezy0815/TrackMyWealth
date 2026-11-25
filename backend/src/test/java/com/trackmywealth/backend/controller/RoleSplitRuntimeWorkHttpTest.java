@@ -10,12 +10,10 @@ import com.trackmywealth.backend.client.FxRateProvider;
 import com.trackmywealth.backend.client.FxRateProviderDefinition;
 import com.trackmywealth.backend.client.ProvidedFxRate;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UpdateWorkspaceNameRequest;
 import com.trackmywealth.backend.dto.WorkspaceResponse;
@@ -24,6 +22,7 @@ import com.trackmywealth.backend.service.TransferRecheckService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.RoleSplitScripts;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -49,7 +48,6 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -202,23 +200,14 @@ class RoleSplitRuntimeWorkHttpTest {
 
   private String token() {
     if (setupToken == null) {
-      setupToken = setUpAdministrator();
+      setupToken = setUpStandardUser();
     }
     return setupToken;
   }
 
-  private String setUpAdministrator() {
-    return client(null)
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest(EMAIL, PASSWORD, "Runtime Work", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String setUpStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            client(null), EMAIL, PASSWORD, "Runtime Work", "CHF")
         .accessToken();
   }
 

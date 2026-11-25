@@ -148,6 +148,13 @@ class RoleSplitScriptsTest {
           assertThat(result.next()).as("V124's purge may be called, %s", url).isTrue();
         }
         try (ResultSet result =
+            statement.executeQuery("SELECT count(*) FROM public.admin_workspace_metadata(1, 0)")) {
+          assertThat(result.next()).as("V127's listing may be called, %s", url).isTrue();
+        }
+        try (ResultSet result = statement.executeQuery("SELECT public.admin_workspace_count()")) {
+          assertThat(result.next()).as("V127's count may be called, %s", url).isTrue();
+        }
+        try (ResultSet result =
             statement.executeQuery("SELECT count(*) FROM flyway_schema_history")) {
           assertThat(result.next()).as("Flyway's history is readable, %s", url).isTrue();
         }

@@ -52,9 +52,9 @@ class WorkspaceMemberListServiceTest {
   void listsEveryMemberWithItsLoginAndMembershipStatus() {
     WorkspaceMember active = member("Anna", "ACTIVE", 1);
     WorkspaceMember inactive = member("Ben", "INACTIVE", 2);
-    AppUser annasLogin = login(active, "STANDARD_USER");
+    AppUser annasLogin = login(active);
     // A disabled login does not make the membership inactive: `active` is the membership's.
-    AppUser bensLogin = login(inactive, "STANDARD_USER");
+    AppUser bensLogin = login(inactive);
     when(bensLogin.getStatus()).thenReturn("DISABLED");
     givenMembers(active, inactive);
     givenLogins(List.of(active, inactive), annasLogin, bensLogin);
@@ -79,24 +79,7 @@ class WorkspaceMemberListServiceTest {
         .isInstanceOfSatisfying(
             ResponseStatusException.class,
             error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
-    verify(members, never()).findMembersForListing(any(), any(), any());
-  }
-
-  // FR-USR-07: the bootstrap membership passes requireActingMember, but the administrator is not
-  // one of the workspace's people and is refused like any other caller it does not concern.
-  @Test
-  void theAdministratorIsRefusedAndNoMemberIsRead() {
-    AuthenticatedUserPrincipal administrator =
-        new AuthenticatedUserPrincipal(
-            UUID.randomUUID(), "SYSTEM_ADMINISTRATOR", workspaceId, UUID.randomUUID(), "EN");
-    when(accessControlService.denyAsNotFound(administrator, "Workspace", workspaceId))
-        .thenReturn(new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
-
-    assertThatThrownBy(() -> service.listWorkspaceMembers(FIRST, administrator))
-        .isInstanceOfSatisfying(
-            ResponseStatusException.class,
-            error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
-    verify(members, never()).findMembersForListing(any(), any(), any());
+    verify(members, never()).findMembersForListing(any(), any());
   }
 
   // V110 refuses a member without a login, so one can only come from a corrupted database: the
@@ -106,7 +89,7 @@ class WorkspaceMemberListServiceTest {
     WorkspaceMember person = member("Anna", "ACTIVE", 1);
     WorkspaceMember loginless = member("Ben", "ACTIVE", 3);
     givenMembers(person, loginless);
-    givenLogins(List.of(person, loginless), login(person, "STANDARD_USER"));
+    givenLogins(List.of(person, loginless), login(person));
 
     assertThatThrownBy(() -> service.listWorkspaceMembers(FIRST, actor))
         .isInstanceOf(IllegalStateException.class)
@@ -114,7 +97,7 @@ class WorkspaceMemberListServiceTest {
   }
 
   private void givenMembers(WorkspaceMember... listed) {
-    when(members.findMembersForListing(workspaceId, "SYSTEM_ADMINISTRATOR", FIRST))
+    when(members.findMembersForListing(workspaceId, FIRST))
         .thenReturn(new PageImpl<>(List.of(listed), FIRST, listed.length));
   }
 
@@ -133,11 +116,10 @@ class WorkspaceMemberListServiceTest {
     return member;
   }
 
-  private static AppUser login(WorkspaceMember member, String role) {
+  private static AppUser login(WorkspaceMember member) {
     AppUser user = mock(AppUser.class);
     when(user.getId()).thenReturn(UUID.randomUUID());
     when(user.getWorkspaceMember()).thenReturn(member);
-    when(user.getRole()).thenReturn(role);
     when(user.getStatus()).thenReturn("ACTIVE");
     return user;
   }

@@ -191,16 +191,17 @@ def login(public, user, save):
     return Api(public.url, tokens["accessToken"]), response["mfaRequired"]
 
 
-def member(public, admin, user, save, *, enroll=False):
+def member(public, admin, user, save, *, workspace_name=WORKSPACE, enroll=False):
     try:
         admin.request("POST", "/admin/users", {
             **credentials(user), "role": "STANDARD_USER", "language": "EN",
+            "workspaceName": workspace_name, "currencyCode": "CHF",
         })
     except ApiError as error:
         if error.status != 409:
             raise
     api, mfa = login(public, user, save)
-    if api.request("GET", "/workspace")["name"] != WORKSPACE:
+    if api.request("GET", "/workspace")["name"] != workspace_name:
         raise SeedError("The signed-in member is outside the synthetic demo workspace.")
     if enroll and not mfa:
         enrollment = api.request("POST", "/users/me/mfa/enroll", {"password": user["password"]})
@@ -437,14 +438,16 @@ EXPECTED_BALANCES = {
 
 def account_values(client):
     # Native balance and status only: the workspace-currency figure moves when a fresh stack's
-    # first exchange rates arrive, which may happen between the two members' reads.
+    # first exchange rates arrive.
     return {row["id"]: (row["balance"], row["valueStatus"])
             for row in client.pages("/accounts")}
 
 
 def check_account_values(ids, first, second):
-    if first != second or set(ids.values()) != first.keys():
-        raise SeedError("The two demo members could not see the same demo account values.")
+    if second:
+        raise SeedError("The separate demo workspace must have no seeded accounts.")
+    if set(ids.values()) != first.keys():
+        raise SeedError("The demo member did not see exactly the seeded accounts.")
     for key, account_id in ids.items():
         balance, status = first[account_id]
         expected = EXPECTED_STATUSES.get(key)
@@ -491,7 +494,7 @@ def run(url, state, save):
     admin_user = state["users"]["admin"]
     try:
         tokens = public.request("POST", "/setup/administrator", {
-            **credentials(admin_user), "workspaceName": WORKSPACE, "currencyCode": "CHF",
+            **credentials(admin_user), "currencyCode": "CHF",
         })
         admin = Api(url, tokens["accessToken"])
     except ApiError as error:
@@ -505,7 +508,7 @@ def run(url, state, save):
             raise
 
     api = member(public, admin, state["users"]["member"], save, enroll=True)
-    partner = member(public, admin, state["users"]["partner"], save)
+    partner = member(public, admin, state["users"]["partner"], save, workspace_name=WORKSPACE + " · Separate")
     if "anchor" not in state:
         # Fix dates before the first financial write so retries work on later calendar days.
         state["anchor"] = str(date.fromisoformat(api.request("GET", "/net-worth")["asOf"])

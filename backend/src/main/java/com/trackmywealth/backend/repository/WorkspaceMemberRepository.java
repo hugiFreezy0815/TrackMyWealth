@@ -15,24 +15,14 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
 
   // US-03-05: deterministic order, inactive members included, and an SQL-level row limit.
   // Workspace scoping is explicit here and independently enforced by PostgreSQL RLS.
-  String LIST_FILTERS =
-      " FROM WorkspaceMember m WHERE m.workspace.id = :workspaceId"
-          + " AND EXISTS (SELECT u.id FROM AppUser u WHERE u.workspaceMember = m"
-          + " AND u.role <> :excludedRole)";
+  String LIST_FILTERS = " FROM WorkspaceMember m WHERE m.workspace.id = :workspaceId";
 
   @Query("SELECT m" + LIST_FILTERS + " ORDER BY m.displayName ASC, m.id ASC")
   Page<WorkspaceMember> findMembersForListing(
-      @Param("workspaceId") UUID workspaceId,
-      @Param("excludedRole") String excludedRole,
-      Pageable pageable);
+      @Param("workspaceId") UUID workspaceId, Pageable pageable);
 
   @Query("SELECT COUNT(m)" + LIST_FILTERS)
-  long countMembersForListing(
-      @Param("workspaceId") UUID workspaceId, @Param("excludedRole") String excludedRole);
-
-  // AccessControlService's interim administrator rule (FR-TEN-007): a SYSTEM_ADMINISTRATOR linked
-  // to a member keeps that member's access only while it is the workspace's sole active member.
-  long countByWorkspaceIdAndStatus(UUID workspaceId, String status);
+  long countMembersForListing(@Param("workspaceId") UUID workspaceId);
 
   // US-03-04/FR-HHL-015: locks the target row plus every other currently-ACTIVE member of the
   // caller's own workspace, in one statement - mirrors

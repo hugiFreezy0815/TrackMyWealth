@@ -1,7 +1,9 @@
 package com.trackmywealth.backend.repository;
 
+import com.trackmywealth.backend.dto.AdminWorkspaceMetadata;
 import com.trackmywealth.backend.entity.Workspace;
 import jakarta.persistence.LockModeType;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,6 +14,19 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
+
+  // V127: the function cuts the page itself (it cannot be inlined). The outer ORDER BY only sorts
+  // the page's own rows, so the order does not rest on how a function result is scanned.
+  @Query(
+      value =
+          "SELECT id, name FROM public.admin_workspace_metadata(:pageLimit, :pageOffset)"
+              + " ORDER BY id",
+      nativeQuery = true)
+  List<AdminWorkspaceMetadata> findAdminMetadataPage(
+      @Param("pageLimit") int pageLimit, @Param("pageOffset") long pageOffset);
+
+  @Query(value = "SELECT public.admin_workspace_count()", nativeQuery = true)
+  long countAdminMetadata();
 
   // Same SELECT ... FOR UPDATE pattern as AccountRepository/AppUserRepository's own
   // findByIdForUpdate - serializes a read-modify-write sequence keyed off the whole workspace (e.g.

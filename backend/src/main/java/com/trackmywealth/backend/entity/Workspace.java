@@ -17,7 +17,7 @@ import org.hibernate.type.SqlTypes;
  * sequence documented in {@code V19__seed_reference_data.sql} requires the application to know this
  * row's id before the INSERT is issued, so it can set {@code app.current_workspace_id} to that
  * value first (required for the row-level-security policies in V20 to allow the workspace's own
- * first rows to be written) - see {@code SetupService}.
+ * first rows to be written) - see {@code WorkspaceProvisioningService}.
  *
  * <p>{@code updated_at} and {@code version} are owned by the database ({@code
  * trg_set_updated_at}/{@code trg_bump_version} in V1): the trigger increments {@code version} and

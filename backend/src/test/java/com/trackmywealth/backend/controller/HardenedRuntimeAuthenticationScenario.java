@@ -10,11 +10,11 @@ import com.trackmywealth.backend.dto.MfaEnrollmentRequest;
 import com.trackmywealth.backend.dto.MfaEnrollmentResponse;
 import com.trackmywealth.backend.dto.MfaVerifyRequest;
 import com.trackmywealth.backend.dto.RefreshTokenRequest;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.WorkspaceResponse;
 import com.trackmywealth.backend.testsupport.MutableClock;
 import com.trackmywealth.backend.testsupport.RoleSplitScripts;
 import com.trackmywealth.backend.testsupport.TestClockConfig;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import dev.samstevens.totp.code.DefaultCodeGenerator;
 import java.io.IOException;
 import java.sql.Connection;
@@ -31,7 +31,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.web.servlet.client.RestTestClient;
@@ -123,17 +122,8 @@ abstract class HardenedRuntimeAuthenticationScenario {
         .as("the application connects as a role bound by RLS")
         .isFalse();
     AuthTokensResponse setup =
-        client()
-            .post()
-            .uri("/api/v1/setup/administrator")
-            .contentType(MediaType.APPLICATION_JSON)
-            .body(new SetupAdministratorRequest(EMAIL, PASSWORD, "My Workspace", "CHF"))
-            .exchange()
-            .expectStatus()
-            .isEqualTo(HttpStatus.CREATED)
-            .expectBody(AuthTokensResponse.class)
-            .returnResult()
-            .getResponseBody();
+        WorkspaceLoginFixtures.bootstrapStandardUser(
+            client(), EMAIL, PASSWORD, "My Workspace", "CHF");
 
     // The principal carries the member's workspace, so the workspace context reaches RLS.
     WorkspaceResponse workspace =

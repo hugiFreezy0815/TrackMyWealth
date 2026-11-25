@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
-import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CategoryResponse;
 import com.trackmywealth.backend.dto.CorrectTransactionRequest;
@@ -13,7 +12,6 @@ import com.trackmywealth.backend.dto.CreateCategorizationRuleRequest;
 import com.trackmywealth.backend.dto.CreateCategoryRequest;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
-import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.PageResponse;
@@ -21,7 +19,6 @@ import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
-import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionCorrectionResponse;
 import com.trackmywealth.backend.dto.TransactionHistoryEntryResponse;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
@@ -34,6 +31,7 @@ import com.trackmywealth.backend.service.SettlementDetectionService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
+import com.trackmywealth.backend.testsupport.WorkspaceLoginFixtures;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -160,7 +158,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void aVoidIsNeverDatedBeforeACategoryDecisionTheRowAlreadyHolds() throws SQLException {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID batch = insertImportBatch(card.id());
     UUID imported = insertImportedFromBatch(card.id(), batch, "COOP PRONTO BERN");
@@ -189,7 +187,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void anImportedRowsHistoryShowsItsCategoryDecisionsVoidAndRestoreNewestFirst() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     String member = memberName("admin@example.com");
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID batch = insertImportBatch(card.id());
@@ -285,7 +283,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void aCorrectionsHistoryIncludesTheRowItReplaced() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     String member = memberName("admin@example.com");
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse original = record(token, card.id(), purchase("-85.00"));
@@ -331,7 +329,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void aManualFinancialCorrectionSoftDeletesAndReplacesAtomically() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse original = record(token, card.id(), purchase("-85.00"));
 
@@ -363,7 +361,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void anImportedFinancialCorrectionVoidsAndLinksTheReplacement() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID importedId = insertImported(card.id(), PURCHASE, "-85.00", today());
     TransactionResponse imported = list(token, card.id()).get(0);
@@ -404,7 +402,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void anAccountCorrectionCreatesTheReplacementOnTheDestinationAccount() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse source = createAccount(token, "CREDIT_CARD", "CHF");
     AccountSummaryResponse destination = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse original = record(token, source.id(), purchase("-85.00"));
@@ -434,7 +432,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void aTextOnlyCorrectionUpdatesInPlaceWithoutRemoval() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse original = record(token, card.id(), purchase("-85.00"));
 
@@ -452,7 +450,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void aTextOnlyCorrectionEditsTheCounterpartyNameInPlace() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse original =
         record(
@@ -496,7 +494,7 @@ class TransactionRemovalControllerTest {
   @Test
   void aCorrectionThatOmitsTheCounterpartyNameKeepsIt() {
     // A client that predates the field sends none: it must not erase an imported counterparty.
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse original =
         record(
@@ -536,7 +534,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void aFinancialCorrectionCarriesTheCounterpartyNameToTheReplacement() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse original =
         record(
@@ -554,7 +552,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void aVoidsReversalAndItsRestoredCopyKeepTheCounterpartyName() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
     setCounterpartyName(imported, "Migros");
@@ -574,7 +572,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void aUserCategoryOverrideCarriesToTheReplacement() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse original = record(token, card.id(), purchase("-85.00"));
     UUID shopping = defaultCategory("SHOPPING");
@@ -608,7 +606,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void anInvalidReplacementRollsBackTheRemoval() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse original = record(token, card.id(), purchase("-85.00"));
 
@@ -636,7 +634,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void threeHundredRemovedTransactionsArePagedWithoutOverlapOrOtherAccounts() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse account = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse other = createAccount(token, "CASH", "CHF");
     try (Connection connection = dataSource.getConnection();
@@ -710,7 +708,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void aManualTransactionIsSoftDeletedAndRestorable() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse kept = record(token, card.id(), purchase("-20.00"));
     TransactionResponse typo = record(token, card.id(), purchase("-85.00"));
@@ -750,7 +748,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void aSoftDeleteCannotBeRestoredAfterThirtyDays() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse typo = record(token, card.id(), purchase("-85.00"));
     remove(token, card.id(), typo.id(), null);
@@ -772,7 +770,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void aCardPurchasesFeeRowGoesAndComesBackWithIt() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse foreign =
         record(
@@ -805,7 +803,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void aRetryWithTheKeyOfADeletedTransactionIsAConflict() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     CreateTransactionRequest keyed =
         TransactionRequests.cash(
@@ -831,7 +829,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void anImportedTransactionIsVoidedWithAReversingEntry() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID imported = insertImported(card.id(), PURCHASE, "-85.00", LocalDate.now());
     TransactionResponse listed = list(token, card.id()).get(0);
@@ -908,7 +906,7 @@ class TransactionRemovalControllerTest {
   // original re-instates it (A, -A, A'), and balances and figures count it again.
   @Test
   void aVoidIsRestoredByAnOrdinaryCopyWithinThirtyDays() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
     TransactionRemovalResponse voided = remove(token, card.id(), imported, "Duplicate import");
@@ -961,7 +959,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void aVoidCannotBeRestoredAfterThirtyDays() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
     remove(token, card.id(), imported, "Duplicate import");
@@ -984,7 +982,7 @@ class TransactionRemovalControllerTest {
   // Just inside the window the void is still restorable.
   @Test
   void aVoidIsRestorableUntilTheWindowCloses() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
     remove(token, card.id(), imported, "Duplicate import");
@@ -1002,7 +1000,7 @@ class TransactionRemovalControllerTest {
   // must count the transaction once: the void pair counts as zero on every date (restated).
   @Test
   void aRestoreDoesNotCountThePurchaseTwiceInAPastBalance() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today().minusDays(10));
     remove(token, card.id(), imported, "Duplicate import");
@@ -1021,7 +1019,7 @@ class TransactionRemovalControllerTest {
   // The same holds for a correction (US-07-06): the replacement is dated like the original.
   @Test
   void aCorrectionDoesNotCountThePurchaseTwiceInAPastBalance() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     insertImported(card.id(), PURCHASE, "-85.00", today().minusDays(10));
     TransactionResponse read = list(token, card.id()).get(0);
@@ -1036,7 +1034,7 @@ class TransactionRemovalControllerTest {
   // cannot come back alone, or it would count without it and miss the purchase's later restore.
   @Test
   void aFeeCannotBeRestoredWhileItsPurchaseIsStillVoided() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID purchase = insertImported(card.id(), PURCHASE, "-100.00", today());
     UUID fee = insertImportedFee(card.id(), purchase, "-2.00");
@@ -1061,7 +1059,7 @@ class TransactionRemovalControllerTest {
   // converted at, so it counts exactly as the original did.
   @Test
   void aForeignCurrencyVoidIsRestoredWithItsRate() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID imported = UUID.randomUUID();
     try (Connection connection = dataSource.getConnection();
@@ -1091,7 +1089,7 @@ class TransactionRemovalControllerTest {
   // A trade's copy carries the security, quantity, price and fee, so the position is back too.
   @Test
   void aVoidedTradeIsRestoredWithItsQuantity() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "SECURITIES", "CHF");
     UUID security = createSecurity(token);
     UUID buy = UUID.randomUUID();
@@ -1124,7 +1122,7 @@ class TransactionRemovalControllerTest {
   // again, any number of times; the voided original points the member at it.
   @Test
   void aRestoredTransactionCanBeCategorizedVoidedAndRestoredAgain() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
     remove(token, card.id(), imported, "Duplicate import");
@@ -1169,7 +1167,7 @@ class TransactionRemovalControllerTest {
   // and its copy belongs to the purchase's copy, never to the voided purchase.
   @Test
   void aPurchaseAndItsFeeAreRestoredTogetherFromEitherRow() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID purchase = insertImported(card.id(), PURCHASE, "-100.00", today());
     UUID fee = insertImportedFee(card.id(), purchase, "-2.00");
@@ -1198,7 +1196,7 @@ class TransactionRemovalControllerTest {
   // later, its copy joins the purchase's copy.
   @Test
   void aSeparatelyVoidedFeeStaysVoidedUntilRestoredItself() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID purchase = insertImported(card.id(), PURCHASE, "-100.00", today());
     UUID fee = insertImportedFee(card.id(), purchase, "-2.00");
@@ -1224,7 +1222,7 @@ class TransactionRemovalControllerTest {
   // A two-sided transfer comes back whole, from either leg, restored by any member (US-03-06).
   @Test
   void aVoidedTransferIsRestoredWithBothLegsByAnotherMember() {
-    String adminToken = bootstrapAdministrator();
+    String adminToken = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(adminToken, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(adminToken, "CASH", "CHF");
     UUID[] legs = insertImportedTransfer(current.id(), savings.id(), "100.00");
@@ -1234,7 +1232,7 @@ class TransactionRemovalControllerTest {
     assertThat(voided.affected())
         .extracting(TransactionResponse::id)
         .containsExactly(debit, credit);
-    createSecondMember(adminToken, "member@example.com");
+    createSecondMember("member@example.com");
     String memberToken = login("member@example.com");
 
     TransactionRemovalResponse restored = restore(memberToken, savings.id(), credit);
@@ -1254,7 +1252,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void restoringAVoidedPaymentMatchesItsCopyAgain() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     AccountSummaryResponse checking = createAccount(token, "CASH", "CHF");
     setSettlementSource(token, card.id(), checking.id());
@@ -1277,7 +1275,7 @@ class TransactionRemovalControllerTest {
   // restore - the copy inherits the decision instead of being matched to the same credit again.
   @Test
   void aRejectedPairStaysRejectedThroughAVoidAndRestore() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     AccountSummaryResponse checking = createAccount(token, "CASH", "CHF");
     setSettlementSource(token, card.id(), checking.id());
@@ -1306,7 +1304,7 @@ class TransactionRemovalControllerTest {
   // A void made by a correction (US-07-06) is not restorable: the replacement is the current entry.
   @Test
   void aCorrectedImportedTransactionIsNotRestorable() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
     TransactionResponse read = list(token, card.id()).get(0);
@@ -1326,7 +1324,7 @@ class TransactionRemovalControllerTest {
   // FR-CNC-001: restoring a void is read-modify-write on the voided row too.
   @Test
   void restoringAVoidRequiresTheCurrentVersion() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
     int beforeVoid = list(token, card.id()).get(0).version();
@@ -1351,7 +1349,7 @@ class TransactionRemovalControllerTest {
   // V50: the restore lineage is frozen like the other lineage columns (RULE-024).
   @Test
   void theRestoreLinkCannotBeRewritten() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
     remove(token, card.id(), imported, "Duplicate import");
@@ -1366,7 +1364,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void aVoidedTradeIsReversedWithItsQuantityNegated() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "SECURITIES", "CHF");
     UUID security = createSecurity(token);
     UUID buy = UUID.randomUUID();
@@ -1402,7 +1400,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void aFutureDatedVoidIsReversedOnItsOwnDate() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     LocalDate later = today().plusDays(10);
     UUID imported = insertImported(card.id(), PURCHASE, "-40.00", later);
@@ -1416,7 +1414,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void theLedgerTriggerRejectsAFinancialUpdateWhateverTheTier() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse manual = record(token, card.id(), purchase("-85.00"));
     remove(token, card.id(), manual.id(), null);
@@ -1434,7 +1432,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void removingAMatchedPaymentDissolvesTheMatchAndFreesTheCredit() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     AccountSummaryResponse checking = createAccount(token, "CASH", "CHF");
     TransactionResponse payment =
@@ -1487,7 +1485,7 @@ class TransactionRemovalControllerTest {
   // V36 required tax_withheld_amount >= 0 on every row; the reversal negates it (V40).
   @Test
   void aVoidedDividendWithWithholdingTaxIsReversedInFull() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse depot = createAccount(token, "SECURITIES", "CHF");
     UUID security = createSecurity(token);
     UUID dividend = UUID.randomUUID();
@@ -1524,7 +1522,7 @@ class TransactionRemovalControllerTest {
   // the member had rejected.
   @Test
   void aRejectedPairStaysRejectedThroughASoftDeleteAndRestore() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     AccountSummaryResponse checking = createAccount(token, "CASH", "CHF");
     setSettlementSource(token, card.id(), checking.id());
@@ -1575,7 +1573,7 @@ class TransactionRemovalControllerTest {
   // Voiding a +500 card credit adds a -500 SETTLEMENT reversal; it is not a payment to review.
   @Test
   void aVoidedCardCreditIsNotAnUnresolvedSettlement() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID credit = insertImported(card.id(), "SETTLEMENT", "500.00", today());
 
@@ -1588,7 +1586,7 @@ class TransactionRemovalControllerTest {
   // card's lock may be about to match this unmatched payment, so removal must wait for it.
   @Test
   void aRemovalWaitsForMatchingOnTheCardEvenBeforeTheRowIsMatched() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     AccountSummaryResponse checking = createAccount(token, "CASH", "CHF");
     setSettlementSource(token, card.id(), checking.id());
@@ -1636,7 +1634,7 @@ class TransactionRemovalControllerTest {
   // removal, correction or restore of that row waits for a commit into the account to end.
   @Test
   void aRemovalWaitsForAnImportCommitIntoTheAccount() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse checking = createAccount(token, "CASH", "CHF");
     TransactionResponse payment = record(token, checking.id(), cashRow("WITHDRAWAL", "-120.00"));
 
@@ -1649,7 +1647,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void aRestoreWaitsForAnImportCommitIntoTheAccount() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse checking = createAccount(token, "CASH", "CHF");
     TransactionResponse payment = record(token, checking.id(), cashRow("WITHDRAWAL", "-120.00"));
     remove(token, checking.id(), payment.id(), null);
@@ -1703,14 +1701,14 @@ class TransactionRemovalControllerTest {
 
   @Test
   void anotherMemberRemovesAndRestoresARowTheFirstOneRecorded() {
-    String adminToken = bootstrapAdministrator();
+    bootstrapStandardUser();
     // The first member is a Standard User: once anyone else joins, the administrator's own
     // membership no longer reaches financial data (FR-TEN-007, AccessControlService).
-    createSecondMember(adminToken, "first@example.com");
+    createSecondMember("first@example.com");
     String firstToken = login("first@example.com");
     AccountSummaryResponse card = createAccount(firstToken, "CREDIT_CARD", "CHF");
     TransactionResponse typo = record(firstToken, card.id(), purchase("-85.00"));
-    createSecondMember(adminToken, "member@example.com");
+    createSecondMember("member@example.com");
     String memberToken = login("member@example.com");
 
     remove(memberToken, card.id(), typo.id(), null);
@@ -1723,7 +1721,7 @@ class TransactionRemovalControllerTest {
 
   @Test
   void anotherAccountsTransactionIsNotFound() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     AccountSummaryResponse other = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse typo = record(token, card.id(), purchase("-85.00"));
@@ -1745,7 +1743,7 @@ class TransactionRemovalControllerTest {
   // row is unchanged.
   @Test
   void removalAndRestoreRequireTheCurrentVersion() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse typo = record(token, card.id(), purchase("-85.00"));
 
@@ -1788,7 +1786,7 @@ class TransactionRemovalControllerTest {
   // If-Match - never the 428 that would confirm the row exists.
   @Test
   void aRowOfAnotherAccountIsNotFoundEvenWithoutIfMatch() {
-    String adminToken = bootstrapAdministrator();
+    String adminToken = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(adminToken, "CREDIT_CARD", "CHF");
     AccountSummaryResponse other = createAccount(adminToken, "CREDIT_CARD", "CHF");
     TransactionResponse typo = record(adminToken, card.id(), purchase("-85.00"));
@@ -1814,7 +1812,7 @@ class TransactionRemovalControllerTest {
   // count the transaction twice, so restore refuses it.
   @Test
   void aCorrectedOriginalCannotBeRestored() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse original = record(token, card.id(), purchase("-85.00"));
     correct(token, card.id(), original, "-80.00", null, null, null, null);
@@ -1833,7 +1831,7 @@ class TransactionRemovalControllerTest {
   // The body is the desired state: no counterparty means a one-sided transfer, not "unchanged".
   @Test
   void droppingTheCounterpartyIsAFinancialCorrection() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(token, "CASH", "CHF");
     TransactionResponse debit = record(token, current.id(), transfer("-100.00", savings.id()));
@@ -1856,7 +1854,7 @@ class TransactionRemovalControllerTest {
   // A two-sided transfer corrected with its counterparty kept replaces both legs.
   @Test
   void correctingATransferAmountReplacesBothLegs() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(token, "CASH", "CHF");
     TransactionResponse debit = record(token, current.id(), transfer("-100.00", savings.id()));
@@ -1877,7 +1875,7 @@ class TransactionRemovalControllerTest {
   // remove both legs and record only a one-sided incoming row, so the outgoing leg vanished.
   @Test
   void theIncomingLegOfATransferIsCorrectedThroughItsOutgoingLeg() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(token, "CASH", "CHF");
     TransactionResponse debit = record(token, current.id(), transfer("-100.00", savings.id()));
@@ -1921,7 +1919,7 @@ class TransactionRemovalControllerTest {
   // #216: a fee row is part of its purchase; its amount is corrected as the purchase's feeAmount.
   @Test
   void aFeeRowIsCorrectedThroughItsPurchase() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse purchase =
         record(
@@ -1972,7 +1970,7 @@ class TransactionRemovalControllerTest {
   // through its purchase, never on its own.
   @Test
   void aRestoredFeeCopyIsCorrectedThroughItsPurchaseToo() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID purchase = insertImported(card.id(), PURCHASE, "-100.00", today());
     UUID fee = insertImportedFee(card.id(), purchase, "-2.00");
@@ -2000,7 +1998,7 @@ class TransactionRemovalControllerTest {
   // validation leaves both legs exactly as they were.
   @Test
   void aRejectedTransferReplacementLeavesBothLegsInPlace() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(token, "CASH", "CHF");
     TransactionResponse debit = record(token, current.id(), transfer("-100.00", savings.id()));
@@ -2030,7 +2028,7 @@ class TransactionRemovalControllerTest {
   // An explicit FX rate left out means "derive it": the replacement gets the estimated daily rate.
   @Test
   void droppingAnExplicitFxRateIsAFinancialCorrection() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     seedFxRate("EUR", "CHF", "0.9000000000");
     TransactionResponse original =
@@ -2065,7 +2063,7 @@ class TransactionRemovalControllerTest {
   // A different MCC is source data: corrected through a replacement. Omitted, it is kept.
   @Test
   void aDifferentMccIsCorrectedByReplacementAndAnOmittedOneIsKept() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse original =
         record(
@@ -2109,7 +2107,7 @@ class TransactionRemovalControllerTest {
   // categorization; a member's override stays.
   @Test
   void aDescriptionEditRecategorizesUnlessOverridden() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID groceries = defaultCategory("GROCERIES");
     createMerchantRule(token, "coop pronto", groceries);
@@ -2148,7 +2146,7 @@ class TransactionRemovalControllerTest {
   // FR-CNC-001 per endpoint (#207): no If-Match is 428, a stale one 412; neither changes anything.
   @Test
   void aCorrectionNeedsTheCurrentVersion() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse original = record(token, card.id(), purchase("-85.00"));
     String staleEtag = "\"" + original.version() + "\"";
@@ -2182,7 +2180,7 @@ class TransactionRemovalControllerTest {
   // nothing happens at all.
   @Test
   void anImportedCorrectionWithoutAReasonChangesNothing() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID importedId = insertImported(card.id(), PURCHASE, "-85.00", today());
     TransactionResponse imported = list(token, card.id()).get(0);
@@ -2209,7 +2207,7 @@ class TransactionRemovalControllerTest {
   // generic 404, checked before anything is removed.
   @Test
   void aMoveToAnUnknownAccountChangesNothing() {
-    String adminToken = bootstrapAdministrator();
+    String adminToken = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(adminToken, "CREDIT_CARD", "CHF");
     TransactionResponse original = record(adminToken, card.id(), purchase("-85.00"));
 
@@ -2230,7 +2228,7 @@ class TransactionRemovalControllerTest {
   // A reversing entry goes with its void; it is never corrected on its own.
   @Test
   void aReversingEntryCannotBeCorrected() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID importedId = insertImported(card.id(), PURCHASE, "-85.00", today());
     TransactionResponse reversal = remove(token, card.id(), importedId, "wrong").reversals().get(0);
@@ -2248,7 +2246,7 @@ class TransactionRemovalControllerTest {
   // Corrections chain: each replacement points at the row it corrected; only the latest counts.
   @Test
   void aCorrectionOfACorrectionChains() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse original = record(token, card.id(), purchase("-85.00"));
     TransactionResponse first =
@@ -2268,7 +2266,7 @@ class TransactionRemovalControllerTest {
   // cannot be restored on its own next to the new one.
   @Test
   void correctingAPurchaseReplacesItsFee() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse original =
         record(
@@ -2315,7 +2313,7 @@ class TransactionRemovalControllerTest {
   // A transfer whose counterparty and amounts stay as they are is edited in place, both legs kept.
   @Test
   void aTransferDescriptionEditIsNotAVoid() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(token, "CASH", "CHF");
     TransactionResponse debit = record(token, current.id(), transfer("-100.00", savings.id()));
@@ -2338,7 +2336,7 @@ class TransactionRemovalControllerTest {
   // one is.
   @Test
   void anExplicitFxRateIsComparedAsDesiredState() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     seedFxRate("EUR", "CHF", "0.9000000000");
     TransactionResponse explicit =
@@ -2389,7 +2387,7 @@ class TransactionRemovalControllerTest {
   // in-place edit, no reason needed.
   @Test
   void anImportedRowWithAnEstimatedRateTakesADescriptionEditInPlace() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID imported = insertImportedEstimated(card.id(), "-100.00", "0.9000000000");
     TransactionResponse row = list(token, card.id()).get(0);
@@ -2416,7 +2414,7 @@ class TransactionRemovalControllerTest {
   // replacement estimates its own instead of pinning the old estimate as if the member stated it.
   @Test
   void anEchoedEstimateIsEstimatedAgainForTheReplacement() throws Exception {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     seedFxRate("EUR", "CHF", "0.9000000000");
     TransactionResponse estimated = record(token, card.id(), eurPurchase("-50.00", null));
@@ -2441,7 +2439,7 @@ class TransactionRemovalControllerTest {
   // row instead.
   @Test
   void anOverrideToADeactivatedCategoryDoesNotCarryOver() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     CategoryResponse hobby =
         client(token)
@@ -2487,7 +2485,7 @@ class TransactionRemovalControllerTest {
   // a transfer, the row has no category, as a recorded transfer would not.
   @Test
   void anOverrideDoesNotCarryOverToAnUncategorizedType() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     TransactionResponse original =
         record(
@@ -2556,7 +2554,7 @@ class TransactionRemovalControllerTest {
   // stays on the row.
   @Test
   void anUnchangedCorrectionIsANoOpAndANotesEditStaysOnTheRow() {
-    String token = bootstrapAdministrator();
+    String token = bootstrapStandardUser();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     TransactionResponse original = record(token, card.id(), purchase("-85.00"));
 
@@ -3395,27 +3393,8 @@ class TransactionRemovalControllerTest {
     }
   }
 
-  private UUID createSecondMember(String adminToken, String email) {
-    client(adminToken)
-        .post()
-        .uri("/api/v1/admin/users")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateUserRequest(email, PASSWORD, "STANDARD_USER", "EN"))
-        .exchange()
-        .expectStatus()
-        .isCreated();
-    try (Connection connection = dataSource.getConnection();
-        PreparedStatement statement =
-            connection.prepareStatement(
-                "SELECT workspace_member_id FROM app_user WHERE email = ?")) {
-      statement.setString(1, email);
-      try (ResultSet resultSet = statement.executeQuery()) {
-        resultSet.next();
-        return (UUID) resultSet.getObject(1);
-      }
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
+  private UUID createSecondMember(String email) {
+    return WorkspaceLoginFixtures.addMember(dataSource, "admin@example.com", email, PASSWORD);
   }
 
   private String login(String email) {
@@ -3434,18 +3413,9 @@ class TransactionRemovalControllerTest {
         .accessToken();
   }
 
-  private String bootstrapAdministrator() {
-    return anonymousClient()
-        .post()
-        .uri("/api/v1/setup/administrator")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "CHF"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(AuthTokensResponse.class)
-        .returnResult()
-        .getResponseBody()
+  private String bootstrapStandardUser() {
+    return WorkspaceLoginFixtures.bootstrapStandardUser(
+            anonymousClient(), "admin@example.com", PASSWORD, "Test Workspace", "CHF")
         .accessToken();
   }
 

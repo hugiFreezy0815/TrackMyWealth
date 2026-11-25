@@ -152,30 +152,56 @@ class AdminUserControllerTest {
   }
 
   @Test
-  void administratorWithNoWorkspaceLinkCannotCreateAUser() throws Exception {
-    // Simulates the pre-fix state #47 describes: an administrator with no workspace_member link
-    // of their own. Not reachable via any current API path (every account-creation path now
-    // links one), but createUser must still fail safely - a clear 409, not an NPE - if it were
-    // ever to occur again.
+  void eachStandardUserGetsTheirOwnWorkspace() {
     String adminToken = bootstrapAdministrator();
-    AppUser admin = onlyAppUser();
+    assertThat(onlyAppUser().getWorkspaceMember()).isNull();
+    createStandardUser(adminToken, "anna@example.com");
+    adminClient(adminToken)
+        .post()
+        .uri("/api/v1/admin/users")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateUserRequest(
+                "ben@example.com",
+                "another-strong-password",
+                "STANDARD_USER",
+                "DE",
+                "  Ben workspace  ",
+                "EUR"))
+        .exchange()
+        .expectStatus()
+        .isCreated();
 
-    // A member never stays without its login (V110), so the link and the member go together.
-    UUID member = admin.getWorkspaceMember().getId();
-    try (Connection connection = dataSource.getConnection()) {
-      connection.setAutoCommit(false);
-      try (PreparedStatement unlink =
-              connection.prepareStatement(
-                  "UPDATE app_user SET workspace_member_id = NULL WHERE id = ?");
-          PreparedStatement delete =
-              connection.prepareStatement("DELETE FROM workspace_member WHERE id = ?")) {
-        unlink.setObject(1, admin.getId());
-        unlink.executeUpdate();
-        delete.setObject(1, member);
-        delete.executeUpdate();
-      }
-      connection.commit();
-    }
+    adminClient(adminToken)
+        .get()
+        .uri("/api/v1/admin/workspaces")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody()
+        .jsonPath("$.page.totalElements")
+        .isEqualTo(2)
+        .jsonPath("$.content[?(@.name == 'Ben workspace')]")
+        .exists()
+        .jsonPath("$.content[*].currency")
+        .doesNotExist()
+        .jsonPath("$.content[*].portfolios")
+        .doesNotExist();
+  }
+
+  @Test
+  void administratorsCannotBeGivenWorkspaceSettingsAndMembersCannotBePromoted() {
+    String adminToken = bootstrapAdministrator();
+    AppUser member = createStandardUser(adminToken, "bob@example.com");
+    adminClient(adminToken)
+        .patch()
+        .uri("/api/v1/admin/users/" + member.getId())
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", member.getId()))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new EditUserRequest(null, "SYSTEM_ADMINISTRATOR", null))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.BAD_REQUEST);
 
     adminClient(adminToken)
         .post()
@@ -183,12 +209,32 @@ class AdminUserControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateUserRequest(
-                "nobody@example.com", "another-strong-password", "STANDARD_USER", "EN"))
+                "second-admin@example.com",
+                "another-strong-password",
+                "SYSTEM_ADMINISTRATOR",
+                "EN",
+                "Disallowed",
+                null))
         .exchange()
         .expectStatus()
-        .isEqualTo(HttpStatus.CONFLICT);
+        .isEqualTo(HttpStatus.BAD_REQUEST);
 
-    assertThat(appUserRepository.findAll()).hasSize(1);
+    // A blank name means "no name", so it is no workspace setting.
+    adminClient(adminToken)
+        .post()
+        .uri("/api/v1/admin/users")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateUserRequest(
+                "blank-name-admin@example.com",
+                "another-strong-password",
+                "SYSTEM_ADMINISTRATOR",
+                "EN",
+                "   ",
+                null))
+        .exchange()
+        .expectStatus()
+        .isCreated();
   }
 
   @Test
@@ -567,7 +613,7 @@ class AdminUserControllerTest {
         .body(new EditUserRequest(null, "STANDARD_USER", null))
         .exchange()
         .expectStatus()
-        .isEqualTo(HttpStatus.CONFLICT);
+        .isEqualTo(HttpStatus.BAD_REQUEST);
 
     AppUser stillAdmin = appUserRepository.findById(admin.getId()).orElseThrow();
     assertThat(stillAdmin.getStatus()).isEqualTo("ACTIVE");
@@ -596,6 +642,19 @@ class AdminUserControllerTest {
             .expectBody(UserSummaryResponse.class)
             .returnResult()
             .getResponseBody();
+
+    assertThat(
+            appUserRepository.findById(secondAdminSummary.id()).orElseThrow().getWorkspaceMember())
+        .isNull();
+    adminClient(adminToken)
+        .patch()
+        .uri("/api/v1/admin/users/" + secondAdminSummary.id())
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", secondAdminSummary.id()))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new EditUserRequest(null, "STANDARD_USER", null))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.BAD_REQUEST);
 
     // Two active administrators: disabling one is fine.
     adminClient(adminToken)
