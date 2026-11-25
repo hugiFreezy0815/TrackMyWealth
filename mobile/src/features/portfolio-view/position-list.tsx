@@ -61,6 +61,15 @@ export function noGainReason(
 }
 
 /**
+ * The note on where a position's cost basis comes from, or null for a printed or entered one: an
+ * estimate, or one calculated from the account's orders (US-15-15, #714).
+ */
+export function costBasisNoteId(position: Position): string | null {
+  if (position.costBasisEstimated) return 'portfolio.position.estimated';
+  return position.costBasisSource === 'ORDERS' ? 'portfolio.position.fromOrders' : null;
+}
+
+/**
  * Whether the gain's percent figure shows. S2/S3 always show it ("–" without a gain). Investments
  * leaves it out when a note explains the missing gain, but still shows "–" when nothing else
  * would fill the cell (a cost basis but an unknown value): a missing figure is never blank.
@@ -91,6 +100,15 @@ export function NoGainNote({
       {msg(intl, reason.id, reason.values)}
     </Text>
   );
+}
+
+/** The note on where the cost basis comes from (costBasisNoteId); nothing for none. */
+export function CostBasisNote({ position }: { position: Position }) {
+  const intl = useIntl();
+  const theme = useTheme();
+  const id = costBasisNoteId(position);
+  if (!id) return null;
+  return <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>{msg(intl, id)}</Text>;
 }
 
 /** The row's spoken summary: name, value, units and gain, masked like the visible text. */
@@ -258,11 +276,7 @@ function PositionRow({
           interactive={false}
         />
         <NoGainNote position={position} currency={currency} investments={Boolean(investments)} />
-        {position.costBasisEstimated ? (
-          <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
-            {msg(intl, 'portfolio.position.estimated')}
-          </Text>
-        ) : null}
+        <CostBasisNote position={position} />
       </View>
     </>
   );

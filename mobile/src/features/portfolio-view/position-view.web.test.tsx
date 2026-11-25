@@ -45,6 +45,7 @@ const positions: Position[] = [
     costBasisCurrency: 'EUR',
     costBasisInAccountCurrency: null,
     costBasisEstimated: false,
+    costBasisSource: 'ORDERS',
     unrealisedGain: '3073.55',
     unrealisedGainPercent: '11.20',
     unrealisedGainCurrency: 'EUR',
@@ -65,6 +66,7 @@ const positions: Position[] = [
     costBasisCurrency: null,
     costBasisInAccountCurrency: null,
     costBasisEstimated: false,
+    costBasisSource: null,
     unrealisedGain: null,
     unrealisedGainPercent: null,
     unrealisedGainCurrency: null,
@@ -131,6 +133,8 @@ describe('Depot positions on web (ADR 0007, W02/W03)', () => {
     expect(screen.getByText('+11.2%')).toBeTruthy();
     // A holding priced in another currency has no gain (FR-PERF-018).
     expect(screen.getByText('Cost basis currency unknown')).toBeTruthy();
+    // US-15-15: the first one's cost basis is calculated from its orders.
+    expect(screen.getAllByText('Cost basis from orders')).toHaveLength(1);
   });
 
   it('lets only the Position cell break anywhere, never an amount or a unit count', async () => {

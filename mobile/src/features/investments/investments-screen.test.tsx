@@ -148,6 +148,7 @@ const position: Position = {
   costBasisCurrency: 'USD',
   costBasisInAccountCurrency: null,
   costBasisEstimated: false,
+  costBasisSource: 'STATEMENT',
   unrealisedGain: '12.34',
   unrealisedGainPercent: '-0.32',
   unrealisedGainCurrency: 'USD',
@@ -161,6 +162,7 @@ const noBasis: Position = {
   displayName: 'Fund Without Basis',
   costBasis: null,
   costBasisCurrency: null,
+  costBasisSource: null,
   unrealisedGain: '99.99', // A conflicting response must still suppress the gain.
   unrealisedGainPercent: '10.9',
 };

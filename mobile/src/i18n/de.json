@@ -784,6 +784,7 @@
   "portfolio.position.noGainInBasisCurrency": "Kein Gewinn verfügbar für einen Einstandswert in {currency}",
   "portfolio.position.noBasis": "Noch kein Einstandswert",
   "portfolio.position.estimated": "Geschätzter Einstandswert",
+  "portfolio.position.fromOrders": "Einstandswert aus Aufträgen",
   "portfolio.empty.title": "Noch keine Konten in {name}",
   "portfolio.empty.body": "Füge ein Konto hinzu oder importiere einen Auszug.",
   "portfolio.addAccount": "Konto hinzufügen",

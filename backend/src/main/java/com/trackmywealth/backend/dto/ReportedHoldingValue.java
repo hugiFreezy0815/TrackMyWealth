@@ -21,6 +21,12 @@ public interface ReportedHoldingValue {
   /** Whether this component is a position; otherwise it is statement cash (#440). */
   boolean isHolding();
 
+  /** US-15-15: a position's security; always null for cash. */
+  @Nullable UUID getSecurityId();
+
+  /** US-15-15: a position's quantity; always null for cash. */
+  @Nullable BigDecimal getQuantity();
+
   /** A position's reported cost basis; always null for cash. */
   @Nullable BigDecimal getReportedCostBasis();
 

@@ -113,6 +113,7 @@ const holding = (id: string, overrides: Partial<Position> = {}): Position => {
     costBasisCurrency: 'EUR',
     costBasisInAccountCurrency: null,
     costBasisEstimated: false,
+    costBasisSource: null,
     unrealisedGain: '10.00',
     unrealisedGainPercent: '11.11',
     valueStatus: 'CURRENT' as Position['valueStatus'],

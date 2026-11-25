@@ -126,7 +126,7 @@ are tracked in #687 and #689 respectively.
 | 3 | Sub line | ISIN short form or symbol, `quantity` "{n} units" / "{n} Anteile", depot name (All depots only) | units with up to 6 decimals as sent, no rounding beyond the format rules |
 | 4 | Value | `valueInAccountCurrency` (account currency); `value` + `priceCurrency` `[advanced]` | `valueStatus ≠ CURRENT` ⇒ badge; null ⇒ "–" |
 | 5 | Unrealised gain | `unrealisedGain`, `unrealisedGainPercent` | `PLChip`: arrow + sign + amount, percent one decimal (#440). Null with `costBasis = null` ⇒ text `position.noCostBasis` "No cost basis" (with a link to fix: S15 item). Shown in its own currency (#527): `unrealisedGainInAccountCurrency` when known, else `unrealisedGain` in `unrealisedGainCurrency`; with a cost basis but neither ⇒ "Cost basis currency unknown" when `costBasisCurrency` is null, else "Gain not available for a cost basis in {currency}" |
-| 6 | Estimated cost basis | `costBasisEstimated` | `Estimated` badge next to 5 |
+| 6 | Estimated cost basis / cost basis from orders | `costBasisEstimated`, `costBasisSource` | `Estimated` badge next to 5; `costBasisSource = ORDERS` (US-15-15, #714) ⇒ tag `portfolio.position.fromOrders` "Cost basis from orders" instead, as on S2 (a cost basis from orders is never estimated) |
 | 7 | Sort | Value (server order, default), Name, Gain % | ordering only |
 
 Native shows 20 rows and then "Show all {n}". Web shows all rows at every width. The wide web

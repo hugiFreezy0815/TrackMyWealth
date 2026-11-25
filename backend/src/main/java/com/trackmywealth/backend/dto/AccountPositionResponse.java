@@ -19,7 +19,10 @@ public record AccountPositionResponse(
         @Nullable String priceCurrency,
     @Nullable BigDecimal value,
     @Nullable BigDecimal valueInAccountCurrency,
-    @Schema(description = "Cost basis as the statement printed it, never converted.")
+    @Schema(
+            description =
+                "Cost basis as the snapshot holds it (printed or entered), or else as the orders"
+                    + " give it (costBasisSource); never converted.")
         @Nullable BigDecimal costBasis,
     @Schema(description = "Currency of costBasis; null when unknown (#527).")
         @Nullable String costBasisCurrency,
@@ -29,6 +32,13 @@ public record AccountPositionResponse(
                     + " purchase-date rate(s), as reported. Never derived at today's rate.")
         @Nullable BigDecimal costBasisInAccountCurrency,
     boolean costBasisEstimated,
+    @Schema(
+            description =
+                "Where costBasis comes from (US-15-15): STATEMENT as an imported statement printed"
+                    + " it or a provider reported it (API or aggregator snapshot), ENTERED by the member, ORDERS calculated at the average price of the"
+                    + " account's buys and sells (fees excluded) when the snapshot has none. Null"
+                    + " without a cost basis.")
+        @Nullable CostBasisSource costBasisSource,
     @Schema(
             description =
                 "Gain in unrealisedGainCurrency, the cost basis currency: valueInAccountCurrency"

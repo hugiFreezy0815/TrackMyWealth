@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -223,7 +224,22 @@ class AccountValuationServiceTest {
 
     service.valueIn(account, "CHF", TODAY);
 
-    verify(accountPositionsService, never()).reportedHoldingsFor(any(), any());
+    verify(accountPositionsService, never()).reportedHoldingsFor(any(), any(), anyBoolean());
+  }
+
+  // #719 review: the orders' cost basis is read only for the depot gain summaries (valueAllIn),
+  // never for a value alone - a daily value history would otherwise query the orders every day.
+  @Test
+  void onlyTheHoldingsSummariesReadTheOrdersCostBasis() {
+    account.setHoldsPositions(true);
+
+    service.valueIn(account, "CHF", TODAY);
+    service.valueAllInCurrencies(List.of(account), List.of("CHF"), TODAY);
+    verify(accountPositionsService, times(2))
+        .reportedHoldingsFor(List.of(account.getId()), TODAY, false);
+
+    service.valueAllIn(List.of(account), List.of("CHF"), TODAY);
+    verify(accountPositionsService).reportedHoldingsFor(List.of(account.getId()), TODAY, true);
   }
 
   @Test
