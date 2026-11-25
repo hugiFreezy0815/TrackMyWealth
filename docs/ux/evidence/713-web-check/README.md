@@ -11,9 +11,10 @@ the web export, with every API call mocked in Playwright (`page.route`) using sy
   - it sits between the panel title row and the first repayment row, and is the panel's
     second child (the block right after the title row);
   - "See all" is in the title row;
+  - unknown state (#722): the count sits above "split unknown", and no amount is shown;
   - nothing overflows horizontally.
 - **axe** (WCAG 2.1 AA): runs at 320 px on the error, partial and dark runs.
-- **Result:** 138 of 138 checks pass ([results.json](results.json)). The screenshots
+- **Result:** 146 of 146 checks pass ([results.json](results.json)). The screenshots
   (`<lang>-<scheme>-<width>-<state>.png`) show the Repayments panel.
 
 Run it again:

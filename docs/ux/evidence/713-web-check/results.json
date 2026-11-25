@@ -67,7 +67,17 @@
   {
     "name": "EN light 320px unknown: field 7 is the first block of the panel",
     "ok": true,
-    "detail": "{\"header\":754,\"field\":796,\"firstRow\":877}"
+    "detail": "{\"header\":754,\"field\":796,\"firstRow\":897}"
+  },
+  {
+    "name": "EN light 320px unknown: count above split unknown",
+    "ok": true,
+    "detail": "{\"count\":844,\"split\":864}"
+  },
+  {
+    "name": "EN light 320px unknown: no amount in field 7",
+    "ok": true,
+    "detail": ""
   },
   {
     "name": "EN light 320px unknown: See all in the title row",
@@ -217,7 +227,17 @@
   {
     "name": "EN light 1280px unknown: field 7 is the first block of the panel",
     "ok": true,
-    "detail": "{\"header\":382,\"field\":424,\"firstRow\":505}"
+    "detail": "{\"header\":382,\"field\":424,\"firstRow\":525}"
+  },
+  {
+    "name": "EN light 1280px unknown: count above split unknown",
+    "ok": true,
+    "detail": "{\"count\":472,\"split\":492}"
+  },
+  {
+    "name": "EN light 1280px unknown: no amount in field 7",
+    "ok": true,
+    "detail": ""
   },
   {
     "name": "EN light 1280px unknown: See all in the title row",
@@ -412,7 +432,17 @@
   {
     "name": "DE light 320px unknown: field 7 is the first block of the panel",
     "ok": true,
-    "detail": "{\"header\":754,\"field\":796,\"firstRow\":877}"
+    "detail": "{\"header\":754,\"field\":796,\"firstRow\":897}"
+  },
+  {
+    "name": "DE light 320px unknown: count above split unknown",
+    "ok": true,
+    "detail": "{\"count\":844,\"split\":864}"
+  },
+  {
+    "name": "DE light 320px unknown: no amount in field 7",
+    "ok": true,
+    "detail": ""
   },
   {
     "name": "DE light 320px unknown: See all in the title row",
@@ -562,7 +592,17 @@
   {
     "name": "DE light 1280px unknown: field 7 is the first block of the panel",
     "ok": true,
-    "detail": "{\"header\":382,\"field\":424,\"firstRow\":505}"
+    "detail": "{\"header\":382,\"field\":424,\"firstRow\":525}"
+  },
+  {
+    "name": "DE light 1280px unknown: count above split unknown",
+    "ok": true,
+    "detail": "{\"count\":472,\"split\":492}"
+  },
+  {
+    "name": "DE light 1280px unknown: no amount in field 7",
+    "ok": true,
+    "detail": ""
   },
   {
     "name": "DE light 1280px unknown: See all in the title row",

@@ -57,8 +57,8 @@ const STATES = {
   partial: { years: [year({ interestPaid: '1222.90', principalPaid: '4627.10', unknownSplitAmount: '650.00' })] },
 };
 const TEXT = {
-  EN: { title: `Interest paid in ${YEAR}`, header: 'Repayments', seeAll: 'See all' },
-  DE: { title: `Bezahlte Zinsen ${YEAR}`, header: 'Rückzahlungen', seeAll: 'Alle anzeigen' },
+  EN: { title: `Interest paid in ${YEAR}`, header: 'Repayments', seeAll: 'See all', count: 'From 10 repayments', splitUnknown: 'Principal and interest split unknown' },
+  DE: { title: `Bezahlte Zinsen ${YEAR}`, header: 'Rückzahlungen', seeAll: 'Alle anzeigen', count: 'Aus 10 Rückzahlungen', splitUnknown: 'Aufteilung in Tilgung und Zinsen unbekannt' },
 };
 
 async function open(browser, { lang, width, scheme, state }) {
@@ -168,6 +168,13 @@ try {
             const rb = await firstRow.boundingBox();
             check(`${tag}: field 7 is the first block of the panel`, tb.y > hb.y + hb.height - 1 && tb.y + tb.height < rb.y,
               JSON.stringify({ header: hb.y, field: tb.y, firstRow: rb.y }));
+          }
+          if (state === 'unknown') {
+            // #722: the count stays above the split-unknown line, and no amount is shown.
+            const [cb, ub] = [await page.getByText(t.count, { exact: true }).first().boundingBox(),
+              await page.getByText(t.splitUnknown, { exact: true }).first().boundingBox()];
+            check(`${tag}: count above split unknown`, !!cb && !!ub && cb.y < ub.y, JSON.stringify({ count: cb?.y, split: ub?.y }));
+            check(`${tag}: no amount in field 7`, (await page.getByText(/6.500/).count()) === 0);
           }
           const seeAll = page.getByRole('button', { name: t.seeAll });
           if (await seeAll.count()) {
