@@ -3,6 +3,7 @@ import {
   accountTypeMessageKey,
   daysUntil,
   hasPositions,
+  isInvestmentDepot,
   sectionMessageKey,
   typeMessageKey,
   unknownAccounts,
@@ -90,6 +91,22 @@ describe('Portfolio View S2 (#493) model', () => {
       false,
     );
     expect(hasPositions(account('depot'), section('DEPOT', []))).toBe(false);
+  });
+
+  it('scopes Investments to depots that hold positions and Pillar 3a accounts with positions', () => {
+    const holds = new Set(['fresh']);
+    const depot = section('DEPOT', []);
+    const pillar = section('PILLAR_3A', []);
+    expect(isInvestmentDepot(account('snap', null, { positionsCount: 0 }), depot)).toBe(true);
+    expect(isInvestmentDepot(account('fresh'), depot, holds)).toBe(true);
+    // A balance-only mandate: no snapshot and holdsPositions false (or not known yet).
+    expect(isInvestmentDepot(account('mandate'), depot, holds)).toBe(false);
+    expect(isInvestmentDepot(account('fresh'), depot)).toBe(false);
+    expect(isInvestmentDepot(account('p', null, { positionsCount: 2 }), pillar)).toBe(true);
+    expect(isInvestmentDepot(account('fresh'), pillar, holds)).toBe(false);
+    expect(
+      isInvestmentDepot(account('c', null, { positionsCount: 2 }), section('CRYPTO', [])),
+    ).toBe(false);
   });
 
   it('names the accounts whose value is unknown for the explanation sheet', () => {

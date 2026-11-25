@@ -21,7 +21,9 @@ When S11 ships, the IA unhides **Investments**:
 
 The Depot tile on S1 and the depot rows on S2/S9 lead here. See
 [01-information-architecture.md](../01-information-architecture.md) §2. Route `/investments`, and
-`/investments?account={accountId}` for one depot.
+`/investments?account={accountId}` for one depot. The S1 Depot tile adds `currency={Cur}`, the S1
+scope currency it shows, so the Depot section subtotal here matches the tile; without it, `Cur` is
+the workspace currency. A scope chip keeps `currency`.
 
 ## Layout
 
@@ -85,18 +87,18 @@ Activity                                       See all   ← trades, dividends, 
 
 | # | Request | Used for |
 |---|---|---|
-| 1 | The depot `AccountRow`s: `GET /api/v1/portfolios/{id}/view` per portfolio (as S9 request 2, cached from S2), the rows of section `DEPOT` (and `PILLAR_3A` rows with `positionsCount ≠ null`) | scope chips, per-depot `totalReturn`, `totalReturnPercent`, `missingCostBasisCount`, `foreignCurrencyCostBasisCount`, `positionsAsOf` |
+| 1 | The depot `AccountRow`s: `GET /api/v1/portfolios/{id}/view` per portfolio (as S9 request 2, cached from S2), the rows of section `DEPOT` that hold positions (and `PILLAR_3A` rows with `positionsCount ≠ null`). A `DEPOT` row with `positionsCount ≠ null` holds positions; for one with `positionsCount = null` the row cannot tell, so `GET /api/v1/accounts/{accountId}` decides (`holdsPositions`). A balance-only depot (e.g. a managed mandate) is left out: its positions request answers 422 `POSITIONS_NOT_APPLICABLE`. The same rule decides the S2 "View investments" link. A chip shows the depot name, and "{depot} ({portfolio})" when another listed depot has the same name | scope chips, per-depot `totalReturn`, `totalReturnPercent`, `missingCostBasisCount`, `foreignCurrencyCostBasisCount`, `positionsAsOf` |
 | 2 | `GET /api/v1/accounts/{accountId}/positions` per depot (max 4 in parallel) | positions list (`AccountPositionResponse`) |
-| 3 | `GET /api/v1/net-worth?currency=Cur` → `sections[]` with `section = DEPOT` | the "All depots" market value and status |
-| 4 | `GET /api/v1/portfolios/{id}/history?period=` (#477) | the chart and chip **for a scope that is exactly one portfolio**. For "All depots", **Gap G11-1** (depot-section history) |
+| 3 | `GET /api/v1/net-worth?currency=Cur` → `sections[]` with `section = DEPOT` | the Depot section subtotal and its status |
+| 4 | `GET /api/v1/accounts/{accountId}/balance?currency={accountCurrency}` for a depot whose currency differs from its portfolio currency | the amount and valuation metadata in the depot currency |
 | 5 | `GET /api/v1/accounts/{accountId}/transactions?sort=bookingDate,desc&size=10` per depot | Activity. For "All depots" Gap G9-2 (workspace transaction list), so the block is hidden there |
 
 ### What "All depots" can and cannot show today
 
 | Element | All depots | One depot |
 |---|---|---|
-| Market value | `/net-worth` DEPOT section `subtotal` (3) | `AccountRow.balance` |
-| Change chip and chart | **hidden** (G11-1) | portfolio history (#477) if the portfolio holds only this depot, else hidden (G11-1) |
+| Market value | Labelled **Depot section subtotal**. Uses `/net-worth` DEPOT section `subtotal` (3) and excludes Pillar 3a, even when those accounts have positions in the list; the note under it names Pillar 3a only when such an account is listed. | `AccountRow.balance` when the depot and portfolio currencies match. Otherwise use (4), or show the account-currency balance with valuation status and date unavailable. |
+| Change chip and chart | **hidden** (G11-1) | **hidden** (G11-1). A portfolio can contain other accounts earlier in the period, and the series is in portfolio currency. |
 | Total return | **hidden** (G11-2: the sum of per-depot returns is a computation) | `AccountRow.totalReturn`, `totalReturnPercent` |
 | Positions | the depots' lists one after the other, each under a depot header; **no merging** of the same security across depots (G11-3) | one list |
 | Allocation | **hidden** (G11-4) | **hidden** (G11-4) |
@@ -106,8 +108,14 @@ This table is the honest MVP: S11 can ship on the existing API for one depot and
 all depots. The rest appears when the server sends it.
 
 **PO decision 2026-11-22: ship this partial version in sprint 8** (#686). The Investments tab goes
-live with the one-depot detail and the All-depots list grouped by depot. The hidden parts appear
-when #694–#697 land in sprint 9. No placeholders are shown in the meantime.
+live with the one-depot detail and the All-depots list grouped by depot. The hidden API-backed
+sections depend on #694–#697.
+
+The Sprint 8 screen includes recent Activity when the selected depot supports transactions.
+Holdings import entry points, including the populated-screen Import action, wait for the supported
+holdings review and commit flow (#367). With no depots, the member can add one. With no holdings
+snapshot, the member can open the depot account. Position drill-through and cost-basis correction
+are tracked in #687 and #689 respectively.
 
 ## Positions list (`PositionRow` v2)
 
@@ -121,8 +129,8 @@ when #694–#697 land in sprint 9. No placeholders are shown in the meantime.
 | 6 | Estimated cost basis | `costBasisEstimated` | `Estimated` badge next to 5 |
 | 7 | Sort | Value (server order, default), Name, Gain % | ordering only |
 
-Phone shows 20 rows and then "Show all {n}". The web table shows all rows: a snapshot is not
-paged.
+Native shows 20 rows and then "Show all {n}". Web shows all rows at every width. The wide web
+table sorts by selectable column headers, with cost basis grouped by reported currency.
 
 ## S13 Performance sheet (M30)
 
@@ -156,6 +164,8 @@ Taxes withheld                   –        ⓘ
 | Missing cost basis line | `missingCostBasisCount`, `foreignCurrencyCostBasisCount` | – |
 
 **Rules for this sheet:**
+- The total return amount and percentage are displayed separately. A missing percentage uses a
+  dash and its own reason.
 - A line whose figure is missing shows "–" and an ⓘ that says why ("Not available yet",
   "Needs the cost basis of 2 positions"). Lines are never left out silently: the member sees
   the shape of the breakdown.
@@ -184,7 +194,7 @@ A full screen from the card (phone push, web main column).
 
 | Action | Result |
 |---|---|
-| Scope chip | Reload with `account` |
+| Scope chip | Reload with `account` (and the `currency` it was opened with) |
 | Tap a position | [S12 Position detail](position-detail.md) |
 | "+" | Menu: Import statement ([S7](import-statement.md)), Add transaction (hidden until M18 ships) |
 | Check card "Compare" | [S15](data-checks.md) units comparison |
@@ -194,8 +204,9 @@ A full screen from the card (phone push, web main column).
 
 | State | Rule |
 |---|---|
-| No depot | `EmptyState` "No investments yet" + "Add a depot" ([S6](add-account.md)) and "Import a holdings statement" ([S7](import-statement.md)) |
-| Depot without snapshot (`positionsAsOf = null`) | `position.noSnapshot` "No positions yet. Import a holdings statement to see them." |
+| No depot | "No investments yet" and "Add a depot" ([S6](add-account.md)). Holdings import is deferred to #367. |
+| Depot without snapshot (`positionsAsOf = null`) | "No positions have been recorded for this depot" and "Open depot account". Holdings import is deferred to #367. |
+| A portfolio view fails while listing All depots | Show the available depot groups, a retry for the failed request and a notice that the subtotal can include accounts missing from the list. |
 | `complete = false` on a positions response | `total.incomplete` under the value |
 | Loading, refreshing, offline, error | README |
 

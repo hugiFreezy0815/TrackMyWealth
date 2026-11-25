@@ -1,0 +1,984 @@
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
+import { Platform } from 'react-native';
+
+import { NetworkError, REQUEST_TIMEOUT_MS } from '@/api/client';
+import { collectionPage } from '@/api/collection-page.fixture';
+import { queryKeys } from '@/api/queries/keys';
+import { shouldRetry } from '@/api/queries/retry';
+import {
+  POSITION_SLOT_TIMEOUT_MS,
+  accountPositionsQuery,
+  resetPositionRequests,
+} from '@/api/queries/resources';
+import type { components } from '@/api/schema';
+import { typedApi } from '@/api/typed-api';
+import type { NetWorth } from '@/features/overview/overview-model';
+import type {
+  PortfolioAccount,
+  PortfolioView,
+  Position,
+  PositionsResponse,
+} from '@/features/portfolio-view/model';
+import { shownGain } from '@/features/portfolio-view/position-gain';
+import { setAmountsHidden } from '@/features/privacy/amount-visibility';
+import { withIntl } from '@/i18n/test-utils';
+
+import { InvestmentsScreen } from './investments-screen';
+import { investmentDepots, investmentFigures, orderPositions, visiblePositionSort } from './model';
+
+jest.mock('@/global.css', () => ({}));
+jest.mock('@/api/typed-api', () => ({ typedApi: { get: jest.fn() } }));
+jest.mock('expo-router', () => ({ useRouter: jest.fn() }));
+jest.mock('expo-image', () => ({ Image: 'Image' }));
+jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
+
+const mockWindow = { width: 390, height: 844, scale: 1, fontScale: 1 };
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true,
+  default: () => mockWindow,
+}));
+
+const originalPlatform = Platform.OS;
+afterEach(() => {
+  Platform.OS = originalPlatform;
+  jest.mocked(typedApi.get).mockReset();
+  jest.useRealTimers();
+  mockWindow.width = 390;
+  resetPositionRequests();
+});
+
+const asOf = '2026-11-21';
+const depot: PortfolioAccount = {
+  accountId: 'depot-1',
+  name: 'Euro Depot',
+  accountType: 'SECURITIES',
+  currency: 'EUR',
+  nature: 'ASSET',
+  balance: '910.52',
+  valueInPortfolioCurrency: '952.52',
+  valueKnown: true,
+  valueStatus: 'STALE',
+  valueSourceDate: asOf,
+  positionsCount: 2,
+  positionsAsOf: asOf,
+  warnings: [],
+  totalReturn: null,
+  totalReturnPercent: null,
+  missingCostBasisCount: 1,
+  foreignCurrencyCostBasisCount: null,
+  dueDate: null,
+  linkedPropertyAccountId: null,
+  maskedIdentifier: null,
+  reconciliationStatus: 'NOT_APPLICABLE',
+  statementDate: null,
+};
+const secondDepot: PortfolioAccount = {
+  ...depot,
+  accountId: 'depot-2',
+  name: 'Swiss Depot',
+  currency: 'CHF',
+  balance: '909.97',
+  totalReturn: '17.51',
+  totalReturnPercent: null,
+  missingCostBasisCount: null,
+};
+const view: PortfolioView = {
+  portfolioId: 'portfolio-1',
+  name: 'Test Portfolio',
+  portfolioType: 'MIXED',
+  portfolioTypeOverridden: false,
+  personalAssetsDefault: false,
+  portfolioCurrency: 'CHF',
+  workspaceCurrency: 'CHF',
+  asOf,
+  total: '1938.99',
+  totalInWorkspaceCurrency: '1938.99',
+  complete: true,
+  valueStatus: 'CURRENT',
+  warnings: [],
+  sections: [
+    {
+      section: 'DEPOT',
+      subtotal: '1987.19',
+      subtotalInWorkspaceCurrency: '1987.19',
+      complete: true,
+      valueStatus: 'CURRENT',
+      accounts: [depot, secondDepot],
+    },
+  ],
+  institutionName: null,
+  logoUrl: null,
+  conversionRate: null,
+  conversionRateDate: null,
+  conversionRateCarriedForward: false,
+  conversionRateStale: false,
+  lastImport: null,
+};
+const netWorth: NetWorth = {
+  currency: 'CHF',
+  asOf,
+  netWorth: '9000.23',
+  totalAssets: '9000.23',
+  totalLiabilities: '0',
+  complete: true,
+  approximate: false,
+  warnings: [],
+  accounts: [],
+  sections: [
+    {
+      section: 'DEPOT',
+      subtotal: '1999.17',
+      complete: true,
+      valueStatus: 'ESTIMATED',
+      accountCount: 2,
+    },
+  ],
+};
+const position: Position = {
+  securityId: 'security-1',
+  displayName: 'Example Fund',
+  isin: null,
+  quantity: '1.24',
+  price: '100',
+  priceCurrency: 'USD',
+  value: '123.45',
+  valueInAccountCurrency: '128.70',
+  costBasis: '90.00',
+  costBasisCurrency: 'USD',
+  costBasisInAccountCurrency: null,
+  costBasisEstimated: false,
+  unrealisedGain: '12.34',
+  unrealisedGainPercent: '-0.32',
+  unrealisedGainCurrency: 'USD',
+  unrealisedGainInAccountCurrency: null,
+  unrealisedGainInAccountCurrencyPercent: null,
+  valueStatus: 'STALE',
+};
+const noBasis: Position = {
+  ...position,
+  securityId: 'security-2',
+  displayName: 'Fund Without Basis',
+  costBasis: null,
+  costBasisCurrency: null,
+  unrealisedGain: '99.99', // A conflicting response must still suppress the gain.
+  unrealisedGainPercent: '10.9',
+};
+const snapshot: PositionsResponse = {
+  accountId: depot.accountId,
+  currency: depot.currency,
+  asOf,
+  complete: false,
+  source: 'HOLDINGS_SNAPSHOT',
+  positions: [position, noBasis],
+};
+
+const ownBalance: components['schemas']['AccountValuation'] = {
+  accountId: depot.accountId,
+  name: depot.name,
+  nativeCurrency: 'EUR',
+  currency: 'EUR',
+  nature: 'ASSET',
+  value: '910.52',
+  valueKnown: true,
+  valueSourceDate: '2026-11-20',
+  valueSourceStale: false,
+  conversionRate: null,
+  conversionRateDate: null,
+  conversionRateCarriedForward: false,
+  conversionRateStale: false,
+  valueBasis: 'LATEST_SNAPSHOT',
+  warnings: [],
+};
+
+describe('Investments view model', () => {
+  it.each(['UNKNOWN', 'STALE'] as const)(
+    'uses depot-currency metadata with a %s portfolio valuation and keeps a usable fallback',
+    (valueStatus) => {
+      const scope = {
+        account: { ...depot, valueKnown: valueStatus !== 'UNKNOWN', valueStatus },
+        portfolioCurrency: 'CHF',
+        portfolioName: 'Test Portfolio',
+        section: 'DEPOT' as const,
+      };
+      expect(investmentFigures(scope, undefined, snapshot, ownBalance).value).toMatchObject({
+        amount: '910.52',
+        currency: 'EUR',
+        known: true,
+        status: 'CURRENT',
+        asOf: '2026-11-20',
+      });
+      // While the depot-currency balance loads, the figure is pending, not "status unavailable".
+      expect(investmentFigures(scope, undefined, snapshot).value).toMatchObject({
+        pending: true,
+        statusUnavailable: false,
+      });
+      expect(investmentFigures(scope, undefined, snapshot, undefined, true).value).toMatchObject({
+        amount: '910.52',
+        known: true,
+        status: undefined,
+        asOf: null,
+        pending: false,
+        statusUnavailable: true,
+      });
+      expect(
+        investmentFigures(scope, undefined, snapshot, {
+          ...ownBalance,
+          value: null,
+          valueKnown: false,
+        }).value,
+      ).toMatchObject({ amount: null, known: false, status: 'UNKNOWN' });
+    },
+  );
+
+  it('preserves server figures and never reconstructs gains or totals', () => {
+    const depots = investmentDepots([view]);
+    expect(investmentFigures(depots[0], netWorth, snapshot)).toMatchObject({
+      value: { amount: '910.52', currency: 'EUR', complete: false },
+      performance: { amount: null, percent: null, missingCostBasisCount: 1 },
+    });
+    expect(investmentFigures(depots[1], netWorth, undefined).performance).toMatchObject({
+      amount: '17.51',
+      percent: null,
+    });
+    expect(investmentFigures(undefined, netWorth, undefined)).toMatchObject({
+      value: { amount: '1999.17', currency: 'CHF' },
+      performance: undefined,
+    });
+    expect(investmentFigures(undefined, undefined, snapshot).value).toBeUndefined();
+    expect(shownGain(position, 'EUR')).toEqual({
+      amount: '12.34',
+      percent: '-0.32',
+      currency: 'USD',
+    });
+    expect(shownGain(noBasis, 'EUR')).toBeNull();
+    // S2/S3 keep the server's account-currency gain, which can rest on its cost there alone.
+    expect(
+      shownGain(
+        {
+          ...noBasis,
+          costBasisInAccountCurrency: '1000.00',
+          unrealisedGainInAccountCurrency: '50.00',
+        },
+        'EUR',
+      ),
+    ).toEqual({ amount: '50.00', percent: null, currency: 'EUR' });
+    expect(
+      orderPositions(
+        { ...snapshot, positions: [noBasis, position] },
+        { key: 'gain', direction: 'descending' },
+        'en',
+      ),
+    ).toEqual([position, noBasis]);
+  });
+});
+
+describe('Investments screen', () => {
+  it.each([
+    ['ios', 390],
+    ['web', 1280],
+  ] as const)(
+    'groups All depots and opens a scoped performance breakdown on %s',
+    async (platform, width) => {
+      Platform.OS = platform;
+      mockWindow.width = width;
+      await act(() => setAmountsHidden(true));
+      const get = jest.mocked(typedApi.get);
+      get.mockImplementation(async (path, options) => {
+        let data: unknown;
+        switch (path) {
+          case '/api/v1/workspace':
+            data = { currency: 'CHF' };
+            break;
+          case '/api/v1/portfolios':
+            data = collectionPage([{ id: view.portfolioId, name: view.name }], 0, 1, 1);
+            break;
+          case '/api/v1/portfolios/{portfolioId}/view':
+            data = view;
+            break;
+          case '/api/v1/net-worth':
+            data = netWorth;
+            break;
+          case '/api/v1/accounts/{accountId}/balance':
+            data = ownBalance;
+            break;
+          case '/api/v1/accounts/{accountId}':
+            data = { hasTransactions: true };
+            break;
+          case '/api/v1/accounts/{accountId}/transactions':
+            data = collectionPage(
+              [
+                {
+                  id: 'activity-1',
+                  counterpartyName: 'Dividend payer',
+                  bookingDate: asOf,
+                  amount: '5',
+                  currency: 'EUR',
+                },
+              ],
+              0,
+              10,
+              1,
+            );
+            break;
+          case '/api/v1/accounts/{accountId}/positions':
+            data =
+              options?.params &&
+              'accountId' in options.params &&
+              options.params.accountId === depot.accountId
+                ? snapshot
+                : {
+                    ...snapshot,
+                    accountId: secondDepot.accountId,
+                    currency: 'CHF',
+                    positions: [{ ...position, displayName: 'Swiss Fund' }],
+                  };
+            break;
+          default:
+            throw new Error('Unexpected query in Investments test');
+        }
+        return data as never;
+      });
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: Infinity } },
+      });
+      const onScope = jest.fn();
+      const onAccount = jest.fn();
+      const route = (accountId?: string) => (
+        <QueryClientProvider client={client}>
+          {withIntl(
+            <InvestmentsScreen
+              accountId={accountId}
+              onScope={onScope}
+              onAddDepot={jest.fn()}
+              onAccount={onAccount}
+            />,
+          )}
+        </QueryClientProvider>
+      );
+      const tree = await render(route());
+      await screen.findByText('Example Fund');
+      await screen.findByText('Swiss Fund');
+      expect(screen.queryByText("CHF 1'999.17")).toBeNull();
+      await fireEvent.press(screen.getByRole('switch', { name: 'Hide amounts' }));
+      expect(screen.getByText("CHF 1'999.17")).toBeOnTheScreen();
+      expect(screen.queryByText('Total return')).toBeNull();
+      expect(screen.queryByText('Allocation')).toBeNull();
+      expect(screen.queryByText('Dividends & interest')).toBeNull();
+      expect(get.mock.calls.some(([path]) => path.includes('/history'))).toBe(false);
+
+      await fireEvent.press(screen.getByRole('radio', { name: depot.name }));
+      expect(onScope).toHaveBeenCalledWith(depot.accountId);
+      await tree.rerender(route(depot.accountId));
+
+      expect(await screen.findByText('EUR 910.52')).toBeOnTheScreen();
+      expect(screen.queryByText('Swiss Fund')).toBeNull();
+      expect(screen.getByText('No cost basis')).toBeOnTheScreen();
+      const row = screen.getByLabelText(/^Example Fund, /);
+      expect(row.props.accessibilityLabel).toContain('Price from 21 Nov 2026');
+      await fireEvent.press(screen.getByRole('switch', { name: 'Hide amounts' }));
+      expect(screen.getByLabelText(/^Example Fund, /).props.accessibilityLabel).toContain('hidden');
+      await fireEvent.press(screen.getByRole('switch', { name: 'Hide amounts' }));
+      expect(await screen.findByText('Dividend payer')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'See all activity' }));
+      expect(onAccount).toHaveBeenCalledWith(depot.accountId, 'activity');
+      expect(screen.getByText('+USD 12.34')).toBeOnTheScreen();
+      expect(screen.queryByText('+USD 99.99')).toBeNull();
+      expect(screen.getByText('Cost basis missing for 1 position')).toBeOnTheScreen();
+      expect(screen.getAllByText('Price from 21 Nov 2026').length).toBeGreaterThan(0);
+      await fireEvent.press(screen.getByRole('button', { name: 'View performance breakdown' }));
+      const sheet = screen.getByTestId(
+        platform === 'web' ? 'shell-detail-panel' : 'shared-dialog-modal',
+      );
+      expect(within(sheet).getByText('Performance · Euro Depot')).toBeOnTheScreen();
+      expect(within(sheet).getByText('Realised gain')).toBeOnTheScreen();
+      expect(
+        within(sheet).getAllByText('This figure is not available yet.').length,
+      ).toBeGreaterThan(0);
+    },
+  );
+});
+
+function setupScreen(currency?: string) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: Infinity } },
+  });
+  const onAccount = jest.fn();
+  const onAddDepot = jest.fn();
+  const route = (accountId?: string) => (
+    <QueryClientProvider client={client}>
+      {withIntl(
+        <InvestmentsScreen
+          accountId={accountId}
+          currency={currency}
+          onScope={jest.fn()}
+          onAccount={onAccount}
+          onAddDepot={onAddDepot}
+        />,
+      )}
+    </QueryClientProvider>
+  );
+  return { route, onAccount, onAddDepot, client };
+}
+
+type FixtureOptions = {
+  views: PortfolioView[];
+  netWorth?: NetWorth;
+  snapshot?: PositionsResponse;
+  /** Account summaries: only `holdsPositions` matters to Investments. */
+  accounts?: { id: string; holdsPositions: boolean }[];
+};
+
+function mockInvestments(options: FixtureOptions, holdSecondPortfolio = false) {
+  const get = jest.mocked(typedApi.get);
+  let fail = holdSecondPortfolio;
+  let failSummaries = false;
+  get.mockImplementation(async (path, request) => {
+    const params = request?.params;
+    switch (path) {
+      case '/api/v1/workspace':
+        return { currency: 'CHF' } as never;
+      case '/api/v1/portfolios':
+        return collectionPage(
+          options.views.map(({ portfolioId, name }) => ({ id: portfolioId, name })),
+          0,
+          50,
+          options.views.length,
+        ) as never;
+      case '/api/v1/portfolios/{portfolioId}/view': {
+        const id = params && 'portfolioId' in params ? params.portfolioId : undefined;
+        if (fail && id === options.views[1]?.portfolioId) throw new Error('Portfolio unavailable');
+        return options.views.find(({ portfolioId }) => portfolioId === id) as never;
+      }
+      case '/api/v1/net-worth':
+        return (options.netWorth ?? netWorth) as never;
+      case '/api/v1/accounts/{accountId}': {
+        const id = params && 'accountId' in params ? params.accountId : undefined;
+        if (failSummaries) throw new Error('Account unavailable');
+        const summary = options.accounts?.find((account) => account.id === id);
+        return { id, hasTransactions: false, holdsPositions: summary?.holdsPositions } as never;
+      }
+      case '/api/v1/accounts/{accountId}/balance':
+        return ownBalance as never;
+      case '/api/v1/accounts/{accountId}/positions':
+        return {
+          ...(options.snapshot ?? snapshot),
+          accountId: params && 'accountId' in params ? params.accountId : undefined,
+        } as never;
+      default:
+        throw new Error('Unexpected Investments request ' + path);
+    }
+  });
+  return {
+    allowSecondPortfolio: () => {
+      fail = false;
+    },
+    failSummaries: () => {
+      failSummaries = true;
+    },
+    get,
+  };
+}
+
+const pillar = { ...secondDepot, accountId: 'pillar', name: 'Pillar 3a depot' };
+const pillarSection = { ...view.sections[0], section: 'PILLAR_3A' as const, accounts: [pillar] };
+
+it.each([false, true])(
+  'labels the Depot subtotal independently of Pillar 3a (Pillar-only: %s)',
+  async (onlyPillar) => {
+    mockInvestments({
+      views: [
+        { ...view, sections: onlyPillar ? [pillarSection] : [view.sections[0], pillarSection] },
+      ],
+      netWorth: onlyPillar
+        ? {
+            ...netWorth,
+            sections: [{ ...netWorth.sections[0], accountCount: 0, subtotal: '0.00' }],
+          }
+        : netWorth,
+      snapshot: { ...snapshot, positions: [] },
+    });
+    const { route } = setupScreen();
+    await render(route());
+    expect(await screen.findByRole('radio', { name: pillar.name })).toBeOnTheScreen();
+    if (onlyPillar) {
+      expect(
+        await screen.findByText(/No Depot section subtotal.*Pillar 3a accounts are excluded/),
+      ).toBeOnTheScreen();
+      expect(screen.queryByText('Depot section subtotal')).toBeNull();
+    } else {
+      expect(await screen.findByText('Depot section subtotal')).toBeOnTheScreen();
+      expect(screen.getByText(/Excludes Pillar 3a/)).toBeOnTheScreen();
+    }
+  },
+);
+
+it.each([
+  [true, 'No Depot section subtotal is available for these accounts.'],
+  [false, 'Includes accounts in the Depot section.'],
+])(
+  'leaves Pillar 3a out of the subtotal note when none is listed (no subtotal: %s)',
+  async (noSubtotal, note) => {
+    mockInvestments({
+      views: [view],
+      netWorth: noSubtotal
+        ? {
+            ...netWorth,
+            sections: [{ ...netWorth.sections[0], accountCount: 0, subtotal: '0.00' }],
+          }
+        : netWorth,
+      snapshot: { ...snapshot, positions: [] },
+    });
+    const { route } = setupScreen();
+    await render(route());
+    expect(await screen.findByText(note)).toBeOnTheScreen();
+    expect(screen.queryByText(/Pillar 3a/)).toBeNull();
+  },
+);
+
+it('dates the offline banner by the oldest figure shown, not the newest refetch', async () => {
+  const dayOld = Date.parse('2026-11-20T09:00:00Z');
+  const now = Date.parse('2026-11-23T09:00:00Z');
+  const clock = jest.spyOn(Date, 'now').mockReturnValue(dayOld);
+  try {
+    mockInvestments({ views: [view] });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: Infinity } },
+    });
+    await render(
+      <QueryClientProvider client={client}>
+        {withIntl(
+          <InvestmentsScreen onScope={jest.fn()} onAccount={jest.fn()} onAddDepot={jest.fn()} />,
+        )}
+      </QueryClientProvider>,
+    );
+    await screen.findByText('Depot section subtotal');
+    await waitFor(() => expect(screen.getAllByText('Example Fund')).toHaveLength(2));
+    clock.mockReturnValue(now);
+    await act(() => client.refetchQueries({ queryKey: queryKeys.workspace }));
+    await act(() => onlineManager.setOnline(false));
+    expect(await screen.findByText(/^Last updated .*20 Nov 2026/)).toBeOnTheScreen();
+    expect(screen.queryByText(/23 Nov 2026/)).toBeNull();
+  } finally {
+    clock.mockRestore();
+    onlineManager.setOnline(true);
+  }
+});
+
+it('keeps loaded depots visible and retries a failed portfolio view', async () => {
+  const { allowSecondPortfolio } = mockInvestments(
+    {
+      views: [view, { ...view, portfolioId: 'other-portfolio', sections: [pillarSection] }],
+      snapshot: { ...snapshot, positions: [] },
+    },
+    true,
+  );
+  const { route } = setupScreen();
+  await render(route());
+  expect(await screen.findByText(/Some depots could not be loaded/)).toBeOnTheScreen();
+  expect(screen.getByRole('radio', { name: depot.name })).toBeOnTheScreen();
+  expect(screen.queryByRole('radio', { name: pillar.name })).toBeNull();
+  allowSecondPortfolio();
+  await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+  expect(await screen.findByRole('radio', { name: pillar.name })).toBeOnTheScreen();
+  expect(screen.queryByText(/Some depots could not be loaded/)).toBeNull();
+});
+
+it.each(['archived', 'reassigned'])(
+  'omits portfolio history on a depot deep link after another account was %s',
+  async () => {
+    // The archived or reassigned account is absent from the current portfolio view. Its earlier
+    // balance would still be in portfolio history. The visible depot is also in a different currency.
+    const { get } = mockInvestments({
+      views: [{ ...view, sections: [{ ...view.sections[0], accounts: [depot] }] }],
+    });
+    const { route } = setupScreen();
+    await render(route(depot.accountId));
+    expect(await screen.findByText('Example Fund')).toBeOnTheScreen();
+    expect(get).toHaveBeenCalledWith(
+      '/api/v1/accounts/{accountId}/balance',
+      expect.objectContaining({
+        params: { accountId: depot.accountId },
+        query: { currency: 'EUR' },
+      }),
+    );
+    expect(get.mock.calls.some(([path]) => path.includes('/history'))).toBe(false);
+  },
+);
+
+it('offers a working Add depot action with no depots', async () => {
+  mockInvestments({ views: [{ ...view, sections: [] }] });
+  const { route, onAddDepot } = setupScreen();
+  await render(route());
+  expect(await screen.findByText('No investments yet')).toBeOnTheScreen();
+  await fireEvent.press(screen.getByRole('button', { name: 'Add a depot' }));
+  expect(onAddDepot).toHaveBeenCalledWith(view.portfolioId);
+  expect(screen.queryByRole('button', { name: /Import/ })).toBeNull();
+});
+
+it('opens the depot account when the holdings snapshot is empty', async () => {
+  mockInvestments({ views: [view], snapshot: { ...snapshot, asOf: null, positions: [] } });
+  const { route, onAccount } = setupScreen();
+  await render(route(depot.accountId));
+  await fireEvent.press(await screen.findByRole('button', { name: 'Open depot account' }));
+  expect(onAccount).toHaveBeenCalledWith(depot.accountId, 'positions');
+  expect(screen.queryByRole('button', { name: /Import/ })).toBeNull();
+});
+
+it('explains a missing percentage independently of a known return amount', async () => {
+  mockInvestments({ views: [view] });
+  const { route } = setupScreen();
+  await act(() => setAmountsHidden(false));
+  await render(route(secondDepot.accountId));
+  await fireEvent.press(await screen.findByRole('button', { name: 'View performance breakdown' }));
+  const sheet = within(screen.getByTestId('shared-dialog-modal'));
+  expect(sheet.getByText('+CHF 17.51')).toBeOnTheScreen();
+  expect(
+    sheet.getByText('The server did not provide a return percentage for this depot.'),
+  ).toBeOnTheScreen();
+  expect(sheet.getAllByText('–').length).toBeGreaterThan(0);
+  expect(sheet.queryByText(/zero cost basis/i)).toBeNull();
+});
+
+it('shows all positions at narrow web widths and truncates long names only in native-style rows', async () => {
+  Platform.OS = 'web';
+  mockWindow.width = 390;
+  const positions = Array.from({ length: 21 }, (_, index) => ({
+    ...position,
+    securityId: 'position-' + index,
+    displayName: 'A very long fund name ' + index,
+  }));
+  mockInvestments({ views: [view], snapshot: { ...snapshot, positions } });
+  const { route } = setupScreen();
+  await render(route(depot.accountId));
+  expect(await screen.findByText('A very long fund name 20')).toBeOnTheScreen();
+  expect(screen.getByText('A very long fund name 20').props.numberOfLines).toBe(1);
+  expect(screen.getByLabelText(/^A very long fund name 20, /)).toBeOnTheScreen();
+  expect(screen.queryByRole('button', { name: /Show all/ })).toBeNull();
+});
+
+it('starts a newly selected depot without issuing abandoned queued positions requests', async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  const depots = Array.from({ length: 8 }, (_, index) => 'depot-' + index);
+  const selected = depots[7];
+  const starts: string[] = [];
+  let active = 0;
+  let maximum = 0;
+  jest.mocked(typedApi.get).mockImplementation(async (_, options) => {
+    const params = options?.params;
+    const accountId = params && 'accountId' in params ? params.accountId : '';
+    const signal = options?.signal;
+    starts.push(accountId);
+    active++;
+    maximum = Math.max(maximum, active);
+    try {
+      if (accountId === selected) return snapshot as never;
+      return await new Promise<never>((_, reject) => {
+        signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    } finally {
+      active--;
+    }
+  });
+
+  const requests = depots.map((id) => client.fetchQuery(accountPositionsQuery(id)));
+  const previousSettled = Promise.allSettled(requests);
+  await waitFor(() => expect(starts).toHaveLength(4));
+  await client.cancelQueries({
+    predicate: ({ queryKey }) => queryKey[1] !== selected,
+  });
+  await client.fetchQuery(accountPositionsQuery(selected));
+  await previousSettled;
+  expect(starts).toEqual([...depots.slice(0, 4), selected]);
+  expect(maximum).toBe(4);
+});
+
+it('does not call a deep-linked depot missing while a view that may list it failed', async () => {
+  const { allowSecondPortfolio } = mockInvestments(
+    {
+      views: [view, { ...view, portfolioId: 'other-portfolio', sections: [pillarSection] }],
+    },
+    true,
+  );
+  const { route } = setupScreen();
+  await render(route('archived-depot'));
+  expect(await screen.findByText(/This depot could not be loaded/)).toBeOnTheScreen();
+  expect(screen.queryByText(/This depot is unavailable/)).toBeNull();
+  expect(screen.getByRole('radio', { name: 'All depots' })).not.toBeChecked();
+  expect(screen.getByRole('radio', { name: depot.name })).toBeOnTheScreen();
+  // Once every view has loaded, a depot none of them lists is missing: show All depots.
+  allowSecondPortfolio();
+  await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+  expect(await screen.findByText(/This depot is unavailable/)).toBeOnTheScreen();
+  expect(screen.queryByText(/This depot could not be loaded/)).toBeNull();
+  expect(screen.getByRole('radio', { name: 'All depots' })).toBeChecked();
+  expect((await screen.findAllByText('Example Fund')).length).toBeGreaterThan(0);
+});
+
+it('does not call a deep-linked depot missing when its account summary failed', async () => {
+  const fresh = { ...depot, positionsCount: null, positionsAsOf: null, accountId: 'fresh' };
+  const { failSummaries } = mockInvestments({
+    views: [{ ...view, sections: [{ ...view.sections[0], accounts: [depot, fresh] }] }],
+    accounts: [{ id: fresh.accountId, holdsPositions: true }],
+    snapshot: { ...snapshot, positions: [] },
+  });
+  failSummaries();
+  const { route } = setupScreen();
+  await render(route(fresh.accountId));
+  expect(await screen.findByText(/This depot could not be loaded/)).toBeOnTheScreen();
+  expect(screen.queryByText(/This depot is unavailable/)).toBeNull();
+  expect(screen.getByRole('button', { name: 'Try again' })).toBeOnTheScreen();
+});
+
+it.each([
+  [false, null],
+  [true, 'Valuation status and date are unavailable in the depot currency.'],
+])(
+  'shows no status note while a foreign-currency depot balance loads (fails: %s)',
+  async (fails, note) => {
+    const { get } = mockInvestments({ views: [view] });
+    const base = get.getMockImplementation();
+    let answer: (value: unknown) => void = () => undefined;
+    get.mockImplementation((path, request) =>
+      path === '/api/v1/accounts/{accountId}/balance'
+        ? new Promise<never>((resolve, reject) => {
+            answer = (value) =>
+              fails ? reject(new Error('Balance unavailable')) : resolve(value as never);
+          })
+        : base!(path, request),
+    );
+    const { route } = setupScreen();
+    await act(() => setAmountsHidden(false));
+    await render(route(depot.accountId));
+    expect(await screen.findByText('Example Fund')).toBeOnTheScreen();
+    expect(screen.queryByText('Market value')).toBeNull();
+    expect(screen.queryByText(/Valuation status and date are unavailable/)).toBeNull();
+    await act(async () => answer(ownBalance));
+    expect(await screen.findByText('Market value')).toBeOnTheScreen();
+    expect(screen.getByText('EUR 910.52')).toBeOnTheScreen();
+    if (note) expect(screen.getByText(note)).toBeOnTheScreen();
+    else expect(screen.queryByText(/Valuation status and date are unavailable/)).toBeNull();
+  },
+);
+
+it('reverses the order when the selected phone sort chip is tapped again', async () => {
+  mockInvestments({ views: [view] });
+  const { route } = setupScreen();
+  await render(route(depot.accountId));
+  await screen.findByText('Example Fund');
+  const order = () =>
+    screen
+      .getAllByLabelText(/^(Example Fund|Fund Without Basis), /)
+      .map(({ props }) => String(props.accessibilityLabel).split(',')[0]);
+  await fireEvent.press(screen.getByRole('radio', { name: 'Name' }));
+  expect(screen.getByRole('radio', { name: 'Name, ascending' })).toBeChecked();
+  expect(screen.getByText('Name ↑ ✓')).toBeOnTheScreen();
+  expect(order()).toEqual(['Example Fund', 'Fund Without Basis']);
+  await fireEvent.press(screen.getByRole('radio', { name: 'Name, ascending' }));
+  expect(screen.getByRole('radio', { name: 'Name, descending' })).toBeChecked();
+  expect(order()).toEqual(['Fund Without Basis', 'Example Fund']);
+  await fireEvent.press(screen.getByRole('radio', { name: 'Gain %' }));
+  expect(screen.getByRole('radio', { name: 'Gain %, descending' })).toBeChecked();
+});
+
+it('resets a table-only sort to the default where the phone sort chips show', () => {
+  const units = { key: 'units', direction: 'ascending' } as const;
+  expect(visiblePositionSort(units, true)).toBe(units);
+  expect(visiblePositionSort(units, false)).toEqual({ key: 'value', direction: 'descending' });
+  expect(visiblePositionSort({ key: 'costBasis', direction: 'descending' }, false).key).toBe(
+    'value',
+  );
+  const name = { key: 'name', direction: 'ascending' } as const;
+  expect(visiblePositionSort(name, false)).toBe(name);
+});
+
+it('lets the member back out of the portfolio picker', async () => {
+  mockInvestments({
+    views: [
+      { ...view, sections: [] },
+      { ...view, portfolioId: 'other-portfolio', name: 'Second portfolio', sections: [] },
+    ],
+  });
+  const { route, onAddDepot } = setupScreen();
+  await render(route());
+  await fireEvent.press(await screen.findByRole('button', { name: 'Add a depot' }));
+  expect(screen.getByRole('radio', { name: 'Second portfolio' })).toBeOnTheScreen();
+  await fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+  expect(screen.queryByRole('radio', { name: 'Second portfolio' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Add a depot' })).toBeOnTheScreen();
+  expect(onAddDepot).not.toHaveBeenCalled();
+});
+
+it('frees a positions slot after its deadline when a request never settles', async () => {
+  jest.useFakeTimers();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  const starts: string[] = [];
+  jest.mocked(typedApi.get).mockImplementation((_, options) => {
+    const params = options?.params;
+    const accountId = params && 'accountId' in params ? params.accountId : '';
+    starts.push(accountId);
+    // Ignores its abort signal on purpose: only the slot deadline can free it.
+    return (accountId === 'late' ? Promise.resolve(snapshot) : new Promise(() => {})) as never;
+  });
+  const stuck = ['a', 'b', 'c', 'd'].map((id) =>
+    client.fetchQuery(accountPositionsQuery(id)).catch((error: unknown) => error),
+  );
+  const late = client.fetchQuery(accountPositionsQuery('late'));
+  await jest.advanceTimersByTimeAsync(0);
+  expect(starts).toEqual(['a', 'b', 'c', 'd']);
+  // A request, a session renewal after its 401 and the resend each have a client deadline: the
+  // slot outlasts all three, so it never ends an exchange the client would still let finish.
+  expect(POSITION_SLOT_TIMEOUT_MS).toBeGreaterThan(3 * REQUEST_TIMEOUT_MS);
+  await jest.advanceTimersByTimeAsync(3 * REQUEST_TIMEOUT_MS);
+  expect(starts).toEqual(['a', 'b', 'c', 'd']);
+  await jest.advanceTimersByTimeAsync(POSITION_SLOT_TIMEOUT_MS - 3 * REQUEST_TIMEOUT_MS);
+  await expect(late).resolves.toEqual(snapshot);
+  const errors = await Promise.all(stuck);
+  for (const error of errors) {
+    expect(error).toBeInstanceOf(NetworkError);
+    expect(error).toHaveProperty('message', 'Positions request timed out');
+    // Retried like the client's own timeout.
+    expect(shouldRetry(0, error)).toBe(true);
+  }
+});
+
+const positionsRequested = (get: jest.MockedFunction<typeof typedApi.get>) =>
+  get.mock.calls
+    .filter(([path]) => path === '/api/v1/accounts/{accountId}/positions')
+    .map(([, request]) => {
+      const params = request?.params;
+      return params && 'accountId' in params ? params.accountId : undefined;
+    });
+
+it('leaves balance-only depots out and keeps a depot that holds positions but has no snapshot', async () => {
+  const noSnapshot = { positionsCount: null, positionsAsOf: null };
+  const mandate = { ...depot, ...noSnapshot, accountId: 'mandate', name: 'Managed mandate' };
+  const fresh = { ...depot, ...noSnapshot, accountId: 'fresh', name: 'New depot' };
+  const { get } = mockInvestments({
+    views: [{ ...view, sections: [{ ...view.sections[0], accounts: [depot, mandate, fresh] }] }],
+    accounts: [
+      { id: mandate.accountId, holdsPositions: false },
+      { id: fresh.accountId, holdsPositions: true },
+    ],
+    snapshot: { ...snapshot, positions: [] },
+  });
+  const { route } = setupScreen();
+  await render(route());
+  expect(await screen.findByRole('radio', { name: fresh.name })).toBeOnTheScreen();
+  expect(screen.getByRole('radio', { name: depot.name })).toBeOnTheScreen();
+  expect(screen.queryByRole('radio', { name: mandate.name })).toBeNull();
+  await waitFor(() => expect(positionsRequested(get)).toContain(fresh.accountId));
+  expect(positionsRequested(get)).not.toContain(mandate.accountId);
+});
+
+it('names the portfolio on scope chips of depots that share a name', async () => {
+  const named = (portfolioId: string, name: string, accountId: string): PortfolioView => ({
+    ...view,
+    portfolioId,
+    name,
+    sections: [{ ...view.sections[0], accounts: [{ ...depot, accountId, name: 'Depot' }] }],
+  });
+  mockInvestments({
+    views: [named('ubs', 'UBS', 'depot-ubs'), named('sq', 'Swissquote', 'depot-sq')],
+    snapshot: { ...snapshot, positions: [] },
+  });
+  const { route } = setupScreen();
+  await render(route());
+  expect(await screen.findByRole('radio', { name: 'Depot (UBS)' })).toBeOnTheScreen();
+  expect(screen.getByRole('radio', { name: 'Depot (Swissquote)' })).toBeOnTheScreen();
+});
+
+it('reads the Depot subtotal in the Overview scope currency it was opened with', async () => {
+  const { get } = mockInvestments({
+    views: [view],
+    netWorth: { ...netWorth, currency: 'EUR' },
+    snapshot: { ...snapshot, positions: [] },
+  });
+  const { route } = setupScreen('EUR');
+  await render(route());
+  expect(await screen.findByText("EUR 1'999.17")).toBeOnTheScreen();
+  await fireEvent.press(screen.getByRole('button', { name: /^Explain / }));
+  expect(screen.getByText('The subtotal of the depot section, in EUR.')).toBeOnTheScreen();
+  const currencies = get.mock.calls
+    .filter(([path]) => path === '/api/v1/net-worth')
+    .map(([, request]) => (request?.query as { currency?: string } | undefined)?.currency);
+  expect(currencies).toEqual(['EUR']);
+});
+
+it('rejects queued positions requests on reset instead of leaving them pending', async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  jest.mocked(typedApi.get).mockImplementation(
+    async (_, options) =>
+      new Promise<never>((_, reject) => {
+        const signal = options?.signal;
+        signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+      }),
+  );
+  const active = ['a', 'b', 'c', 'd'].map((id) =>
+    client.fetchQuery(accountPositionsQuery(id)).catch((error: unknown) => error),
+  );
+  const queued = client.fetchQuery(accountPositionsQuery('queued'));
+  await waitFor(() => expect(typedApi.get).toHaveBeenCalledTimes(4));
+  resetPositionRequests();
+  await expect(queued).rejects.toThrow('Positions requests reset');
+  // Active requests of the earlier generation end too, so they never run beside new ones.
+  for (const error of await Promise.all(active)) {
+    expect(error).toHaveProperty('message', 'Positions requests reset');
+  }
+  const next = ['e', 'f', 'g', 'h', 'i'].map((id) =>
+    client.fetchQuery(accountPositionsQuery(id)).catch((error: unknown) => error),
+  );
+  await waitFor(() => expect(typedApi.get).toHaveBeenCalledTimes(8));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(typedApi.get).toHaveBeenCalledTimes(8);
+  resetPositionRequests();
+  await Promise.all(next);
+});
+
+it('tells same-name depots of one portfolio apart by section, else masked identifier', async () => {
+  const twin = (accountId: string, maskedIdentifier: string | null) => ({
+    ...depot,
+    accountId,
+    name: 'Depot',
+    maskedIdentifier,
+  });
+  mockInvestments({
+    views: [
+      {
+        ...view,
+        name: 'UBS',
+        sections: [
+          { ...view.sections[0], accounts: [twin('a', 'CH•• 1111'), twin('b', 'CH•• 2222')] },
+          { ...view.sections[0], section: 'PILLAR_3A', accounts: [twin('c', null)] },
+        ],
+      },
+    ],
+    snapshot: { ...snapshot, positions: [] },
+  });
+  const { route } = setupScreen();
+  await render(route());
+  expect(await screen.findByRole('radio', { name: 'Depot (UBS, CH•• 1111)' })).toBeOnTheScreen();
+  expect(screen.getByRole('radio', { name: 'Depot (UBS, CH•• 2222)' })).toBeOnTheScreen();
+  expect(screen.getByRole('radio', { name: 'Depot (UBS, Pillar 3a)' })).toBeOnTheScreen();
+});
+
+it('shows one error banner for a selected depot whose summary the directory already reads', async () => {
+  const fresh = { ...depot, positionsCount: null, positionsAsOf: null, accountId: 'fresh' };
+  const { failSummaries } = mockInvestments({
+    views: [{ ...view, sections: [{ ...view.sections[0], accounts: [fresh] }] }],
+    accounts: [{ id: fresh.accountId, holdsPositions: true }],
+    snapshot: { ...snapshot, positions: [] },
+  });
+  const { route, client } = setupScreen();
+  await render(route(fresh.accountId));
+  expect(await screen.findByRole('radio', { name: fresh.name })).toBeOnTheScreen();
+  failSummaries();
+  await act(() => client.refetchQueries({ queryKey: queryKeys.account(fresh.accountId) }));
+  await waitFor(() => expect(screen.getAllByRole('button', { name: 'Try again' })).toHaveLength(1));
+});

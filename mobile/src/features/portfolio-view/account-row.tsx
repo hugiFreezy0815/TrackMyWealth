@@ -3,6 +3,7 @@ import { useIntl, type IntlShape } from 'react-intl';
 import { Platform, Pressable, Text, View } from 'react-native';
 
 import { Amount, Figure, ValueStatusBadge, amountTexts, isValueKnown } from '@/components/shared';
+import { linkKeyProps } from '@/components/shared/link-key';
 import { Spacing, TypeScale } from '@/constants/theme';
 import { isNegativeAmount } from '@/features/overview/overview-model';
 import { msg } from '@/features/overview/overview-text';
@@ -15,9 +16,12 @@ import {
   accountTypeMessageKey,
   daysUntil,
   hasPositions,
+  isInvestmentDepot,
+  needsHoldsPositions,
   type PortfolioAccount,
   type PortfolioSection,
 } from './model';
+import { usePositionAccounts } from './use-position-accounts';
 
 const date = (intl: IntlShape, value: string) => formatDate(value, intl.locale);
 /** Test hook only, never shown or announced. */
@@ -140,6 +144,7 @@ export function PortfolioAccountRow({
   nested,
   portfolioCurrency,
   onAccount,
+  onInvestments,
 }: {
   account: PortfolioAccount;
   section: PortfolioSection;
@@ -147,11 +152,16 @@ export function PortfolioAccountRow({
   nested: boolean;
   portfolioCurrency: string;
   onAccount: (accountId: string, tab?: 'positions') => void;
+  onInvestments?: (accountId: string) => void;
 }) {
   const intl = useIntl();
   const theme = useTheme();
   const hidden = useAmountsHidden();
   const descriptionId = useId();
+  // Only a depot without a snapshot needs its account summary to decide on the Investments link.
+  const positionAccounts = usePositionAccounts(
+    onInvestments && needsHoldsPositions(account, section) ? [account.accountId] : [],
+  );
   const web = Platform.OS === 'web';
   const known = account.valueKnown && isValueKnown(account.valueStatus);
   const detail = rowDetail(intl, account, section);
@@ -253,6 +263,19 @@ export function PortfolioAccountRow({
           <HoldingsReturn account={account} />
         ) : null}
       </View>
+      {onInvestments && isInvestmentDepot(account, section, positionAccounts.ids) ? (
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel={msg(intl, 'investments.openDepot', { depot: account.name })}
+          onPress={() => onInvestments(account.accountId)}
+          {...linkKeyProps(() => onInvestments(account.accountId))}
+          style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}
+        >
+          <Text style={{ ...TypeScale.labelMedium, color: theme.brandLink }}>
+            {msg(intl, 'investments.open')}
+          </Text>
+        </Pressable>
+      ) : null}
       {hasPositions(account, section) ? (
         <DepotPositions account={account} onAccount={onAccount} />
       ) : null}
