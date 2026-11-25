@@ -647,11 +647,20 @@ describe('S10 liability detail (#685)', () => {
 
     it('says Not known instead of 0 when no payment of the year has a known split', async () => {
       await renderYears([
-        year(thisYear, { interestPaid: null, principalPaid: null, unknownSplitAmount: '1650.00' }),
+        year(thisYear, {
+          interestPaid: null,
+          principalPaid: null,
+          unknownSplitAmount: '1650.00',
+          paymentCount: 3,
+        }),
       ]);
       expect(await screen.findByText('Not known')).toBeTruthy();
+      // The count stays, so "Not known" does not read as nothing paid (#722); no amount is shown.
+      expect(within(field()).getByText('From 3 repayments')).toBeTruthy();
+      expect(within(field()).getByText('Principal and interest split unknown')).toBeTruthy();
+      expect(within(field()).queryByText(/1.?650/)).toBeNull();
       expect(field().props.accessibilityLabel).toBe(
-        `${title}, Not known, Principal and interest split unknown`,
+        `${title}, Not known, From 3 repayments, Principal and interest split unknown`,
       );
       expect(screen.queryByText('EUR 0.00')).toBeNull();
       // The whole year is unsplit, so there is no "Not included" part to name.
