@@ -282,9 +282,11 @@ HTTP path - filter, listener, services - as `trackmywealth_runtime`.
 must. Flyway creates them, so they belong to the migration role, which has `BYPASSRLS` (see
 "Database roles" above; ADR 0005 says why no separate owner role). The application connects as
 `trackmywealth_runtime` and gets `EXECUTE` on these two functions, on V124's purge
-(see "Idempotent creates"), and on V127's `admin_workspace_metadata()` (IDs and names only): `V81` grants it when the
-role exists before Flyway runs (a fresh split installation), and `role-split-database.sql` when an
-existing installation is split later. `V81` revokes PostgreSQL's default `PUBLIC` `EXECUTE`. A
+(see "Idempotent creates"), and on V127's `admin_workspace_metadata(INTEGER, BIGINT)` (IDs and
+names only, one page) and `admin_workspace_count()`. The migration that creates a function grants
+it when the role exists before Flyway runs (a fresh split installation), and
+`role-split-database.sql` when an existing installation is split later. Each of these migrations
+revokes PostgreSQL's default `PUBLIC` `EXECUTE`. A
 later migration that replaces a function must keep its grants. Both functions pin `search_path`,
 qualify their tables and set `row_security = off`, so an owner that cannot bypass RLS fails with an
 error instead of silently reading no membership. They are narrowly privileged identity lookups,
