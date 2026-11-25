@@ -30,10 +30,12 @@ import org.springframework.stereotype.Service;
  *   <li>The orders count day by day. The ledger holds no time of day, and rows of one import share
  *       their recording time, so nothing orders a same-day buy and sell. Buys among themselves, and
  *       sells among themselves, give the same cost in any order. A day with both counts its buys
- *       before its sells only when the order cannot change the cost: every lot in play - the units
- *       held before the day and the day's buys - has one unit price. Otherwise (say 10 held at 100,
- *       then a sale of 10 and a buy of 10 at 50 on one day: 500 or 750) the position has no cost
- *       basis (#719 review).
+ *       before its sells when the order is known or cannot change the cost: no sale fits into the
+ *       units held before any of the day's buys, so the buys came first; nothing is left at the end
+ *       of the day, so the cost is 0 in any order; or every lot in play - the units held before the
+ *       day and the day's buys - has one unit price. Otherwise (say 10 held at 100, then a sale of
+ *       10 and a buy of 10 at 50 on one day: 500 or 750) the position has no cost basis (#719
+ *       review).
  *   <li>The orders must add up to exactly the quantity held: an order missing, a transfer-in or an
  *       opening holding without orders (#233), a split, or a sale of more than was bought leaves
  *       the position without a cost basis. Nothing is estimated (FR-PERF-018).
@@ -100,33 +102,39 @@ public class OrderCostBasisService {
                 Comparator.comparing(TradeLeg::tradeDate)
                     .thenComparing(trade -> trade.quantity().signum() < 0))
             .toList();
-    LocalDate checkedDay = null;
-    for (TradeLeg trade : ordered) {
-      if (!trade.tradeDate().equals(checkedDay)) {
-        checkedDay = trade.tradeDate();
-        if (sameDayOrderMatters(ordered, checkedDay, quantity, cost)) {
+    int start = 0;
+    while (start < ordered.size()) {
+      LocalDate day = ordered.get(start).tradeDate();
+      int end = start + 1;
+      while (end < ordered.size() && ordered.get(end).tradeDate().equals(day)) {
+        end++;
+      }
+      List<TradeLeg> sameDay = ordered.subList(start, end);
+      start = end;
+      if (sameDayOrderMatters(sameDay, quantity, cost)) {
+        return Optional.empty();
+      }
+      for (TradeLeg trade : sameDay) {
+        if (currency != null && !currency.equals(trade.currency())) {
           return Optional.empty();
         }
+        currency = trade.currency();
+        if (trade.quantity().signum() > 0) {
+          cost = cost.add(trade.quantity().multiply(trade.unitPrice()));
+          quantity = quantity.add(trade.quantity());
+          continue;
+        }
+        BigDecimal remaining = quantity.add(trade.quantity());
+        if (remaining.signum() < 0) {
+          // A sale of more than the orders bought: they do not explain the position.
+          return Optional.empty();
+        }
+        cost =
+            remaining.signum() == 0
+                ? BigDecimal.ZERO
+                : cost.multiply(remaining).divide(quantity, MathContext.DECIMAL128);
+        quantity = remaining;
       }
-      if (currency != null && !currency.equals(trade.currency())) {
-        return Optional.empty();
-      }
-      currency = trade.currency();
-      if (trade.quantity().signum() > 0) {
-        cost = cost.add(trade.quantity().multiply(trade.unitPrice()));
-        quantity = quantity.add(trade.quantity());
-        continue;
-      }
-      BigDecimal remaining = quantity.add(trade.quantity());
-      if (remaining.signum() < 0) {
-        // A sale of more than the orders bought: they do not explain the position.
-        return Optional.empty();
-      }
-      cost =
-          remaining.signum() == 0
-              ? BigDecimal.ZERO
-              : cost.multiply(remaining).divide(quantity, MathContext.DECIMAL128);
-      quantity = remaining;
     }
     if (currency == null
         || quantity.compareTo(heldQuantity) != 0
@@ -139,27 +147,47 @@ public class OrderCostBasisService {
   }
 
   /**
-   * Whether the unknown order of {@code day}'s buys and sells could change the cost: the day has
-   * both, and the lots in play - {@code heldQuantity} held before the day at {@code heldCost}, and
-   * the day's buys - do not all have one unit price.
+   * Whether the unknown order of one day's buys and sells ({@code sameDay}) could change the cost,
+   * with {@code heldQuantity} held before the day at {@code heldCost}. It cannot when the day lacks
+   * a buy or a sell, when no sale fits before any buy (even the smallest sale exceeds what is held
+   * with all but the smallest buy), when nothing is left at the end of the day, or when every lot
+   * in play has one unit price. Two buys at different prices around a sale stay open even where
+   * buying all first and selling all first happen to agree: a sale between them changes the cost.
    */
   private static boolean sameDayOrderMatters(
-      List<TradeLeg> ordered, LocalDate day, BigDecimal heldQuantity, BigDecimal heldCost) {
-    List<TradeLeg> sameDay =
-        ordered.stream().filter(trade -> trade.tradeDate().equals(day)).toList();
-    if (sameDay.stream().noneMatch(trade -> trade.quantity().signum() < 0)) {
+      List<TradeLeg> sameDay, BigDecimal heldQuantity, BigDecimal heldCost) {
+    BigDecimal bought = BigDecimal.ZERO;
+    BigDecimal sold = BigDecimal.ZERO;
+    BigDecimal smallestBuy = null;
+    BigDecimal smallestSale = null;
+    BigDecimal price = null;
+    boolean onePrice = true;
+    for (TradeLeg trade : sameDay) {
+      BigDecimal units = trade.quantity().abs();
+      if (trade.quantity().signum() > 0) {
+        bought = bought.add(units);
+        smallestBuy = smallestBuy == null ? units : smallestBuy.min(units);
+        if (price == null) {
+          price = trade.unitPrice();
+        } else if (price.compareTo(trade.unitPrice()) != 0) {
+          onePrice = false;
+        }
+      } else {
+        sold = sold.add(units);
+        smallestSale = smallestSale == null ? units : smallestSale.min(units);
+      }
+    }
+    if (smallestBuy == null || smallestSale == null) {
       return false;
     }
-    List<BigDecimal> buyPrices =
-        sameDay.stream()
-            .filter(trade -> trade.quantity().signum() > 0)
-            .map(TradeLeg::unitPrice)
-            .toList();
-    if (buyPrices.isEmpty()) {
+    BigDecimal withAllBuys = heldQuantity.add(bought);
+    if (withAllBuys.subtract(sold).signum() <= 0
+        || withAllBuys.subtract(smallestBuy).compareTo(smallestSale) < 0) {
+      // Nothing left: 0 in any order (an oversale fails later). No sale fits before a buy: the
+      // buys came first.
       return false;
     }
-    BigDecimal price = buyPrices.get(0);
-    if (buyPrices.stream().anyMatch(other -> other.compareTo(price) != 0)) {
+    if (!onePrice) {
       return true;
     }
     return heldQuantity.signum() > 0 && heldCost.compareTo(heldQuantity.multiply(price)) != 0;

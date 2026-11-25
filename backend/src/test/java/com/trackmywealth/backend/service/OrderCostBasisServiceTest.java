@@ -73,6 +73,53 @@ class OrderCostBasisServiceTest {
         .isEqualTo(cost(List.of(buy, heldAtTheSamePrice, sell), "10", "CHF"));
   }
 
+  // #719 review: different prices, but only one order is possible or none changes the cost.
+  @Test
+  void aDaysBuysCountBeforeItsSellsWhenNoSaleFitsBeforeThemOrNothingIsLeft() {
+    LocalDate day = DATE.minusDays(5);
+    TradeLeg later = trade("5", "80", DATE);
+
+    // 10 held at 100, a buy of 10 at 50 and a sale of 20: selling first would oversell, so the
+    // buy came first and nothing is left; the later buy alone makes the cost.
+    TradeLeg tenHeld = trade("10", "100", day.minusDays(1));
+    assertThat(
+            cost(
+                List.of(tenHeld, trade("-20", "70", day), trade("10", "50", day), later),
+                "5",
+                "CHF"))
+        .contains(new CostFromOrders(new BigDecimal("400.0000"), "CHF"));
+
+    // 5 held at 100, a buy of 10 at 50 and a sale of 12: the sale does not fit into the 5 held,
+    // so 3 of 15 units costing 1000 are left.
+    TradeLeg fiveHeld = trade("5", "100", day.minusDays(1));
+    assertThat(cost(List.of(fiveHeld, trade("-12", "70", day), trade("10", "50", day)), "3", "CHF"))
+        .contains(new CostFromOrders(new BigDecimal("200.0000"), "CHF"));
+
+    // 10 held at 100, a sale of 5 and a buy of 5 at 50, then a sale of 10: it fits either way,
+    // but nothing is left at the end of the day.
+    assertThat(
+            cost(
+                List.of(
+                    tenHeld,
+                    trade("-5", "70", day),
+                    trade("5", "50", day),
+                    trade("-10", "70", day),
+                    later),
+                "5",
+                "CHF"))
+        .contains(new CostFromOrders(new BigDecimal("400.0000"), "CHF"));
+
+    // Nothing held, buys of 3 at 20 and 10 at 50 and a sale of 11: it fits after neither buy
+    // alone, so both came first; 2 of 13 units costing 560 are left.
+    TradeLeg small = trade("3", "20", day);
+    TradeLeg big = trade("10", "50", day);
+    assertThat(cost(List.of(trade("-11", "70", day), small, big), "2", "CHF"))
+        .contains(new CostFromOrders(new BigDecimal("86.1538"), "CHF"));
+
+    // A sale of 4 instead fits after the buy of 10 alone, before the buy at 20: open.
+    assertThat(cost(List.of(trade("-4", "70", day), small, big), "9", "CHF")).isEmpty();
+  }
+
   @Test
   void aSameDayBuyAndSellWhoseOrderChangesTheCostGiveNone() {
     LocalDate day = DATE.minusDays(5);
