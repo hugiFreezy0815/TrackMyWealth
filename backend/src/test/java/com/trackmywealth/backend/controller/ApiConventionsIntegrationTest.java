@@ -885,8 +885,9 @@ class ApiConventionsIntegrationTest {
                             notPageResponses.add(name + " -> " + schema);
                           }
                         }));
-    // Includes the eight collection operations paginated in #570.
-    assertThat(pagedOperations).hasSize(21);
+    // Includes the eight collection operations paginated in #570 and the admin workspace list
+    // (#414).
+    assertThat(pagedOperations).hasSize(22);
     assertThat(notPageResponses).as("paged operations not answering a PageResponse").isEmpty();
 
     JsonNode list =
@@ -936,7 +937,7 @@ class ApiConventionsIntegrationTest {
                 }
               }
             });
-    assertThat(paged).hasSize(21);
+    assertThat(paged).hasSize(22);
   }
 
   private static JsonNode parameter(JsonNode operation, String name) {

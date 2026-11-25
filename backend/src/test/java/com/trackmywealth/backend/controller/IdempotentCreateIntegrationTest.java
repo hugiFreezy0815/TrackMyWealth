@@ -544,7 +544,7 @@ class IdempotentCreateIntegrationTest {
   private AuthenticatedUserPrincipal member() {
     UUID userId = (UUID) single("SELECT id FROM app_user WHERE email = 'admin@example.com'");
     UUID workspaceId = (UUID) single("SELECT workspace_id FROM account WHERE id = '" + cash + "'");
-    return new AuthenticatedUserPrincipal(userId, "SYSTEM_ADMINISTRATOR", workspaceId, null, "EN");
+    return new AuthenticatedUserPrincipal(userId, "STANDARD_USER", workspaceId, null, "EN");
   }
 
   private static <T> T as(AuthenticatedUserPrincipal principal, Supplier<T> call) {

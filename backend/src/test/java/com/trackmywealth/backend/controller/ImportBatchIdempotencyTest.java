@@ -276,7 +276,7 @@ class ImportBatchIdempotencyTest {
     UUID userId = (UUID) single("SELECT id FROM app_user WHERE email = 'admin@example.com'");
     UUID workspaceId = (UUID) single("SELECT workspace_id FROM account");
     AuthenticatedUserPrincipal member =
-        new AuthenticatedUserPrincipal(userId, "SYSTEM_ADMINISTRATOR", workspaceId, null, "EN");
+        new AuthenticatedUserPrincipal(userId, "STANDARD_USER", workspaceId, null, "EN");
     String oldRequest = "a".repeat(64);
     String newRequest = "b".repeat(64);
     IdempotencyClaim held =
@@ -379,7 +379,7 @@ class ImportBatchIdempotencyTest {
     UUID userId = (UUID) single("SELECT id FROM app_user WHERE email = 'admin@example.com'");
     UUID workspaceId = (UUID) single("SELECT workspace_id FROM account");
     AuthenticatedUserPrincipal member =
-        new AuthenticatedUserPrincipal(userId, "SYSTEM_ADMINISTRATOR", workspaceId, null, "EN");
+        new AuthenticatedUserPrincipal(userId, "STANDARD_USER", workspaceId, null, "EN");
     OffsetDateTime now = OffsetDateTime.now().truncatedTo(ChronoUnit.MICROS);
     String fingerprint = "0".repeat(64);
 

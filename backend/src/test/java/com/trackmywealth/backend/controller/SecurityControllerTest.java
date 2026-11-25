@@ -783,7 +783,7 @@ class SecurityControllerTest {
                 + " = wm.id WHERE u.id = ?",
             userId);
     return new AuthenticatedUserPrincipal(
-        userId, "SYSTEM_ADMINISTRATOR", workspaceId, UUID.randomUUID(), "EN");
+        userId, "STANDARD_USER", workspaceId, UUID.randomUUID(), "EN");
   }
 
   // A second, fully independent workspace: its own member, user and (EDIT-able, as sole member)

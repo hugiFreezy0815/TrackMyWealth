@@ -448,6 +448,7 @@ only once. The field names and spellings must match the published OpenAPI `sort`
 | `GET /api/v1/workspace-members` | **None: fixed order** | Display name ascending | `id`, ascending |
 | `GET /api/v1/sessions` | **None: fixed order** | Last seen descending | `id`, ascending |
 | `POST /api/v1/import-templates/detect` | **None: fixed order** | Exact header matches first, then workspace templates first within each tier, then name ascending | `template id`, ascending |
+| `GET /api/v1/admin/workspaces` | **None: fixed order** | Workspace id ascending | `id`, ascending |
 
 `bookingDate` sorts first by booking date and then by creation time before the final `id`
 tie-breaker. `amount` sorts by the transaction's value in the **account currency**, not
