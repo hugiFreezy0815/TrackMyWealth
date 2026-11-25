@@ -1,0 +1,692 @@
+[
+  {
+    "name": "EN light 320px amount: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 320px amount: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 320px amount: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 320px amount: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":754,\"field\":796,\"firstRow\":877}"
+  },
+  {
+    "name": "EN light 320px amount: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 320px estimated: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 320px estimated: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 320px estimated: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 320px estimated: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":754,\"field\":796,\"firstRow\":909}"
+  },
+  {
+    "name": "EN light 320px estimated: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 320px unknown: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 320px unknown: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 320px unknown: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 320px unknown: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":754,\"field\":796,\"firstRow\":877}"
+  },
+  {
+    "name": "EN light 320px unknown: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 320px error: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 320px error: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 320px error: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 320px error: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":754,\"field\":796,\"firstRow\":853}"
+  },
+  {
+    "name": "EN light 320px error: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 320px error: axe",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 320px hidden: field 7 absent",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 320px hidden: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":null,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 320px hidden: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 320px partial: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 320px partial: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 320px partial: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 320px partial: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":754,\"field\":796,\"firstRow\":913}"
+  },
+  {
+    "name": "EN light 320px partial: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 320px partial: axe",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 1280px amount: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 1280px amount: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 1280px amount: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 1280px amount: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":382,\"field\":424,\"firstRow\":505}"
+  },
+  {
+    "name": "EN light 1280px amount: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 1280px estimated: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 1280px estimated: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 1280px estimated: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 1280px estimated: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":382,\"field\":424,\"firstRow\":537}"
+  },
+  {
+    "name": "EN light 1280px estimated: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 1280px unknown: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 1280px unknown: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 1280px unknown: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 1280px unknown: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":382,\"field\":424,\"firstRow\":505}"
+  },
+  {
+    "name": "EN light 1280px unknown: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 1280px error: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 1280px error: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 1280px error: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 1280px error: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":382,\"field\":424,\"firstRow\":481}"
+  },
+  {
+    "name": "EN light 1280px error: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 1280px hidden: field 7 absent",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 1280px hidden: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":null,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 1280px hidden: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 1280px partial: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN light 1280px partial: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 1280px partial: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN light 1280px partial: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":382,\"field\":424,\"firstRow\":525}"
+  },
+  {
+    "name": "EN light 1280px partial: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN dark 320px estimated: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN dark 320px estimated: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN dark 320px estimated: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN dark 320px estimated: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":754,\"field\":796,\"firstRow\":909}"
+  },
+  {
+    "name": "EN dark 320px estimated: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN dark 320px estimated: axe",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN dark 1280px estimated: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "EN dark 1280px estimated: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN dark 1280px estimated: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "EN dark 1280px estimated: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":382,\"field\":424,\"firstRow\":537}"
+  },
+  {
+    "name": "EN dark 1280px estimated: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 320px amount: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 320px amount: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 320px amount: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 320px amount: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":754,\"field\":796,\"firstRow\":877}"
+  },
+  {
+    "name": "DE light 320px amount: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 320px estimated: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 320px estimated: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 320px estimated: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 320px estimated: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":754,\"field\":796,\"firstRow\":949}"
+  },
+  {
+    "name": "DE light 320px estimated: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 320px unknown: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 320px unknown: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 320px unknown: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 320px unknown: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":754,\"field\":796,\"firstRow\":877}"
+  },
+  {
+    "name": "DE light 320px unknown: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 320px error: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 320px error: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 320px error: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 320px error: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":754,\"field\":796,\"firstRow\":853}"
+  },
+  {
+    "name": "DE light 320px error: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 320px error: axe",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 320px hidden: field 7 absent",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 320px hidden: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":null,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 320px hidden: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 320px partial: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 320px partial: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 320px partial: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 320px partial: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":754,\"field\":796,\"firstRow\":913}"
+  },
+  {
+    "name": "DE light 320px partial: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 320px partial: axe",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 1280px amount: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 1280px amount: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 1280px amount: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 1280px amount: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":382,\"field\":424,\"firstRow\":505}"
+  },
+  {
+    "name": "DE light 1280px amount: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 1280px estimated: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 1280px estimated: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 1280px estimated: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 1280px estimated: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":382,\"field\":424,\"firstRow\":537}"
+  },
+  {
+    "name": "DE light 1280px estimated: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 1280px unknown: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 1280px unknown: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 1280px unknown: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 1280px unknown: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":382,\"field\":424,\"firstRow\":505}"
+  },
+  {
+    "name": "DE light 1280px unknown: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 1280px error: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 1280px error: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 1280px error: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 1280px error: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":382,\"field\":424,\"firstRow\":481}"
+  },
+  {
+    "name": "DE light 1280px error: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 1280px hidden: field 7 absent",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 1280px hidden: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":null,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 1280px hidden: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 1280px partial: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE light 1280px partial: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 1280px partial: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE light 1280px partial: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":382,\"field\":424,\"firstRow\":525}"
+  },
+  {
+    "name": "DE light 1280px partial: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE dark 320px estimated: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE dark 320px estimated: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE dark 320px estimated: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE dark 320px estimated: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":754,\"field\":796,\"firstRow\":949}"
+  },
+  {
+    "name": "DE dark 320px estimated: See all in the title row",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE dark 320px estimated: axe",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE dark 1280px estimated: field 7 present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "DE dark 1280px estimated: field 7 is rows[1] of the panel",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE dark 1280px estimated: no horizontal overflow",
+    "ok": true,
+    "detail": "{\"pageOverflow\":0,\"firstBlockIsField\":true,\"panelOverflow\":0}"
+  },
+  {
+    "name": "DE dark 1280px estimated: field 7 is the first block of the panel",
+    "ok": true,
+    "detail": "{\"header\":382,\"field\":424,\"firstRow\":537}"
+  },
+  {
+    "name": "DE dark 1280px estimated: See all in the title row",
+    "ok": true,
+    "detail": ""
+  }
+]

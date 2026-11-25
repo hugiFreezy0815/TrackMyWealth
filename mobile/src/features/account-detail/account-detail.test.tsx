@@ -618,27 +618,44 @@ describe('S10 liability detail (#685)', () => {
       splitEstimated: false,
       ...other,
     });
-    const renderYears = async (years: ReturnType<typeof year>[]) => {
+    const renderYears = async (years: ReturnType<typeof year>[], locale: 'en' | 'de' = 'en') => {
       const server = fakeServer(summary({ nature: 'LIABILITY', hasAmortisation: true }), []);
       server.repayments = [repayment('r0', '2026-10-01')];
       server.yearlyTotals = { loanAccountId: 'acc', currency: 'EUR', years };
-      const { client } = await renderDetail();
+      const { client } = await renderDetail({ locale });
       expect(await screen.findByText('EUR 825.40')).toBeTruthy();
       return { server, client };
     };
+    const title = `Interest paid in ${thisYear}`;
+    const field = () => screen.getByLabelText(new RegExp(`^${title}`));
 
-    it('shows the sent interest of the current year', async () => {
+    it('shows the sent interest of the current year as its own block', async () => {
       await renderYears([year(thisYear, { interestPaid: '251.15' }), year(thisYear - 1)]);
       expect(await screen.findByText('EUR 251.15')).toBeTruthy();
-      expect(screen.getByText(/^Interest this year:/)).toBeTruthy();
+      expect(screen.getByText(title)).toBeTruthy();
+      expect(screen.getByText('From 2 repayments')).toBeTruthy();
+      expect(field().props.accessibilityLabel).toMatch(
+        new RegExp(`^${title}, .*251\\.15 euros, From 2 repayments$`),
+      );
+      expect(screen.queryByText(/Not included/)).toBeNull();
+    });
+
+    it('counts a single repayment in the singular', async () => {
+      await renderYears([year(thisYear, { paymentCount: 1 })]);
+      expect(await screen.findByText('From 1 repayment')).toBeTruthy();
     });
 
     it('says Not known instead of 0 when no payment of the year has a known split', async () => {
       await renderYears([
         year(thisYear, { interestPaid: null, principalPaid: null, unknownSplitAmount: '1650.00' }),
       ]);
-      expect(await screen.findByText('Interest this year: Not known')).toBeTruthy();
+      expect(await screen.findByText('Not known')).toBeTruthy();
+      expect(field().props.accessibilityLabel).toBe(
+        `${title}, Not known, Principal and interest split unknown`,
+      );
       expect(screen.queryByText('EUR 0.00')).toBeNull();
+      // The whole year is unsplit, so there is no "Not included" part to name.
+      expect(screen.queryByText(/Not included/)).toBeNull();
     });
 
     it('marks an estimated year sum', async () => {
@@ -646,6 +663,44 @@ describe('S10 liability detail (#685)', () => {
       expect(await screen.findByText('EUR 250.00')).toBeTruthy();
       // One badge for the year sum, one for the estimated repayment row.
       expect(screen.getAllByText('Estimated split')).toHaveLength(2);
+      expect(screen.getByText('Some of this year’s splits were estimated.')).toBeTruthy();
+      expect(field().props.accessibilityLabel).toMatch(
+        /, From 2 repayments, Estimated split, Some of this year’s splits were estimated\.$/,
+      );
+    });
+
+    it('names the payments the sum leaves out because their split is unknown', async () => {
+      await renderYears([year(thisYear, { interestPaid: '200.00', unknownSplitAmount: '650.00' })]);
+      expect(await screen.findByText('EUR 200.00')).toBeTruthy();
+      expect(screen.getByText('Not included: EUR 650.00 without a known split')).toBeTruthy();
+      expect(field().props.accessibilityLabel).toMatch(
+        /, Not included: .*650\.00 euros without a known split$/,
+      );
+    });
+
+    it('masks the year sum and the left-out amount when amounts are hidden', async () => {
+      jest.mocked(useAmountsHidden).mockReturnValue(true);
+      try {
+        const server = fakeServer(summary({ nature: 'LIABILITY', hasAmortisation: true }), []);
+        server.repayments = [repayment('r0', '2026-10-01')];
+        server.yearlyTotals = {
+          loanAccountId: 'acc',
+          currency: 'EUR',
+          years: [year(thisYear, { interestPaid: '251.15', unknownSplitAmount: '650.00' })],
+        };
+        await renderDetail();
+        expect(await screen.findByText(title)).toBeTruthy();
+        expect(screen.queryByText(/251\.15|650\.00/)).toBeNull();
+        expect(field().props.accessibilityLabel).not.toMatch(/251|650/);
+      } finally {
+        jest.mocked(useAmountsHidden).mockReturnValue(false);
+      }
+    });
+
+    it('uses the German copy', async () => {
+      await renderYears([year(thisYear, { splitEstimated: true })], 'de');
+      expect(await screen.findByText(`Bezahlte Zinsen ${thisYear}`)).toBeTruthy();
+      expect(screen.getByText('Aus 2 Rückzahlungen')).toBeTruthy();
     });
 
     it.each([
@@ -662,7 +717,9 @@ describe('S10 liability detail (#685)', () => {
       };
       await renderDetail();
 
-      expect(await screen.findByText('Interest this year: –')).toBeTruthy();
+      expect(await screen.findByLabelText(`${title}: not available`)).toBeTruthy();
+      expect(screen.getByText(title)).toBeTruthy();
+      expect(screen.queryByText(/From \d+ repayment/)).toBeNull();
     });
 
     it('replaces a loaded sum with a dash when access is denied later', async () => {
@@ -678,7 +735,7 @@ describe('S10 liability detail (#685)', () => {
         }
       };
       await act(() => invalidateFinancialData(client));
-      expect(await screen.findByText('Interest this year: –')).toBeTruthy();
+      expect(await screen.findByLabelText(`${title}: not available`)).toBeTruthy();
       expect(screen.queryByText('EUR 251.15')).toBeNull();
     });
 
@@ -689,7 +746,7 @@ describe('S10 liability detail (#685)', () => {
           api.get.mock.calls.some(([path]) => String(path).endsWith('/repayments/yearly-totals')),
         ).toBe(true),
       );
-      expect(screen.queryByText(/Interest this year/)).toBeNull();
+      expect(screen.queryByText(/Interest paid in/)).toBeNull();
       expect(screen.queryByText('EUR 250.00')).toBeNull();
     });
   });
