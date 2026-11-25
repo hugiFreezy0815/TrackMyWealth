@@ -45,6 +45,8 @@ export type OverviewScreenProps = {
   onPortfolio?: (portfolioId: string) => void;
   missingPortfolioNotice?: boolean;
   onImportStatement?: () => void;
+  /** Opens Investments for the Depot tile, in the scope currency the tile shows. */
+  onInvestments?: (currency: string) => void;
 };
 
 /** S1 web layout: two columns from 1024 px, the right one 360 px wide. */
@@ -71,6 +73,7 @@ export function OverviewScreen({
   onPortfolio,
   missingPortfolioNotice = false,
   onImportStatement,
+  onInvestments,
 }: OverviewScreenProps) {
   const intl = useIntl();
   const theme = useTheme();
@@ -158,6 +161,7 @@ export function OverviewScreen({
             intl={intl}
           />
           <SectionTiles
+            onInvestments={onInvestments}
             data={netWorth.data}
             hidden={hidden}
             intl={intl}

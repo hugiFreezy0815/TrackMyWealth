@@ -137,6 +137,21 @@ describe('Depot positions on web (ADR 0007, W02/W03)', () => {
     expect(screen.getAllByText('Cost basis from orders')).toHaveLength(1);
   });
 
+  it('lets only the Position cell break anywhere, never an amount or a unit count', async () => {
+    await renderTable();
+    const wraps = host('td').map(
+      (td) => (td.props.style as { overflowWrap?: string }).overflowWrap,
+    );
+    expect(wraps).toEqual(
+      ['anywhere', undefined, undefined, undefined].concat([
+        'anywhere',
+        undefined,
+        undefined,
+        undefined,
+      ]),
+    );
+  });
+
   it('opens the depot from the focusable position link', async () => {
     const onOpen = await renderTable();
     await fireEvent.press(screen.getByRole('link', { name: /^iShares Core MSCI World,/ }));
@@ -157,4 +172,70 @@ describe('Depot positions on web (ADR 0007, W02/W03)', () => {
     expect(host('table')).toHaveLength(0);
     expect(screen.getByText('310 units · IE00B4L5Y983')).toBeTruthy();
   });
+});
+
+it('shows the Investments cost-basis column and uses the snapshot date for a stale price', async () => {
+  await renderWithIntl(
+    <PositionView
+      positions={[{ ...positions[0], valueStatus: 'STALE' }]}
+      currency="EUR"
+      accountName="DKB Depot"
+      investments={{ asOf: '2026-11-21', showDepotName: true }}
+    />,
+  );
+  expect(host('th').map(textOf)).toEqual([
+    'Position',
+    'Units',
+    'Cost basis',
+    'Value',
+    'Unrealised gain',
+  ]);
+  expect(screen.getByText("EUR 27'439.00")).toBeOnTheScreen();
+  expect(screen.getByText('Price from 21 Nov 2026')).toBeOnTheScreen();
+});
+
+it('makes each Investments column sortable and announces the active sort direction', async () => {
+  const onSort = jest.fn();
+  await renderWithIntl(
+    <PositionView
+      positions={positions}
+      currency="EUR"
+      accountName="DKB Depot"
+      investments={{
+        asOf: '2026-11-21',
+        showDepotName: false,
+        sort: { key: 'value', direction: 'descending' },
+        onSort,
+      }}
+    />,
+  );
+  expect(host('th').map((th) => th.props['aria-sort'])).toEqual([
+    undefined,
+    undefined,
+    undefined,
+    'descending',
+    undefined,
+  ]);
+  expect(host('button').map((button) => textOf(button).trim())).toEqual([
+    'Position',
+    'Units',
+    'Cost basis',
+    'Value ↓',
+    'Unrealised gain',
+  ]);
+  await fireEvent(screen.getByText('Cost basis'), 'click');
+  expect(onSort).toHaveBeenCalledWith('costBasis');
+});
+
+it('shows "–" in an Investments gain cell that has neither a gain nor a note', async () => {
+  await renderWithIntl(
+    <PositionView
+      positions={[{ ...positions[1], costBasisCurrency: 'USD', valueStatus: 'UNKNOWN' }]}
+      currency="EUR"
+      accountName="DKB Depot"
+      investments={{ asOf: '2026-11-21', showDepotName: false }}
+    />,
+  );
+  const gainCell = host('td')[4];
+  expect(textOf(gainCell).trim()).toBe('–');
 });

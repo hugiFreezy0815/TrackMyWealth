@@ -8,6 +8,10 @@ on:
       # The app's types are generated from these (#375): a contract change must regenerate them.
       - "api/openapi.yaml"
       - "api/problem-codes.json"
+      # The Investments value status mirrors these (value-status-sync.test.ts).
+      - "backend/src/main/java/com/trackmywealth/backend/dto/ValueStatus.java"
+      - "backend/src/main/java/com/trackmywealth/backend/dto/ValueBasisValues.java"
+      - "backend/src/main/java/com/trackmywealth/backend/dto/DataQualityWarningValues.java"
       - ".github/workflows/mobile-web-ci.yml"
   pull_request:
     paths:
@@ -15,6 +19,10 @@ on:
       # The app's types are generated from these (#375): a contract change must regenerate them.
       - "api/openapi.yaml"
       - "api/problem-codes.json"
+      # The Investments value status mirrors these (value-status-sync.test.ts).
+      - "backend/src/main/java/com/trackmywealth/backend/dto/ValueStatus.java"
+      - "backend/src/main/java/com/trackmywealth/backend/dto/ValueBasisValues.java"
+      - "backend/src/main/java/com/trackmywealth/backend/dto/DataQualityWarningValues.java"
       - ".github/workflows/mobile-web-ci.yml"
 
 jobs:

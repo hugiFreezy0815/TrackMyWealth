@@ -36,6 +36,10 @@ jest.mock('@/api/queries/resources', () => ({
   usePortfolioView: jest.fn(),
   usePortfolioHistory: jest.fn(),
   useAccountPositions: jest.fn(),
+  accountQuery: jest.fn((accountId: string) => ({
+    queryKey: ['accounts', accountId],
+    queryFn: async () => ({ id: accountId, holdsPositions: true }),
+  })),
 }));
 const mockWindow = { width: 390, height: 844, scale: 2, fontScale: 1 };
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
