@@ -1846,7 +1846,7 @@ export interface components {
       valueInAccountCurrency: DecimalString | null;
       /**
        * Format: decimal
-       * @description Cost basis as the statement printed it, never converted.
+       * @description Cost basis as the snapshot holds it (printed or entered), or else as the orders give it (costBasisSource); never converted.
        */
       costBasis: DecimalString | null;
       /** @description Currency of costBasis; null when unknown (#527). */
@@ -1857,6 +1857,11 @@ export interface components {
        */
       costBasisInAccountCurrency: DecimalString | null;
       costBasisEstimated: boolean;
+      /**
+       * @description Where costBasis comes from (US-15-15): STATEMENT as an imported statement printed it or a provider reported it (API or aggregator snapshot), ENTERED by the member, ORDERS calculated at the average price of the account's buys and sells (fees excluded) when the snapshot has none. Null without a cost basis.
+       * @enum {string|null}
+       */
+      costBasisSource: 'STATEMENT' | 'ENTERED' | 'ORDERS' | null;
       /**
        * Format: decimal
        * @description Gain in unrealisedGainCurrency, the cost basis currency: valueInAccountCurrency minus costBasis for a cost basis in the account currency, value minus costBasis for one in priceCurrency. Null without a cost basis, its currency or a value, and for a cost basis in a third currency.

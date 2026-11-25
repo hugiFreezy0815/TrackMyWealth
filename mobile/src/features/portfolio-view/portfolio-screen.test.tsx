@@ -36,6 +36,10 @@ jest.mock('@/api/queries/resources', () => ({
   usePortfolioView: jest.fn(),
   usePortfolioHistory: jest.fn(),
   useAccountPositions: jest.fn(),
+  accountQuery: jest.fn((accountId: string) => ({
+    queryKey: ['accounts', accountId],
+    queryFn: async () => ({ id: accountId, holdsPositions: true }),
+  })),
 }));
 const mockWindow = { width: 390, height: 844, scale: 2, fontScale: 1 };
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
@@ -165,6 +169,7 @@ const position = (id: string, overrides: Partial<Position> = {}): Position => {
     costBasisCurrency: 'EUR',
     costBasisInAccountCurrency: null,
     costBasisEstimated: false,
+    costBasisSource: null,
     unrealisedGain: '10.00',
     unrealisedGainPercent: '11.11',
     valueStatus: 'CURRENT' as Position['valueStatus'],
@@ -770,7 +775,7 @@ describe('S2 depot positions (#478)', () => {
     setData(view([depotSection()]));
     setPositions([
       position('1', { quantity: '1250.500000', unrealisedGainPercent: '11.24' }),
-      position('2', { unrealisedGainPercent: '-3.75' }),
+      position('2', { unrealisedGainPercent: '-3.75', costBasisSource: 'ORDERS' }),
       position('3', {
         unrealisedGainPercent: null,
         unrealisedGain: null,
@@ -791,6 +796,8 @@ describe('S2 depot positions (#478)', () => {
     expect(screen.getByText('Cost basis currency unknown')).toBeTruthy();
     expect(screen.getByText('No cost basis yet')).toBeTruthy();
     expect(screen.getByText('Estimated cost basis')).toBeTruthy();
+    // US-15-15: Fund 2's cost basis is calculated from its orders.
+    expect(screen.getAllByText('Cost basis from orders')).toHaveLength(1);
     expect(
       screen.getByRole('button', {
         name: /^Fund 1, 100.00 euros, 1250.5 units, Price: .*unrealised gain plus 11.2 percent$/,

@@ -119,3 +119,35 @@ export function unknownAccounts(sections: readonly PortfolioSection[]): Portfoli
     .flatMap((section) => section.accounts)
     .filter((account) => !account.valueKnown || account.valueStatus === 'UNKNOWN');
 }
+
+/**
+ * The Investments scope includes depots that hold positions and Pillar 3a accounts with positions.
+ * A DEPOT row tracked as a balance only (holdsPositions = false, e.g. a managed mandate) is left
+ * out: its positions request answers 422 POSITIONS_NOT_APPLICABLE. The view row does not carry
+ * holdsPositions, so a depot without a snapshot yet (positionsCount = null) needs the account
+ * summary's flag from `positionAccountIds`; a snapshot proves the account holds positions.
+ * `needsHoldsPositions` names the rows that need it.
+ */
+export function isInvestmentDepot(
+  account: PortfolioAccount,
+  section: PortfolioSection,
+  positionAccountIds?: ReadonlySet<string>,
+): boolean {
+  if (account.positionsCount != null) {
+    return section.section === 'DEPOT' || section.section === 'PILLAR_3A';
+  }
+  return section.section === 'DEPOT' && positionAccountIds?.has(account.accountId) === true;
+}
+
+/** A depot row whose Investments scope depends on the account summary's holdsPositions. */
+export function needsHoldsPositions(account: PortfolioAccount, section: PortfolioSection): boolean {
+  return section.section === 'DEPOT' && account.positionsCount == null;
+}
+
+export type PositionSort = {
+  key: 'name' | 'units' | 'costBasis' | 'value' | 'gain';
+  direction: 'ascending' | 'descending';
+};
+
+/** Use list rows where the table columns would not fit, including at 200% zoom. */
+export const POSITION_TABLE_MIN_WIDTH = 600;

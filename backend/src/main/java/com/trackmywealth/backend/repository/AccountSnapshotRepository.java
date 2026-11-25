@@ -78,20 +78,24 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
                  parts.currency AS "reportedCurrency", parts.holding AS "holding",
                  parts.cost_basis AS "reportedCostBasis",
                  parts.cost_basis_currency AS "reportedCostBasisCurrency",
-                 parts.cost_in_account AS "costBasisInAccountCurrency"
+                 parts.cost_in_account AS "costBasisInAccountCurrency",
+                 parts.security_id AS "securityId", parts.quantity AS "quantity"
           FROM flagged s
           CROSS JOIN LATERAL (
               SELECT coalesce(s.balance, CASE WHEN EXISTS (
                          SELECT 1 FROM snapshot_foreign_cash fc WHERE fc.snapshot_id = s.id)
                        THEN 0 END) AS amount,
                      s.currency AS currency, false AS holding, NULL::numeric AS cost_basis,
-                     NULL::char(3) AS cost_basis_currency, NULL::numeric AS cost_in_account
+                     NULL::char(3) AS cost_basis_currency, NULL::numeric AS cost_in_account,
+                     NULL::uuid AS security_id, NULL::numeric AS quantity
               UNION ALL
-              SELECT c.amount, c.currency, false, NULL::numeric, NULL::char(3), NULL::numeric
+              SELECT c.amount, c.currency, false, NULL::numeric, NULL::char(3), NULL::numeric,
+                     NULL::uuid, NULL::numeric
               FROM snapshot_foreign_cash c WHERE c.snapshot_id = s.id
               UNION ALL
               SELECT h.reported_value, h.reported_currency, true, h.reported_cost_basis,
-                     h.reported_cost_basis_currency, h.cost_basis_in_account_currency
+                     h.reported_cost_basis_currency, h.cost_basis_in_account_currency,
+                     h.security_id, h.quantity
               FROM snapshot_holding h WHERE h.snapshot_id = s.id
           ) parts
           """,

@@ -4,6 +4,7 @@ import com.trackmywealth.backend.dto.FuzzyCategoryCandidate;
 import com.trackmywealth.backend.dto.ImportDuplicateCandidate;
 import com.trackmywealth.backend.dto.KeyedAmount;
 import com.trackmywealth.backend.dto.KeyedDate;
+import com.trackmywealth.backend.dto.TradeLeg;
 import com.trackmywealth.backend.dto.TransactionSearchFilter;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.Transaction;
@@ -1082,4 +1083,22 @@ public interface TransactionRepository
               + " AND t.voided_at IS NULL AND t.replaces_transaction_id IS NULL",
       nativeQuery = true)
   List<UUID> findLiveIdsAmong(@Param("ids") Collection<UUID> ids);
+
+  /**
+   * US-15-15 (#714): the buys and sells of {@code securityIds} in effect on {@code accountIds} up
+   * to {@code asOf} by trade date (the booking date where a row has none) - neither voided, nor a
+   * reversal, nor deleted. Unordered: {@code OrderCostBasisService#costBasis} orders them itself.
+   */
+  @Query(
+      "select new com.trackmywealth.backend.dto.TradeLeg(t.account.id, t.securityId, t.quantity,"
+          + " t.unitPrice, t.currency, coalesce(t.tradeDate, t.bookingDate))"
+          + " from Transaction t"
+          + " where t.account.id in :accountIds and t.securityId in :securityIds"
+          + " and t.transactionType in ('BUY', 'SELL')"
+          + " and coalesce(t.tradeDate, t.bookingDate) <= :asOf"
+          + NOT_VOIDED_OR_REVERSAL)
+  List<TradeLeg> findTradesAsOf(
+      @Param("accountIds") Collection<UUID> accountIds,
+      @Param("securityIds") Collection<UUID> securityIds,
+      @Param("asOf") LocalDate asOf);
 }

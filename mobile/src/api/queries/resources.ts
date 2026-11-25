@@ -1,4 +1,5 @@
 import {
+  queryOptions,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -6,6 +7,7 @@ import {
   type InfiniteData,
 } from '@tanstack/react-query';
 
+import { NetworkError, REQUEST_TIMEOUT_MS } from '@/api/client';
 import { readAllPages } from '@/api/pages';
 import type { components } from '@/api/schema';
 import { typedApi } from '@/api/typed-api';
@@ -29,13 +31,16 @@ export const usePortfolios = () =>
     queryFn: ({ signal }) =>
       readAllPages((page) => typedApi.get('/api/v1/portfolios', { query: { page }, signal })),
   });
-export const usePortfolioView = (portfolioId: string, { enabled = true }: QueryGate = {}) =>
-  useQuery({
+export const portfolioViewQuery = (portfolioId: string, enabled = true) =>
+  queryOptions({
     queryKey: queryKeys.portfolioView(portfolioId),
-    queryFn: () =>
-      typedApi.get('/api/v1/portfolios/{portfolioId}/view', { params: { portfolioId } }),
+    queryFn: ({ signal }) =>
+      typedApi.get('/api/v1/portfolios/{portfolioId}/view', { params: { portfolioId }, signal }),
     enabled: enabled && !!portfolioId,
   });
+
+export const usePortfolioView = (portfolioId: string, { enabled = true }: QueryGate = {}) =>
+  useQuery(portfolioViewQuery(portfolioId, enabled));
 /** `enabled: false` holds the request back, e.g. until the scope currency is known (S1). */
 export type QueryGate = { enabled?: boolean };
 
@@ -84,12 +89,37 @@ export const useAccounts = (portfolioId?: string, { enabled = true }: QueryGate 
       ),
     enabled,
   });
-export const useAccount = (accountId: string) =>
-  useQuery({
+export const accountQuery = (accountId: string) =>
+  queryOptions({
     queryKey: queryKeys.account(accountId),
     queryFn: () => typedApi.get('/api/v1/accounts/{accountId}', { params: { accountId } }),
     enabled: !!accountId,
   });
+export const useAccount = (accountId: string) => useQuery(accountQuery(accountId));
+export const useAccountBalance = (accountId: string, currency?: string) =>
+  useQuery({
+    queryKey: [...queryKeys.account(accountId), 'balance', currency],
+    queryFn: ({ signal }) =>
+      typedApi.get('/api/v1/accounts/{accountId}/balance', {
+        params: { accountId },
+        query: { currency },
+        signal,
+      }),
+    enabled: !!accountId && !!currency,
+  });
+
+export const useRecentAccountActivity = (accountId: string, enabled: boolean) =>
+  useQuery({
+    queryKey: queryKeys.accountTransactions(accountId, { recent: true }),
+    queryFn: ({ signal }) =>
+      typedApi.get('/api/v1/accounts/{accountId}/transactions', {
+        params: { accountId },
+        query: { size: 10, sort: ['bookingDate,desc'] },
+        signal,
+      }),
+    enabled: !!accountId && enabled,
+  });
+
 export type TransactionSort = 'bookingDate,desc' | 'bookingDate,asc' | 'amount,desc' | 'amount,asc';
 
 /** Each sort/filter gets a separate cache. Changing either begins at page zero. */
@@ -136,15 +166,121 @@ export const useArchivedAccounts = (portfolioId: string, enabled = true) =>
     enabled: !!portfolioId && enabled,
   });
 
-export const useAccountPositions = (accountId: string, enabled = true) =>
-  useQuery({
-    queryKey: queryKeys.accountPositions(accountId),
-    queryFn: () =>
+// Share the four-request limit and the cache across screens that read depot positions.
+const POSITION_REQUEST_LIMIT = 4;
+// A slot is held at most this long, so a request that never settles cannot block every later
+// positions query in the app. One exchange can use three client deadlines - the request, a session
+// renewal after its 401 and the resend - and reading the response body has none of its own, so
+// the slot allows one more on top: it only ends a request the client's own deadlines missed.
+export const POSITION_SLOT_TIMEOUT_MS = 4 * REQUEST_TIMEOUT_MS;
+type PositionWaiter = { resume: () => void; abandon: (reason: Error) => void };
+let positionRequestQueue: PositionWaiter[] = [];
+let activePositionRequests = 0;
+// Bumped by resetPositionRequests: a request admitted before a reset must not release a slot
+// counted after it.
+let positionGeneration = 0;
+// The requests holding a slot, so a reset can end them before it frees their slots.
+const activePositionControllers = new Set<AbortController>();
+
+/**
+ * Test hook: forget queued and active positions requests left over by an earlier test. Queued
+ * requests are rejected and active ones aborted, so none of their queries stays pending for good
+ * and no request of the earlier generation runs beside the new ones (the limit still holds).
+ */
+export function resetPositionRequests() {
+  const abandoned = positionRequestQueue;
+  const active = [...activePositionControllers];
+  positionRequestQueue = [];
+  activePositionControllers.clear();
+  activePositionRequests = 0;
+  positionGeneration++;
+  const reason = new Error('Positions requests reset');
+  for (const waiter of abandoned) waiter.abandon(reason);
+  for (const controller of active) controller.abort(reason);
+}
+
+function cancelled(signal: AbortSignal) {
+  return signal.reason ?? new Error('Positions request cancelled');
+}
+
+/** Resolves with the generation the slot belongs to, which releasePositionSlot needs. */
+async function waitForPositionSlot(signal: AbortSignal): Promise<number> {
+  if (signal.aborted) throw cancelled(signal);
+  if (activePositionRequests < POSITION_REQUEST_LIMIT) {
+    activePositionRequests++;
+    return positionGeneration;
+  }
+  return new Promise<number>((resolve, reject) => {
+    const waiter: PositionWaiter = {
+      resume: () => {
+        signal.removeEventListener('abort', cancel);
+        resolve(positionGeneration);
+      },
+      abandon: (reason) => {
+        signal.removeEventListener('abort', cancel);
+        reject(reason);
+      },
+    };
+    const cancel = () => {
+      const index = positionRequestQueue.indexOf(waiter);
+      if (index >= 0) positionRequestQueue.splice(index, 1);
+      reject(cancelled(signal));
+    };
+    positionRequestQueue.push(waiter);
+    signal.addEventListener('abort', cancel, { once: true });
+  });
+}
+
+function releasePositionSlot(generation: number) {
+  if (generation !== positionGeneration) return;
+  const next = positionRequestQueue.shift();
+  if (next) next.resume();
+  else activePositionRequests = Math.max(0, activePositionRequests - 1);
+}
+
+async function readAccountPositions(accountId: string, signal: AbortSignal) {
+  const generation = await waitForPositionSlot(signal);
+  const controller = new AbortController();
+  activePositionControllers.add(controller);
+  const forwardAbort = () => controller.abort(signal.reason);
+  signal.addEventListener('abort', forwardAbort, { once: true });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    if (signal.aborted) throw cancelled(signal);
+    // A reset between the slot grant and this line found no controller to abort.
+    if (generation !== positionGeneration) throw new Error('Positions requests reset');
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        // A NetworkError like the client's own timeout, so React Query retries it (shouldRetry).
+        const timeout = new NetworkError('Positions request timed out');
+        controller.abort(timeout);
+        reject(timeout);
+      }, POSITION_SLOT_TIMEOUT_MS);
+    });
+    return await Promise.race([
       typedApi.get('/api/v1/accounts/{accountId}/positions', {
         params: { accountId },
+        signal: controller.signal,
       }),
+      deadline,
+    ]);
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener('abort', forwardAbort);
+    activePositionControllers.delete(controller);
+    releasePositionSlot(generation);
+  }
+}
+
+export const accountPositionsQuery = (accountId: string, enabled = true) =>
+  queryOptions({
+    queryKey: queryKeys.accountPositions(accountId),
+    queryFn: ({ signal }) => readAccountPositions(accountId, signal),
     enabled: !!accountId && enabled,
   });
+
+export const useAccountPositions = (accountId: string, enabled = true) =>
+  useQuery(accountPositionsQuery(accountId, enabled));
 
 /** Every write sends the exact version read from the server. */
 export function useAccountArchiveAction(accountId: string) {

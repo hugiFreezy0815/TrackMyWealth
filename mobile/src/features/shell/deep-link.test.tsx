@@ -2,9 +2,12 @@
 // opens afterwards. Uses the real root layout (src/app/_layout.tsx); tests cannot live in src/app,
 // where expo-router would treat them as routes.
 import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
+import { Platform } from 'react-native';
 
+import { typedApi } from '@/api/typed-api';
 import { usePortfolios, useWorkspace } from '@/api/queries/resources';
 import RootLayout from '@/app/_layout';
+import InvestmentsRoute from '@/app/investments';
 import { loadServerUrl } from '@/api/server-url';
 import type { Identity } from '@/features/auth/session';
 import { UnavailableScreen } from '@/features/shell/screen';
@@ -29,9 +32,23 @@ const mockSession: { current: Session; listeners: Set<() => void> } = {
 };
 
 jest.mock('@/global.css', () => ({}));
+// These route tests run without a browser DOM, including the web layout case.
+jest.mock('@/api/queries/client', () => ({
+  ...jest.requireActual('@/api/queries/client'),
+  configureQueryEnvironment: () => () => undefined,
+}));
+jest.mock('@/features/auth/web-document', () => ({
+  ...jest.requireActual('@/features/auth/web-document'),
+  installBackForwardGuard: () => () => undefined,
+}));
 jest.mock('@/api/queries/resources', () => ({
+  ...jest.requireActual('@/api/queries/resources'),
   useWorkspace: jest.fn(),
   usePortfolios: jest.fn(),
+}));
+jest.mock('@/api/typed-api', () => ({
+  ...jest.requireActual('@/api/typed-api'),
+  typedApi: { get: jest.fn() },
 }));
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async () => null),
@@ -198,3 +215,78 @@ describe('deep link while signed out (US-01-13 AC2)', () => {
     expect(screen.queryByText(accountText)).toBeNull();
   });
 });
+
+it.each(['ios', 'android', 'web'] as const)(
+  'opens an empty depot deep link after member sign-in in the %s layout',
+  async (platform) => {
+    const startPlatform = Platform.OS;
+    Platform.OS = platform;
+    const linkedDepot = {
+      accountId: 'empty-depot',
+      name: 'Empty Depot',
+      currency: 'CHF',
+      valueKnown: false,
+      valueStatus: 'UNKNOWN',
+      balance: null,
+      totalReturn: null,
+      totalReturnPercent: null,
+      positionsAsOf: null,
+      valueSourceDate: null,
+    };
+    jest.mocked(usePortfolios).mockReturnValue({
+      data: [
+        {
+          id: 'portfolio-1',
+          name: 'Example Bank',
+          personalAssetsDefault: false,
+          activeAccountCount: 1,
+        },
+      ],
+      isPending: false,
+      isError: false,
+    } as ReturnType<typeof usePortfolios>);
+    jest.mocked(typedApi.get).mockImplementation(async (path) => {
+      if (path === '/api/v1/portfolios/{portfolioId}/view') {
+        return {
+          portfolioCurrency: 'CHF',
+          sections: [{ section: 'DEPOT', accounts: [linkedDepot] }],
+        } as never;
+      }
+      if (path === '/api/v1/accounts/{accountId}')
+        return { hasTransactions: false, holdsPositions: true } as never;
+      if (path === '/api/v1/accounts/{accountId}/positions') {
+        return {
+          accountId: linkedDepot.accountId,
+          currency: 'CHF',
+          positions: [],
+          asOf: null,
+          complete: true,
+        } as never;
+      }
+      if (path === '/api/v1/net-worth') return { currency: 'CHF', sections: [] } as never;
+      throw new Error('Unexpected test request ' + path);
+    });
+    try {
+      const view = await renderRouter(
+        { ...routes, investments: InvestmentsRoute },
+        {
+          initialUrl: '/investments?account=empty-depot',
+        },
+      );
+      expect(await screen.findByRole('header')).toHaveTextContent('Sign in');
+      expect(screen.queryByText('Empty Depot')).toBeNull();
+      await serverSays({ signedIn: true, identity: MEMBER });
+      expect(await screen.findByRole('radio', { name: 'Empty Depot' })).toBeChecked();
+      expect(view.getPathname()).toBe('/investments');
+      await fireEvent.press(screen.getByRole('radio', { name: 'All depots' }));
+      expect(await screen.findByRole('radio', { name: 'All depots' })).toBeChecked();
+      await fireEvent.press(screen.getByRole('radio', { name: 'Empty Depot' }));
+      await fireEvent.press(await screen.findByRole('button', { name: 'Open depot account' }));
+      expect(await screen.findByText(accountText)).toBeOnTheScreen();
+      expect(view.getPathname()).toBe('/accounts/empty-depot');
+    } finally {
+      Platform.OS = startPlatform;
+      jest.mocked(typedApi.get).mockReset();
+    }
+  },
+);

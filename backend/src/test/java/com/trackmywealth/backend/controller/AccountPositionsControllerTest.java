@@ -9,7 +9,9 @@ import com.trackmywealth.backend.dto.AccountPositionsSource;
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
+import com.trackmywealth.backend.dto.CostBasisSource;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
+import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
@@ -21,12 +23,14 @@ import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.SnapshotHoldingRequest;
+import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.dto.ValueHistoryResponse;
 import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -88,6 +92,9 @@ class AccountPositionsControllerTest {
   void cleanDatabase() throws Exception {
     try (Connection connection = dataSource.getConnection();
         Statement statement = connection.createStatement()) {
+      // US-15-15: the orders a cost basis is calculated from.
+      statement.execute("DELETE FROM transaction_categorization_log");
+      statement.execute(LedgerCleanup.DELETE_ALL_TRANSACTIONS);
       for (String table :
           List.of(
               "fx_rate",
@@ -766,6 +773,132 @@ class AccountPositionsControllerTest {
       UUID security, String value, String currency) {
     return new SnapshotHoldingRequest(
         security, BigDecimal.ONE, null, null, null, new BigDecimal(value), currency);
+  }
+
+  // --- US-15-15 (#714): a missing cost basis from the orders -----------------------------------
+
+  // AC 1, 5 and 7: two buys explain the 30 units the snapshot holds without a cost basis; once one
+  // of them is removed, they no longer do.
+  @Test
+  void theOrdersGiveAMissingCostBasisAtTheirAveragePriceWhileTheyExplainThePosition() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createAccount(token, "Depot", "SECURITIES");
+    UUID security = createSecurity(token, "CH0038863350", "Nestle").id();
+    LocalDate date = today().minusDays(1);
+    buy(token, depot.id(), security, "20", "50", date.minusDays(20));
+    TransactionResponse second = buy(token, depot.id(), security, "10", "80", date.minusDays(10));
+    // Bought after the statement date: not part of the position it shows.
+    buy(token, depot.id(), security, "5", "90", today());
+    recordOk(token, depot.id(), heldWithoutCostBasis(date, security, "30", "2100"));
+
+    AccountPositionResponse position = positions(token, depot.id()).positions().get(0);
+
+    // 20 x 50.00 + 10 x 80.00 = 1,800.00 (an average of 60.00), fees not included.
+    assertThat(position.costBasis()).isEqualByComparingTo("1800");
+    assertThat(position.costBasisCurrency()).isEqualTo("CHF");
+    assertThat(position.costBasisSource()).isEqualTo(CostBasisSource.ORDERS);
+    assertThat(position.costBasisEstimated()).isFalse();
+    assertThat(position.unrealisedGain()).isEqualByComparingTo("300");
+    assertThat(position.unrealisedGainInAccountCurrency()).isEqualByComparingTo("300");
+
+    client(token)
+        .delete()
+        .uri("/api/v1/accounts/" + depot.id() + "/transactions/" + second.id())
+        .header("If-Match", "\"" + second.version() + "\"")
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    // 20 bought of 30 held: the orders no longer explain the position - nothing is guessed.
+    AccountPositionResponse unexplained = positions(token, depot.id()).positions().get(0);
+    assertThat(unexplained.costBasis()).isNull();
+    assertThat(unexplained.costBasisSource()).isNull();
+    assertThat(unexplained.unrealisedGain()).isNull();
+  }
+
+  // AC 4: a cost basis the member entered is never replaced by the orders' one.
+  @Test
+  void anEnteredCostBasisComesBeforeTheOrders() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createAccount(token, "Depot", "SECURITIES");
+    UUID security = createSecurity(token, "CH0038863350", "Nestle").id();
+    LocalDate date = today().minusDays(1);
+    buy(token, depot.id(), security, "30", "60", date.minusDays(5));
+    recordOk(
+        token,
+        depot.id(),
+        new RecordAccountSnapshotRequest(
+            date,
+            null,
+            List.of(
+                new SnapshotHoldingRequest(
+                    security,
+                    new BigDecimal("30"),
+                    new BigDecimal("1500"),
+                    null,
+                    null,
+                    new BigDecimal("2100"),
+                    "CHF"))));
+
+    AccountPositionResponse position = positions(token, depot.id()).positions().get(0);
+
+    assertThat(position.costBasis()).isEqualByComparingTo("1500");
+    assertThat(position.costBasisSource()).isEqualTo(CostBasisSource.ENTERED);
+  }
+
+  private TransactionResponse buy(
+      String token, UUID accountId, UUID security, String quantity, String price, LocalDate on) {
+    BigDecimal amount = new BigDecimal(quantity).multiply(new BigDecimal(price)).negate();
+    CreateTransactionRequest request =
+        new CreateTransactionRequest(
+            "BUY",
+            on,
+            amount,
+            "CHF",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            security,
+            new BigDecimal(quantity),
+            new BigDecimal(price),
+            on,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null);
+    return client(token)
+        .post()
+        .uri("/api/v1/accounts/" + accountId + "/transactions")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(request)
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED)
+        .expectBody(TransactionResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private static RecordAccountSnapshotRequest heldWithoutCostBasis(
+      LocalDate date, UUID security, String quantity, String value) {
+    return new RecordAccountSnapshotRequest(
+        date,
+        null,
+        List.of(
+            new SnapshotHoldingRequest(
+                security,
+                new BigDecimal(quantity),
+                null,
+                null,
+                null,
+                new BigDecimal(value),
+                "CHF")));
   }
 
   // --- Helpers ------------------------------------------------------------------------------
