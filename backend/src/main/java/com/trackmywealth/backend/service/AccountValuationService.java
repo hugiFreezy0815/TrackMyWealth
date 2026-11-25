@@ -321,7 +321,7 @@ public class AccountValuationService {
       // Nothing to value: no query at all, every list empty (#381 review).
       return new MultiCurrencyValuations(byCurrency, List.of(), Map.of());
     }
-    AccountValueSources sources = sourcesFor(accounts, asOf);
+    AccountValueSources sources = sourcesFor(accounts, asOf, withOwnCurrency);
     Map<UUID, LocalDate> openingDates = new HashMap<>();
     sources
         .openingBalances()
@@ -421,7 +421,8 @@ public class AccountValuationService {
    * with a statement no repayments against its principal, an account without a ledger no ledger
    * after its opening balance.
    */
-  private AccountValueSources sourcesFor(Collection<Account> accounts, LocalDate asOf) {
+  private AccountValueSources sourcesFor(
+      Collection<Account> accounts, LocalDate asOf, boolean withHoldingsSummaries) {
     // For an account that holds positions, the opening balance is only used for warnings.
     Map<UUID, SnapshotBalance> openingBalances = new HashMap<>();
     List<UUID> openingCandidates = idsOf(accounts, AccountValuationService::takesOpeningBalance);
@@ -527,7 +528,9 @@ public class AccountValuationService {
     Map<UUID, List<ReportedHoldingValue>> reportedHoldings =
         holdsPositions.isEmpty()
             ? Map.of()
-            : accountPositionsService.reportedHoldingsFor(holdsPositions, asOf);
+            // US-15-15: the orders' cost basis only for the depot gain summaries (#719 review).
+            : accountPositionsService.reportedHoldingsFor(
+                holdsPositions, asOf, withHoldingsSummaries);
 
     return new AccountValueSources(
         ownCurrencies,

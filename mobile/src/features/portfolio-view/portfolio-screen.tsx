@@ -51,6 +51,7 @@ type Props = {
   onAddAccount: (portfolioId: string) => void;
   onImport: () => void;
   onAccount: (accountId: string, tab?: 'positions') => void;
+  onInvestments?: (accountId: string) => void;
   onMissing: () => void;
 };
 
@@ -59,11 +60,13 @@ function SectionCardView({
   currency,
   onExplain,
   onAccount,
+  onInvestments,
 }: {
   section: PortfolioSection;
   currency: string;
   onExplain: () => void;
   onAccount: (accountId: string, tab?: 'positions') => void;
+  onInvestments?: (accountId: string) => void;
 }) {
   const intl = useIntl();
   const theme = useTheme();
@@ -114,6 +117,7 @@ function SectionCardView({
           nested={nested}
           portfolioCurrency={currency}
           onAccount={onAccount}
+          onInvestments={onInvestments}
         />
       ))}
     </SectionCard>
@@ -130,6 +134,7 @@ export function PortfolioScreen({
   onAddAccount,
   onImport,
   onAccount,
+  onInvestments,
   onMissing,
 }: Props) {
   const intl = useIntl();
@@ -196,6 +201,7 @@ export function PortfolioScreen({
           currency={data.currency}
           onExplain={() => setExplained(section)}
           onAccount={onAccount}
+          onInvestments={onInvestments}
         />
       ))}
       {desktop ? null : dataSource}

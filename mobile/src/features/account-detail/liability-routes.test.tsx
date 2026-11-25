@@ -192,8 +192,11 @@ beforeEach(() => {
           years: [
             {
               year: new Date().getFullYear(),
+              amountPaid: '800.00',
               interestPaid: '100.00',
               principalPaid: '700.00',
+              unknownSplitAmount: '0.00',
+              paymentCount: 1,
               splitEstimated: false,
             },
           ],
@@ -351,14 +354,14 @@ it('loads the recent repayments again after access to the full history was denie
   await renderRoute(loanPath, 'ios', 390);
   expect(await screen.findByRole('button', { name: 'See all' })).toBeTruthy();
   expect(await screen.findByText('4 Oct 2026')).toBeTruthy();
-  expect(screen.queryByText('Interest this year: –')).toBeNull();
+  expect(screen.queryByLabelText(/^Interest paid in \d{4}: not available$/)).toBeNull();
 
   accessRevoked = true;
   await fireEvent.press(screen.getByRole('button', { name: 'See all' }));
   expect(await screen.findByText('You are not allowed to do this.')).toBeTruthy();
   await fireEvent.press(screen.getByRole('button', { name: 'Show recent repayments' }));
 
-  expect(await screen.findByText('Interest this year: –')).toBeTruthy();
+  expect(await screen.findByLabelText(/^Interest paid in \d{4}: not available$/)).toBeTruthy();
   expect(await screen.findByText('You are not allowed to do this.')).toBeTruthy();
   expect(screen.queryByText('4 Oct 2026')).toBeNull();
 });

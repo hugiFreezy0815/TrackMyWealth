@@ -77,12 +77,16 @@ REQUIRED_CHECKS: Dict[str, Tuple[str, Optional[Tuple[str, ...]]]] = {
     ),
     # #375: the app's API types are generated from the contract and the problem-code registry, so
     # a change to either runs Mobile Web CI, whose stale check then requires them regenerated.
+    # The Investments value status mirrors three backend DTO files (value-status-sync.test.ts, #686).
     "build-web": (
         "Mobile Web CI",
         (
             "mobile/",
             "api/openapi.yaml",
             "api/problem-codes.json",
+            "backend/src/main/java/com/trackmywealth/backend/dto/ValueStatus.java",
+            "backend/src/main/java/com/trackmywealth/backend/dto/ValueBasisValues.java",
+            "backend/src/main/java/com/trackmywealth/backend/dto/DataQualityWarningValues.java",
             ".github/workflows/mobile-web-ci.yml",
         ),
     ),
