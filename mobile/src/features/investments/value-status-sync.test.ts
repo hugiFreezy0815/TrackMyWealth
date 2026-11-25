@@ -1,7 +1,7 @@
 // Investments derives a depot balance's value status on the client (model.ts, balanceStatus),
 // because /accounts/{id}/balance sends no valueStatus. This keeps that copy in step with the
-// backend rule it mirrors: a new approximate basis or another warning there fails here.
-// Mobile Web CI also runs when either Java file changes.
+// backend rule it mirrors: a new approximate basis, another warning or a changed wire value there
+// fails here. Mobile Web CI also runs when any of the three Java files changes.
 
 import type { components } from '@/api/schema';
 
@@ -27,13 +27,18 @@ function methodBody(source: string, signature: string) {
   throw new Error(`No end to ${signature}`);
 }
 
-it('lists the approximate value bases of ValueBasisValues.isApproximate', () => {
-  const source = read('ValueBasisValues.java');
-  const constants = Object.fromEntries(
+/** The wire value of each `public static final String` constant, by Java name. */
+function stringConstants(source: string): Record<string, string> {
+  return Object.fromEntries(
     [...source.matchAll(/public static final String (\w+)\s*=\s*"([^"]+)"/g)].map(
       ([, name, value]) => [name, value],
     ),
   );
+}
+
+it('lists the approximate value bases of ValueBasisValues.isApproximate', () => {
+  const source = read('ValueBasisValues.java');
+  const constants = stringConstants(source);
   const approximate = [
     ...methodBody(source, 'public static boolean isApproximate(').matchAll(
       /(\w+)\.equals\(valueBasis\)/g,
@@ -44,8 +49,10 @@ it('lists the approximate value bases of ValueBasisValues.isApproximate', () => 
 
 it('reads the warnings ValueStatus.of reads, in its order', () => {
   const body = methodBody(read('ValueStatus.java'), 'public static ValueStatus of(');
+  const warnings = stringConstants(read('DataQualityWarningValues.java'));
+  // Each warning as its wire value: the client compares the strings the API sends.
   const checks = [...body.matchAll(/DataQualityWarningValues\.(\w+)|return (\w+);/g)].map(
-    ([, warning, status]) => warning ?? status,
+    ([, warning, status]) => (warning ? (warnings[warning] ?? `unknown ${warning}`) : status),
   );
   expect(checks).toEqual([
     'UNKNOWN',
@@ -86,6 +93,8 @@ type Change = Partial<components['schemas']['AccountValuation']>;
 it.each<[Change, string]>([
   [{}, 'CURRENT'],
   [{ valueKnown: false }, 'UNKNOWN'],
+  // Like ValueStatus.of, only valueKnown decides UNKNOWN; a null amount is a display matter.
+  [{ value: null }, 'CURRENT'],
   [{ warnings: [STATUS_WARNINGS.unreconciled], conversionRateStale: true }, 'UNRECONCILED'],
   [{ conversionRateStale: true, valueBasis: 'LEDGER_EMPTY' }, 'STALE'],
   [{ valueSourceStale: true }, 'STALE'],

@@ -64,7 +64,7 @@ export const STATUS_WARNINGS = {
 } as const;
 
 export function balanceStatus(balance: AccountBalance): ValueStatus {
-  if (!balance.valueKnown || balance.value == null) return 'UNKNOWN';
+  if (!balance.valueKnown) return 'UNKNOWN';
   if (balance.warnings.includes(STATUS_WARNINGS.unreconciled)) return 'UNRECONCILED';
   if (balance.conversionRateStale || balance.valueSourceStale) return 'STALE';
   if (
@@ -75,12 +75,17 @@ export function balanceStatus(balance: AccountBalance): ValueStatus {
   return 'CURRENT';
 }
 
-/** Select the server's figures and metadata that apply to the displayed currency. */
+/**
+ * Select the server's figures and metadata that apply to the displayed currency. `balanceFailed`:
+ * the depot-currency balance request failed with nothing cached; until it answers or fails, the
+ * figure is `pending` (the screen shows a skeleton, not the "status unavailable" note).
+ */
 export function investmentFigures(
   depot: Depot | undefined,
   netWorth: NetWorth | undefined,
   positions: PositionsResponse | undefined,
   balance?: AccountBalance,
+  balanceFailed = false,
 ) {
   if (depot) {
     const { account, portfolioCurrency } = depot;
@@ -108,7 +113,8 @@ export function investmentFigures(
           : sharesCurrency
             ? account.valueSourceDate
             : null,
-        statusUnavailable: !ownBalance && !sharesCurrency && amount != null,
+        pending: !ownBalance && !sharesCurrency && !balanceFailed,
+        statusUnavailable: !ownBalance && !sharesCurrency && balanceFailed && amount != null,
         complete: positions?.complete !== false,
       },
       performance: {
@@ -130,6 +136,7 @@ export function investmentFigures(
             known: section.valueStatus !== 'UNKNOWN',
             status: section.valueStatus,
             asOf: netWorth.asOf,
+            pending: false,
             statusUnavailable: false,
             complete: section.complete,
           }

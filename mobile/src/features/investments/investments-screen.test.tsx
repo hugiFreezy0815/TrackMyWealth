@@ -208,11 +208,17 @@ describe('Investments view model', () => {
         status: 'CURRENT',
         asOf: '2026-11-20',
       });
+      // While the depot-currency balance loads, the figure is pending, not "status unavailable".
       expect(investmentFigures(scope, undefined, snapshot).value).toMatchObject({
+        pending: true,
+        statusUnavailable: false,
+      });
+      expect(investmentFigures(scope, undefined, snapshot, undefined, true).value).toMatchObject({
         amount: '910.52',
         known: true,
         status: undefined,
         asOf: null,
+        pending: false,
         statusUnavailable: true,
       });
       expect(
@@ -689,8 +695,8 @@ it('starts a newly selected depot without issuing abandoned queued positions req
   expect(maximum).toBe(4);
 });
 
-it('falls back to All depots for a missing depot while another portfolio view failed', async () => {
-  mockInvestments(
+it('does not call a deep-linked depot missing while a view that may list it failed', async () => {
+  const { allowSecondPortfolio } = mockInvestments(
     {
       views: [view, { ...view, portfolioId: 'other-portfolio', sections: [pillarSection] }],
     },
@@ -698,10 +704,83 @@ it('falls back to All depots for a missing depot while another portfolio view fa
   );
   const { route } = setupScreen();
   await render(route('archived-depot'));
+  expect(await screen.findByText(/This depot could not be loaded/)).toBeOnTheScreen();
+  expect(screen.queryByText(/This depot is unavailable/)).toBeNull();
+  expect(screen.getByRole('radio', { name: 'All depots' })).not.toBeChecked();
+  expect(screen.getByRole('radio', { name: depot.name })).toBeOnTheScreen();
+  // Once every view has loaded, a depot none of them lists is missing: show All depots.
+  allowSecondPortfolio();
+  await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
   expect(await screen.findByText(/This depot is unavailable/)).toBeOnTheScreen();
-  expect(screen.getByText(/Some depots could not be loaded/)).toBeOnTheScreen();
+  expect(screen.queryByText(/This depot could not be loaded/)).toBeNull();
   expect(screen.getByRole('radio', { name: 'All depots' })).toBeChecked();
   expect((await screen.findAllByText('Example Fund')).length).toBeGreaterThan(0);
+});
+
+it('does not call a deep-linked depot missing when its account summary failed', async () => {
+  const fresh = { ...depot, positionsCount: null, positionsAsOf: null, accountId: 'fresh' };
+  const { failSummaries } = mockInvestments({
+    views: [{ ...view, sections: [{ ...view.sections[0], accounts: [depot, fresh] }] }],
+    accounts: [{ id: fresh.accountId, holdsPositions: true }],
+    snapshot: { ...snapshot, positions: [] },
+  });
+  failSummaries();
+  const { route } = setupScreen();
+  await render(route(fresh.accountId));
+  expect(await screen.findByText(/This depot could not be loaded/)).toBeOnTheScreen();
+  expect(screen.queryByText(/This depot is unavailable/)).toBeNull();
+  expect(screen.getByRole('button', { name: 'Try again' })).toBeOnTheScreen();
+});
+
+it.each([
+  [false, null],
+  [true, 'Valuation status and date are unavailable in the depot currency.'],
+])(
+  'shows no status note while a foreign-currency depot balance loads (fails: %s)',
+  async (fails, note) => {
+    const { get } = mockInvestments({ views: [view] });
+    const base = get.getMockImplementation();
+    let answer: (value: unknown) => void = () => undefined;
+    get.mockImplementation((path, request) =>
+      path === '/api/v1/accounts/{accountId}/balance'
+        ? new Promise<never>((resolve, reject) => {
+            answer = (value) =>
+              fails ? reject(new Error('Balance unavailable')) : resolve(value as never);
+          })
+        : base!(path, request),
+    );
+    const { route } = setupScreen();
+    await act(() => setAmountsHidden(false));
+    await render(route(depot.accountId));
+    expect(await screen.findByText('Example Fund')).toBeOnTheScreen();
+    expect(screen.queryByText('Market value')).toBeNull();
+    expect(screen.queryByText(/Valuation status and date are unavailable/)).toBeNull();
+    await act(async () => answer(ownBalance));
+    expect(await screen.findByText('Market value')).toBeOnTheScreen();
+    expect(screen.getByText('EUR 910.52')).toBeOnTheScreen();
+    if (note) expect(screen.getByText(note)).toBeOnTheScreen();
+    else expect(screen.queryByText(/Valuation status and date are unavailable/)).toBeNull();
+  },
+);
+
+it('reverses the order when the selected phone sort chip is tapped again', async () => {
+  mockInvestments({ views: [view] });
+  const { route } = setupScreen();
+  await render(route(depot.accountId));
+  await screen.findByText('Example Fund');
+  const order = () =>
+    screen
+      .getAllByLabelText(/^(Example Fund|Fund Without Basis), /)
+      .map(({ props }) => String(props.accessibilityLabel).split(',')[0]);
+  await fireEvent.press(screen.getByRole('radio', { name: 'Name' }));
+  expect(screen.getByRole('radio', { name: 'Name, ascending' })).toBeChecked();
+  expect(screen.getByText('Name ↑ ✓')).toBeOnTheScreen();
+  expect(order()).toEqual(['Example Fund', 'Fund Without Basis']);
+  await fireEvent.press(screen.getByRole('radio', { name: 'Name, ascending' }));
+  expect(screen.getByRole('radio', { name: 'Name, descending' })).toBeChecked();
+  expect(order()).toEqual(['Fund Without Basis', 'Example Fund']);
+  await fireEvent.press(screen.getByRole('radio', { name: 'Gain %' }));
+  expect(screen.getByRole('radio', { name: 'Gain %, descending' })).toBeChecked();
 });
 
 it('resets a table-only sort to the default where the phone sort chips show', () => {

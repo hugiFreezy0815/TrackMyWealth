@@ -172,6 +172,9 @@ export function InvestmentsScreen({
       {data.invalidScope ? (
         <InfoText warning>{msg(intl, 'investments.depotMissing')}</InfoText>
       ) : null}
+      {data.scopeUnavailable ? (
+        <InfoText warning>{msg(intl, 'investments.depotNotLoaded')}</InfoText>
+      ) : null}
       {noDepots ? (
         <SectionCard title={msg(intl, 'investments.empty')}>
           {!showPortfolioPicker ? (
@@ -215,12 +218,13 @@ export function InvestmentsScreen({
           }}
         />
       ) : null}
-      {data.showAll &&
-      data.depots.length > 0 &&
-      data.valueQueries.some(({ isPending }) => isPending) ? (
+      {(data.showAll &&
+        data.depots.length > 0 &&
+        data.valueQueries.some(({ isPending }) => isPending)) ||
+      value?.pending ? (
         <LoadingSkeleton count={2} />
       ) : null}
-      {value && !noDepots ? (
+      {value && !value.pending && !noDepots ? (
         <SectionCard title={marketValueTitle}>
           <Amount
             value={value.amount}
@@ -295,15 +299,20 @@ export function InvestmentsScreen({
       {!webTable && data.groups.some(({ query }) => query.data?.positions.length) ? (
         <ChipGroup
           label={msg(intl, 'investments.sort')}
-          options={CHIP_SORT_KEYS.map((value) => ({
-            value,
-            label: msg(intl, 'investments.sort.' + value),
-          }))}
+          options={CHIP_SORT_KEYS.map((value) => {
+            const label = msg(intl, 'investments.sort.' + value);
+            if (value !== sort.key) return { value, label };
+            // Tapping the selected chip again reverses the order, as the web table headers do.
+            return {
+              value,
+              label: `${label} ${sort.direction === 'ascending' ? '↑' : '↓'}`,
+              accessibilityLabel: msg(intl, 'investments.sort.' + sort.direction, { label }),
+            };
+          })}
           selected={[sort.key]}
           onSelect={(next) => {
             const option = CHIP_SORT_KEYS.find((value) => value === next);
-            if (option)
-              setSort({ key: option, direction: option === 'name' ? 'ascending' : 'descending' });
+            if (option) selectSort(option);
           }}
         />
       ) : null}

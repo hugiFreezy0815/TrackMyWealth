@@ -50,13 +50,15 @@ export function useInvestments(accountId?: string, scopeCurrency?: string) {
     views.every(({ data }) => data != null) &&
     positionAccounts.queries.every(({ data }) => data != null);
   const directoryFailed = directoryQueries.some(({ isError, data }) => isError && data == null);
-  // A depot missing from every view that loaded falls back to All depots once no view is still
-  // loading: one failed view must not leave the screen blank (its error banner still shows).
+  // Only a complete directory proves a depot does not exist: then the screen falls back to All
+  // depots. While a view or summary that could list it has failed, the depot is not called
+  // missing; the screen says it could not load, beside that request's error banner and retry.
   const directorySettled =
     portfolios.data != null &&
     views.every(({ isPending }) => !isPending) &&
     positionAccounts.queries.every(({ isPending }) => !isPending);
-  const invalidScope = Boolean(accountId && !depot && directorySettled);
+  const invalidScope = Boolean(accountId && !depot && directoryComplete);
+  const scopeUnavailable = Boolean(accountId && !depot && directorySettled && !directoryComplete);
   const showAll = !accountId || invalidScope;
   const workspace = useWorkspace();
   const currency = scopeCurrency ?? workspace.data?.currency;
@@ -77,6 +79,7 @@ export function useInvestments(accountId?: string, scopeCurrency?: string) {
     depot,
     showAll,
     invalidScope,
+    scopeUnavailable,
     directoryPending,
     directoryComplete,
     directoryFailed,
@@ -97,6 +100,7 @@ export function useInvestments(accountId?: string, scopeCurrency?: string) {
       showAll ? netWorth.data : undefined,
       depot ? positions[0]?.data : undefined,
       balance.data,
+      balance.isError && balance.data == null,
     ),
     // The queries behind the figures shown: the value and performance, and the positions.
     figureQueries: [

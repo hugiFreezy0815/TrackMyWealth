@@ -11,6 +11,7 @@ on:
       # The Investments value status mirrors these (value-status-sync.test.ts).
       - "backend/src/main/java/com/trackmywealth/backend/dto/ValueStatus.java"
       - "backend/src/main/java/com/trackmywealth/backend/dto/ValueBasisValues.java"
+      - "backend/src/main/java/com/trackmywealth/backend/dto/DataQualityWarningValues.java"
       - ".github/workflows/mobile-web-ci.yml"
   pull_request:
     paths:
@@ -21,6 +22,7 @@ on:
       # The Investments value status mirrors these (value-status-sync.test.ts).
       - "backend/src/main/java/com/trackmywealth/backend/dto/ValueStatus.java"
       - "backend/src/main/java/com/trackmywealth/backend/dto/ValueBasisValues.java"
+      - "backend/src/main/java/com/trackmywealth/backend/dto/DataQualityWarningValues.java"
       - ".github/workflows/mobile-web-ci.yml"
 
 jobs:
