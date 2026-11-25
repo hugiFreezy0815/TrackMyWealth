@@ -151,9 +151,10 @@ export function RepaymentsPanel({
 /**
  * Field 7 (#712): the server's interest sum for the current calendar year, as the first block of
  * the Repayments panel. Hidden when nothing was paid this year; an unknown split is "Not known",
- * never 0, and the count stays (#722). When the sum cannot be loaded, or the loan's repayments are not accessible, the amount
- * is "–" and never a cached one (PO 2026-11-23). Payments without a known split are left out of
- * `interestPaid`, so their sent total is named below it (PO 2026-11-24).
+ * never 0, and the count stays (#722). When the sum cannot be loaded, or the loan's repayments are
+ * not accessible, the amount is "–" and never a cached one (PO 2026-11-23). Payments without a
+ * known split are left out of `interestPaid`, so their sent total is named below it
+ * (PO 2026-11-24).
  */
 function InterestThisYear({ accountId, unavailable }: { accountId: string; unavailable: boolean }) {
   const intl = useIntl();
@@ -199,8 +200,9 @@ function InterestThisYear({ accountId, unavailable }: { accountId: string; unava
     title,
     interest?.label ?? msg(intl, 'loan.interestUnknown'),
     meta,
-    known ? null : msg(intl, 'loan.splitUnknown'),
+    // Same order as on screen: the badge sits in the count row, above the split-unknown line.
     splitEstimated ? msg(intl, 'loan.estimatedSplit') : null,
+    known ? null : msg(intl, 'loan.splitUnknown'),
     // The children are not read on their own, so the visible explanation must be in the label.
     splitEstimated ? msg(intl, 'loan.interestYtdEstimated') : null,
     unsplit ? msg(intl, 'loan.interestYtdPartial', { amount: unsplit.label }) : null,

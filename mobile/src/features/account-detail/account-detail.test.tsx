@@ -667,6 +667,25 @@ describe('S10 liability detail (#685)', () => {
       expect(screen.queryByText(/Not included/)).toBeNull();
     });
 
+    it('reads an estimated badge before the split-unknown line, as on screen', async () => {
+      await renderYears([
+        year(thisYear, {
+          interestPaid: null,
+          principalPaid: null,
+          unknownSplitAmount: '1650.00',
+          paymentCount: 3,
+          splitEstimated: true,
+        }),
+      ]);
+      expect(await screen.findByText('Not known')).toBeTruthy();
+      expect(field().props.accessibilityLabel).toMatch(
+        new RegExp(
+          `^${title}, Not known, From 3 repayments, Estimated split, ` +
+            'Principal and interest split unknown, ',
+        ),
+      );
+    });
+
     it('marks an estimated year sum', async () => {
       await renderYears([year(thisYear, { splitEstimated: true })]);
       expect(await screen.findByText('EUR 250.00')).toBeTruthy();
