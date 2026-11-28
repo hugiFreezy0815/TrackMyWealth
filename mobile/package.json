@@ -50,7 +50,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-import-resolver-typescript": "^4.4.5",
     "jest": "~30.5.2",
-    "jest-expo": "~58.0.14",
+    "jest-expo": "~58.0.15",
     "openapi-typescript": "7.13.0",
     "playwright": "1.65.1",
     "prettier": "^3.9.9",
